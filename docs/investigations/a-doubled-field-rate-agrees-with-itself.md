@@ -178,11 +178,22 @@ while `IF_HS_DEC_FACTOR` stays 0 -- so one IF unit is one ADC sample and the
 block counts 1253 of the 2506 a line actually runs. Exactly two IF lines per
 line is exactly half a frame between vertical pulses.
 
-The counter and the decimation are written by different calls:
-`writeLineCounter()` and `applyLineDoubling()`, and only the second reaches
-`IF_HS_DEC_FACTOR` -- along with the deinterlacer and the video processor,
-because a scan mode is all three. Setting a scan mode at reset is a wider
-change than sizing a counter, and it has not been made.
+The counter and the decimation were written by different calls:
+`writeLineCounter()` and `applyLineDoubling()`. They are one fact, so
+`writeLineCounter()` now owns both and `applyLineDoubling()` delegates to it.
+
+**HOLDING THEM TOGETHER DOES NOT REMOVE THE 0.500 READING, AND THAT IS THE
+RESULT.** Every state the block passes through on an input change is now
+internally consistent -- 1253 with the decimation set against a divider of
+2506, 347 against 694, 1100 against 2200, 1448 unset against 1448, and no
+truncated counter anywhere -- and the field rate still reads exactly twice the
+source's.
+
+So half a frame between vertical pulses is **not** the horizontal counter. The
+block counts one IF line per line and the vertical still arrives twice per
+frame, which puts it in the vertical path: `IF_VB_ST`/`IF_VB_SP`, or whatever
+decides a field from a frame on a progressive source. That is where to look
+next, and the counter is ruled out rather than suspected.
 
 ## What this is not
 
