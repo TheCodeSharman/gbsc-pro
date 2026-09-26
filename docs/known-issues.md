@@ -300,26 +300,6 @@ the separator's path and it reads later.
 What would settle it: the same creep at a second divider, which needs a doubled
 source that is not 15 kHz, or `IF_HBIN_SP` swept against it.
 
-### The sample-clock group has two writers, and they are the same function twice
-
-`PLLAD_MD`, `IF_HSYNC_RST` and `SP_RT_HS_SP` are one quantity in three
-registers, and two functions write all three in the same order:
-
-| | |
-|---|---|
-| `VideoPath::applySampling(divider)` | `Adc::applySampleRate` -> `writeLineCounter` -> `writeRetimeStop` |
-| `gbs-control.ino`'s `applyScalingSampleClock(divider, oversample)` | the same three, same order |
-
-Neither knows about the other. The sketch copy is reached from the serial
-command that sets the sample clock by hand, so a divider applied that way does
-not go through the engine's own path and nothing reconciles the two afterwards.
-
-It is the standing target rather than a new fault -- the sketch is supposed to
-end up writing no registers at all -- and it is recorded here because holding
-the line counter on `InputFormatter` made the duplication visible: both copies
-now write the same held state, so a divergence between them is a divergence in
-what the block believes it wrote.
-
 ### `Memory::FetchFloor` drives the playback ratio off the bottom of its band
 
 `Memory::fetchFor()` is `max(FetchFloor, ceil(captureWidth / RequestsPerLine))`
