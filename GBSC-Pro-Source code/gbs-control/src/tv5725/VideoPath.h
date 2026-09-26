@@ -296,6 +296,16 @@ public:
     // the IF counts half-lines with the doubler in.
     bool lineDoubled() const;
 
+    // A divider and an oversampling ratio chosen by hand rather than solved,
+    // put in force the way a solve would put them -- the scan and the line
+    // doubling that size the divider, the clamp that moves with it, and the
+    // retime stop, all from the state this class already holds.
+    //
+    // The whole PLL group moves together or the ADC leaves lock, and the three
+    // blocks that carry the scan have to agree with the counter, so there is
+    // nothing here a caller can usefully do a subset of.
+    void applyChosenSampling(uint16_t divider, uint8_t oversample);
+
 private:
 
     // The raster is the held one, never a read-back.
@@ -342,7 +352,12 @@ private:
     // multiple of the truth. Nothing is written at all where the line does not
     // fit the counter.
     // ../../../../docs/investigations/the-field-rate-reads-exactly-double-after-a-sync-reset.md
-    void applySampling(uint16_t divider, bool doubled);
+    //
+    // The oversampling goes in beside them because it is the third part of one
+    // setting, and it is HELD: a caller that asks for a ratio by hand is giving
+    // a command, and the next solve has to size its divider against the same
+    // one or it undoes the request on the next measurement.
+    void applySampling(uint16_t divider, bool doubled, uint8_t oversample);
 
     // The scan alone, sized for a divider that is going in beside it or is
     // already in force. False where the line does not fit the counter, having

@@ -3229,18 +3229,6 @@ static void reportSampleClock(const char *what)
 // divider is one quantity in three registers and PLLAD_LAT loads several
 // members of the ADC PLL group on one edge, so writing a subset by hand leaves
 // the PLL unlocked at a value every register reports correctly.
-static void applyScalingSampleClock(uint16_t divider, uint8_t oversample)
-{
-    const bool doubled = geometry.lineDoubled();
-
-    if (!inputFormatter.applyScan(divider, doubled, Tv5725::Adc::inputIsComponent()))
-        return;
-
-    Tv5725::Adc::applySampleRate(divider, sourceSampling.lineRateHz(), oversample);
-    Tv5725::SyncProcessor::writeRetimeStop(
-        Tv5725::SyncProcessor::retimeStopFor(divider));
-}
-
 static void applyCoastOverride(bool apply, bool clear, uint8_t pre, uint8_t post)
 {
     if (apply) {
@@ -3289,7 +3277,7 @@ static void applySampleClock(bool apply, uint16_t divider, uint8_t oversample)
     if (passingThrough)
         Tv5725::HdBypass::applyPassThroughSampling(wanted, lineRateHz, ratio);
     else
-        applyScalingSampleClock(wanted, ratio);
+        geometry.applyChosenSampling(wanted, ratio);
 
     // Writing the group is not enough to re-establish lock: the PLL and the
     // phase adjusters have to be restarted after it, and without that the ADC

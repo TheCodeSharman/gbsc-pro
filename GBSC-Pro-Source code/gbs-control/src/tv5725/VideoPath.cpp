@@ -473,7 +473,7 @@ bool VideoPath::installSampling(SamplingReason reason)
              (unsigned long)rate, (unsigned)lineDoubled_, (unsigned)divider);
     tv5725Log(line);
 
-    applySampling(divider, lineDoubled_);
+    applySampling(divider, lineDoubled_, modeOversample_);
     return true;
 }
 
@@ -735,8 +735,15 @@ bool VideoPath::applyScan(uint16_t divider, bool doubled)
     return true;
 }
 
-void VideoPath::applySampling(uint16_t divider, bool doubled)
+void VideoPath::applyChosenSampling(uint16_t divider, uint8_t oversample)
 {
+    applySampling(divider, lineDoubled_, oversample);
+}
+
+void VideoPath::applySampling(uint16_t divider, bool doubled, uint8_t oversample)
+{
+    modeOversample_ = oversample;
+
     if (!applyScan(divider, doubled))
         return;
 
