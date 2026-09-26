@@ -402,12 +402,20 @@ public:
     // the reset state has to be a clock that can be measured through, or
     // nothing is ever able to measure its way out of it.
     //
-    // The pair is a MEASURED WORKING POINT rather than a nominal one: 2506 at
-    // 15625 Hz is CKO 39.2 MHz, which the crossover table puts on post divider
-    // 2 and so a VCO of 156.6 MHz on high gain -- the state the bench unit
-    // locks in. A lower divider would be arithmetically tidier and lands the
-    // VCO at 112 MHz on low gain, where nothing has measured whether the PLL
-    // holds.
+    // The pair is a MEASURED WORKING POINT rather than a nominal one: 1400 at
+    // 15625 Hz is CKO 21.9 MHz, which the crossover table puts on post divider
+    // 4 and so a VCO of 87.5 MHz on low gain -- measured on both bench inputs,
+    // acquiring in 3.8 s on `vga` and 5.3 s on `ypbpr`.
+    //
+    // **IT FITS THE LINE COUNTER UNDOUBLED**, which is the reason to prefer it
+    // over a larger one: everything to LineCounterMax does, so the reference
+    // line can be carried in either scan and the reference clock is no longer a
+    // divider the arriving source's scan may be unable to represent.
+    //
+    // It also sits closer to the row the part ends up on. The crossover row is
+    // chosen from the ASSUMED rate here, and the actual CKO is the divider
+    // times the real line rate -- 1400 puts a 37.9 kHz source at 53 MHz against
+    // an installed /4, where 2506 put it at 94.9 MHz.
     //
     // The rate is the LOWEST line the part is expected to carry, so that every
     // faster source needs the PLL to divide rather than multiply: asked for a
@@ -416,16 +424,21 @@ public:
     // reaches 62.5 kHz. Above that the first count is not the source's and the
     // recovery ladder is what answers.
     // ../../../docs/investigations/the-reference-divider-was-the-bootstrap.md
-    static const uint16_t BringUpDivider = 2506;
+    static const uint16_t BringUpDivider = 1400;
     static const uint32_t BringUpLineRateHz = 15625;
 
-    // The scan the bring-up line is carried as, which the input formatter's
-    // line counter is sized from. 15625 is the SD line, and an SD line is
-    // doubled -- so the counter is half the divider and fits its eleven bits.
-    // Undoubled the pair cannot be represented at all: 2506 truncates to 458,
-    // and the block then counts several lines per line and times the source's
-    // field rate off the result.
-    static const bool BringUpLineDoubled = true;
+    // The scan the bring-up line is carried as, which the input formatter's line
+    // counter is sized from. Undoubled, because the divider above fits the
+    // counter whole: the counter takes every ADC sample and the decimation says
+    // so, which is one fewer state a measurement can be taken through.
+    //
+    // **THE DOUBLED RATE DOES NOT FOLLOW FROM THIS EITHER WAY.** Measured on
+    // both pairs: the field rate still reads exactly twice in the window after
+    // a sync reset. What changes is that the first ACCEPTED sample is the
+    // correct one, so the engine solves one divider per selection instead of
+    // three.
+    // ../../../docs/investigations/the-field-rate-reads-exactly-double-after-a-sync-reset.md
+    static const bool BringUpLineDoubled = false;
 
     // The divider alone, latched. NOT the crossover row -- applySampleRate() is
     // what writes the group, and a caller here is holding the rest itself.
