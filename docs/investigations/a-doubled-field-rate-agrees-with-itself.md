@@ -72,14 +72,45 @@ find it -- most of it the sync-type probe -- and 0.55 s afterwards, with its
 first `sampling:` line 0.05 s after `det found`. **The thrash is under a second
 of it**, so it is not on its own the reason an input change costs what it does.
 
-## What the readings point at instead
+## The reading is taken through the bring-up divider
 
-Every bad reading lands within about 200 ms of `det found,2`, and from there on
-every sample is 59.93 Hz exactly. That is a settle, not a corroboration problem:
-the quantity is wrong while the vsync path is still coming up, and right
-afterwards, without anything being installed to make it so.
+`SamplingLog` across one input change, with the divider in the second column:
 
-`SourceMeasurement::settlePasses_` already discards readings for exactly this
-reason, returning `ClockSettling` until the count drains. It is armed by
-`samplingClockLatched()` and by nothing else, so the passes immediately after
-acquisition -- where these readings are -- are not covered by it.
+```
+smp,ms,divider,pllad_lock,sp_vtotal,sp_htotal,hperiod_if,vperiod_if,hsact,ifbits,int
+smp,  42,1438,1,627,1438,223,  48,1,12,0     on vga, locked and correct
+evt,det low power,1
+smp,2120,2506,0,  0,   0,214,   2,1, 1,138   the teardown's divider
+evt,det found,2
+smp,4657,2506,1,524,2506,214, 524,1, 3,64    the doubled rate is read HERE
+smp,4720, 694,0,524,2506,214, 524,1, 3,64    and sizes this
+smp,5871,1446,1,524,1446,214, 524,1, 3,0     settled
+```
+
+**2506 is `Adc::BringUpDivider`**, written by `applyResetParameters()` inside
+`setResetParameters()` on the low-power teardown. Detection hands the source
+over with it still in force, and the first field rate is measured through it.
+
+The field rate is timed on `DEBUG_IN_PIN` off `TestBus::selectInputVsync()` --
+`VideoSourceAcquisition` passes `useSyncProcessorBus` false, so the held sync
+type does not reach this -- which is the INPUT FORMATTER's vsync. The IF's
+vertical output is counted in its own line units, and its line counter is
+`IF_HSYNC_RST`, sized from the divider. Sized for a line the source does not
+run, it emits vsync more than once per frame.
+
+**The error is exactly 2.000x, which is what rules out simple clock scaling**:
+2506 against the 1448 the source wants is a ratio of 1.73, and no reading shows
+1.73. A clean factor of two is the line doubler's, so what is wrong at that
+moment is how many IF lines the counter believes a frame holds, not the clock
+rate as such.
+
+`VPERIOD_IF` does not discriminate it -- 524 at the doubled readings and 524
+once settled -- so it is not available as the independent witness.
+
+## What this is not
+
+It is not `SourceMeasurement::settlePasses_` being unarmed.
+`inputTimingsChanged()` calls `applySampling()`, which calls
+`samplingClockLatched()`, so five settle passes ARE armed on this path and they
+drain during the 1.92 s between `det found` and the first reading. Arming it
+again on acquisition changes nothing.
