@@ -73,6 +73,9 @@ This is the measurement behind retiring the byte. `docs/video-source-acquisition
 
 ## The fault the witness catches cannot occur where the witness is missing
 
+**The check described here is deleted.** The fault it caught is not reachable once one owner writes the coast pair, measured over 3239 samples.
+[two-owners-of-the-coast-lengths-double-the-count.md](two-owners-of-the-coast-lengths-double-the-count.md)
+
 `countIsSerrations()` needs `VPERIOD_IF` to tell a count of the source's lines
 from a count of the serration and equalisation pulses either side of the
 vertical interval. Those pulses are a composite-sync construct: a separate-sync

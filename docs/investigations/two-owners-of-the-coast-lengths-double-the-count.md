@@ -285,3 +285,43 @@ failing to hold. The on-device log does not corroborate them.
 - [../video-source-acquisition.md](../video-source-acquisition.md), step 5
 - [the-sketch-hunts-while-the-engine-is-locked.md](the-sketch-hunts-while-the-engine-is-locked.md)
   — the same two-owner shape on `SP_H_PULSE_IGNOR`
+
+
+## The doubled count is no longer reachable, and the runtime check is deleted
+
+`SourceMeasurement::countIsSerrations()` refused a settled count that sat nearer
+the witness than half of it, and `VideoSourceAcquisition` answered that by
+widening the coast. Both are gone.
+
+The doubling cannot be reproduced on the firmware that owns the coast pair. The
+historical pairs were written BY HAND against a frozen engine, on the Wii, and
+the count sampled from `loop()` at 25 ms:
+
+| source | coast | count |
+|---|---|---|
+| 576i | 9/9, the engine's own | 310 in 557/557 |
+| 576i | **4/7** | 309..316 |
+| 576i | **4/3** | 309..315 |
+| 576i | **2/2** | 309..316 |
+| 480i | 7/6, the engine's own | 259/260 alternating |
+| 480i | **4/7**, **4/3**, **2/2** | 230..258, scattered |
+
+**Zero counts above 1.5x the baseline in 3239 samples across both modes**, where
+4/7 on 576i is the pair this page measured 622 at.
+
+So the coast pair alone does not double the count, and the state that did was
+the MIXTURE this page records -- `SP_DLT_REG` 0xC0 and `SP_H_PULSE_IGNOR` 26
+left from one arm with two of its four registers overwritten by another. Single
+ownership removed the fault rather than merely making it rarer, and the check
+had been guarding nothing since.
+
+**What the pair still does is a different failure**, and one the check could
+never have seen: on 480i it makes the count UNDERCOUNT and scatter, 230..258
+against a clean 259/260, with `VPERIOD_IF` falling from a steady 524 to
+483..509 and the picture shifting vertically. On 576i it costs a few counts and
+does not disturb the picture at all.
+
+**Freeze only over a counting counter.** Frozen across a re-acquisition,
+`STATUS_SYNC_PROC_VTOTAL` read 0 in all 2380 samples of a run while the picture
+stayed up at full size off the frame buffer -- a dead instrument that reads as a
+result, and one a photograph does not catch either.

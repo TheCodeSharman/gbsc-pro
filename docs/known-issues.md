@@ -828,38 +828,26 @@ pass as normal -- but a settling analog path gives arbitrary values, not three
 consecutive samples at exactly 2.0000x.
 `docs/investigations/the-field-rate-reads-exactly-double-after-a-sync-reset.md`.
 
-### The serration test reads VPERIOD_IF on a scale the reconciliation does not give it
+### After a flash the output can be featureless vertical stripes, with every register correct
 
-`VPERIOD_IF` presents the frame either in whole lines or in half lines
-depending on the source, and `SourceMeasurement::reconciledFrame()` is what
-normalises that -- it tries factor 1 and factor 2 and takes whichever lands a
-small non-negative distance above the counted frame. Measured on this bench:
+The emitted frame carries horizontal structure repeated down every row and no
+vertical structure at all -- one line played out for the whole frame. Seen twice
+in one session, both times within a minute of an OTA flash, on `ypbpr` with the
+Wii at 576i.
 
-| source | count | `VPERIOD_IF` | ratio |
-|---|---|---|---|
-| RiscPC 320x256@50 composite | 311 | 623 | 2 |
-| RiscPC 800x600@60 composite | 623 | 1255 | 2 |
-| Wii 480p component | 524 | 524 | **1** |
-| Wii 576i component | 311 field | 624 | 2 |
+**Nothing in a register dump distinguishes it.** `state: acquired`, count 310
+against `VPERIOD_IF` 624, `PLLAD_MD` 2200 equal to `STATUS_SYNC_PROC_HTOTAL`,
+`DAC_RGBS_PWDNZ` 1, and `/geometry` self-consistent -- capture 1101x622, scales
+and windows all solved. The dongle sees the stripes, so it is the board's output
+rather than the television.
 
-`countIsSerrations()` does not go through that normalisation. It takes the raw
-reading and hardcodes the halving, so on a ratio-1 source the distance from the
-count to the period is **zero** and the test fires on every pass. The count
-alone cannot separate the two cases -- a serration-doubled interlaced count
-against its period and a correct progressive count against its period are the
-same comparison -- so the whole verdict rests on the gate, which is the two
-Mode Detect interlace bits.
+**An input round trip clears it**: `/input?src=vga`, then back. Both occurrences
+recovered that way at once, and the other input is clean throughout, which is
+what rules the board out.
 
-**The consequence is a silent permanent refusal**, reproduced at the host layer:
-a steady count of 524 with `VPERIOD_IF` 524 and the interlace bits set returns
-`Serrations` on every pass for ever, and `reading()` answers that with
-`SyncProcessor::widenCoast()`, which writes registers and logs nothing.
-
-It needs a source of **400 lines or more**, because `VPERIOD_IF / 2` must still
-pass `countIsSource()`. The 311-line RiscPC cannot reach it; the Wii at 480p
-can. **It is not the acquisition stall below** -- the two interlace bits read 0
-in 807 of 807 samples through a measured stall -- so this is a latent defect
-rather than an observed one.
+The scaling path is not the only thing that has to be right for a frame to come
+out, and this is the one state measured where everything the engine sets is
+correct and the played-out frame is not.
 
 ### A YPbPr detection that succeeds on its first pass skips the only preparation
 

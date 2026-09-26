@@ -150,6 +150,10 @@ gives it. There the scan type has no source at all.
 
 ### The measured scan type cannot replace the classification here, and the reason is circular
 
+**`countIsSerrations()` and the two `ModeDetect` predicates are deleted**, so nothing takes this decision any more. The circularity below is why the
+obvious cleanup was never available, and it is kept because the same shape recurs wherever a count is judged against a witness derived from it.
+[two-owners-of-the-coast-lengths-double-the-count.md](two-owners-of-the-coast-lengths-double-the-count.md)
+
 The obvious cleanup -- feed `countIsSerrations()` the measured scan type
 instead of the STATUS_00 bits -- does not work, and it fails in the direction
 that matters.
@@ -260,3 +264,224 @@ is why it survives modes this model would have mis-assigned.
 The reconciliation does not apply to an interlaced source and does not claim
 to: the counter holds a field where `VPERIOD_IF` holds a frame, no factor
 reconciles them, and the raw count stands.
+
+## `VPERIOD_IF` is in half-lines on sources the line doubler is not doubling
+
+The premise the withdrawn parity rule rested on -- that only line doubling puts
+the register in half lines -- is refuted by measurement. A RISC PC at
+800x600@60 over composite sync runs **undoubled** (`IF_HSYNC_RST` equal to
+`PLLAD_MD`, not half of it) and reads 1255, where the DMT total is 628 and
+`1255 + 1 = 2 x 628`. A RISC PC at 640x480@60, also undoubled, reads 524 against
+a DMT total of 525, which is whole lines.
+
+So the register's scale is a property of the source that neither the sync
+arrangement nor the engine's scan choice predicts, and
+`SourceMeasurement::reconciledFrame()` resolving it by testing both factors is
+the only thing on the board that establishes it.
+
+### The high byte tears, and the bottom bit does not
+
+Sampled from `loop()` at 25 ms, 800x600@60 composite gives 1255 x740, 615 x137,
+1267 x123 and 627 x75 in 1075 samples, 542 transitions. Every pair differs by
+exactly **640**, which is 5 x 128 -- the field spans `s0_07[7:1]` for its low
+seven bits and `s0_08[3:0]` for bits 7..10, so the corruption is the high
+nibble going 9 to 4 inside the chip's own two-byte burst. An atomic read does
+not avoid it.
+
+Two consequences. A ratio taken per sample is wrong on a torn reading -- 616
+against a count of 624 computes 1 where the source is 2 -- so the ratio must be
+held. `reconciledFrame()` already rejects every torn sample, because
+`frame >= counted` fails at 616 against 624 on both factors.
+
+And the bottom bit is untouched, 640 being even: `(VPERIOD_IF + 1)` is even in
+1075 of 1075 samples with interlace off and odd in 1062 of 1062 with it on,
+through those 542 transitions.
+
+## The alternation fires on one interlaced state of five
+
+`countAlternated()` is the whole interlace rule. Measured across every
+interlaced state this bench can produce, with `MAPDT_VT_SEL_PRGV`,
+`WFF_ENABLE` and `RFF_ENABLE` read at each:
+
+| interlaced state | count | alternates | motion adapt |
+|---|---|---|---|
+| Wii 480i | 259/260, 258 steps each way | yes | **engaged** |
+| Wii 576i | 310 in 1072/1072 | no | bypassed |
+| RISC PC 320x256@50 `INTERLACE ON` | 309 steady | no | bypassed |
+| RISC PC 800x600@60 `INTERLACE ON` | 624 in 1060/1062 | no | bypassed |
+| RISC PC 640x480@60 `INTERLACE ON` | 523 in 706/706 | no | bypassed |
+
+Four of the five are steered as progressive and shown as a single field, line
+doubled -- correct in shape and aspect, at half the vertical resolution, which
+is why the cost is invisible without a reference.
+
+**480i reaches `acquired`.** An earlier reading that it cannot predates
+`SteadyRun::agree()` treating a pair alternating by one as agreeing.
+
+## A parity rule keyed on the measured ratio, pre-registered and not yet adopted
+
+The rule under test is
+
+    interlaced  <=>  (VPERIOD_IF + 1) is odd,  and only where the held ratio is 2
+
+where the ratio is `reconciledFrame()`'s factor, held rather than recomputed.
+
+**What makes it a different rule from the withdrawn one** is the correction
+term. The withdrawn rule corrected by `lineDoubled`, which is the engine's own
+scan decision; this one corrects by a ratio measured from the witness against
+the count. At 800x600@60 those disagree -- `lineDoubled` 0 against a ratio of 2
+-- and that state is what refuted the withdrawn rule.
+
+**The mechanism**, which the withdrawn rule had none of: `VPERIOD_IF + 1` is the
+frame total in the witness's own unit. At ratio 2 that unit is half lines and a
+progressive frame is an even number of them by construction, so odd is the extra
+half line an interlaced field carries. At ratio 1 the unit is whole lines and
+the parity is the mode's own total, which carries nothing, so the rule declines
+there rather than guessing.
+
+**States used to construct it**: RISC PC 320x256@50, 800x600@60 and 640x480@60
+each `INTERLACE OFF` and `ON`, Wii 576i, Wii 480p.
+
+**States predicted before measurement**: Wii 480i -- ratio 2 from a field count
+of 259/260 against `VPERIOD_IF` 524, so odd and interlaced, where 480p at the
+*same* register value gives ratio 1. Measured: 524 in 1083/1083, ratio 2.01/2.02
+in every sample, `(VPERIOD_IF + 1)` odd in 1083/1083, motion adapt engaged.
+
+### The pre-registered test
+
+Seven modes, none of them in the construction set, five with **odd** progressive
+totals -- the property that produced the withdrawn rule's false positive, since
+an odd total read as whole lines scores interlaced.
+
+| mode | DMT total | line rate |
+|---|---|---|
+| 800x600@56 | 625 odd | 35156 |
+| 800x600@75 | 625 odd | 46875 |
+| 640x400@85 | 445 odd | 37861 |
+| 1920x1080@60 | 1125 odd | 67500 |
+| 1024x768@60 | 806 | 48363 |
+| 1280x960@60 | 1000 | 60000 |
+| 1152x864@75 | 900 | 67500 |
+
+Predictions, each falsifiable on its own:
+
+1. Where the ratio is 2, `(VPERIOD_IF + 1)` is **even** with `INTERLACE OFF` and
+   **odd** with `INTERLACE ON`.
+2. The ratio is the same for both interlace states of a mode.
+3. `(VPERIOD_IF + 1) / ratio` equals the mode's published progressive total.
+
+4. The parity is **unanimous across every sample of a state**, not merely the
+   most common one. A rule keyed on a bit that flips intermittently misfires
+   intermittently, which is worse than one that never fires: the register's high
+   byte tears on a fifth of samples at some modes, so this has to be shown
+   rather than assumed.
+
+Any mode at ratio 2 reading odd with `INTERLACE OFF` refutes the rule, and so
+does a parity that splits within one state. Parity then stays withdrawn.
+
+### Outcome: predictions 1 to 3 hold, prediction 4 fails, so parity stays withdrawn
+
+Seven modes, both interlace states, sampled from `loop()` at 25 ms, composite
+sync throughout.
+
+| mode | published | `INTERLACE OFF` | `ON` | ratio | `(VPERIOD+1)/R` off / on |
+|---|---|---|---|---|---|
+| 800x600@56 | 625 | 1249, even 358/358 | 1250, odd 358/358 | 2 | 625.0 / 625.5 |
+| 640x400@85 | 445 | 889, even 372/372 | 890, odd 372/372 | 2 | 445.0 / 445.5 |
+| 1024x768@60 | 806 | 1611, even 358/358 | 1612, odd 359/359 | 2 | 806.0 / 806.5 |
+| 1152x864@75 | 900 | 1799, even 366/366 | 1800, odd 368/368 | 2 | 900.0 / 900.5 |
+| 1280x960@60 | 1000 | 1999, even **354/357** | 2000, odd 78/78 | 2 | 1000.0 / 1000.5 |
+| 800x600@75 | 625 | 624 | 625 | **1** | 625.0 / 626.0 |
+| 1920x1080@60 | 1125 | 1124 | debris | **1** | 1125.0 / -- |
+
+**Prediction 3 holds exactly on all seven**, at both ratios: the derived total
+equals the published total to the unit, and the interlaced state adds exactly
+**0.5**. That is the strongest result here and it establishes the ratio itself
+-- `reconciledFrame()`'s factor recovers the mode's raster rather than fitting
+it.
+
+**Prediction 4 fails at 1280x960@60 with `INTERLACE OFF`.** `VPERIOD_IF` reads
+1999 in 354 samples, 2000 in two and 1998 in one, so parity reports interlaced
+in 3 of 357. A **one-count dither flips the bit**, where the 640-count tear
+measured elsewhere cannot. The rule as pre-registered is per sample, so it is
+refuted at the rate of roughly one sample in 120.
+
+A corroborated variant may survive -- the three dithered readings are rejected
+by `reconciledFrame()`, because at ratio 2 a reconcilable reading must be even
+and 2001 and 1999 are not. **That is a different rule and it needs its own
+pre-registered test**, not this one's result. Rescuing a refuted rule with a
+qualifier the data suggested is how the first parity rule was arrived at.
+
+### The ratio is not a property of the raster
+
+800x600 at **56 Hz reads ratio 2** and at **75 Hz reads ratio 1** -- same
+resolution, same published total of 625, same cable and sync arrangement. So
+the factor is not derivable from the raster, and it does not follow the line
+rate either:
+
+| line rate | ratio |
+|---|---|
+| 31500 | 1 |
+| 35156 | 2 |
+| 37861 | 2 |
+| 37879 | 2 |
+| 46875 | **1** |
+| 48363 | **2** |
+| 60000 | 2 |
+| 67500 | 1 and 2, at different modes |
+
+Nine points, no threshold and no ordering. This is why the factor is tested
+against the count rather than derived.
+
+**1920x1080@60 interlaced does not settle** on this bench -- the count wanders
+1119..1153 and `VPERIOD_IF` falls to 201..203 debris, so that row is a mode
+limit rather than evidence about the rule.
+
+## The scan type is a stored choice, not a measurement
+
+Nothing on this board detects interlace reliably. The classification bits report
+a vertical-period family, the parity of `VPERIOD_IF` is refuted twice, and the
+count alternates on one interlaced state in five. The design stops trying.
+
+The scan type is resolved in this order:
+
+1. **The choice stored against the `SourceKey`**, alongside the framing.
+2. **The published raster**, where `SourceTiming::matching()` finds one and that
+   row is interlaced.
+3. **Progressive.**
+
+The default is progressive because the costs are not symmetric: motion adapting
+a progressive source corrupts the picture, where leaving an interlaced one alone
+halves its vertical resolution and looks correct. An unresolved source is
+therefore shown, not guessed at.
+
+**The published row is what makes the default right for a standard source, and
+it is not optional.** A bobbed interlaced source is stable, correctly shaped and
+correctly proportioned -- there is no cue that anything is wrong, so a
+choice-only design leaves every standard interlaced source at half resolution
+until somebody measures one. `SourceTiming::Raster` carries `interlaced` for
+that reason, and the interlaced CEA rows sit beside the progressive ones already
+in `Published[]`.
+
+**`countAlternated()` is discarded.** It fires on Wii 480i and on none of Wii
+576i, RISC PC 320x256@50, 800x600@60 or 640x480@60 with `INTERLACE ON`. A rule
+that answers one state in five is not a detector, and `CrossingsForInterlace`
+and `AlternationStaleRun` exist only to stop a single off-by-one reading being
+taken as interlace -- a signal defended against itself.
+
+`SteadyRun::agree()` treating a pair alternating by one as agreeing **stays**.
+That is what lets an interlaced field count settle at all; without it 480i never
+acquires. Only `alternated()` and the three constants serving it go, with their
+cases in `test_steady_run.cpp`.
+
+**Order of work.** Alternation is today the only reason Wii 480i engages motion
+adapt, so the interlaced published rows have to be in and matching on the bench
+before it is removed, or 480i regresses to a bob.
+
+**What the published row cannot reach.** The sync processor counts a field on
+some interlaced sources and a frame on others -- Wii 576i counts 310 against a
+625-line frame, where RISC PC 800x600@60 `INTERLACE ON` counts 624, one more
+than the same mode progressive. A frame-counted interlaced source matches no
+interlaced row and rests on the stored choice. The keys do separate the two
+variants of a mode, 623 against 624 and 308 against 309, so a stored choice
+attaches to the right one.
