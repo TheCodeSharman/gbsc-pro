@@ -496,6 +496,11 @@ bool SourceMeasurement::lowLineRate() const
     return lineRateHz() != 0 && lineRateHz() < LowLineRateBelowHz;
 }
 
+bool SourceMeasurement::hasSerratedSync() const
+{
+    return lowLineRate() && SyncMeasurement::isCsync();
+}
+
 uint16_t SourceMeasurement::measureSourceLinesCorrected(uint16_t divider)
 {
     const uint16_t lines = SyncProcessor::lineCount();

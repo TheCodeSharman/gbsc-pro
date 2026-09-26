@@ -1117,7 +1117,7 @@ static boolean bypassCanBeDisplayed()
 // docs/investigations/serrated-sync-is-not-line-rate.md
 static boolean sourceHasSerratedSync()
 {
-    return sourceLowLineRate() && Tv5725::SyncMeasurement::isCsync();
+    return sourceSampling.hasSerratedSync();
 }
 
 void zeroAll()

@@ -833,7 +833,7 @@ void VideoSourceAcquisition::applySyncProcessorDynamic(bool hunting)
 
 bool VideoSourceAcquisition::sourceHasSerratedSync() const
 {
-    return sampling_.lowLineRate() && Tv5725::SyncMeasurement::isCsync();
+    return sampling_.hasSerratedSync();
 }
 
 bool VideoSourceAcquisition::mayChangeInput()
