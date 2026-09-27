@@ -10,26 +10,26 @@ regardless of which step is in flight.
 
 ## Reaches the picture
 
-### The default capture window opens before the picture, horizontally
+### The emitted frame is wider than the aperture, so the picture cannot reach both edges
 
-**Measured across four DMT modes on the RISC PC**, anchored by a
-`PAD_SYNC_OUT_ENZ` toggle so the emitted frame's first column is the aperture's
-first pixel. The horizontal window lands 20.6 to 54.1 counter units before the
-source's first active pixel, so a default framing shows a band of the source's
-own back porch at one end and loses the same amount of picture at the other.
+**Measured at 800x600@60 into 1080p.** The picture fills the display window
+exactly -- 1388.4 px of production into 1388 px of window -- but spans only
+about 1904 of the emitted frame's 1920 columns, so the frame covers ~1401 raster
+pixels against an aperture of 1388. The shortfall shows as a black band that
+does not move when the capture is panned and does not scale with magnification.
 
-The source's active WIDTH and its sync width are the standard's on every mode
-measured, so the whole discrepancy sits between the counter's origin and the
-first active pixel. The vertical axis carries `VerticalOriginLines = 7` for
-exactly that gap and does not do this: `card_edges.py` reads 0 or 1 output pixel
-of blanking down, against one green edge missing across on five modes of six.
+The capture window is NOT the fault: measured inside one acquisition with both
+of the card's green columns in frame, the source's active video runs 298.9 ..
+1403.0 units against the engine's window of 298 .. 1403.
 
-**What it is has not been separated** -- a horizontal counter-origin lead, which
-would belong to the chip, or VIDC20 not emitting the back porch the mode file
-states, which would belong to the machine. Three of the four cluster at 20.6 to
-24.6 units and the fourth is 54.1, so no constant fitted to them is safe. A
-second source running a DMT mode answers it in one reading.
-`docs/investigations/the-default-capture-window-opens-before-the-picture.md`.
+**`VDS_DIS_HB_SP` does not move the emitted frame** -- walked 159 to 179 with
+automation frozen, the green columns did not move at all. The transmitted window
+is latched at link-up, so any measurement that walks a blanking register and
+reads the emitted frame needs a `PAD_SYNC_OUT_ENZ` re-lock at every step.
+
+Vertically the picture is flush: 0 or 1 output pixel of the source's own
+blanking on screen across six DMT modes.
+`docs/investigations/the-emitted-frame-is-wider-than-the-aperture.md`.
 
 ### The HC32 stops following input selections, and only a true power cycle returns it
 
