@@ -112,6 +112,17 @@ public:
     // docs/scaler-geometry-model.md "The output front porch"
     static const uint16_t FrontPorchMinPx = 16;
 
+    // How much later than the back porch the TRANSMITTED window opens, in
+    // samples. The chain does not start carrying video where our blanking ends:
+    // it starts this much after, so a picture placed on the back porch loses its
+    // leading samples off the emitted frame and leaves the same width black at
+    // the far end.
+    //
+    // A count of samples rather than a time, measured off the emitted frame on
+    // four output modes at two clocks.
+    // docs/investigations/the-transmitted-window-opens-late.md
+    static const uint16_t TransmittedWindowDelayPx = 20;
+
     static const uint16_t HorizontalTotalMax = 4096;  // VDS_HSYNC_RST is 12 bits
     static const uint16_t VerticalTotalMax = 2048;  // VDS_VSYNC_RST is 11 bits
 

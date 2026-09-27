@@ -43,7 +43,7 @@ using namespace Tv5725;
 // What a 1080p raster affords this source: Axis::maximumCapture(1600), rounded
 // even. Not a constant of the part -- change the output resolution and it
 // changes with it.
-static const uint16_t RasterDivider = 1446;
+static const uint16_t RasterDivider = 1466;
 
 static float g_fieldRate = 50.08f;
 
@@ -274,7 +274,7 @@ static void checkBenchGeometry()
     // captured, which is memory the previous mode left behind. Vertically it
     // closes a trailing captureMargin sooner than the played-out window, none
     // of which is picture.
-    CHECK(VideoProcessor::VDS_HB_ST::read() == 1808);
+    CHECK(VideoProcessor::VDS_HB_ST::read() == 1828);
     CHECK(VideoProcessor::VDS_VB_ST::read() == 1116);
 
     // And the horizontal window is an ODD number of units wide, which is what
@@ -283,18 +283,19 @@ static void checkBenchGeometry()
     CHECK((VideoProcessor::VDS_HB_ST::read()
            - VideoProcessor::VDS_HB_SP::read()) % 2 == 1);
 
-    // The picture opens at the back porch the output mode states, so the write
-    // floor of 8 no longer binds: 140 is 32 of sync and 108 of porch, which is
-    // 1080p60's 996.6 ns at this clock, and 41 is its 5 sync lines and 36 of
-    // porch. Below 41 the window would open with vsync still asserted.
-    CHECK(VideoProcessor::VDS_HB_SP::read() == 41);
+    // The picture opens where the transmitted window does, so the write floor
+    // of 8 no longer binds: 160 is 32 of sync, 108 of porch -- 1080p60's
+    // 996.6 ns at this clock -- and the 20 samples the window opens late by.
+    // Vertically 41 is its 5 sync lines and 36 of porch, and below that the
+    // window would open with vsync still asserted.
+    CHECK(VideoProcessor::VDS_HB_SP::read() == 61);
     CHECK(VideoProcessor::VDS_VB_SP::read() == 39);
     // One capture unit past the porch horizontally: the write origin marks
     // where content first appears, and that unit is only partly written.
     // Vertically the aperture opens ON the picture -- reading before the first
     // written line comes back as nothing, so the unit would buy no picture and
     // cost a black bar across the top of the screen.
-    CHECK(VideoProcessor::VDS_DIS_HB_SP::read() == 142);
+    CHECK(VideoProcessor::VDS_DIS_HB_SP::read() == 162);
     CHECK(VideoProcessor::VDS_DIS_VB_SP::read() == 41);
     CHECK(VideoProcessor::VDS_DIS_VB_SP::read() > VideoProcessor::VDS_VS_SP::read());
 
@@ -1251,9 +1252,9 @@ TEST_CASE("a framed picture holds every window against the framing")
     // put them on.
     CHECK(VideoProcessor::VDS_HB_ST::read() > 1800);
     CHECK(VideoProcessor::VDS_VB_ST::read() > 1100);
-    // The near edge follows the output mode's back porch less the write origin,
-    // rather than resting on the floor of 8.
-    CHECK(VideoProcessor::VDS_HB_SP::read() == 21);
+    // The near edge follows where the transmitted window opens, less the write
+    // origin, rather than resting on the floor of 8.
+    CHECK(VideoProcessor::VDS_HB_SP::read() == 41);
     CHECK(VideoProcessor::VDS_VB_SP::read() > 0);
     CHECK(VideoProcessor::VDS_DIS_HB_SP::read() > VideoProcessor::VDS_HB_SP::read());
     CHECK(VideoProcessor::VDS_DIS_VB_SP::read() > VideoProcessor::VDS_VB_SP::read());
@@ -1497,8 +1498,8 @@ TEST_CASE("an output change re-derives the divider even where the doubling holds
 {
     // The divider is bounded by the CAPTURE THE RASTER CAN SHOW, and the raster
     // is the output's -- so two outputs that agree about the doubling still want
-    // different dividers. 480p affords 1876 units and 576p 1952, both undoubled
-    // from a 311 line source.
+    // different dividers, both undoubled from a 311 line source -- the two the
+    // assertions below pin.
     //
     // Measured on the bench, both directions: switching between the two left
     // PLLAD_MD on whichever was arrived from, with VDS_HSCALE stranded to match.
@@ -1512,7 +1513,7 @@ TEST_CASE("an output change re-derives the divider even where the doubling holds
     engine.setOutputMode(&Mode480p);
     engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(acquisition));
-    REQUIRE(dividerInForce() == 1804);
+    REQUIRE(dividerInForce() == 1824);
 
     // The output alone. Nothing tells the engine the source moved, because it
     // has not -- which is the whole of what /uc?<key> does.
@@ -1520,7 +1521,7 @@ TEST_CASE("an output change re-derives the divider even where the doubling holds
     for (uint8_t i = 0; i < SourceMeasurement::SteadySamples; ++i)
         pollOnce(acquisition);
 
-    CHECK(dividerInForce() == 1852);
+    CHECK(dividerInForce() == 1872);
 }
 
 TEST_CASE("the source is measured through a known divider, not the last mode's")

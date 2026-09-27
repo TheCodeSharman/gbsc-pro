@@ -118,7 +118,7 @@ TEST_CASE("the sync pulse is CEA-861's, converted to the clock the line runs at"
     CHECK(at108.horizontalTotal == 1920);
     CHECK(at108.hsyncStart == 0);
     CHECK(at108.hsyncStop == 32);
-    CHECK(at108.activeStart == 32 + 108);
+    CHECK(at108.activeStart == 32 + 108 + OutputMode::TransmittedWindowDelayPx);
 
     OutputTiming at1296 = Mode1080p.solve(50.0f, 129600000u);
     CHECK(at1296.horizontalTotal == 2304);
@@ -180,11 +180,11 @@ TEST_CASE("the far end is the mode's active fraction, floored by the board's por
     // would not.
     OutputTiming at108 = Mode1080p.solve(50.0f, 108000000u);
     CHECK(at108.horizontalTotal == 1920);
-    CHECK(at108.activeStop == 140 + 1675);
+    CHECK(at108.activeStop == 160 + 1675);
 
     OutputTiming at1296 = Mode1080p.solve(50.0f, 129600000u);
     CHECK(at1296.horizontalTotal == 2304);
-    CHECK(at1296.activeStop == 167 + 2010);
+    CHECK(at1296.activeStop == 187 + 2010);
 
     SUBCASE("the fraction floors, because a part pixel past the end is lost") {
         // 1920 x 1920 / 2200 is 1675.6. Rounding up puts the picture's far edge
@@ -462,24 +462,57 @@ TEST_CASE("a mode's frame total is its active lines plus the standard blanking")
 
 TEST_CASE("the active window is the standard's fraction of the line, not a porch time")
 {
-    // The encoder starts sampling where OUR blanking ends -- measured within 4
-    // raster px of activeStart in both modes -- and then resamples the line
-    // into the STANDARD's active pixel count. So what it can carry is
-    // raster x activeStd / totalStd, and anything the scaler paints past that
-    // falls off the end of the encoder's line.
+    // What the chain carries is raster x activeStd / totalStd, and anything the
+    // scaler paints past that falls off the end of its line.
     //
     // A front porch stated as a time cannot express that: our raster overruns
     // the standard's by a different factor in every mode, 1920/2200 against
     // 2026/1688, so the error is 3.6% at 1080p and 5.4% at 1024p.
+    //
+    // The window's WIDTH is that fraction and its START is a separate quantity
+    // -- the case above. Both were read off the emitted frame; the width holds
+    // to 3 px of 1920 and the start does not fall where our blanking ends.
     OutputTiming hd = Mode1080p.solve(50.0f, 108000000u);
     CHECK(hd.horizontalTotal == 1920);
-    CHECK(hd.activeStart == 140);
     CHECK(hd.activeWidth() == 1675);     // 1920 x 1920 / 2200
 
     OutputTiming dmt = Mode1024p.solve(50.0f, 108000000u);
     CHECK(dmt.horizontalTotal == 2026);
-    CHECK(dmt.activeStart == 360);
     CHECK(dmt.activeWidth() == 1536);    // 2026 x 1280 / 1688
+}
+
+TEST_CASE("the encoder's window opens a fixed count of samples after our blanking")
+{
+    // The encoder does NOT start sampling where our blanking ends. Read off the
+    // EMITTED frame -- the USB capture, so a margin is a byte count rather than
+    // a photograph -- by walking `VDS_DIS_HB_SP` and `VDS_DIS_HB_ST` into the
+    // window and extrapolating the black margin back to zero. Neither edge then
+    // depends on where the picture happens to sit.
+    //
+    //   mode    raster   sync + porch   window opens at   delta
+    //   1080p     1916            140            159.52   +19.52
+    //   1024p     2024            360            380.25   +20.25
+    //   960p      2156            424            443.80   +19.80
+    //   720p      2156            284            304.78   +20.78
+    //
+    // A constant count of SAMPLES and not a time: 720p runs a 25% slower clock
+    // and carries the same delta. It is not our sync pulse either -- the window
+    // does not move when `VDS_HS_SP` is walked 16..64.
+    //
+    // Uncharged, the picture is pinned that far before the window, so the
+    // leading samples fall off the emitted frame and the same width comes back
+    // as black at the far end: 27 px of 1920 at 1080p.
+    // ../docs/investigations/the-transmitted-window-opens-late.md
+    CHECK(Mode1080p.solve(50.0f, 108000000u).activeStart == 160);
+    CHECK(Mode1024p.solve(50.0f, 108000000u).activeStart == 380);
+
+    SUBCASE("and the window's WIDTH is unchanged, so the picture only moves") {
+        // Measured 1671.09 against the 1675 the fraction states at 1080p and
+        // 1532.75 against 1536 at 1024p. The far end follows the near one.
+        OutputTiming hd = Mode1080p.solve(50.0f, 108000000u);
+        CHECK(hd.activeWidth() == 1675);
+        CHECK(hd.activeStop == hd.activeStart + 1675);
+    }
 }
 
 TEST_CASE("the 625-line mode's transmitted lines are not CEA 576p's")

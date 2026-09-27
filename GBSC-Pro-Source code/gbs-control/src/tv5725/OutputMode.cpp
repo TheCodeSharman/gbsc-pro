@@ -167,9 +167,9 @@ OutputTiming OutputMode::solve(float fieldRateHz, uint32_t ceilingHz) const
     // encoder drops the link outright at 90, 140 or 60 where 112 carries a
     // picture, so it has to arrive when the standard says whatever clock the
     // line runs at. The back porch is a duration for symmetry and is NOT
-    // load-bearing -- the encoder's active window does not follow our blanking
-    // edge -- so it is what gives way below.
-    // ../../../docs/investigations/the-shown-window-is-latched-at-lock.md
+    // load-bearing -- the transmitted window opens later than it, by a fixed
+    // count of samples -- so it is what gives way below.
+    // ../../../docs/investigations/the-transmitted-window-opens-late.md
     long width = scaled(syncPx_, clockHz);
     if (width < 1)
         width = 1;
@@ -189,12 +189,17 @@ OutputTiming OutputMode::solve(float fieldRateHz, uint32_t ceilingHz) const
     long span = (long)horizontalTotal * carriedPx_ / totalPx_;
     long lastUsable = (long)horizontalTotal - FrontPorchMinPx;
 
+    // The window opens TransmittedWindowDelayPx after the back porch ends, not
+    // on it. Charged here so the picture is placed inside what the chain
+    // carries; uncharged it starts that far before the window, loses its leading
+    // samples and leaves the same width black at the far end.
+    //
     // A rate the standard does not run at shortens the line while the porch,
     // being a duration, stays where it was -- so the two stop fitting. THE SPAN
     // IS THE PICTURE AND THE PORCH IS BLANKING: giving way at the porch costs
     // nothing visible, and taking it out of the span throws picture away and
     // makes the same source reach the panel differently at different rates.
-    long start = (long)width + porch;
+    long start = (long)width + porch + TransmittedWindowDelayPx;
     if (start + span > lastUsable)
         start = lastUsable - span;
     if (start < (long)width)
@@ -229,9 +234,12 @@ OutputTiming OutputMode::solve(float fieldRateHz, uint32_t ceilingHz) const
 // reaches the panel is 0.804 of the line at 480p and 0.786 at 576p, where the
 // standard's activePx/totalPx is 0.839 and 0.833; the other four carry all of
 // theirs. Measured against the panel on all six, with the photo-column mapping
-// re-derived per mode: the left edge lands on activeStart to within 2 px
-// everywhere, so the whole of the shortfall is at the far end, and the fraction
-// holds to 0.3% across a 33% change of raster. It is a property of the MODE.
+// re-derived per mode, and the fraction holds to 0.3% across a 33% change of
+// raster. It is a property of the MODE.
+//
+// Where the window OPENS is a separate quantity and the panel reading of it is
+// superseded: read off the emitted frame it lands TransmittedWindowDelayPx
+// after the back porch, not on it.
 //
 // The mechanism is not known and the raster ratio is refuted as the boundary.
 // Nor is it established whether the fraction belongs to the encoder or to the
