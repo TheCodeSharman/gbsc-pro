@@ -55,13 +55,30 @@ when the aperture moves LATER:
 | the chain carrying window our aperture blanks | grows -- **observed** |
 | the aperture opening before the picture starts | shrinks to nothing, then clips picture |
 
-The two in-scope modes, both read after the link has re-acquired, so neither
-carries a stale latch:
+**640x480@60 MEETS THE GOAL FROM THE ENGINE'S OWN SOLVE**, with no hand-set
+register: `card_edges.py` reports `across 0 (0|0) down 0 (0|0)`, and the emitted
+frame carries no blank column at any edge. Two placement constants get it there,
+`OutputMode::HsyncStartPx` at 13 and `OutputMode::TransmittedWindowDelayPx` at 3.
 
-| mode | black left \| right | vertical |
+| mode | blank left \| right | |
 |---|---|---|
-| 640x480@60 | 4 \| 0 | flush both edges |
-| 800x600@60 | 12 \| 0 | flush both edges |
+| 640x480@60 | 0 \| 0 | passes |
+| 800x600@60 | 0 \| 6 | the picture is 6 px NARROW |
+| 1024x768@60 | 38 \| 3 | the picture is 41 px narrow |
+
+**THE PLACEMENT CONSTANTS GENERALISE AND THE SPAN DOES NOT.** One value of
+`HsyncStartPx` brought the near edge flush on 640x480@60 and on 800x600@60, the
+latter from 12 blank columns -- so a per-mode offset is not needed, which is what
+a single constant was suspected of hiding. What remains on the two larger modes
+is a picture NARROWER than the frame rather than misplaced, and the deficit grows
+with the resolution: 0.3% at 800x600@60 and 2.1% at 1024x768@60. That is a scale
+question and it is not what these two constants reach.
+
+**AND THE BORDER IS SMEARED BY THE INTERPOLATOR, so a flush edge does not look
+like a hard line.** At 640x480@60 the green dominance runs 43, 43, 73, 73, 51, 49
+across the first six columns -- a one-source-pixel feature spread over about six
+emitted ones with its peak two or three in. It measures as present at column 0 and
+reads on a panel as absent, which is worth knowing before chasing the last pixel.
 
 **AND THE RESIDUAL IS NOT IN OUR REGISTERS, because the two modes agree on where
 the picture starts and disagree by 8 emitted pixels on the black.** The picture
@@ -105,6 +122,17 @@ blanking does not open.
   of `IF_HB_SP2` does nothing -- so 259 and 258 are one state, and a lead of one
   unit buys between nothing and one granule depending on the picture start's
   parity.
+- **Anything that lets a placement constant reach the SAMPLING clock.** The
+  transmitted window's delay slides the whole window, so it slides `activeStop`,
+  and `VideoPath::dividerCeilingForOutput()` sized the divider from that -- which
+  made the constant untunable rather than merely coupled. Moving it two samples
+  moved `PLLAD_MD` two, which moved the capture, the scale, the stride and the
+  write origin, so the aperture that was correct before the change was wrong
+  after it. Each attempt to correct it started the loop again. The ceiling takes
+  the delay back off the published raster's far edge now: the delay is a
+  compensation for a chain that starts carrying video late, and it says nothing
+  about how much capture the raster can hold. It costs the divider the delay's
+  own width -- 1454 to 1444 here -- and buys a constant that can be measured.
 - **`Axis::captureMargin`, which reaches that capture start and gives the 2 px
   straight back.** Two granules is the value that opens the capture where the
   hand-set register does, and on the acceptance path it leaves 640x480@60 at
