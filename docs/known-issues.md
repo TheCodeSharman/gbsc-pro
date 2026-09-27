@@ -87,6 +87,79 @@ magnification term, so the gap moves with the scale rather than being constant.
 Insetting the window is not the fix: a window pulled inside the picture loses
 real rows. `docs/scaler-geometry-model.md` has the write-start model.
 
+### A line-doubled source's origin is 15 ADC samples out at one field rate or the other
+
+**The line doubler's FIFO reset is the doubled path's whole origin term**, one
+ADC sample of picture per register unit, and what each bench mode wants was
+measured by clipping the card's frame out of the capture:
+
+| field rate | modes | wants |
+|---|---|---|
+| 50.08 Hz | X640 Y256 141, X768 Y288 145, X320 Y256 147, and 152 at `PLLAD_MD` 1800 | 141..152 |
+| 60 Hz | X640 Y240 175, X640 Y200 175 | 175 |
+
+`InputFormatter::LineDoubleReset` is 160, which takes every one of them within
+15 samples where the inherited 272 was out by 127 -- the source's active start
+now lands −9.8 to +7.2 source pixels from the mode file against −28.5 to −60.5
+before.
+
+**No mechanism accounts for the split and one value is deliberate.** Every
+input-side register reads identical across it: the divider, the whole PLL group,
+both decimators, `IF_HBIN_SP`/`ST`, `IF_HS_DEC_FACTOR`, both coasts, `SP_DLT_REG`
+and `HLOW_LEN` within a sample. The two field rates do solve different output
+rasters, but the instrument cannot see the output. The 60 Hz shortfall is the
+same TIME at two different pixel clocks -- 0.89 us at 13.5 MHz, 0.87 at 16 --
+which points at the source and is not confirmed.
+
+What would settle it: a doubled source at 60 Hz that is not one of the RISC PC's
+two game modes, or the same mode's raster measured off the wire.
+`investigations/the-line-doubler-resets-the-fifo-late.md`.
+
+### The vertical origin correction reaches only a published raster
+
+`SourceTiming::VerticalOriginLines` is 7, documented as a property of the chip's
+vsync detection rather than of the source. It is applied inside
+`SourceTiming::activeStart()`, which returns 0 when the source matches no
+published raster -- so every Acorn SD mode falls through to `Axis`'s flat 0.061
+envelope with no origin correction at all.
+
+Measured on two doubled sources by clipping, the frame counter's origin sits a
+fixed distance after the vsync pulse's LEADING edge: 5.0 lines on X320 Y256 F50
+with a 3-line pulse, 5.1 on X640 Y240 F60 with a 6-line one. Two pulses a factor
+of two apart agree, which is what says it is the counter's property and not the
+source's, and it belongs on `VideoSourceLine::frame()` rather than in the table.
+
+The hazard is double counting: `InputFormatter::capturableFrame()` already
+passes `SeparatorFrameLeadLines` on a separated source, and whether the two
+overlap is a measurement rather than a deduction.
+
+### The display window closes after the last written pixel, and the gap shows unwritten memory
+
+**Measured on the bench RISC PC, `X320 Y256 C256 F50` into 1080p, default
+framing.** Three columns at the right of the emitted frame and one row at the
+bottom carry content the capture never wrote, and what they carry CHANGES
+between acquisitions with every register identical -- columns 1884..1886 read a
+mean luma of 45 / 90 / 62 on one lock and 5.7 / 12.6 / 5.7 on the next.
+
+The arithmetic accounts for both:
+
+| | produced | write starts | picture ends | window closes | open |
+|---|---|---|---|---|---|
+| h | 998 x 1024/611 = 1672.6 | `VDS_HB_SP` 44 + 55 + 25 x 1.676 = 140.9 | 1813.5 | `VDS_DIS_HB_ST` 1815 | 1.5 px |
+| v | 621 x 1024/589 = 1079.6 | `VDS_VB_SP` 36 + 0.2 + 0.8 x 1.739 = 37.6 | 1117.2 | `VDS_DIS_VB_ST` 1120 | 2.8 lines |
+
+1.5 output pixels is 2.9 dongle columns, and three are lit. The memory window IS
+the display window here, `VDS_?B_ST == VDS_DIS_?B_ST` on both axes, so nothing
+blanks the remainder.
+
+**The window's end does not follow the write.** It is placed from the memory
+window rather than from where the produced picture actually stops, which is the
+write start plus `capture x 1024 / scale` -- and the write start carries the
+magnification term, so the gap moves with the scale rather than being constant.
+
+Insetting the window is not the fix: a window pulled inside the picture loses
+real rows. `docs/scaler-geometry-model.md` has the write-start model.
+
 ### The retime stop is wrong on every line-doubled source
 
 **Measured at full framing against the mode file.** The rule
