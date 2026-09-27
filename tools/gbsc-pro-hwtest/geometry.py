@@ -64,13 +64,34 @@ def sample_hperiod(host, reads=8):
     return {"median": median, "spread": spread, "state": state, "n": reads}
 
 
+def picture(host):
+    """The framed picture on each axis, which is what the scale is fitted to.
+
+    The IF register pair spans Axis::captureMargin units MORE than the picture
+    at each end, so the produced width read off it is the whole window and not
+    what reaches the aperture. Only the engine knows the margin, so it is asked
+    rather than assumed; a build without /geometry answers 404 and the report
+    falls back to the register pair.
+    """
+    try:
+        url = f"http://{host}/geometry"
+        with urllib.request.urlopen(url, timeout=8) as response:
+            got = json.loads(response.read())
+        return got.get("eh"), got.get("ev")
+    except Exception:
+        return None, None
+
+
 def read_all(host, hperiod_reads=8):
     hperiod = sample_hperiod(host, hperiod_reads)
+    framed = picture(host)
     s0 = burst(host, 0, 0x00, 0x1C)
     s1 = burst(host, 1, 0x00, 0x2F)
     s3 = burst(host, 3, 0x00, 0x1F)
     s5 = burst(host, 5, 0x10, 0x4F)
     return {
+        "PICTURE_H": framed[0],
+        "PICTURE_V": framed[1],
         # source, as measured
         "STATUS_16": s0[0x16],
         "HPERIOD_IF": hperiod["median"],
@@ -174,9 +195,10 @@ def report(r, label=None):
     magnify = gm.magnification(scale, r["VDS_HSCALE_BYPS"])
     # magnify is None only for a dropped read; fall back to 1:1 so the rest of
     # the report still prints, and say so loudly further down.
-    produced = gm.produced_px(capture, scale, r["VDS_HSCALE_BYPS"])
+    framed = r.get("PICTURE_H") or capture
+    produced = gm.produced_px(framed, scale, r["VDS_HSCALE_BYPS"])
     if produced is None:
-        produced = capture
+        produced = framed
 
     add("\n  OUTPUT SIDE (real output pixels)")
     add(f"    VDS_HSYNC_RST {r['VDS_HSYNC_RST']} (line = {htotal} px)   "
@@ -192,7 +214,9 @@ def report(r, label=None):
     if magnify is None and not r["VDS_HSCALE_BYPS"]:
         add("    (VDS_HSCALE unreadable -- the figures below assume 1:1 and are NOT")
         add("     the real output width. Re-read before trusting any of this.)")
-    add(f"    scaler produces   {capture} capture units -> {produced:.2f} px")
+    add(f"    scaler produces   {framed} picture units -> {produced:.2f} px"
+        + ("" if framed == capture
+           else f"   ({capture - framed} more captured, the interpolator's margin)"))
     add(f"    memory window     {memory} px      -> {produced - memory:+.2f} px vs produced")
     add(f"    display window    {display} px      -> {produced - display:+.2f} px vs produced")
 
@@ -245,9 +269,10 @@ def vertical_report(r):
     scale = r["VDS_VSCALE"]
     bypassed = r["VDS_VSCALE_BYPS"]
     magnify = gm.magnification(scale, bypassed)
-    produced = gm.produced_px(capture, scale, bypassed)
+    framed = r.get("PICTURE_V") or capture
+    produced = gm.produced_px(framed, scale, bypassed)
     if produced is None:
-        produced = capture
+        produced = framed
 
     disp_sp, disp_st = r["VDS_DIS_VB_SP"], r["VDS_DIS_VB_ST"]
     mem_sp, mem_st = r["VDS_VB_SP"], r["VDS_VB_ST"]
@@ -262,7 +287,9 @@ def vertical_report(r):
     add(f"    memory  blanking active  {mem_sp} .. {mem_st}   = {memory} lines")
     add(f"    display blanking active  {disp_sp} .. {disp_st}   = {display} lines")
 
-    add(f"    scaler produces   {capture} capture lines -> {produced:.2f} lines")
+    add(f"    scaler produces   {framed} picture lines -> {produced:.2f} lines"
+        + ("" if framed == capture
+           else f"   ({capture - framed} more captured, the interpolator's margin)"))
     add(f"    memory window     {memory} lines    -> {produced - memory:+.2f} lines vs produced")
     add(f"    display window    {display} lines    -> {produced - display:+.2f} lines vs produced")
 
