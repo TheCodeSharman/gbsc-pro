@@ -1,5 +1,10 @@
 # Golden: 640x480@60 framed to the edges of the emitted frame
 
+**SUPERSEDED by `2026-09-27b-golden-640x480-full-screen`.** This was found by
+hand before `HsyncStartPx` and `TransmittedWindowDelayPx` were changed, so two
+of the four registers it carries are now what the engine solves by itself. It
+stays for the measurements below, which are what those changes were made on.
+
 The framing the bench settled on for the goal in
 `docs/investigations/full-screen-framing-on-the-vesa-modes.md`: the card's green
 border reaches the left, the top and the bottom of the emitted frame, with two
