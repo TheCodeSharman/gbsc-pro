@@ -95,7 +95,7 @@ test-bus:
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_test_bus" \
 	  "$(HERE)/test_test_bus.cpp" src/tv5725/TestBus.cpp \
-	  src/tv5725/SyncProcessor.cpp src/tv5725/SyncMeasurement.cpp \
+	  src/tv5725/SyncProcessor.cpp src/tv5725/HsyncPulse.cpp src/tv5725/SyncMeasurement.cpp \
 	  src/tv5725/Interrupts.cpp
 	@"$(OUT)/test_test_bus"
 
@@ -109,7 +109,7 @@ test-bus-rate-measurement:
 	  -o "$(OUT)/test_test_bus_rate_measurement" \
 	  "$(HERE)/test_test_bus_rate_measurement.cpp" \
 	  src/tv5725/TestBusRateMeasurement.cpp src/tv5725/SyncMeasurement.cpp src/tv5725/Interrupts.cpp \
-	  src/tv5725/TestBus.cpp src/tv5725/SyncProcessor.cpp
+	  src/tv5725/TestBus.cpp src/tv5725/SyncProcessor.cpp src/tv5725/HsyncPulse.cpp
 	@"$(OUT)/test_test_bus_rate_measurement"
 
 ## sync-on-green: host unit tests for Tv5725::SyncOnGreen
@@ -122,7 +122,7 @@ sync-on-green:
 	  -o "$(OUT)/test_sync_on_green" \
 	  "$(HERE)/test_sync_on_green.cpp" src/tv5725/SyncOnGreen.cpp src/tv5725/Interrupts.cpp \
 	  src/tv5725/SyncMeasurement.cpp src/tv5725/Adc.cpp \
-	  src/tv5725/TestBus.cpp src/tv5725/SyncProcessor.cpp
+	  src/tv5725/TestBus.cpp src/tv5725/SyncProcessor.cpp src/tv5725/HsyncPulse.cpp
 	@"$(OUT)/test_sync_on_green"
 
 ## axis: host unit tests for Tv5725::Axis
@@ -650,7 +650,7 @@ sync-processor:
 	@mkdir -p "$(OUT)"
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_sync_processor" \
-	  "$(HERE)/test_sync_processor.cpp" src/tv5725/SyncProcessor.cpp \
+	  "$(HERE)/test_sync_processor.cpp" src/tv5725/SyncProcessor.cpp src/tv5725/HsyncPulse.cpp \
 	  src/tv5725/TestBus.cpp
 	@"$(OUT)/test_sync_processor"
 
@@ -663,7 +663,7 @@ sync-measurement:
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_sync_measurement" \
 	  "$(HERE)/test_sync_measurement.cpp" src/tv5725/SyncMeasurement.cpp \
-	  src/tv5725/SyncProcessor.cpp src/tv5725/Interrupts.cpp src/tv5725/TestBus.cpp
+	  src/tv5725/SyncProcessor.cpp src/tv5725/HsyncPulse.cpp src/tv5725/Interrupts.cpp src/tv5725/TestBus.cpp
 	@"$(OUT)/test_sync_measurement"
 
 ## colour-space: host unit tests for Tv5725::ColourSpace

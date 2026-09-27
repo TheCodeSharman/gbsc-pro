@@ -1,6 +1,7 @@
 #ifndef TV5725_SYNC_PROCESSOR_H
 #define TV5725_SYNC_PROCESSOR_H
 
+#include "HsyncPulse.h"
 #include "Tv5725.h"
 
 namespace Tv5725 {
@@ -200,14 +201,32 @@ public:
     static void driveTestBus(uint8_t module, uint8_t signal);
 
     // How far along the line hsync retiming stops, in percent. Upstream's,
-    // unexplained and unmeasured here; what matters is that it follows the
-    // divider.
+    // and what the retime window falls back to where no sync width is known --
+    // a fraction that is only right for a source whose pulse takes 7% of the
+    // line, which is the one it was inherited against.
     static const uint16_t RetimeStopPercent = 93;
 
-    // The retime window's stop for a given ADC divider. It counts in ADC
-    // samples, so a divider that moves without it leaves the sync processor
-    // retiming a line that is not arriving.
+    // WHERE THE RETIMED PULSE SITS BEHIND THE WINDOW'S STOP, in ADC samples.
+    // Laying the pulse exactly on the incoming one leaves the input formatter's
+    // line counter taking its origin this far BEFORE the source's sync edge,
+    // and every window the engine places is counted from that origin.
+    //
+    // Measured, not derived, and it is the one number here that wants a
+    // derivation: 61.0, 62.6, 63.6 and 63.5 across four states.
+    // ../../../docs/investigations/the-retime-stop-is-the-counters-origin.md
+    static const uint16_t RetimeOriginSamples = 63;
+
+    // The retime window's stop, in the ADC samples PLLAD_MD divides the line
+    // into. It is the INPUT FORMATTER'S ORIGIN: the counter every capture
+    // window is placed in zeroes on the retimed pulse, so this decides where
+    // the source's video lands in it and a value that follows only the divider
+    // misplaces every source whose sync is not 7% of the line.
+    //
+    // A stop past the end of the line is inert -- measured, the picture does
+    // not move at any value above PLLAD_MD -- so a pulse that carries no
+    // reading falls back to the fraction rather than reaching for one.
     static uint16_t retimeStopFor(uint16_t divider);
+    static uint16_t retimeStopFor(uint16_t divider, const HsyncPulse &pulse);
 
     // Whether ANY sync is reaching this block, counted off its own output stage
     // on the test bus rather than read off a status bit. STATUS_SYNC_PROC_HSACT

@@ -339,6 +339,12 @@ private:
     // ../../../../docs/investigations/the-capture-may-not-outgrow-the-raster.md
     uint16_t dividerCeilingForOutput() const;
 
+    // The capture counter's origin, from the divider installed and the sync
+    // width measured through it. Written at the install and again on every
+    // solve, because the two arrive at different moments and either can move
+    // without the other.
+    void writeRetimeStop();
+
     // The divider this solve wants, held or recommended. Chooses; writes
     // nothing. The oversampling must have settled first: the sample clock is
     // the product of the divider and it.
@@ -450,6 +456,11 @@ private:
     uint16_t reachHorizontal_, reachVertical_;
     uint16_t firstHorizontal_, firstVertical_;
     uint16_t activeStartLine_;
+
+    // The divider this class installed, held rather than read back: the retime
+    // stop is a function of it and of the source's sync width, and the sync
+    // width arrives AFTER the install invalidates it.
+    uint16_t installedDivider_;
     SourceTiming timing_;
     SourceMeasurement &sampling_;
     bool scanSolved_;

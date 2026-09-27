@@ -3,6 +3,7 @@
 #include "TestBus.h"
 
 #include <Arduino.h>   // delayMicroseconds(), a hardware settling time
+#include <math.h>
 
 #include "Adc.h"
 #include "Chip.h"
@@ -12,10 +13,22 @@
 namespace Tv5725 {
 
 const uint16_t SyncProcessor::RetimeStopPercent;
+const uint16_t SyncProcessor::RetimeOriginSamples;
 
 uint16_t SyncProcessor::retimeStopFor(uint16_t divider)
 {
     return (uint16_t)(((uint32_t)divider * RetimeStopPercent) / 100);
+}
+
+uint16_t SyncProcessor::retimeStopFor(uint16_t divider, const HsyncPulse &pulse)
+{
+    if (!pulse.isPulse())
+        return retimeStopFor(divider);
+
+    const uint32_t sync = (uint32_t)lrintf((float)divider * pulse.syncDuty());
+    if (sync < RetimeOriginSamples)
+        return divider;
+    return (uint16_t)(divider - sync + RetimeOriginSamples);
 }
 
 void SyncProcessor::driveTestBus(uint8_t module, uint8_t signal)

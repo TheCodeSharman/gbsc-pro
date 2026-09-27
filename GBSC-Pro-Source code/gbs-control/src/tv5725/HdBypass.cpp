@@ -237,6 +237,11 @@ void HdBypass::applyPassThroughSampling(uint16_t divider, uint32_t lineRateHz,
     // samples per line the engine reads back -- so its retime window follows
     // the line the ADC is delivering here, not the one a scaling solve last
     // sized it for.
+    //
+    // THE FRACTION AND NOT THE MEASURED SYNC WIDTH, which the scaling path
+    // takes. There the retime is the capture counter's origin and the rule is
+    // measured against the emitted frame; here the input formatter is out of
+    // circuit and nothing has measured what this window places.
     SyncProcessor::writeRetimeStop(SyncProcessor::retimeStopFor(divider));
 
     holdHsyncPulse(ChannelSyncStart, ChannelSyncStart + SyncPulseWidth);

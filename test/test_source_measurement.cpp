@@ -466,6 +466,44 @@ TEST_CASE("the divider is capped so the line counter can hold it")
 
 }
 
+TEST_CASE("the retime window's stop follows the source's sync width")
+{
+    // Where the input formatter's line counter takes its origin. Measured on
+    // the bench by walking SP_RT_HS_SP until the emitted frame reproduces the
+    // source's published back and front porch at once -- four states, the
+    // divider held away from its own choice on three of them:
+    //
+    //   source         PLLAD_MD  HLOW_LEN  stop that framed the raster
+    //   1024x768@60        1440       141                       1360.0
+    //   1024x768@60        1200       118                       1144.6
+    //   1024x768@60         960        94                        929.6
+    //   640x480@60         1444       169                       1338.5
+    //
+    // docs/investigations/the-retime-stop-is-the-counters-origin.md
+    CHECK(SyncProcessor::retimeStopFor(1440, HsyncPulse(141.0f / 1440.0f)) == 1362);
+    CHECK(SyncProcessor::retimeStopFor(1444, HsyncPulse(169.0f / 1444.0f)) == 1338);
+
+    SUBCASE("and it follows the divider at one sync width") {
+        CHECK(SyncProcessor::retimeStopFor(1200, HsyncPulse(118.0f / 1200.0f)) == 1145);
+        CHECK(SyncProcessor::retimeStopFor(960, HsyncPulse(94.0f / 960.0f)) == 929);
+    }
+
+    SUBCASE("a pulse narrower than the origin cannot push the stop past the line") {
+        // The narrowest duty HsyncPulse accepts is 41 per mille, which at this
+        // divider is 59 samples -- fewer than the origin sits behind the stop.
+        // Carried through the subtraction that lands beyond the end of the
+        // line, where the register does nothing at all.
+        CHECK(SyncProcessor::retimeStopFor(1440, HsyncPulse(0.041f)) <= 1440);
+    }
+
+    SUBCASE("a stop past the end of the line is inert, so it is never written") {
+        // Measured: SP_RT_HS_SP above PLLAD_MD moves the picture not at all,
+        // and every reading around it is frozen -- which reads as a control
+        // that does nothing rather than as a value out of range.
+        CHECK(SyncProcessor::retimeStopFor(1200, HsyncPulse(0.0f)) <= 1200);
+    }
+}
+
 TEST_CASE("the sync processor's retime window is the divider a third time")
 {
     // SP_RT_HS_SP is the third register holding this quantity: the stop of the

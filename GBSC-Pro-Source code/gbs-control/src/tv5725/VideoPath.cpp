@@ -34,6 +34,7 @@ VideoPath::VideoPath(DisplayClock &displayClock, SourceMeasurement &sampling,
       usableHorizontal_(0), usableVertical_(0),
       reachHorizontal_(0), reachVertical_(0),
       firstHorizontal_(0), firstVertical_(0), activeStartLine_(0),
+      installedDivider_(0),
       timing_(0.0f),
       sampling_(sampling),
       scanSolved_(false), lineDoubled_(true),
@@ -750,13 +751,26 @@ void VideoPath::applySampling(uint16_t divider, bool doubled, uint8_t oversample
     applySamplingClock(divider);
 }
 
+// The retime window's stop is the capture counter's ORIGIN, so it takes the
+// source's own sync width rather than a fraction of the line: the counter
+// zeroes on the retimed pulse, and a pulse laid anywhere but on the incoming
+// one moves every window the solve places in it.
+void VideoPath::writeRetimeStop()
+{
+    if (installedDivider_ == 0)
+        return;
+    SyncProcessor::writeRetimeStop(
+        SyncProcessor::retimeStopFor(installedDivider_, sampling_.hsync()));
+}
+
 void VideoPath::applySamplingClock(uint16_t divider)
 {
     if (divider == 0)
         return;
 
     Adc::applySampleRate(divider, sampling_.lineRateHz(), modeOversample_);
-    SyncProcessor::writeRetimeStop(SyncProcessor::retimeStopFor(divider));
+    installedDivider_ = divider;
+    writeRetimeStop();
 
     // The clamp is a fraction of the LINE, so it moves with the divider. Left
     // where a previous one put it, the stop reaches past the back porch and the
@@ -998,6 +1012,11 @@ void VideoPath::write(const OutputWindow &solved, const CaptureWindow &capture)
     // The line double's progressive window spans one whole line, so it is
     // recomputed on every solve. Its start is written rather than read, or a
     // clobbered preset byte would propagate into the stop.
+    // The install invalidates the duty, so the sync width this needs arrives on
+    // a later pass than the divider does: derived here as well, or the counter's
+    // origin keeps the PREVIOUS source's sync width for the life of the mode.
+    writeRetimeStop();
+
     GBS::IF_LINE_ST::write(capture.progressiveWindow().stop());
     GBS::IF_LINE_SP::write(capture.progressiveWindow().start());
     GBS::IF_HB_SP2::write(capture.horizontal().stop());

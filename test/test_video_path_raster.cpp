@@ -254,7 +254,9 @@ TEST_CASE("an unmeasurable line rate is retried, not settled for")
         // and the divider sits hard against that row's ceiling.
         CHECK(Wire.field(5, 0x12, 0, 12) == 2200);
         CHECK(Wire.field(1, 0x0E, 0, 11) == 1100);   // IF_HSYNC_RST, divider / 2
-        CHECK(Wire.field(5, 0x4B, 0, 12) == 2046);   // SP_RT_HS_SP, 93% of it
+        // SP_RT_HS_SP: the divider less the source's sync width, plus the
+        // origin the retiming module adds. 181/2553 through 2200 is 156.
+        CHECK(Wire.field(5, 0x4B, 0, 12) == 2107);
     }
 }
 

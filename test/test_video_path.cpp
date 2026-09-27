@@ -207,11 +207,13 @@ static void checkBenchGeometry()
     CHECK(Tv5725::Tv5725::PLL_2XV::read() == 0);
     CHECK(Tv5725::Tv5725::PLL_4XV::read() == 1);
 
-    // The sampling divider in its three registers: IF_HSYNC_RST is PLLAD_MD/2
-    // and SP_RT_HS_SP is 93% of it. One quantity, never read back.
+    // The sampling divider in its three registers: IF_HSYNC_RST is PLLAD_MD/2,
+    // and SP_RT_HS_SP is the divider less the sync width the source measured
+    // through it, plus the origin the retiming module adds: 177 samples of
+    // pulse, so 2200 - 177 + 63. One quantity, never read back.
     CHECK(Adc::PLLAD_MD::read() == 2200);
     CHECK(InputFormatter::IF_HSYNC_RST::read() == 1100);
-    CHECK(SyncProcessor::SP_RT_HS_SP::read() == 2046);
+    CHECK(SyncProcessor::SP_RT_HS_SP::read() == 2086);
 
     // PLLAD_LAT is the rising edge that loads MD into the PLL, so a divider
     // written after it leaves the ADC clocking at the old one.
@@ -430,7 +432,7 @@ TEST_CASE("a solve puts all three registers of the one quantity on the chip")
                                        ? Adc::dividerInForce() / 2
                                        : Adc::dividerInForce()));
     CHECK(retimeStopInForce()
-          == SyncProcessor::retimeStopFor(Adc::dividerInForce()));
+          == SyncProcessor::retimeStopFor(Adc::dividerInForce(), sampling.hsync()));
 }
 
 TEST_CASE("a measurement that solved nothing keeps the clock, and never writes a zero")
@@ -1267,8 +1269,11 @@ TEST_CASE("a framed picture holds every window against the framing")
     // The raster did not change, so its registers are not rewritten -- and
     // neither is the sampling group, which was installed before the duty was
     // read rather than by the solve. The three beyond the geometry are
-    // OUT_SYNC_CNTRL, the DAC power and the sync pad, asserted with every show.
-    CHECK(registersWritten() == 35);
+    // OUT_SYNC_CNTRL, the DAC power and the sync pad, asserted with every show,
+    // and the retime stop is derived per solve because the sync width it needs
+    // arrives after the install that invalidates it -- two bytes, the field
+    // being twelve bits across s5_4B and s5_4C.
+    CHECK(registersWritten() == 37);
 }
 
 // --- the IF line counter follows the scan mode -------------------------------
