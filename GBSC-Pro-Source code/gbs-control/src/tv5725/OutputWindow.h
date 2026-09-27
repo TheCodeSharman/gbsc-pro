@@ -35,7 +35,12 @@ public:
     // geometry has.
     OutputWindow();
 
-    OutputWindow(uint16_t horizontalCapture, uint16_t verticalCapture,
+    // The PICTURE on each axis, not the window the input formatter registers
+    // span: the capture opens Axis::captureMargin units either side of it so
+    // the picture's own edge units interpolate from samples beyond them, and
+    // those extra units are produced into the blanking rather than onto the
+    // screen.
+    OutputWindow(uint16_t horizontalPicture, uint16_t verticalPicture,
                  const OutputTiming &raster);
 
     // Each axis's whole answer: its scale, what that produced, and the two
@@ -101,6 +106,11 @@ private:
                                    uint16_t activeStart = 0, uint16_t activeStop = 0);
 
     static float originOffset(const Axis &axis, float magnification);
+
+    // How far the picture starts after VDS_?B_SP. The write begins an
+    // originOffset() in and produces the capture's leading margin before it
+    // reaches the picture, so the picture is that much further still.
+    static float pictureOffset(const Axis &axis, float magnification);
 
     // Whether the WRITE FLOOR decides where the picture starts, rather than the
     // raster's own back porch. The two regimes charge the write origin

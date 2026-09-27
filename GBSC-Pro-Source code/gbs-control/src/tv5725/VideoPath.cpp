@@ -960,11 +960,11 @@ bool VideoPath::calculateInputFormatterRegisters(CaptureWindow &capture)
 
 OutputWindow VideoPath::imageFor(const CaptureWindow &capture) const
 {
-    // The window the hardware plays out, which is the register pair: scaling the
-    // picture alone runs the far end past the aperture and the source's last
-    // line is blanked.
-    return OutputWindow(capture.horizontal().width(), capture.vertical().width(),
-                        raster_);
+    // The PICTURE, not the register pair. The pair carries the interpolator's
+    // margin at each end; fitting that to the raster scales the margin onto the
+    // screen, leaving the picture short of both edges by what it costs.
+    return OutputWindow(capture.pictureOn(AxisHorizontal).width(),
+                        capture.pictureOn(AxisVertical).width(), raster_);
 }
 
 void VideoPath::write(const OutputWindow &solved, const CaptureWindow &capture)

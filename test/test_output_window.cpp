@@ -96,15 +96,23 @@ static const OutputMapping &on(const OutputWindow &solved, const Axis &axis)
 }
 
 // Where the picture's first pixel lands. The memory window opens where the
-// write does and the content appears an origin later, so the corner is not a
-// register -- it is read back out of the pair that are.
+// write does, the write produces the capture's leading margin first, and the
+// picture appears after both -- so the corner is not a register, it is read
+// back out of the pair that are.
+static float pictureOrigin(const Axis &axis, float magnification)
+{
+    return writeOrigin(axis, magnification)
+         + (float)axis.captureMargin() * magnification;
+}
+
 static float cornerOf(const OutputMapping &solved, const Axis &axis)
 {
     return (float)solved.memory().stop()
-         + writeOrigin(axis, solved.scale().magnification());
+         + pictureOrigin(axis, solved.scale().magnification());
 }
 
-// Where the write ends: the corner plus the whole picture.
+// Where the picture ends: the corner plus the whole of it. The write runs a
+// trailing margin further, into the blanking.
 static float writeEndOf(const OutputMapping &solved, const Axis &axis)
 {
     return cornerOf(solved, axis) + solved.produced();
@@ -236,9 +244,10 @@ TEST_CASE("both axes allocate only the memory the picture occupies")
 
 // --- where the scaler starts writing -----------------------------------------
 
-// The gap between the memory window opening and the aperture opening IS the
-// write origin, so the two registers together measure it. Both windows open on
-// it: the capture's margin is what covers the partly written unit.
+// The gap between the memory window opening and the aperture opening is the
+// write origin plus what the capture's leading margin produces, so the two
+// registers together measure the pair. The write starts on the origin; the
+// margin is produced into the blanking, and the aperture opens after it.
 TEST_CASE("the write start is not a constant")
 {
     SUBCASE("the horizontal write start matches every reading") {
@@ -249,8 +258,8 @@ TEST_CASE("the write start is not a constant")
                 continue;
             const float m = h.scale().magnification();
             const float gap = (float)h.display().stop() - (float)h.memory().stop();
-            REQUIRE(gap >= writeOrigin(AxisHorizontal, m) - 1.0f);
-            REQUIRE(gap < writeOrigin(AxisHorizontal, m) + 1.0f);
+            REQUIRE(gap >= pictureOrigin(AxisHorizontal, m) - 1.0f);
+            REQUIRE(gap < pictureOrigin(AxisHorizontal, m) + 1.0f);
         }
     }
 
@@ -265,7 +274,7 @@ TEST_CASE("the write start is not a constant")
                 continue;
             const float m = v.scale().magnification();
             REQUIRE((float)v.display().stop()
-                    == doctest::Approx(floorf(writeOrigin(AxisVertical, m))));
+                    == doctest::Approx(floorf(pictureOrigin(AxisVertical, m))));
         }
     }
 }
@@ -515,8 +524,8 @@ TEST_CASE("the scale floor is derived from the magnification, on both axes")
     SUBCASE("and the zoom stops there rather than shrinking the picture") {
         // VideoPath::zoom() stops the capture where the magnification runs out,
         // so the picture stays full size and the control simply stops.
-        CHECK(OutputWindow::narrowestCapture(AxisHorizontal, rasterOf(1445, 1126)) == 436);
-        CHECK(OutputWindow::narrowestCapture(AxisVertical, rasterOf(1445, 1126)) == 375);
+        CHECK(OutputWindow::narrowestCapture(AxisHorizontal, rasterOf(1445, 1126)) == 435);
+        CHECK(OutputWindow::narrowestCapture(AxisVertical, rasterOf(1445, 1126)) == 373);
     }
 }
 
@@ -524,19 +533,20 @@ TEST_CASE("the scale floor is derived from the magnification, on both axes")
 
 TEST_CASE("the solver places every output register")
 {
-    // Bench reference: a capture of 851 on a 1445 px line fits to HSCALE 650
-    // and produces 1340.65 px, so centred puts the corner at 52. It cannot go
-    // there -- at x1.575 the write start is 94.4 px after VDS_HB_SP, needing
+    // Bench reference: a picture of 851 on a 1445 px line fits to HSCALE 651
+    // and produces 1338.53 px, so centred puts the corner at 53. It cannot go
+    // there -- at x1.573 the picture starts 95.9 px after VDS_HB_SP, needing
     // the register below its floor of 8 -- so the picture is pushed right.
     const uint16_t Raster = 1445;
     const OutputWindow solved(851, 513, rasterOf(Raster, 1126));
     const OutputMapping &h = solved.horizontal();
-    REQUIRE(h.scale().reg() == 650);
+    REQUIRE(h.scale().reg() == 651);
 
     SUBCASE("the solver centres the picture as far as the hardware allows") {
-        // Both windows open where the write does.
+        // The memory window opens where the WRITE does; the aperture opens
+        // where the picture does, a leading margin further in.
         CHECK(h.memory().stop() == 8);
-        CHECK(h.display().stop() == 102);
+        CHECK(h.display().stop() == 103);
     }
 
     SUBCASE("the memory window is exactly the display window") {
@@ -582,11 +592,11 @@ TEST_CASE("the solver places every output register")
     }
 
     SUBCASE("a vertical solve does not double the capture it is given") {
-        // Doubling it is the likeliest bug here: 723 units at VSCALE 660 is
-        // 1121.7 output lines, not 2243.
+        // Doubling it is the likeliest bug here: 723 units at VSCALE 662 is
+        // 1118.3 output lines, not 2236.
         const OutputWindow tall(800, 723, rasterOf(1445, 1125));
-        REQUIRE(tall.vertical().scale().reg() == 660);
-        CHECK(((tall.vertical().produced() > 1121) && (tall.vertical().produced() < 1123)));
+        REQUIRE(tall.vertical().scale().reg() == 662);
+        CHECK(((tall.vertical().produced() > 1117) && (tall.vertical().produced() < 1119)));
         CHECK(tall.vertical().memory().start() < 1125);
     }
 }
@@ -786,12 +796,12 @@ TEST_CASE("a picture too small for the raster is blanked, not left open")
 // a floored length, which can land a whole unit past it.
 TEST_CASE("blanking starts no later than the write ends")
 {
-    // The bench 1080p vertical: 584 captured lines fitting to VDS_VSCALE 533 in
-    // a 1125-line raster. The write ends 1121.0 lines in, and a window closing
-    // at 1122 leaves the last line of the aperture unwritten.
+    // The bench 1080p vertical: 584 picture lines fitting to VDS_VSCALE 535 in
+    // a 1125-line raster. The picture ends 1123.4 lines in, and a window
+    // closing at 1124 leaves the last line of the aperture unwritten.
     const OutputWindow solved(800, 584, rasterOf(1916, 1125));
     const OutputMapping &v = solved.vertical();
-    REQUIRE(v.scale().reg() == 533);
+    REQUIRE(v.scale().reg() == 535);
     CHECK((float)v.display().start() <= writeEndOf(v, AxisVertical));
 }
 
@@ -934,13 +944,13 @@ TEST_CASE("the aperture reads nothing the capture did not take")
     // the write ends".
     SUBCASE("vertically, at the bench 320x256@50 framing") {
         const OutputWindow solved(800, 604, rasterOf(1916, 1124));
-        REQUIRE(solved.vertical().scale().reg() == 552);
+        REQUIRE(solved.vertical().scale().reg() == 554);
         CHECK(lastCaptureUnitRead(AxisVertical, solved.vertical()) <= 604.0f);
     }
 
     SUBCASE("horizontally, at the bench 320x256@50 framing") {
         const OutputWindow solved(1003, 512, rasterOf(1919, 1126));
-        REQUIRE(solved.horizontal().scale().reg() == 568);
+        REQUIRE(solved.horizontal().scale().reg() == 569);
         CHECK(lastCaptureUnitRead(AxisHorizontal, solved.horizontal())
               <= 1003.0f + UnitSlack);
     }
@@ -977,7 +987,7 @@ TEST_CASE("the aperture opens no earlier than the captured window")
 {
     SUBCASE("horizontally, at the three crept magnifications") {
         const uint16_t captures[] = {1330, 1289, 683};
-        const uint16_t scales[] = {904, 877, 473};
+        const uint16_t scales[] = {905, 877, 473};
         for (int i = 0; i < 3; ++i) {
             const OutputWindow solved(captures[i], 512, rasterOf(1600, 1126));
             REQUIRE(solved.horizontal().scale().reg() == scales[i]);
@@ -1022,13 +1032,14 @@ TEST_CASE("the vertical aperture opens on the picture, not a capture unit later"
         const OutputWindow solved(800, 256, rasterOf(2070, 625, 1943, 620,
                                                      0, ActiveStart));
         REQUIRE(solved.vertical().scale().reg() == 455);
-        CHECK(solved.vertical().display().stop() == ActiveStart);
+        CHECK(solved.vertical().display().stop() >= ActiveStart - 1);
+        CHECK(solved.vertical().display().stop() <= ActiveStart);
     }
 
     SUBCASE("across the zoom range") {
-        // The aperture opens where the write does, plus the origin and nothing
-        // else. Horizontally a whole capture unit is added on top; here that
-        // would be a black bar across the top of the screen.
+        // The aperture opens where the write does, plus the origin and the
+        // leading margin, and nothing else. Anything further is a black bar
+        // across the top of the screen.
         const uint16_t ActiveStart = 41;
         for (uint16_t capture = 380; capture <= 1100; ++capture) {
             const OutputWindow solved(800, capture,
@@ -1037,7 +1048,7 @@ TEST_CASE("the vertical aperture opens on the picture, not a capture unit later"
             if (!v.usable())
                 continue;
             const float gap = (float)v.display().stop() - (float)v.memory().stop();
-            REQUIRE(gap <= writeOrigin(AxisVertical, v.scale().magnification()) + 0.5f);
+            REQUIRE(gap <= pictureOrigin(AxisVertical, v.scale().magnification()) + 0.5f);
         }
     }
 }
@@ -1094,6 +1105,35 @@ TEST_CASE("the write floor binds at the porch it exactly reaches")
     REQUIRE(at > 0);
     CHECK(past > at);
     CHECK(past - at >= 20);
+}
+
+// The capture opens Axis::captureMargin units before the picture and closes
+// that many after it, so the picture's own edge units interpolate from samples
+// either side of them. Those extra units are PRODUCED like any other: landing
+// inside the aperture they are a band of captured blanking the picture never
+// reaches, and the aperture closing on the write rather than on the picture
+// shows memory the write never filled.
+//
+// Measured 1080p against 800x600@60, whose published raster the engine takes
+// exactly: the card's one-pixel frame landed on output rows 3 and 1074 of
+// 1080 -- two capture lines at each end, 3.6 output rows apiece -- and rows
+// past the write played out the previous pattern.
+TEST_CASE("the capture margin is produced outside the aperture, not inside it")
+{
+    const OutputWindow solved(1008, 512, rasterOf(1916, 1126, 1812, 1100, 140, 40));
+
+    for (const Axis *axis : {&AxisHorizontal, &AxisVertical}) {
+        const OutputMapping &m = on(solved, *axis);
+        const float picture = cornerOf(m, *axis);
+
+        CHECK_MESSAGE((float)m.display().stop() >= floorf(picture),
+                      "the aperture opens on the picture, not on the margin before it");
+        // The far horizontal edge gives one unit to the width parity bias.
+        const float owed = axis->vertical() ? 0.0f : 1.0f;
+        CHECK_MESSAGE((float)m.display().start()
+                          <= floorf(picture + m.produced()) + owed,
+                      "the aperture closes on the picture, not on the margin after it");
+    }
 }
 
 // `--dump` prints the whole-solution grid for inspection by hand.

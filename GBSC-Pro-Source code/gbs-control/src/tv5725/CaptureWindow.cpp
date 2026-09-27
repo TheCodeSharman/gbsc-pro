@@ -197,6 +197,16 @@ CaptureWindow::Placement CaptureWindow::place(const Axis &axis) const
     return placed;
 }
 
+BlankingTiming CaptureWindow::pictureOn(const Axis &axis) const
+{
+    const VideoSourceLine &line = lineOn(axis);
+    if (line.units() == 0)
+        return BlankingTiming();
+    Placement placed = place(axis);
+    return BlankingTiming((uint16_t)placed.start,
+                          (uint16_t)(placed.start + placed.width));
+}
+
 BlankingTiming CaptureWindow::captureOn(const Axis &axis) const
 {
     const VideoSourceLine &line = lineOn(axis);

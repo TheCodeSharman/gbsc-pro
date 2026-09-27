@@ -43,7 +43,7 @@ using namespace Tv5725;
 // What a 1080p raster affords this source: Axis::maximumCapture(1600), rounded
 // even. Not a constant of the part -- change the output resolution and it
 // changes with it.
-static const uint16_t RasterDivider = 1466;
+static const uint16_t RasterDivider = 1464;
 
 static float g_fieldRate = 50.08f;
 
@@ -245,8 +245,8 @@ static void checkBenchGeometry()
     CHECK(InputFormatter::IF_LINE_SP::read() == 1165);
 
     // Both scales computed from the capture and the raster, never inherited.
-    CHECK(VideoProcessor::VDS_HSCALE::read() == 584);
-    CHECK(VideoProcessor::VDS_VSCALE::read() == 556);
+    CHECK(VideoProcessor::VDS_HSCALE::read() == 583);
+    CHECK(VideoProcessor::VDS_VSCALE::read() == 552);
     CHECK(VideoProcessor::VDS_HSCALE_BYPS::read() == 0);
     CHECK(VideoProcessor::VDS_VSCALE_BYPS::read() == 0);
     CHECK(VideoProcessor::VDS_SYNC_EN::read() == 0);
@@ -273,11 +273,9 @@ static void checkBenchGeometry()
     // Horizontally two units short of where the picture ends: the scaler
     // interpolates between two capture units, so the last unit an aperture
     // closing on the picture would show reads the unit after the last one
-    // captured, which is memory the previous mode left behind. Vertically it
-    // closes a trailing captureMargin sooner than the played-out window, none
-    // of which is picture.
+    // captured -- which is what the trailing captureMargin puts under it.
     CHECK(VideoProcessor::VDS_HB_ST::read() == 1830);
-    CHECK(VideoProcessor::VDS_VB_ST::read() == 1119);
+    CHECK(VideoProcessor::VDS_VB_ST::read() == 1121);
 
     // And the horizontal window is an ODD number of units wide, which is what
     // reaches the picture: an even one shears.
@@ -290,15 +288,17 @@ static void checkBenchGeometry()
     // 996.6 ns at this clock -- and the 20 samples the window opens late by.
     // Vertically 41 is its 5 sync lines and 36 of porch, and below that the
     // window would open with vsync still asserted.
-    CHECK(VideoProcessor::VDS_HB_SP::read() == 61);
-    CHECK(VideoProcessor::VDS_VB_SP::read() == 39);
-    // One capture unit past the porch horizontally: the write origin marks
-    // where content first appears, and that unit is only partly written.
-    // Vertically the aperture opens ON the picture -- reading before the first
-    // written line comes back as nothing, so the unit would buy no picture and
-    // cost a black bar across the top of the screen.
+    //
+    // The memory window opens earlier still, by what the capture's leading
+    // margin produces: the write has to reach the picture with the
+    // interpolator already fed.
+    CHECK(VideoProcessor::VDS_HB_SP::read() == 59);
+    CHECK(VideoProcessor::VDS_VB_SP::read() == 36);
+    // The aperture opens ON the picture, both axes: the margin before it is
+    // the source's own blanking, and showing it is a black band the picture
+    // never reaches.
     CHECK(VideoProcessor::VDS_DIS_HB_SP::read() == 159);
-    CHECK(VideoProcessor::VDS_DIS_VB_SP::read() == 40);
+    CHECK(VideoProcessor::VDS_DIS_VB_SP::read() == 41);
     CHECK(VideoProcessor::VDS_DIS_VB_SP::read() > VideoProcessor::VDS_VS_SP::read());
 
     // The playback burst, sized from the capture width so the fetch rate does
@@ -1255,8 +1255,9 @@ TEST_CASE("a framed picture holds every window against the framing")
     CHECK(VideoProcessor::VDS_HB_ST::read() > 1800);
     CHECK(VideoProcessor::VDS_VB_ST::read() > 1100);
     // The near edge follows where the transmitted window opens, less the write
-    // origin, rather than resting on the floor of 8.
-    CHECK(VideoProcessor::VDS_HB_SP::read() == 41);
+    // origin and the capture's leading margin, rather than resting on the
+    // floor of 8.
+    CHECK(VideoProcessor::VDS_HB_SP::read() == 38);
     CHECK(VideoProcessor::VDS_VB_SP::read() > 0);
     CHECK(VideoProcessor::VDS_DIS_HB_SP::read() > VideoProcessor::VDS_HB_SP::read());
     CHECK(VideoProcessor::VDS_DIS_VB_SP::read() > VideoProcessor::VDS_VB_SP::read());

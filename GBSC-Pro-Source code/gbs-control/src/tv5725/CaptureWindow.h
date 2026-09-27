@@ -59,6 +59,12 @@ public:
     const BlankingTiming &horizontal() const;
     const BlankingTiming &vertical() const;
 
+    // The picture inside those pairs: what the framing asked for, before the
+    // interpolator's margin is added at each end. It is what the output side
+    // fits to the raster, so the margin is produced into the blanking rather
+    // than onto the screen.
+    BlankingTiming pictureOn(const Axis &axis) const;
+
     // The line doubler's window, IF_LINE_ST and IF_LINE_SP. It is the line
     // double timing rather than the picture, and it has to span exactly one
     // line -- so the far end follows the line length and may roll past it. The

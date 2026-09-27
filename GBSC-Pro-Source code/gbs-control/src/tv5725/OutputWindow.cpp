@@ -44,16 +44,16 @@ uint16_t OutputWindow::widestCapture(const Axis &axis, const OutputTiming &raste
 
 OutputWindow::OutputWindow() {}
 
-OutputWindow::OutputWindow(uint16_t horizontalCapture, uint16_t verticalCapture,
+OutputWindow::OutputWindow(uint16_t horizontalPicture, uint16_t verticalPicture,
                            const OutputTiming &raster)
 {
-    horizontal_ = solve(AxisHorizontal, horizontalCapture,
-                        fitToRaster(AxisHorizontal, horizontalCapture,
+    horizontal_ = solve(AxisHorizontal, horizontalPicture,
+                        fitToRaster(AxisHorizontal, horizontalPicture,
                                     raster.horizontalTotal, raster.activeStart,
                                     raster.activeStop).scale(),
                         raster.horizontalTotal, raster.activeStart, raster.activeStop);
-    vertical_ = solve(AxisVertical, verticalCapture,
-                      fitToRaster(AxisVertical, verticalCapture,
+    vertical_ = solve(AxisVertical, verticalPicture,
+                      fitToRaster(AxisVertical, verticalPicture,
                                   raster.verticalTotal, raster.activeLinesStart,
                                   raster.activeLinesStop).scale(),
                       raster.verticalTotal, raster.activeLinesStart,
@@ -77,14 +77,16 @@ uint16_t OutputWindow::minimumCapture(const Axis &axis, uint16_t rasterTotal,
     // -- rounded UP, one unit short leaving a bar.
     //
     // Where the WRITE FLOOR binds rather than the porch, fitToRaster takes the
-    // write origin out of that same room -- produced = room x capture /
-    // (capture + startPerMag) -- so the capture reaching the floor is that much
-    // larger. maximumCapture charges it at the other end for the same reason.
+    // write origin and the capture's leading margin out of that same room --
+    // produced = room x capture / (capture + startPerMag + captureMargin) -- so
+    // the capture reaching the floor is that much larger. maximumCapture
+    // charges it at the other end for the same reason.
     const float room = maxDisplayWindow(axis, rasterTotal, activeStart, activeStop);
     if (room <= 0.0f)
         return 0;
     const float charged = writeFloorBinds(axis, activeStart)
-                        ? writeStart(axis).perMagnification : 0.0f;
+                        ? writeStart(axis).perMagnification
+                              + (float)axis.captureMargin() : 0.0f;
     const float smallest = room * (float)Scale::Min / (float)Scale::Unity - charged;
     return smallest <= 0.0f ? 0 : (uint16_t)ceilf(smallest);
 }
@@ -92,20 +94,27 @@ uint16_t OutputWindow::minimumCapture(const Axis &axis, uint16_t rasterTotal,
 uint16_t OutputWindow::maximumCapture(const Axis &axis, uint16_t rasterTotal,
                                       uint16_t activeStart, uint16_t activeStop)
 {
-    // fitToRaster solves produced = room x capture / (capture + startPerMag),
-    // so the scale it asks for is Unity x (capture + startPerMag) / room. The
-    // capture the room still holds is the largest that keeps that at or under
-    // Scale::Max, and the write offset is charged because it comes out of the
-    // same room.
+    // fitToRaster solves produced = room x capture / (capture + startPerMag +
+    // captureMargin), so the scale it asks for is Unity x that sum over room.
+    // The capture the room still holds is the largest that keeps it at or under
+    // Scale::Max, and the write offset and the leading margin are charged
+    // because they come out of the same room.
     const float room = maxDisplayWindow(axis, rasterTotal, activeStart, activeStop);
     const float largest = room * (float)Scale::Max / (float)Scale::Unity
-                        - writeStart(axis).perMagnification;
+                        - writeStart(axis).perMagnification
+                        - (float)axis.captureMargin();
     return largest <= 0.0f ? 0 : (uint16_t)largest;
 }
 
 float OutputWindow::originOffset(const Axis &axis, float magnification)
 {
     return writeStart(axis).constant + writeStart(axis).perMagnification * magnification;
+}
+
+float OutputWindow::pictureOffset(const Axis &axis, float magnification)
+{
+    return originOffset(axis, magnification)
+         + (float)axis.captureMargin() * magnification;
 }
 
 bool OutputWindow::writeFloorBinds(const Axis &axis, uint16_t activeStart)
@@ -158,7 +167,8 @@ RasterFit OutputWindow::fitToRaster(const Axis &axis, uint16_t capture,
     // short of the far bound by it.
     const float onFloor = (farBound(rasterTotal, activeStop)
                            - (float)writeStart(axis).floor - writeStart(axis).constant)
-                        * capture / (capture + writeStart(axis).perMagnification);
+                        * capture / (capture + writeStart(axis).perMagnification
+                                     + (float)axis.captureMargin());
     const float behindPorch = (float)farBound(rasterTotal, activeStop) - (float)activeStart;
     float produced = onFloor < behindPorch ? onFloor : behindPorch;
     if (produced > room)
@@ -181,7 +191,7 @@ RasterFit OutputWindow::fitToRaster(const Axis &axis, uint16_t capture,
     // of picture -- 2.37 lines at the bench 1080p framing -- so bumping for a
     // fraction of a unit pays lines to save a quarter of one.
     while (scale < Scale::Max
-           && floorf(placementFloor(axis, originOffset(axis, (float)Scale::Unity / scale), activeStart)
+           && floorf(placementFloor(axis, pictureOffset(axis, (float)Scale::Unity / scale), activeStart)
                      + produced)
                   > (float)farBound(rasterTotal, activeStop)) {
         ++scale;
@@ -195,7 +205,7 @@ PictureOrigin OutputWindow::placePicture(const Axis &axis, float produced,
                                          uint16_t rasterTotal, float magnification,
                                          uint16_t activeStart)
 {
-    float offset = originOffset(axis, magnification);
+    float offset = pictureOffset(axis, magnification);
     int32_t corner = lrintf((rasterTotal - produced) / 2.0f);
     int32_t windowStop = lrintf(corner - offset);
     if (windowStop < (int32_t)writeStart(axis).floor) {
@@ -245,10 +255,10 @@ OutputMapping OutputWindow::solve(const Axis &axis, uint16_t capture, Scale scal
     // capture units, and the path drops the trailing margin -- the CAPTURE pays
     // for it by opening wider, which is what Axis::captureMargin is for. Giving
     // it back out of the aperture instead is a black bar no zoom can close.
-    const float writeEnds = (float)placed.windowStop()
-                          + originOffset(axis, scale.magnification())
-                          + solved.produced_;
-    int32_t apertureStart = (int32_t)floorf(writeEnds);
+    const float pictureEnds = (float)placed.windowStop()
+                            + pictureOffset(axis, scale.magnification())
+                            + solved.produced_;
+    int32_t apertureStart = (int32_t)floorf(pictureEnds);
     if (apertureStart < placed.corner())
         apertureStart = placed.corner();
     if (apertureStart > lastUsable)
@@ -287,7 +297,7 @@ OutputMapping OutputWindow::solve(const Axis &axis, uint16_t capture, Scale scal
     // the write starts at a fraction of a pixel and the register is a whole
     // one, so rounding to nearest blanks a column the write had reached.
     int32_t displayStop = (int32_t)floorf((float)placed.windowStop()
-                                          + originOffset(axis, scale.magnification()));
+                                          + pictureOffset(axis, scale.magnification()));
     if (displayStop < 0)
         displayStop = 0;
     if (displayStop > apertureStart)
