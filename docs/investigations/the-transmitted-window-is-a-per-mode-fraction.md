@@ -33,6 +33,15 @@ rather than tracking the register, and the point reads as a large residual.
 
 ## The left edge is exact on every mode
 
+**SUPERSEDED, and the table below is the panel reading it was based on.** Read
+off the EMITTED frame rather than through a fitted photo-column mapping, the
+window opens about 20 raster units LATER than `activeStart` on all four modes
+re-measured -- 159.5 against 140 at 1080p. `OutputMode::TransmittedWindowDelayPx`
+carries it now.
+[the-transmitted-window-opens-late.md](the-transmitted-window-opens-late.md).
+What this page establishes about the WIDTH is untouched.
+
+
 `activeStart` is `sync + back porch`, both converted from the standard's
 durations. Against the panel, on the bench RISC PC at 320x256@50:
 
