@@ -14,11 +14,14 @@ outside them is shown.
 Read off the USB capture rather than the panel, so an edge is a column index
 and not a judgement. `docs/bench-output-capture.md`.
 
-**WHERE THE PICTURE SITS IN THE EMITTED FRAME IS LATCHED AT LINK-UP AND IS NOT
-THE BOARD'S.** Two acquisitions of the same registers differ by tens of columns,
-so "how far the green frame sits from the left edge" measures the encoder as
-much as the engine. What survives that is which green edges are present and how
-far apart they are, and those are what this judges:
+Both the span and each edge's own margin are reported. **The margin carries the
+encoder in it**: the transmitted window's start is latched from `VDS_DIS_HB_SP`
+at link-up and lands a little before it, so a correct framing still reads a few
+columns at the near edge and none at the far one. It is repeatable -- ten
+re-locks at one state give the same margins to the pixel -- but a STALE latch,
+left from before the framing moved, reads differently, so judge a margin only
+after the link has re-acquired. The span is free of both, since the two edges
+move together.
 
   both edges, full span   the window is the source's active window
   both edges, short span  the window is WIDER -- the source's own blanking is
@@ -27,11 +30,13 @@ far apart they are, and those are what this judges:
                           lost at the other
   no edge                 the window is NARROWER than the source's picture
 
-`docs/investigations/the-default-capture-window-opens-before-the-picture.md`.
+`docs/investigations/the-transmitted-window-is-latched-from-our-blanking.md`.
 
-**THE CARD'S OUTERMOST RING FLASHES YELLOW AND WHITE**, twice a second. The
-green frame is drawn over it in both phases and does not flash, which is why it
-is what this reads.
+**THE CARD'S OUTERMOST RING FLASHES YELLOW AND WHITE**, twice a second, and the
+green frame is drawn over it in both phases. **ONE FRAME IS NOT ENOUGH TO SEE
+IT**: in the phase where the ring beside it is yellow the green smears into it
+and falls under any hue test, so a single capture reports the edge missing and
+the window shifted. Read over a clip and take each column's GREENEST moment.
 """
 
 import argparse
@@ -48,20 +53,36 @@ MODESERV = "192.168.88.10"
 # Green dominance rather than brightness: the frame is one source pixel wide and
 # the scaler interpolates its edges toward the ring beside it, so its captured
 # brightness varies while its hue does not.
-GREEN_OVER = 25
-GREEN_FLOOR = 45
+#
+# The MEAN of it down the line, never a count of how many rows are green enough.
+# The frame is one source pixel wide, so at the edges it lands on a fraction of
+# an output pixel and blends with whatever the ring beside it is doing -- dark
+# where the castellation is black, pale where it is white. Measured at
+# 800x600@60 the left column cleared a per-row test on 70 rows of 1080 while
+# the right cleared it on all of them, so a row count reports the left edge
+# missing and the window shifted when both edges are on screen.
+GREEN_HUE = 20.0
 
 # A green edge smeared into the ring beside it can fall under the hue test for a
 # column or two, so runs this close together are one edge.
 JOIN = 8
 
+# Over half a second at 30 fps, so both phases of the ring's flash are in it.
+CLIP_FRAMES = 40
 
-def green_runs(rgb, axis):
-    """Where the frame's green lies along `axis`, as (start, stop) runs."""
-    r, g, b = (rgb[:, :, i].astype(np.int16) for i in range(3))
-    mask = (g > r + GREEN_OVER) & (g > b + GREEN_OVER) & (g > GREEN_FLOOR)
-    across = mask.shape[1 - axis]
-    found = np.where(mask.sum(axis=1 - axis) > across // 2)[0]
+
+def green_runs(clip, axis):
+    """Where the frame's green lies along `axis`, as (start, stop) runs.
+
+    Each position's greenest moment across the clip, so the phase where the
+    ring beside the frame is yellow cannot hide it.
+    """
+    greenest = np.zeros(clip.shape[1 + axis], np.float32)
+    for rgb in clip:
+        r, g, b = (rgb[:, :, i].astype(np.float32) for i in range(3))
+        greenest = np.maximum(greenest,
+                              (g - np.maximum(r, b)).mean(axis=1 - axis))
+    found = np.where(greenest > GREEN_HUE)[0]
     runs, start = [], None
     for i, at in enumerate(found):
         if start is None:
@@ -80,20 +101,21 @@ def green_runs(rgb, axis):
 QUARTER = 4
 
 
-def judge(rgb, axis, allowance):
+def judge(clip, axis, allowance):
     """What the green frame says about the window on this axis."""
-    runs = green_runs(rgb, axis)
-    extent = rgb.shape[0] if axis == 0 else rgb.shape[1]
+    runs = green_runs(clip, axis)
+    extent = clip.shape[1 + axis]
     near = [run for run in runs if run[1] < extent // QUARTER]
     far = [run for run in runs if run[0] > extent - extent // QUARTER]
     if not near and not far:
-        return None, "neither edge: the window is narrower than the picture"
+        return None, None, "neither edge: the window is narrower than the picture"
     if not near or not far:
-        return None, "one edge: the window is shifted off the picture"
+        return None, None, "one edge: the window is shifted off the picture"
+    margins = (near[0][0], extent - 1 - far[-1][1])
     shown = extent - (far[-1][1] - near[0][0] + 1)
     if shown > allowance:
-        return shown, f"{shown} of the source's own blanking is on screen"
-    return shown, None
+        return shown, margins, f"{shown} of the source's own blanking is on screen"
+    return shown, margins, None
 
 
 def settled(host, limit_s=60.0, holds=3):
@@ -130,11 +152,13 @@ def sweep_mode(host, dev, source, mode, allowance, keep_framing):
         return None, "the framing never reset"
     time.sleep(2.0)
 
-    rgb = hdmi_capture.frames(3, dev)[-1]
+    # A clip rather than a frame: the card flashes twice a second, so a single
+    # capture can miss a green edge entirely. CLIP_FRAMES spans both phases.
+    clip = hdmi_capture.frames(CLIP_FRAMES, dev)
     found, whys = {}, []
     for name, axis in (("across", 1), ("down", 0)):
-        shown, why = judge(rgb, axis, allowance)
-        found[name] = shown
+        shown, margins, why = judge(clip, axis, allowance)
+        found[name] = (shown, margins)
         if why:
             whys.append(f"{name}: {why}")
     return found, "; ".join(whys)
@@ -179,8 +203,9 @@ def main():
         if found is None:
             print(f"  {mode:24} SKIP  {why}")
             continue
-        shown = "  ".join(f"{k} {v}" if v is not None else f"{k} -"
-                          for k, v in found.items())
+        shown = "  ".join(
+            f"{k} {v[0]} ({v[1][0]}|{v[1][1]})" if v[0] is not None else f"{k} -"
+            for k, v in found.items())
         print(f"  {mode:24} {'FAIL' if why else 'ok  '}  {shown}"
               + (f"   [{why}]" if why else ""))
         if why:
