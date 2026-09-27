@@ -375,13 +375,19 @@ TEST_CASE("the picture is made as big as the raster allows")
         CHECK(h.memory().stop() <= BenchHorizontal.floor + 4);
     }
 
-    SUBCASE("the picture gives up exactly the write offset and nothing more") {
-        // Once, not twice: the offset is paid before the first write and there
-        // is nothing after the last one.
+    SUBCASE("the picture gives up the write offset and the leading margin") {
+        // Each once, not twice: the offset is paid before the first write and
+        // there is nothing after the last one, and only the margin AHEAD of the
+        // picture comes out of the room -- the trailing one is produced past the
+        // far bound, where the aperture blanks it. Stating the margin rather
+        // than absorbing it in the tolerance is what makes this fail when the
+        // fit stops charging it.
         CHECK_NEAR(h.produced(),
                    room(AxisHorizontal, Raster)
-                       - BenchHorizontal.perMagnification * h.scale().magnification(),
-                   2.0);
+                       - (BenchHorizontal.perMagnification
+                          + AxisHorizontal.captureMargin())
+                             * h.scale().magnification(),
+                   1.0);
     }
 
     SUBCASE("a smaller capture still fills the raster") {
