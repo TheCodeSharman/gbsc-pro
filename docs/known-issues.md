@@ -2001,6 +2001,13 @@ Untried. What would settle it is a divider raised past what
 `recommendedDivider()` allows with the decimator taking the difference, judged
 on the finest grating of the card against the same framing.
 
+**And `IF_HS_DEC_FACTOR` is only the coarse half of it.** Beside it sits a
+12-bit DDA -- `IF_HS_RATE_SEG0..7` with `IF_HS_RATE_LOW` -- which scales down
+continuously from 1.0x to 0.5x, where the factor steps in halves. The ratio
+this wants is rarely a half, so the DDA is the better tool.
+`docs/scaling-down-path.md` is the whole path, both axes, and what else it
+would buy.
+
 ### The pass-through ADC PLL does not lock, and the finest grating beats
 
 `STATUS_MISC_PLLAD_LOCK` reads 1 in **2 of 38** samples in pass-through against
