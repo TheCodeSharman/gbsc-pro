@@ -59,23 +59,45 @@ RUN, and skip the first few columns.
   windows, the stride and fetch, the PLL loop-filter range and the sample phase.
   Nothing is set differently that the mode does not explain.
 
-## What is left
+## Also not the stride
 
-The band follows the CAPTURE: walking `IF_HB_SP2` moves it at 1.75 emitted px per
-unit and it narrows as the capture opens later, extrapolating to zero about 21
-units later than the engine places it. So the frame buffer holds ~20 source
-pixels of something black ahead of the picture, at a capture position the
-published raster says is already inside active video.
+`PB_CAP_OFFSET` is the SDRAM ROW STRIDE -- how many bytes are skipped per row --
+and capture and playback share it, so they are addressing the same layout by
+construction. It decides where the left edge lives IN MEMORY and not where it
+appears on screen, which is `VDS_HB_SP` and the aperture. That is why enlarging it
+changes nothing about the framing: moving it relocates the layout, so different
+leftovers land under a window that is looking at unwritten memory, and that is the
+only thing it appears to do to an edge.
 
-The one piece of direct evidence not yet followed is that the **stride** decides
-what occupies the left edge -- found by hand, moving `PB_CAP_OFFSET` changes the
-content there while `PB_FETCH_NUM` changes which part of the image is fetched.
-`CAP_REQ_FREEZ` (`s4_22` bit 3) is the probe that separates the two sides:
-with the capture frozen, anything that still moves is playback and anything baked
-into the frozen image was never written.
-[playback-fetch-and-stride.md](playback-fetch-and-stride.md) is the model, and
-its claim that playback reads the stride's excess is asserted rather than
-measured.
+## What is left: the capture opens 16 source pixels before active video
+
+Measured rather than extrapolated. Walking `IF_HB_SP2` up with automation frozen
+and NO mode change, so nothing can re-solve underneath it:
+
+| `IF_HB_SP2` | near | far |
+|---|---|---|
+| 316 (solved) | 37 | 1918 |
+| 320 | 30 | 1918 |
+| 324 | 23 | 1918 |
+| 328 | 16 | 1918 |
+| 332 | 9 | 1918 |
+| 336 | 7 | 1918 |
+| 340..348 | 7 | 1918 |
+
+**The far edge never moves**, so the band is blanking being trimmed and the
+picture is not displaced. The near edge closes at 1.75 emitted px per capture
+unit and reaches a floor of 7 px at about `IF_HB_SP2` 334 -- and 7 px is the floor
+640x480@60 and 800x600@60 show too, so it is the baseline and not this fault.
+
+So active video starts at IF unit **~334** and the engine captures at **316**:
+**17.5 samples early, about 16 source pixels.** The source starts at line
+fraction 0.2314 against the 0.2202 the published raster states.
+
+**An arithmetic error in `(sync + back porch) / total` would be wrong on every
+mode**, and 640x480@60 and 800x600@60 are right to a pixel. One mode out by a
+fixed 16 pixels reads as a wrong INPUT rather than wrong arithmetic. The next
+measurement is the same walk on 1280x1024@60, whose published active start is
+0.2133: two modes off gives a pattern where one gives only a number.
 
 ## Measurement discipline this cost
 
