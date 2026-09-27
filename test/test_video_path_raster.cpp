@@ -584,12 +584,12 @@ TEST_CASE("the display window opens at the porch the output mode states")
     const OutputTiming raster = Mode1080p.solve(g_fieldRate, OutputMode::EngineCeilingHz);
 
     SUBCASE("vertically, clear of the sync pulse it would otherwise sit inside") {
-        CHECK(Wire.field(3, 0x14, 4, 11) >= raster.activeLinesStart);
+        CHECK(Wire.field(3, 0x14, 4, 11) >= (long)raster.activeLinesStart - 1);
         CHECK(Wire.field(3, 0x14, 4, 11) > Wire.field(3, 0x0E, 4, 11));
     }
 
     SUBCASE("horizontally, after the back porch the mode asks for") {
-        CHECK(Wire.field(3, 0x11, 4, 12) >= raster.activeStart);
+        CHECK(Wire.field(3, 0x11, 4, 12) >= (long)raster.activeStart - 1);
     }
 }
 
@@ -616,9 +616,10 @@ TEST_CASE("the picture fills the active region, the porch carrying the write ori
     const long stop = Wire.field(3, 0x10, 0, 12);          // VDS_DIS_HB_ST
 
     // The back porch is a time, so it is the same count at either raster. The
-    // aperture opens one capture unit past it, on the first unit fully written.
+    // aperture opens ON it, within the unit the registers round by: both are
+    // whole numbers and the write origin is not.
     const long reach = 1 + Scale::Unity / Wire.field(3, 0x16, 0, 10);
-    CHECK(start >= raster.activeStart);
+    CHECK(start >= (long)raster.activeStart - 1);
     CHECK(start <= raster.activeStart + reach);
 
     SUBCASE("and the far edge sits on the mode's front porch, not short of it") {

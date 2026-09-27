@@ -265,7 +265,7 @@ TEST_CASE("the write start is not a constant")
                 continue;
             const float m = v.scale().magnification();
             REQUIRE((float)v.display().stop()
-                    == doctest::Approx(lrintf(writeOrigin(AxisVertical, m))));
+                    == doctest::Approx(floorf(writeOrigin(AxisVertical, m))));
         }
     }
 }
@@ -445,7 +445,10 @@ TEST_CASE("a filling framing reaches the raster at every edge")
 
     for (const Axis *axis : {&AxisHorizontal, &AxisVertical}) {
         const OutputMapping &m = on(solved, *axis);
-        CHECK_MESSAGE((float)m.display().stop() <= cornerOf(m, *axis) + 1.0f,
+        // Never AFTER the write starts: the corner is a whole output pixel and
+        // the origin is not, so rounding it to nearest blanks a column the
+        // write had already reached.
+        CHECK_MESSAGE((float)m.display().stop() <= cornerOf(m, *axis),
                       "the aperture opens on the picture, not past it");
         // The far horizontal edge may give one unit to the width parity, which
         // is the single exception to filling the screen.
@@ -891,9 +894,8 @@ TEST_CASE("the display window is the picture, at both ends")
     const OutputMapping &h = solved.horizontal();
     REQUIRE(h.scale().reg() == 557);
 
-    CHECK((float)h.display().stop() > cornerOf(h, AxisHorizontal));
-    CHECK((float)h.display().stop()
-          <= cornerOf(h, AxisHorizontal) + h.scale().magnification() + 1.0f);
+    CHECK((float)h.display().stop() <= cornerOf(h, AxisHorizontal));
+    CHECK((float)h.display().stop() > cornerOf(h, AxisHorizontal) - 1.0f);
 
     CHECK((float)h.display().start() <= writeEndOf(h, AxisHorizontal));
     CHECK(writeEndOf(h, AxisHorizontal) - (float)h.display().start()
@@ -1009,7 +1011,10 @@ TEST_CASE("the vertical aperture opens on the picture, not a capture unit later"
         const OutputWindow solved(800, 512, rasterOf(1916, 1125, 1852, 1121,
                                                      0, ActiveStart));
         REQUIRE(solved.vertical().scale().reg() == 486);
-        CHECK(solved.vertical().display().stop() == ActiveStart);
+        // Within a row of it: the memory window is a whole line and the write
+        // origin is not, so the floored aperture may open one before.
+        CHECK(solved.vertical().display().stop() >= ActiveStart - 1);
+        CHECK(solved.vertical().display().stop() <= ActiveStart);
     }
 
     SUBCASE("at 576p") {

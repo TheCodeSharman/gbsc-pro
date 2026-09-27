@@ -282,7 +282,14 @@ OutputMapping OutputWindow::solve(const Axis &axis, uint16_t capture, Scale scal
     // pays for that is the capture opening a unit earlier, not the aperture
     // opening a unit later. Inset, it is a black column down the left of a
     // full-screen picture.
-    int32_t displayStop = placed.corner();
+    //
+    // FLOORED, like the far end, rather than taken from the rounded corner:
+    // the write starts at a fraction of a pixel and the register is a whole
+    // one, so rounding to nearest blanks a column the write had reached.
+    int32_t displayStop = (int32_t)floorf((float)placed.windowStop()
+                                          + originOffset(axis, scale.magnification()));
+    if (displayStop < 0)
+        displayStop = 0;
     if (displayStop > apertureStart)
         displayStop = apertureStart;
 
