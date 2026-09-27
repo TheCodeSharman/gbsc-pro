@@ -35,6 +35,55 @@ Vertically the picture is flush: 0 or 1 output pixel of the source's own
 blanking on screen across six DMT modes.
 `docs/investigations/the-transmitted-window-is-latched-from-our-blanking.md`.
 
+### The display window closes after the last written pixel, and the gap shows unwritten memory
+
+**Measured on the bench RISC PC, `X320 Y256 C256 F50` into 1080p, default
+framing.** Three columns at the right of the emitted frame and one row at the
+bottom carry content the capture never wrote, and what they carry CHANGES
+between acquisitions with every register identical -- columns 1884..1886 read a
+mean luma of 45 / 90 / 62 on one lock and 5.7 / 12.6 / 5.7 on the next.
+
+The arithmetic accounts for both:
+
+| | produced | write starts | picture ends | window closes | open |
+|---|---|---|---|---|---|
+| h | 998 x 1024/611 = 1672.6 | `VDS_HB_SP` 44 + 55 + 25 x 1.676 = 140.9 | 1813.5 | `VDS_DIS_HB_ST` 1815 | 1.5 px |
+| v | 621 x 1024/589 = 1079.6 | `VDS_VB_SP` 36 + 0.2 + 0.8 x 1.739 = 37.6 | 1117.2 | `VDS_DIS_VB_ST` 1120 | 2.8 lines |
+
+1.5 output pixels is 2.9 dongle columns, and three are lit. The memory window IS
+the display window here, `VDS_?B_ST == VDS_DIS_?B_ST` on both axes, so nothing
+blanks the remainder.
+
+**The window's end does not follow the write.** It is placed from the memory
+window rather than from where the produced picture actually stops, which is the
+write start plus `capture x 1024 / scale` -- and the write start carries the
+magnification term, so the gap moves with the scale rather than being constant.
+
+Insetting the window is not the fix: a window pulled inside the picture loses
+real rows. `docs/scaler-geometry-model.md` has the write-start model.
+
+### The retime stop is wrong on every line-doubled source
+
+**Measured at full framing against the mode file.** The rule
+`SP_RT_HS_SP = PLLAD_MD - STATUS_SYNC_PROC_HLOW_LEN + 63` was fitted on two
+UNDOUBLED sources. On the bench's doubled ones the counter's origin lands late,
+so the source's picture is captured earlier on the line than it really is: 28.5
+source pixels at `X320 Y256 F50`, 60 at `X640 Y256 F50`, 59 at `X768 Y288 F50`.
+Every duration is right -- line total, sync width, both actives, the frame -- so
+only the placement is wrong and no register dump can see it.
+
+The stop that frames the raster is about 125 ADC samples below what the engine
+writes at 50 Hz and 97 below at 60 Hz. **Three source rasters in one output
+state agree within 7 samples**, which is the part that carries no instrument
+assumption. The absolute figure and the split between the two field rates both
+rest on the dongle-to-capture-unit anchor and are not settled.
+
+What blocks the form: every 15 kHz mode this source offers has a sync duty of
+7.0 to 7.4 per cent, so a term that scales with the sync width and one that
+scales with the divider cannot be told apart -- the same degeneracy that made
+`0.93 x PLLAD_MD` look right.
+`investigations/the-source-raster-measured-against-the-mode-file.md`.
+
 ### The HC32 stops following input selections, and only a true power cycle returns it
 
 **Measured on `vga` with the RISC PC at 800x600@60.** The sync processor reports
