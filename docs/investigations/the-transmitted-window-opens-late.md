@@ -21,6 +21,28 @@ That is the whole of the fault. The left of the picture is not cropped by a
 panel and the right is not short of picture -- the picture is 20 units before
 the window at one end and 20 units short of it at the other.
 
+## What the correction does
+
+Flashed, RiscPC at 320x256@50 on `vga`, output 1080p, the same framing either
+side -- capture 630 units, `VDS_HSCALE` 386:
+
+| | `VDS_DIS_HB_SP` | `VDS_DIS_HB_ST` | left | right |
+|---|---|---|---|---|
+| before | 143 | 1808 | 0 | **27** |
+| after | 163 | 1828 | 24 | **3** |
+
+Every solved horizontal register moves by the 20 and nothing else changes. The
+left gains black because the source's own border is no longer falling off the
+frame -- the card's corner marker is on screen after and cut off before -- so it
+is picture area the framing can now reach rather than loss.
+
+Framed to fill the screen afterwards, at `VDS_HSCALE` 420 with the aperture at
+163..1830, the emitted frame carries **4 px of black at the left and 1 at the
+right**, and both are what the window predicts: (163 - 159.5) x 1.15 = 4.0 and
+(1830.6 - 1830) x 1.15 = 0.7. The left one is the aperture's one-capture-unit
+inset, which is ~3 px at that magnification, so there is no slack left to
+recover at either end.
+
 ## The instrument
 
 The USB HDMI capture, not a photograph of the panel: it is the emitted frame
