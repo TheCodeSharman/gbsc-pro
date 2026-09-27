@@ -224,7 +224,10 @@ def measure(host, dev, mode, h, v, label):
     try:
         for name, axis, at, travel, window_start in plan:
             crosses = window_start + at / travel
-            start, stop = int(round(crosses)) - RUN_UP, int(round(crosses)) + OVERRUN
+            # A feature close to the window's own start leaves no room for the
+            # whole run-up, and a negative register value is not a reading.
+            start = max(0, int(round(crosses)) - RUN_UP)
+            stop = int(round(crosses)) + OVERRUN
             if not set_field(host, specs[name], start):
                 print(f"    {name}: the run-up would not take")
                 continue
