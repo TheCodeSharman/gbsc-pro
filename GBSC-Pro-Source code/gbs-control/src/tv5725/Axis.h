@@ -34,10 +34,11 @@ public:
     float activeStart() const;
     float activeExtent() const;
 
-    // How far beyond the picture the capture window opens at EACH END. The
-    // scale is fitted on the widened window because that is what the hardware
-    // plays out, and neither end's margin is picture, so the aperture closes a
-    // margin's worth sooner than `produced`.
+    // How far beyond the picture the capture window opens at EACH END, so that
+    // the units the write only partly fills have a spare one under them. The
+    // aperture then spans the whole write and the picture reaches the raster at
+    // every edge -- the margin is what PAYS for that, rather than something the
+    // aperture gives back.
     //
     // Vertically 2, both measured. A window opened on the picture loses the
     // source's first and last lines: at 800x600@60 the top frame reaches the
@@ -46,7 +47,9 @@ public:
     // green frame does not reach the panel from the engine's own window and
     // does from one unit earlier; opening early costs a line of the source's
     // blanking and nothing else. The doubled case is NOT measured.
-    // Horizontally 0: the near edge is already crept against corruption.
+    // Horizontally 1, for the partly written unit at each end. It used to be 0
+    // and the aperture was inset instead, which showed as a black column down
+    // the left of a full-screen picture and a black row across the bottom.
     uint16_t captureMargin() const;
 
     // The smallest change of capture POSITION this axis's hardware acts on.

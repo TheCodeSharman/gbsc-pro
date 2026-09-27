@@ -196,7 +196,9 @@ TEST_CASE("the framing is held as state and the window is derived")
 
     SUBCASE("the default framing takes the default capture width") {
         BlankingTiming got = defaultWindowOn(VideoSourceLine(1126), 50.0f, AxisHorizontal);
-        CHECK(got.start() - got.stop() == CaptureWindow::defaultWidth(VideoSourceLine(1126), 50.0f, AxisHorizontal));
+        CHECK(got.start() - got.stop()
+              == CaptureWindow::defaultWidth(VideoSourceLine(1126), 50.0f, AxisHorizontal)
+                 + 2 * AxisHorizontal.captureMargin());
     }
 
     SUBCASE("one unit of zoom is one unit of capture") {
@@ -248,12 +250,18 @@ TEST_CASE("the framing is held as state and the window is derived")
     }
 
     SUBCASE("a pan is clamped to the line rather than crossing it") {
+        // The PICTURE keeps its width. The window may not, because the margin
+        // beyond it is truncated where the line ends -- at either end there is
+        // no unit left outside the picture to open into.
+        const long margin = AxisHorizontal.captureMargin();
         BlankingTiming far_right = captureFor(VideoSourceLine(1126), 50.0f, AxisHorizontal, 0, +5000);
         CHECK(far_right.start() <= 1126);
-        CHECK(far_right.start() - far_right.stop() == centred.start() - centred.stop());
+        CHECK((centred.start() - centred.stop())
+              - (far_right.start() - far_right.stop()) <= margin);
         BlankingTiming far_left = captureFor(VideoSourceLine(1126), 50.0f, AxisHorizontal, 0, -5000);
         CHECK(far_left.stop() == CaptureWindow::FirstCapturableUnit);
-        CHECK(far_left.start() - far_left.stop() == centred.start() - centred.stop());
+        CHECK((centred.start() - centred.stop())
+              - (far_left.start() - far_left.stop()) <= margin);
     }
 
     SUBCASE("a zoom in never crops the capture away to nothing") {
@@ -334,8 +342,9 @@ TEST_CASE("a source running a published raster is captured where that raster put
 
     BlankingTiming got = defaultWindowOn(line, dmt, AxisHorizontal);
 
-    CHECK_NEAR(got.stop(), 0.180f * 1126.0f, 1.0f);
-    CHECK_NEAR(got.width(), 0.800f * 1126.0f, 1.0f);
+    const float margin = (float)AxisHorizontal.captureMargin();
+    CHECK_NEAR(got.stop(), 0.180f * 1126.0f - margin, 1.0f);
+    CHECK_NEAR(got.width(), 0.800f * 1126.0f + 2.0f * margin, 1.0f);
 }
 
 TEST_CASE("a source matching no published raster is captured across the envelope")
@@ -349,8 +358,9 @@ TEST_CASE("a source matching no published raster is captured across the envelope
     const VideoSourceLine line(1126);
 
     BlankingTiming got = defaultWindowOn(line, 50.0f, AxisHorizontal);
-    CHECK_NEAR(got.stop(), 0.117f * 1126.0f, 1.0f);
-    CHECK_NEAR(got.start(), 0.981f * 1126.0f, 1.0f);
+    const float margin = (float)AxisHorizontal.captureMargin();
+    CHECK_NEAR(got.stop(), 0.117f * 1126.0f - margin, 1.0f);
+    CHECK_NEAR(got.start(), 0.981f * 1126.0f + margin, 1.0f);
 
     SUBCASE("and the vertical envelope does not split on field rate") {
         BlankingTiming fifty = defaultWindowOn(VideoSourceLine(624), 50.0f, AxisVertical);
@@ -402,6 +412,9 @@ TEST_CASE("a press that overshoots the edge leaves no dead zone")
     }
 
     SUBCASE("the same holds at the other end of the line") {
+        // The margin takes the near edge past the first capturable unit, so at
+        // the floor the pair opens on it and the press back is seen at the FAR
+        // edge -- the near one has nowhere left to go.
         const VideoSourceLine line(Units);
         PanAndZoom f = pressedOn(line, Rate, AxisHorizontal, 0, -200, PanAndZoom());
         CHECK(captureOf(line, Rate, AxisHorizontal, f).stop()
@@ -409,7 +422,7 @@ TEST_CASE("a press that overshoots the edge leaves no dead zone")
 
         BlankingTiming at_edge = captureOf(line, Rate, AxisHorizontal, f);
         f = pressedOn(line, Rate, AxisHorizontal, 0, +1, f);
-        CHECK(captureOf(line, Rate, AxisHorizontal, f).stop() > at_edge.stop());
+        CHECK(captureOf(line, Rate, AxisHorizontal, f).start() > at_edge.start());
     }
 
     SUBCASE("vertically too, which is the 'or bottom' half of the report") {
@@ -419,7 +432,7 @@ TEST_CASE("a press that overshoots the edge leaves no dead zone")
         const VideoSourceLine frame(624);
         PanAndZoom f = pressedOn(frame, Rate, AxisVertical, 0, -400, PanAndZoom());
         BlankingTiming at_edge = captureOf(frame, Rate, AxisVertical, f);
-        CHECK(at_edge.stop() == 0);
+        CHECK(at_edge.stop() == CaptureWindow::FirstCapturableUnit);
 
         f = pressedOn(frame, Rate, AxisVertical, 0, +1, f);
         CHECK(captureOf(frame, Rate, AxisVertical, f).start() > at_edge.start());
@@ -431,7 +444,8 @@ TEST_CASE("a press that overshoots the edge leaves no dead zone")
         const VideoSourceLine line(Units);
         PanAndZoom f = pressedOn(line, Rate, AxisHorizontal, 5000, 0, PanAndZoom());
         BlankingTiming tightest = captureOf(line, Rate, AxisHorizontal, f);
-        CHECK(tightest.start() - tightest.stop() == MinimumCapture);
+        CHECK(tightest.start() - tightest.stop()
+              == MinimumCapture + 2 * AxisHorizontal.captureMargin());
 
         f = pressedOn(line, Rate, AxisHorizontal, -1, 0, f);
         BlankingTiming wider = captureOf(line, Rate, AxisHorizontal, f);
@@ -495,18 +509,19 @@ TEST_CASE("the window each axis reports is the register pair")
         CHECK(got.start() - got.stop() == 400 + 2 * Margin);
     }
 
-    SUBCASE("the horizontal pair carries none, which is its axis's margin") {
-        REQUIRE(AxisHorizontal.captureMargin() == 0);
+    SUBCASE("the horizontal pair carries its axis's margin too") {
+        const long horizontal = AxisHorizontal.captureMargin();
+        REQUIRE(horizontal == 1);
         const VideoSourceLine line(1126);
         const PanAndZoom framing(100.0f / 1126.0f, 400.0f / 1126.0f, 0.0f, 1.0f);
         const BlankingTiming got = captureOf(line, 50.0f, AxisHorizontal, framing);
-        CHECK(got.start() - got.stop() == 400);
+        CHECK(got.start() - got.stop() == 400 + 2 * horizontal);
     }
 
     SUBCASE("the near end floors at the counter's origin") {
         const PanAndZoom framing(0.0f, 1.0f, 0.0f, 400.0f / 628.0f);
         const BlankingTiming got = captureOf(frame, 60.0f, AxisVertical, framing);
-        CHECK(got.stop() == 0);
+        CHECK(got.stop() == CaptureWindow::FirstCapturableUnit);
     }
 
     SUBCASE("the far end clamps at the last unit before the wrap") {
@@ -580,7 +595,7 @@ TEST_CASE("the capture window never takes the hsync pulse")
         CHECK(at_edge.stop() == firstUnitOf(SourceLine, AxisHorizontal));
 
         f = pressedOn(SourceLine, Rate, AxisHorizontal, 0, +1, f);
-        CHECK(captureOf(SourceLine, Rate, AxisHorizontal, f).stop() > at_edge.stop());
+        CHECK(captureOf(SourceLine, Rate, AxisHorizontal, f).start() > at_edge.start());
     }
 }
 

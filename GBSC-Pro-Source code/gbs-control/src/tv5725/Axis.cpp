@@ -36,7 +36,7 @@ int16_t Axis::stepUnits(int16_t pixels, float magnification) const
     return pixels < 0 ? (int16_t)-units : (int16_t)units;
 }
 
-const Axis AxisHorizontal(2, 0, 0.117f, 0.864f, false);
+const Axis AxisHorizontal(2, 1, 0.117f, 0.864f, false);
 
 const Axis AxisVertical(1, 2, 0.061f, 0.933f, true);
 

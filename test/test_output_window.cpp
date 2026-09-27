@@ -237,8 +237,8 @@ TEST_CASE("both axes allocate only the memory the picture occupies")
 // --- where the scaler starts writing -----------------------------------------
 
 // The gap between the memory window opening and the aperture opening IS the
-// write origin, so the two registers together measure it. Horizontally the
-// aperture opens a further capture unit in, on the first unit fully written.
+// write origin, so the two registers together measure it. Both windows open on
+// it: the capture's margin is what covers the partly written unit.
 TEST_CASE("the write start is not a constant")
 {
     SUBCASE("the horizontal write start matches every reading") {
@@ -248,8 +248,8 @@ TEST_CASE("the write start is not a constant")
             if (!h.usable() || h.memory().stop() != BenchHorizontal.floor)
                 continue;
             const float m = h.scale().magnification();
-            const float gap = (float)h.display().stop() - (float)h.memory().stop() - m;
-            REQUIRE(gap >= writeOrigin(AxisHorizontal, m));
+            const float gap = (float)h.display().stop() - (float)h.memory().stop();
+            REQUIRE(gap >= writeOrigin(AxisHorizontal, m) - 1.0f);
             REQUIRE(gap < writeOrigin(AxisHorizontal, m) + 1.0f);
         }
     }
@@ -402,7 +402,7 @@ TEST_CASE("the picture is made as big as the raster allows")
     }
 }
 
-TEST_CASE("the display window opens after the picture starts, not on it")
+TEST_CASE("the display window opens on the picture, not after it")
 {
     // Where the first written pixel lands is MODELLED, and the model
     // under-estimates: measured at 1080p on a 2300 px raster, the engine opened
@@ -414,16 +414,45 @@ TEST_CASE("the display window opens after the picture starts, not on it")
     const OutputWindow solved(1008, 512, rasterOf(2300, 1126));
     const OutputMapping &h = solved.horizontal();
 
-    // One capture unit past the modelled corner: the origin marks where content
-    // first appears, and that unit is only partly written.
-    CHECK((float)h.display().stop() > cornerOf(h, AxisHorizontal));
-    CHECK((float)h.display().stop()
-          <= cornerOf(h, AxisHorizontal) + h.scale().magnification() + 1.0f);
+    // ON the modelled corner. The first unit is only partly written, and what
+    // covers it is the capture's margin -- inset here it is a black column down
+    // the left of a full-screen picture.
+    CHECK((float)h.display().stop() <= cornerOf(h, AxisHorizontal) + 1.0f);
+    CHECK((float)h.display().stop() >= cornerOf(h, AxisHorizontal) - 1.0f);
 
     SUBCASE("the memory window still opens where the write does") {
         // It is the DISPLAY that must not show the gap. Opening the memory
         // window late moves the picture instead, which widens the band.
         CHECK(h.memory().stop() == BenchHorizontal.floor);
+    }
+}
+
+TEST_CASE("a filling framing reaches the raster at every edge")
+{
+    // THE PICTURE FILLS THE SCREEN. Nothing is blanked to hide a partly written
+    // unit: where the write lands short of a shown pixel the CAPTURE pays for
+    // it, so the aperture spans the whole write extent on both axes.
+    //
+    // Measured before this rule, 1080p on the bench source framed to fill: 4
+    // black columns down the left and 5 rows across the bottom, at every zoom,
+    // being the near inset and the trailing capture margin scaled out.
+    //
+    // The far HORIZONTAL edge is the one exception, and it belongs to the
+    // memory window rather than this one: the width parity bias keeps it odd
+    // against the zoom shear.
+    // ../docs/investigations/horizontal-scale-corruption.md
+    const OutputWindow solved(1008, 512, rasterOf(1916, 1126, 1812, 1100, 140, 40));
+
+    for (const Axis *axis : {&AxisHorizontal, &AxisVertical}) {
+        const OutputMapping &m = on(solved, *axis);
+        CHECK_MESSAGE((float)m.display().stop() <= cornerOf(m, *axis) + 1.0f,
+                      "the aperture opens on the picture, not past it");
+        // The far horizontal edge may give one unit to the width parity, which
+        // is the single exception to filling the screen.
+        const float owed = axis->vertical() ? 1.0f
+                                            : 1.0f + m.scale().magnification();
+        CHECK_MESSAGE((float)m.display().start() >= writeEndOf(m, *axis) - owed,
+                      "the aperture closes on the write end, not before it");
     }
 }
 
@@ -502,10 +531,9 @@ TEST_CASE("the solver places every output register")
     REQUIRE(h.scale().reg() == 650);
 
     SUBCASE("the solver centres the picture as far as the hardware allows") {
-        // The MEMORY window opens where the write does; the display window
-        // opens one capture unit later, on the first unit fully written.
+        // Both windows open where the write does.
         CHECK(h.memory().stop() == 8);
-        CHECK(h.display().stop() == 104);
+        CHECK(h.display().stop() == 102);
     }
 
     SUBCASE("the memory window is exactly the display window") {
@@ -779,15 +807,13 @@ TEST_CASE("the vertical aperture closes where the write ends")
     SUBCASE("at the bench 800x600@60 framing, where the far bound is what stops it") {
         const OutputWindow solved(600, 384, rasterOf(2156, 1000, 1957, 999, 424, 39));
         REQUIRE(solved.vertical().scale().reg() == 410);
-        CHECK(solved.vertical().display().start() == 993);
+        CHECK(solved.vertical().display().start() == 998);
     }
 
     SUBCASE("and where it is the write rather than the bound") {
         const OutputWindow solved(800, 584, rasterOf(1916, 1125));
         const OutputMapping &v = solved.vertical();
-        const float ends = writeEndOf(v, AxisVertical)
-                         - AxisVertical.captureMargin() * v.scale().magnification();
-        CHECK(v.display().start() == (int32_t)floorf(ends));
+        CHECK(v.display().start() == (int32_t)floorf(writeEndOf(v, AxisVertical)));
     }
 }
 
@@ -837,19 +863,16 @@ TEST_CASE("the horizontal memory window is an odd number of units wide")
     }
 
     SUBCASE("and the aperture still closes on the last column the capture filled") {
-        // The memory window may carry the odd unit; the APERTURE may not. One
-        // pixel past the interpolator's reach shows as a column of junk down the
-        // right-hand edge, which is what the forward bias costs if both far
-        // edges move together. Blanking it loses nothing: that column was never
-        // captured.
+        // The aperture closes on the write and never past it. The parity bias
+        // may pull it back a unit at the far bound, which is the one place a
+        // full-screen picture gives a pixel away.
         for (uint16_t capture = 600; capture <= 1500; ++capture) {
             const OutputWindow solved(capture, 512, rasterOf(Raster, 1126));
             const OutputMapping &h = solved.horizontal();
             if (!h.usable())
                 continue;
-            const float reach = floorf(writeEndOf(h, AxisHorizontal)
-                                       - h.scale().magnification());
-            REQUIRE((float)h.display().start() <= reach);
+            REQUIRE((float)h.display().start()
+                    <= floorf(writeEndOf(h, AxisHorizontal)));
         }
     }
 
@@ -888,6 +911,11 @@ TEST_CASE("the display window is the picture, at both ends")
 // clears when the capture takes one more line, and it grows to a forty-line
 // band that does NOT flash while the source's border does when the capture
 // takes forty fewer.
+// The aperture lands exactly on a capture unit where the window stop is on its
+// floor, and the origin is computed in float, so the equality case loses a ulp.
+// A thousandth of a unit is not a framing defect.
+static const float UnitSlack = 1e-3f;
+
 static float lastCaptureUnitRead(const Axis &axis, const OutputMapping &solved)
 {
     const float lastUnit = (float)solved.display().start() - 1.0f;
@@ -896,7 +924,7 @@ static float lastCaptureUnitRead(const Axis &axis, const OutputMapping &solved)
     return floorf(pos) + 1.0f;
 }
 
-TEST_CASE("the aperture's last unit is interpolated from captured memory")
+TEST_CASE("the aperture reads nothing the capture did not take")
 {
     // Vertically it reads the last unit the capture filled and no further --
     // one unit later than the horizontal bound, because nothing on that axis
@@ -912,7 +940,7 @@ TEST_CASE("the aperture's last unit is interpolated from captured memory")
         const OutputWindow solved(1003, 512, rasterOf(1919, 1126));
         REQUIRE(solved.horizontal().scale().reg() == 568);
         CHECK(lastCaptureUnitRead(AxisHorizontal, solved.horizontal())
-              <= 1003.0f - 1.0f);
+              <= 1003.0f + UnitSlack);
     }
 
     SUBCASE("across the zoom range on both axes") {
@@ -925,42 +953,25 @@ TEST_CASE("the aperture's last unit is interpolated from captured memory")
             const OutputWindow h(capture, 512, rasterOf(1919, 1126));
             if (h.horizontal().usable())
                 REQUIRE(lastCaptureUnitRead(AxisHorizontal, h.horizontal())
-                        <= (float)capture - 1.0f);
+                        <= (float)capture + UnitSlack);
         }
     }
 }
 
-// The write origin marks where content first APPEARS, which is the first unit
-// the capture partly filled -- `docs/investigations/moving-write-origin.md`
-// found it by creeping until the picture started. The first unit fully written
-// is one capture unit later, so an aperture opening on the origin shows a unit
-// carrying whatever the previous mode left in that memory.
-//
-// Crept on the bench at three magnifications, `VDS_DIS_HB_SP` raised one unit
-// at a time until the line down the left edge cleared:
-//
-//   magnification 1.13, write origin 140.32 -> first clean corner 142
-//   magnification 1.17, write origin 140.19 -> first clean corner 142
-//   magnification 2.17, write origin 140.12 -> first clean corner 143
-//
-// The third is what makes it a capture unit rather than an output pixel: a
-// fixed one-pixel margin predicts 142 there.
-//
-// Horizontal only. The vertical near end reads past the start of the frame,
-// which comes back as nothing, so the unit buys no picture there and costs a
-// black bar across the top -- the test below holds that end.
+// The aperture opens on the write origin, which is the first unit the capture
+// partly filled -- `docs/investigations/moving-write-origin.md` found it by
+// creeping until the picture started. That unit is captured, because
+// Axis::captureMargin opens the window a unit before the picture; what it must
+// not do is read a WHOLE unit before it, which is memory nothing wrote. A
+// fraction of one is the corner rounding to a whole output pixel, and the
+// margin is what absorbs that.
 static float firstCaptureUnitRead(const Axis &axis, const OutputMapping &solved)
 {
     return ((float)solved.display().stop() - cornerOf(solved, axis))
          * (float)solved.scale().reg() / (float)Scale::Unity;
 }
 
-// The inset lands exactly on one capture unit where the window stop is on its
-// floor, and the origin is computed in float, so the equality case loses a ulp.
-// A thousandth of a unit is not a framing defect.
-static const float UnitSlack = 1e-3f;
-
-TEST_CASE("the aperture's first unit is interpolated from captured memory")
+TEST_CASE("the aperture opens no earlier than the captured window")
 {
     SUBCASE("horizontally, at the three crept magnifications") {
         const uint16_t captures[] = {1330, 1289, 683};
@@ -969,7 +980,7 @@ TEST_CASE("the aperture's first unit is interpolated from captured memory")
             const OutputWindow solved(captures[i], 512, rasterOf(1600, 1126));
             REQUIRE(solved.horizontal().scale().reg() == scales[i]);
             CHECK(firstCaptureUnitRead(AxisHorizontal, solved.horizontal())
-                  >= 1.0f - UnitSlack);
+                  > -1.0f);
         }
     }
 
@@ -979,7 +990,7 @@ TEST_CASE("the aperture's first unit is interpolated from captured memory")
             if (!solved.horizontal().usable())
                 continue;
             REQUIRE(firstCaptureUnitRead(AxisHorizontal, solved.horizontal())
-                    >= 1.0f - UnitSlack);
+                    > -1.0f);
         }
     }
 }

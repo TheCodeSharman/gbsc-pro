@@ -318,7 +318,8 @@ TEST_CASE("the framing reported in units is the capture window on the chip")
     SolvedEngine solved;
 
     CHECK(solved.engine.extentUnitsOn(AxisHorizontal)
-          == Wire.field(1, 0x18, 0, 11) - Wire.field(1, 0x1A, 0, 11));
+          == Wire.field(1, 0x18, 0, 11) - Wire.field(1, 0x1A, 0, 11)
+                 - 2 * AxisHorizontal.captureMargin());
     CHECK(solved.engine.extentUnitsOn(AxisVertical)
           == Wire.field(1, 0x1C, 0, 11) - Wire.field(1, 0x1E, 0, 11)
                  - 2 * AxisVertical.captureMargin());
@@ -326,7 +327,8 @@ TEST_CASE("the framing reported in units is the capture window on the chip")
     SUBCASE("and it follows a press") {
         REQUIRE(solved.engine.zoom(400, 0));
         CHECK(solved.engine.extentUnitsOn(AxisHorizontal)
-              == Wire.field(1, 0x18, 0, 11) - Wire.field(1, 0x1A, 0, 11));
+              == Wire.field(1, 0x18, 0, 11) - Wire.field(1, 0x1A, 0, 11)
+                     - 2 * AxisHorizontal.captureMargin());
     }
 }
 
@@ -481,8 +483,9 @@ TEST_CASE("a VESA source is captured where its published raster puts picture")
     // 18.0% is where the published raster puts picture in ITS line, counted
     // from the hsync leading edge -- which is the counter's origin on every
     // source, the polarity having been normalised before the count.
-    CHECK_NEAR(stop, 0.180 * line, 2);
-    CHECK_NEAR(start - stop, 0.800 * line, 2);
+    const long margin = AxisHorizontal.captureMargin();
+    CHECK_NEAR(stop, 0.180 * line - margin, 2);
+    CHECK_NEAR(start - stop, 0.800 * line + 2 * margin, 2);
 }
 
 
@@ -660,12 +663,11 @@ TEST_CASE("a forced full framing captures everything the source offers")
     // counter wraps. Those are positions in the COUNTER, so they are read off
     // the registers; the framing is a proportion of the SOURCE, and the two
     // meet through the lag.
+    // A framing across the whole reach leaves the margin nowhere to go: the
+    // window is already on the first unit the counter reaches, at both ends and
+    // on both axes, so it opens there rather than a margin below it.
     CHECK(Wire.field(1, 0x1A, 0, 11) == solved.engine.firstUnitOn(AxisHorizontal));
-    // Vertically the margin is taken off the floor, and clamped at the
-    // counter's origin: a window at the floor has nowhere left to open into.
-    const long verticalFloor = (long)solved.engine.firstUnitOn(AxisVertical)
-                             - (long)AxisVertical.captureMargin();
-    CHECK(Wire.field(1, 0x1E, 0, 11) == (verticalFloor > 0 ? verticalFloor : 0));
+    CHECK(Wire.field(1, 0x1E, 0, 11) == solved.engine.firstUnitOn(AxisVertical));
 
     // The far edge is the last unit the framing can name: the pulse is excluded
     // at the head, and the tail stops on the last unit the counter reaches.

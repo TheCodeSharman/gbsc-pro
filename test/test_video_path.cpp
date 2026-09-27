@@ -228,12 +228,14 @@ static void checkBenchGeometry()
     // is placed across the envelope of what real sources put on a line. The
     // doubler is in the path here, so the vertical counts half-lines.
     //
-    // The vertical window carries Axis::captureMargin units at EACH end, both
-    // measured on the card's one-pixel frame, which lands on exactly those
-    // lines. The doubler is in the path here, so the margin is a half-line
-    // rather than a line -- which is NOT measured.
-    CHECK(InputFormatter::IF_HB_SP2::read() == 129);
-    CHECK(InputFormatter::IF_HB_ST2::read() == 1080);
+    // BOTH windows carry Axis::captureMargin units at EACH end: the aperture
+    // shows the whole write, so the margin is what covers the units the write
+    // only partly fills. The vertical pair was measured on the card's
+    // one-pixel frame, which lands on exactly those lines; the doubler is in
+    // the path here, so that margin is a half-line rather than a line, which
+    // is NOT measured.
+    CHECK(InputFormatter::IF_HB_SP2::read() == 128);
+    CHECK(InputFormatter::IF_HB_ST2::read() == 1081);
     CHECK(InputFormatter::IF_VB_SP::read() == 36);
     CHECK(InputFormatter::IF_VB_ST::read() == 622);
 
@@ -243,7 +245,7 @@ static void checkBenchGeometry()
     CHECK(InputFormatter::IF_LINE_SP::read() == 1165);
 
     // Both scales computed from the capture and the raster, never inherited.
-    CHECK(VideoProcessor::VDS_HSCALE::read() == 583);
+    CHECK(VideoProcessor::VDS_HSCALE::read() == 584);
     CHECK(VideoProcessor::VDS_VSCALE::read() == 556);
     CHECK(VideoProcessor::VDS_HSCALE_BYPS::read() == 0);
     CHECK(VideoProcessor::VDS_VSCALE_BYPS::read() == 0);
@@ -274,8 +276,8 @@ static void checkBenchGeometry()
     // captured, which is memory the previous mode left behind. Vertically it
     // closes a trailing captureMargin sooner than the played-out window, none
     // of which is picture.
-    CHECK(VideoProcessor::VDS_HB_ST::read() == 1828);
-    CHECK(VideoProcessor::VDS_VB_ST::read() == 1116);
+    CHECK(VideoProcessor::VDS_HB_ST::read() == 1830);
+    CHECK(VideoProcessor::VDS_VB_ST::read() == 1119);
 
     // And the horizontal window is an ODD number of units wide, which is what
     // reaches the picture: an even one shears.
@@ -295,14 +297,14 @@ static void checkBenchGeometry()
     // Vertically the aperture opens ON the picture -- reading before the first
     // written line comes back as nothing, so the unit would buy no picture and
     // cost a black bar across the top of the screen.
-    CHECK(VideoProcessor::VDS_DIS_HB_SP::read() == 162);
+    CHECK(VideoProcessor::VDS_DIS_HB_SP::read() == 160);
     CHECK(VideoProcessor::VDS_DIS_VB_SP::read() == 41);
     CHECK(VideoProcessor::VDS_DIS_VB_SP::read() > VideoProcessor::VDS_VS_SP::read());
 
     // The playback burst, sized from the capture width so the fetch rate does
     // not move with the scale.
     CHECK(FrameBuffer::PB_CAP_OFFSET::read() == 276);
-    CHECK(FrameBuffer::PB_FETCH_NUM::read() == 238);
+    CHECK(FrameBuffer::PB_FETCH_NUM::read() == 239);
 
     // The rest of what PLLAD_LAT loads, and the decimators that follow the tap
     // it selects. 2508 samples on a 15574 Hz line is 39.1 MHz, just inside the
@@ -833,8 +835,8 @@ TEST_CASE("a reset puts the framing back without re-deriving the rest")
     CHECK(g_fieldRateCalls - before == 0);
     CHECK_FALSE(engine.changing());
 
-    CHECK(InputFormatter::IF_HB_SP2::read() == 129);
-    CHECK(InputFormatter::IF_HB_ST2::read() == 1080);
+    CHECK(InputFormatter::IF_HB_SP2::read() == 128);
+    CHECK(InputFormatter::IF_HB_ST2::read() == 1081);
     CHECK(InputFormatter::IF_VB_SP::read() == 36);
     CHECK(InputFormatter::IF_VB_ST::read() == 622);
 

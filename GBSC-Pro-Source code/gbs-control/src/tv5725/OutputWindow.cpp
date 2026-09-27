@@ -239,29 +239,15 @@ OutputMapping OutputWindow::solve(const Axis &axis, uint16_t capture, Scale scal
     // its own lands up to a whole unit past the write, leaving the last unit of
     // the aperture showing memory nothing wrote.
     //
-    // HORIZONTALLY the write is usable one capture unit's worth of output short
-    // of where it ends: the scaler interpolates between two capture units, so
-    // the output unit landing on the last one written reads the one after it,
-    // which no capture filled.
-    //
-    // VERTICALLY THE INTERPOLATOR GIVES NOTHING BACK, MEASURED. Crept at
-    // 800x600@60 into Mode960p with the source's last picture line as the
-    // capture's last unit, the picture extends a row per step out to the far
-    // bound with the falloff keeping its shape and no row of stale memory at
-    // any of them. docs/known-issues.md
-    //
-    // THE TRAILING MARGIN IS A SEPARATE SUBTRACTION and is not that. `produced`
-    // is the whole capture window scaled, margin and all, because that is what
-    // the hardware plays out -- but the path drops the last margin units, so
-    // the WRITE stops that much sooner and an aperture closing on `produced`
-    // shows rows nothing wrote. Measured at 800x600@60: the aperture solved at
-    // 998 carries two rows of stale memory under the source's last line, and
-    // 996 is clean with that line intact.
-    const float interpolatorReach = axis.vertical() ? 0.0f : scale.magnification();
-    const float marginReach = (float)axis.captureMargin() * scale.magnification();
+    // NOTHING IS HELD BACK HERE. The aperture closes on the write, so a framing
+    // that fills the raster reaches it. Where the last shown unit needs a
+    // sample the capture did not take -- the scaler interpolates between two
+    // capture units, and the path drops the trailing margin -- the CAPTURE pays
+    // for it by opening wider, which is what Axis::captureMargin is for. Giving
+    // it back out of the aperture instead is a black bar no zoom can close.
     const float writeEnds = (float)placed.windowStop()
                           + originOffset(axis, scale.magnification())
-                          + solved.produced_ - interpolatorReach - marginReach;
+                          + solved.produced_;
     int32_t apertureStart = (int32_t)floorf(writeEnds);
     if (apertureStart < placed.corner())
         apertureStart = placed.corner();
@@ -269,50 +255,34 @@ OutputMapping OutputWindow::solve(const Axis &axis, uint16_t capture, Scale scal
         apertureStart = lastUsable;
 
     // An even memory window shears the picture and an odd one is clean, so the
-    // width is biased by a unit, FORWARD: the fetch reaching one further costs
-    // nothing, where stepping back short-changes it. Horizontal only, because
-    // VDS_VB_SP has never been crept.
-    // docs/investigations/horizontal-scale-corruption.md
+    // width is biased by a unit. Horizontal only, because VDS_VB_SP has never
+    // been crept. docs/investigations/horizontal-scale-corruption.md
     //
-    // THE APERTURE DOES NOT FOLLOW IT. Moving both far edges together puts the
-    // last shown column one past the interpolator's reach, which is a column of
-    // junk down the right-hand edge; blanking it costs no picture, because that
-    // column was never captured. So the two windows differ at the far end by
-    // the bias, and the memory window is the wider of the two -- the safe
-    // direction, since the fetch then covers every column the aperture shows.
+    // BACKWARD, and it is the one pixel a full-screen picture gives away. The
+    // bias used to step forward into the unit the aperture held back for the
+    // interpolator; the aperture now closes on the write, so there is no unit
+    // there to take and stepping forward would open the fetch past what the
+    // write filled. The aperture follows it down, because the fetch has to
+    // cover every column shown.
+    //
+    // Replacing it needs a knob on the produced width that does not move the
+    // picture -- the input formatter's scaling-down DDA is one, and is unused.
     int32_t memoryStart = apertureStart;
     if (!axis.vertical() && (memoryStart - placed.windowStop()) % 2 == 0) {
-        if (memoryStart < lastUsable)
-            ++memoryStart;
-        else if (memoryStart > placed.corner())
+        if (memoryStart > placed.corner())
             --memoryStart;
+        else if (memoryStart < lastUsable)
+            ++memoryStart;
     }
     if (apertureStart > memoryStart)
         apertureStart = memoryStart;
 
-    // The near end mirrors the far one, HORIZONTALLY. The write origin marks
-    // where content first appears, which is the first unit the capture only
-    // PARTLY filled -- it was measured by creeping until the picture started.
-    // One capture unit later is the first unit fully written, and an aperture
-    // opening before it shows memory the previous mode left behind.
-    // docs/investigations/moving-write-origin.md
-    //
-    // Vertically the aperture opens ON the picture. Reading before the first
-    // written LINE reaches past the start of the frame and comes back as
-    // nothing, where reading before the first written COLUMN reaches the
-    // previous line's storage -- so the unit buys nothing here, and the picture
-    // is placed on the output mode's first active line, which is the first line
-    // the panel paints. An inset there is a black bar across the top of the
-    // screen rather than overscan.
-    // docs/investigations/the-aperture-is-inset-one-capture-unit-at-each-end.md
+    // The near end opens ON the picture, both axes, for the reason the far end
+    // closes on it: the first capture unit is only partly written, and what
+    // pays for that is the capture opening a unit earlier, not the aperture
+    // opening a unit later. Inset, it is a black column down the left of a
+    // full-screen picture.
     int32_t displayStop = placed.corner();
-    if (!axis.vertical()) {
-        displayStop = (int32_t)ceilf((float)placed.windowStop()
-                                     + originOffset(axis, scale.magnification())
-                                     + scale.magnification());
-        if (displayStop < placed.corner())
-            displayStop = placed.corner();
-    }
     if (displayStop > apertureStart)
         displayStop = apertureStart;
 

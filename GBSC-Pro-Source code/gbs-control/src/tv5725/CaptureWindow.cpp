@@ -203,17 +203,21 @@ BlankingTiming CaptureWindow::captureOn(const Axis &axis) const
     if (line.units() == 0)
         return BlankingTiming();
 
-    // The axis's own margin at each end, because the capture path drops that
-    // much at each end: a window opened on the picture loses the source's first
-    // and last lines. Horizontally the margin is 0 and the near edge is already
-    // crept against corruption, so this is the vertical pair in practice.
+    // The axis's own margin at each end. It is what lets the aperture show the
+    // WHOLE picture: the first and last units the write touches are only partly
+    // filled, so the margin puts a spare unit under each of them and the
+    // aperture never has to be inset to hide one.
     //
-    // The near end floors at the counter's origin -- a window already there has
-    // nowhere to open into -- and the far end is clamped to the last unit
-    // before the counter wraps, because a margin past it rolls the frame.
+    // The near end floors at the first capturable unit -- a margin below it is
+    // a window the counter never reaches -- and the far end is clamped to the
+    // last unit before the counter wraps, because a margin past it rolls the
+    // frame.
     Placement placed = place(axis);
     const long margin = axis.captureMargin();
-    const long near = placed.start > margin ? placed.start - margin : 0;
+    const long first = firstCapture(line);
+    long near = placed.start - margin;
+    if (near < first)
+        near = first;
     const long far = placed.start + placed.width + margin;
     const long last = lastCapture(line);
     return BlankingTiming((uint16_t)near, (uint16_t)(far < last ? far : last));
