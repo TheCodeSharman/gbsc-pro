@@ -76,6 +76,7 @@ What each mode wants, from the same instrument:
 
 | mode | field rate | `PLLAD_MD` | wants |
 |---|---|---|---|
+| X1056 Y256 F50 | 50.08 | 2200 | 137 |
 | X640 Y256 F50 | 50.08 | 2200 | 141 |
 | X768 Y288 F50 | 50.08 | 2200 | 145 |
 | X320 Y256 F50 | 50.08 | 2200 | 147 |
@@ -83,8 +84,8 @@ What each mode wants, from the same instrument:
 | X640 Y240 F60 | 60.1 | 2200 | 175 |
 | X640 Y200 F60 | 59.9 | 2200 | 175 |
 
-The 50 Hz cluster spans three source rasters and two dividers and agrees within
-11 samples. The two 60 Hz modes agree with each other to one sample and sit 30
+The 50 Hz cluster spans four source rasters -- lines of 512, 858, 1024 and 1536
+source pixels -- and two dividers, and agrees within 15 samples. The two 60 Hz modes agree with each other to one sample and sit 30
 away.
 
 **Nothing on the chip differs across that split.** Read on both, every field is

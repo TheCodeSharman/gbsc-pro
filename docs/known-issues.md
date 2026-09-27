@@ -123,15 +123,24 @@ vsync detection rather than of the source. It is applied inside
 published raster -- so every Acorn SD mode falls through to `Axis`'s flat 0.061
 envelope with no origin correction at all.
 
-Measured on two doubled sources by clipping, the frame counter's origin sits a
-fixed distance after the vsync pulse's LEADING edge: 5.0 lines on X320 Y256 F50
-with a 3-line pulse, 5.1 on X640 Y240 F60 with a 6-line one. Two pulses a factor
-of two apart agree, which is what says it is the counter's property and not the
-source's, and it belongs on `VideoSourceLine::frame()` rather than in the table.
+Measured by clipping the card's frame out of the capture, the frame counter's
+origin sits a fixed distance after the vsync pulse's LEADING edge -- and the
+scan mode splits it, as it does the horizontal:
 
-The hazard is double counting: `InputFormatter::capturableFrame()` already
-passes `SeparatorFrameLeadLines` on a separated source, and whether the two
-overlap is a measurement rather than a deduction.
+| scan | sources | origin | in counter units |
+|---|---|---|---|
+| doubled | X320 Y256 F50, X640 Y240 F60, X1056 Y256 F50 | 5.0..5.1 lines | 10.0..10.2 |
+| undoubled | 640x480@60 | 8.7 lines | 8.7 |
+
+Three doubled sources agree and their pulses differ by a factor of two, which is
+what says it is the counter's property rather than the source's.
+
+**So moving the 7 onto `VideoSourceLine::frame()` is not what this supports**:
+it would carry the undoubled figure onto a scan mode measured 1.5 counter units
+away from it. What is still unmeasured is the sync arrangement --
+`InputFormatter::capturableFrame()` already passes `SeparatorFrameLeadLines` on
+a separated source, and whether the two overlap is a measurement rather than a
+deduction. `SYNC 1` on the RISC PC makes it one run.
 
 ### The display window closes after the last written pixel, and the gap shows unwritten memory
 
