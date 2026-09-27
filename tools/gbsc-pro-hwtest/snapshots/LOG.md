@@ -1055,3 +1055,9 @@ at each end, and that is the expected difference rather than a finding.
 | snapshot | what it shows |
 |---|---|
 | `golden-800x600-bypass-2026-09-21` | the reference for a correct RGBHV **pass-through**: the RISC PC at 800x600@60 on `vga`, divider 2038, `HD_HS_ST` 33, blanking open to the source's own active video at `HD_HB_SP` 340 / `HD_HB_ST` 2037. Both of the card's corner blocks measure the same width, so nothing is clipped at either end, and the frequency wedge sits at the camera's noise floor with no beat. A **full 1536-register** capture for `snapdiff.py`, with `…dump.json` beside it for `dump_registers.py --restore`. `docs/photos/2026-09-21-golden-800x600-bypass/README.md` carries how each of those is measured, and why the engine's own `HD_HB_SP` 417 / `HD_HB_ST` 1961 crops a border the standard does not know about |
+
+## The golden full-screen framing
+
+| snapshot | what it shows |
+|---|---|
+| `golden-640x480-full-screen-2026-09-27` | 640x480@60 on `vga` into 1080p, scaling path, automation frozen: the framing that puts the card's green border on the left, top and bottom of the emitted frame, with two columns of slack at the right. **Reached by hand** -- `VDS_HS_ST` 2 against the solved 0, and `VDS_DIS_HB_SP` 152 against the solved 159 -- so it is what the engine has to be made to solve rather than a state it produces. A full 1536-register capture for `snapdiff.py`, with `…dump.json` beside it for `dump_registers.py --restore`. `docs/photos/2026-09-27-golden-640x480-full-screen/README.md` carries what each register does, and why the left-edge bands it clears are hidden rather than cured |
