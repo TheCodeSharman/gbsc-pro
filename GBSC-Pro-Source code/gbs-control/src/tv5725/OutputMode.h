@@ -118,10 +118,14 @@ public:
     // leading samples off the emitted frame and leaves the same width black at
     // the far end.
     //
-    // A count of samples rather than a time, measured off the emitted frame on
-    // four output modes at two clocks.
-    // docs/investigations/the-transmitted-window-opens-late.md
-    static const uint16_t TransmittedWindowDelayPx = 20;
+    // A count of samples rather than a time, measured off the emitted frame.
+    // 20 left the picture inside the window at the near end: 640x480@60 into
+    // 1080p carried a black band at the left and none at the right, and moving
+    // the picture and the aperture eight samples earlier closed it across three
+    // re-locks. Walking VDS_DIS_HB_SP there puts the window's own start at
+    // 152.7 against a back porch ending at 140.
+    // docs/investigations/full-screen-framing-on-the-vesa-modes.md
+    static const uint16_t TransmittedWindowDelayPx = 12;
 
     static const uint16_t HorizontalTotalMax = 4096;  // VDS_HSYNC_RST is 12 bits
     static const uint16_t VerticalTotalMax = 2048;  // VDS_VSYNC_RST is 11 bits

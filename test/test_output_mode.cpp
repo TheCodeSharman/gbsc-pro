@@ -180,11 +180,11 @@ TEST_CASE("the far end is the mode's active fraction, floored by the board's por
     // would not.
     OutputTiming at108 = Mode1080p.solve(50.0f, 108000000u);
     CHECK(at108.horizontalTotal == 1920);
-    CHECK(at108.activeStop == 160 + 1675);
+    CHECK(at108.activeStop == 152 + 1675);
 
     OutputTiming at1296 = Mode1080p.solve(50.0f, 129600000u);
     CHECK(at1296.horizontalTotal == 2304);
-    CHECK(at1296.activeStop == 187 + 2010);
+    CHECK(at1296.activeStop == 179 + 2010);
 
     SUBCASE("the fraction floors, because a part pixel past the end is lost") {
         // 1920 x 1920 / 2200 is 1675.6. Rounding up puts the picture's far edge
@@ -503,8 +503,8 @@ TEST_CASE("the encoder's window opens a fixed count of samples after our blankin
     // leading samples fall off the emitted frame and the same width comes back
     // as black at the far end: 27 px of 1920 at 1080p.
     // ../docs/investigations/the-transmitted-window-opens-late.md
-    CHECK(Mode1080p.solve(50.0f, 108000000u).activeStart == 160);
-    CHECK(Mode1024p.solve(50.0f, 108000000u).activeStart == 380);
+    CHECK(Mode1080p.solve(50.0f, 108000000u).activeStart == 152);
+    CHECK(Mode1024p.solve(50.0f, 108000000u).activeStart == 372);
 
     SUBCASE("and the window's WIDTH is unchanged, so the picture only moves") {
         // Measured 1671.09 against the 1675 the fraction states at 1080p and

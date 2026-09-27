@@ -43,7 +43,7 @@ using namespace Tv5725;
 // What a 1080p raster affords this source: Axis::maximumCapture(1600), rounded
 // even. Not a constant of the part -- change the output resolution and it
 // changes with it.
-static const uint16_t RasterDivider = 1464;
+static const uint16_t RasterDivider = 1456;
 
 static float g_fieldRate = 50.08f;
 
@@ -274,7 +274,7 @@ static void checkBenchGeometry()
     // interpolates between two capture units, so the last unit an aperture
     // closing on the picture would show reads the unit after the last one
     // captured -- which is what the trailing captureMargin puts under it.
-    CHECK(VideoProcessor::VDS_HB_ST::read() == 1830);
+    CHECK(VideoProcessor::VDS_HB_ST::read() == 1822);
     CHECK(VideoProcessor::VDS_VB_ST::read() == 1121);
 
     // And the horizontal window is an ODD number of units wide, which is what
@@ -284,20 +284,20 @@ static void checkBenchGeometry()
            - VideoProcessor::VDS_HB_SP::read()) % 2 == 1);
 
     // The picture opens where the transmitted window does, so the write floor
-    // of 8 no longer binds: 160 is 32 of sync, 108 of porch -- 1080p60's
-    // 996.6 ns at this clock -- and the 20 samples the window opens late by.
+    // of 8 no longer binds: 152 is 32 of sync, 108 of porch -- 1080p60's
+    // 996.6 ns at this clock -- and the 12 samples the window opens late by.
     // Vertically 41 is its 5 sync lines and 36 of porch, and below that the
     // window would open with vsync still asserted.
     //
     // The memory window opens earlier still, by what the capture's leading
     // margin produces: the write has to reach the picture with the
     // interpolator already fed.
-    CHECK(VideoProcessor::VDS_HB_SP::read() == 59);
+    CHECK(VideoProcessor::VDS_HB_SP::read() == 51);
     CHECK(VideoProcessor::VDS_VB_SP::read() == 36);
     // The aperture opens ON the picture, both axes: the margin before it is
     // the source's own blanking, and showing it is a black band the picture
     // never reaches.
-    CHECK(VideoProcessor::VDS_DIS_HB_SP::read() == 159);
+    CHECK(VideoProcessor::VDS_DIS_HB_SP::read() == 151);
     CHECK(VideoProcessor::VDS_DIS_VB_SP::read() == 41);
     CHECK(VideoProcessor::VDS_DIS_VB_SP::read() > VideoProcessor::VDS_VS_SP::read());
 
@@ -1257,7 +1257,7 @@ TEST_CASE("a framed picture holds every window against the framing")
     // The near edge follows where the transmitted window opens, less the write
     // origin and the capture's leading margin, rather than resting on the
     // floor of 8.
-    CHECK(VideoProcessor::VDS_HB_SP::read() == 38);
+    CHECK(VideoProcessor::VDS_HB_SP::read() == 30);
     CHECK(VideoProcessor::VDS_VB_SP::read() > 0);
     CHECK(VideoProcessor::VDS_DIS_HB_SP::read() > VideoProcessor::VDS_HB_SP::read());
     CHECK(VideoProcessor::VDS_DIS_VB_SP::read() > VideoProcessor::VDS_VB_SP::read());
@@ -1516,7 +1516,7 @@ TEST_CASE("an output change re-derives the divider even where the doubling holds
     engine.setOutputMode(&Mode480p);
     engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(acquisition));
-    REQUIRE(dividerInForce() == 1824);
+    REQUIRE(dividerInForce() == 1816);
 
     // The output alone. Nothing tells the engine the source moved, because it
     // has not -- which is the whole of what /uc?<key> does.
@@ -1524,7 +1524,7 @@ TEST_CASE("an output change re-derives the divider even where the doubling holds
     for (uint8_t i = 0; i < SourceMeasurement::SteadySamples; ++i)
         pollOnce(acquisition);
 
-    CHECK(dividerInForce() == 1872);
+    CHECK(dividerInForce() == 1864);
 }
 
 TEST_CASE("the source is measured through a known divider, not the last mode's")
