@@ -298,14 +298,29 @@ TEST_CASE("a progressive source blanks nothing at the head of the captured line"
     CHECK(Wire.field(1, 0x26, 0, 12) == 2);
 }
 
-TEST_CASE("a line-doubled source keeps the line-double FIFO's reset position")
+TEST_CASE("a line-doubled source resets the FIFO where the source's line starts")
 {
     FreshChip chip;
 
+    // The reset is the doubled path's whole origin term: it moves the picture
+    // one ADC sample per register unit, measured on the bench by clipping the
+    // card's frame out of the capture and reading the window's own start.
+    //
+    //   IF_HBIN_SP  272 -> 208 -> 144   moved the source's active start
+    //   80.9 -> 95.8 -> 110.6 source pixels against the mode file's 110
+    //
+    // The value each mode wants, from the same measurement -- a COUNT, since
+    // holding the divider at 1800 rather than 2200 moved it 5 samples where a
+    // fraction of the line would have moved it 27:
+    //
+    //   50.08 Hz   X320 Y256 147, X640 Y256 141, X768 Y288 145, at 1800 152
+    //   60 Hz      X640 Y240 175, X640 Y200 175
+    //
+    // ../docs/investigations/the-line-doubler-resets-the-fifo-late.md
     inputFormatter.applyScan(1438, false, false);
     inputFormatter.applyScan(1438, true, false);
 
-    CHECK(Wire.field(1, 0x26, 0, 12) == 272);
+    CHECK(Wire.field(1, 0x26, 0, 12) == 160);
 }
 
 // IF_HBIN_SP IS THE LINE-DOUBLE FIFO'S RESET WITH THE FIFO IN CIRCUIT, AND

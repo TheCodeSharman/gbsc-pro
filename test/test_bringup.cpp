@@ -341,7 +341,7 @@ TEST_CASE("the input formatter's horizontal path is owned on a 15 kHz RGB source
     CHECK(written(1, 0x02, 5, 2) == 3u);   // IF_HS_Y_PDELAY
     CHECK(written(1, 0x10, 0, 11) == 2u);  // IF_HB_ST,  blanking set 0
     CHECK(written(1, 0x12, 0, 11) == 72u); // IF_HB_SP,  blanking set 0
-    CHECK(written(1, 0x26, 0, 12) == 272u);// IF_HBIN_SP
+    CHECK(written(1, 0x26, 0, 12) == 160u);// IF_HBIN_SP, measured, not the tables'
 }
 
 TEST_CASE("the decimation is not written apart from the line counter it sizes")

@@ -289,9 +289,18 @@ public:
     // docs/investigations/the-hbin-start-blanks-the-captured-tail.md
     static const uint16_t DoubledTailBlanking = 96;
 
-    // The reset position, which has no derivation -- the ten scaling tables
-    // shipped 136..272 and this is the one the bench picture is right on.
-    static const uint16_t LineDoubleReset = 272;
+    // The reset position, in ADC samples. It is the doubled path's whole origin
+    // term: the picture moves one sample per register unit, so a reset late by
+    // N samples captures the source's line N samples early and every window the
+    // solve places goes with it. Measured 141..152 at 50 Hz and 175 at 60 Hz,
+    // with no mechanism for the split and every input register identical across
+    // it, so one value takes both within 15 samples where 272 was out by 127.
+    //
+    // A COUNT: holding the divider at 1800 rather than 2200 moved what the
+    // source wants by 5 samples, where a fraction of the line would have moved
+    // it 27.
+    // ../../../../docs/investigations/the-line-doubler-resets-the-fifo-late.md
+    static const uint16_t LineDoubleReset = 160;
 
     // The scan mode, in every register that carries it: the three the line
     // doubler is routed by, and the two that size the line for it -- the counter
