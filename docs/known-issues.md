@@ -35,6 +35,31 @@ Vertically the picture is flush: 0 or 1 output pixel of the source's own
 blanking on screen across six DMT modes.
 `docs/investigations/the-transmitted-window-is-latched-from-our-blanking.md`.
 
+### A held field rate 1.4% high survives the source returning, and the frame time lock cannot converge on it
+
+**Measured on the bench RISC PC at `X320 Y256 C256 F50`, after a run of mode
+changes through 60 Hz modes and a round trip through 720p and 960p.** The engine
+held 50.766 Hz against the source's 50.081, and the line rate with it -- 15839
+against 15625 -- steadily, with `state: acquired`, `STATUS_SYNC_PROC_VTOTAL` a
+clean 311 and `HTOTAL` matching the divider. Nothing in a register dump is
+wrong.
+
+**What it costs is the frame time lock.** At the wrong rate the phase never
+settles: it slides monotonically and wraps the counter every ~17 s, the error
+sweeping its whole range, while the steering has only ~30 mHz of resolution
+(50735 / 50766 / 50796 mHz) and cannot close a ~57 mHz gap. The display clock
+runs 109.36 MHz against the 108 asked for, and the picture judders vertically.
+
+`/sc?~` clears it at once. Afterwards the same measurement reads 50.081 and the
+lock holds a phase of 810674..810712 out of 3194880 across 38 s -- a spread of
+0.001%.
+
+The rate is measured and then HELD, and `rateFollowsCount()` judges a new
+reading against the held one, so a rate accepted once outlives the source that
+produced it. The count is the thing that did not move here: 311 lines is right
+for both the rate held and the rate true, so nothing in the pair disagreed.
+**A count that fits cannot arbitrate a rate**, and there is no second witness.
+
 ### The display window closes after the last written pixel, and the gap shows unwritten memory
 
 **Measured on the bench RISC PC, `X320 Y256 C256 F50` into 1080p, default
