@@ -10,26 +10,30 @@ regardless of which step is in flight.
 
 ## Reaches the picture
 
-### The emitted frame is wider than the aperture, so the picture cannot reach both edges
+### The transmitted window's start is latched, so the picture cannot reach both edges
 
-**Measured at 800x600@60 into 1080p.** The picture fills the display window
-exactly -- 1388.4 px of production into 1388 px of window -- but spans only
-about 1904 of the emitted frame's 1920 columns, so the frame covers ~1401 raster
-pixels against an aperture of 1388. The shortfall shows as a black band that
-does not move when the capture is panned and does not scale with magnification.
+**The window the chain carries is the right WIDTH and starts in the wrong
+place**, and the start is not something the engine can compute: the encoder
+latches it at link-up near wherever `VDS_DIS_HB_SP` was at that moment. Measured
+at 1080p across six rasters it lands 0.4 to 8.6 units before the aperture, and
+two acquisitions of one framing differ by six output pixels.
+
+Because the width is right, the two ends are one fault: a window latched N units
+early puts N units of black at the left and loses N units of picture off the
+right. Every margin the card measures across the DMT set reads `N | 0` -- all
+the slack at the left, none at the right.
+
+**`OutputMode::TransmittedWindowDelayPx` is fitted to that scatter**, and no
+constant can correct it: charging the aperture moves the blanking the latch
+follows, so the window moves with it.
 
 The capture window is NOT the fault: measured inside one acquisition with both
 of the card's green columns in frame, the source's active video runs 298.9 ..
 1403.0 units against the engine's window of 298 .. 1403.
 
-**`VDS_DIS_HB_SP` does not move the emitted frame** -- walked 159 to 179 with
-automation frozen, the green columns did not move at all. The transmitted window
-is latched at link-up, so any measurement that walks a blanking register and
-reads the emitted frame needs a `PAD_SYNC_OUT_ENZ` re-lock at every step.
-
 Vertically the picture is flush: 0 or 1 output pixel of the source's own
 blanking on screen across six DMT modes.
-`docs/investigations/the-emitted-frame-is-wider-than-the-aperture.md`.
+`docs/investigations/the-transmitted-window-is-latched-from-our-blanking.md`.
 
 ### The HC32 stops following input selections, and only a true power cycle returns it
 

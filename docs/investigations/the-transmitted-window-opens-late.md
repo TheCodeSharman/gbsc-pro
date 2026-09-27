@@ -1,5 +1,14 @@
 # The transmitted window opens later than our back porch, by a fixed count of samples
 
+**THE START IS SUPERSEDED. THE WIDTH IS NOT.** The delay below is not a constant
+of the chain: the window's start is LATCHED from `VDS_DIS_HB_SP` at link-up, so
+the four readings of ~20 are four samples of where the latch happened to land.
+Re-measured on one output mode across six rasters it runs 0.4 to 8.6 units, and
+a constant cannot express it because charging the aperture moves the blanking
+the latch follows. The width measurement here is confirmed by that sweep.
+[the-transmitted-window-is-latched-from-our-blanking.md](the-transmitted-window-is-latched-from-our-blanking.md).
+
+
 `OutputMode::solve()` used to place active video at `sync + back porch`, both
 converted from the standard's durations, on the reading that the chain starts
 carrying video where our blanking ends. It does not. It starts about **20
@@ -8,8 +17,8 @@ porch therefore loses its leading samples off the emitted frame and leaves the
 same width black at the far end.
 
 `OutputMode::TransmittedWindowDelayPx` charges it. The window's WIDTH is
-unaffected -- that is the mode's own fraction, and it is confirmed here -- so
-the whole of the correction is a shift.
+unaffected -- that is the mode's own fraction, and it is confirmed here and
+again by the later sweep -- so the whole of the correction is a shift.
 
 ## What the picture does without it
 
@@ -50,7 +59,10 @@ itself, 1920 columns, no camera and no photo-column mapping to re-derive.
 `docs/bench-output-capture.md`.
 
 Each edge of the window is found by walking one of our own blanking registers
-INTO it and extrapolating the emitted black margin back to zero:
+INTO it and extrapolating the emitted black margin back to zero. **Read off the
+first lit column, as below, that margin runs late wherever the card's own black
+bands lie under the blanking edge** -- difference against the previous step
+instead:
 
 | `VDS_DIS_HB_ST` | right margin |
 |---|---|
@@ -91,7 +103,7 @@ delta. A constant time would put it at 15 units rather than 20.7.
 
 | refuted | how |
 |---|---|
-| the window latching from our blanking at lock | `VDS_DIS_HB_SP` set to 300 and the link re-acquired by toggling `PAD_SYNC_OUT_ENZ`: the window stayed at 159.1, and putting the blanking back gave 159.5. Three measurements either side of two re-locks, all the same window |
+| ~~the window latching from our blanking at lock~~ | **THIS ROW IS ITSELF REFUTED.** `VDS_DIS_HB_SP` at 300 across a re-lock leaves the window where it was, and that is the one direction the latch does not move in: at 100 it latches 100. [the-transmitted-window-is-latched-from-our-blanking.md](the-transmitted-window-is-latched-from-our-blanking.md) |
 | our own hsync pulse | `VDS_HS_SP` walked 16, 32, 48, 64 with a re-lock at each: start 159.52, stop 1830.61 and width 1671.09 at every one of them, to the digit |
 | the standard's blanking as a fraction | `(sync + porch) / totalStd` predicts 167 at 1080p, 432 at 1024p, 508 at 960p and 340 at 720p, against 159.5 / 380.3 / 443.8 / 304.8 -- wrong by up to 64 units and in no fixed direction |
 | the back porch as a fraction with the sync kept a duration | fits 1080p to 1.4 units and misses 1024p by 29 |
