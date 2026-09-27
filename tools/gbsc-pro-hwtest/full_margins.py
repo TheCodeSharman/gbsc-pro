@@ -76,7 +76,11 @@ def open_wide(host):
     took = gbs_unit.wait_for(
         lambda: (lambda at: at if at and at["full"] and not at["queued"] else None)(
             gbs_unit.get_json(host, "/framing/full")[1]), timeout=20.0)
-    return took and gbs_unit.framing_settled(host)
+    if not took:
+        return None
+    # The re-solve moves the framing while it lands, so one pair of reads can
+    # disagree for a reason that is not a fault.
+    return gbs_unit.wait_for(lambda: gbs_unit.framing_settled(host), timeout=20.0)
 
 
 def green_edges(clip, axis, expected):

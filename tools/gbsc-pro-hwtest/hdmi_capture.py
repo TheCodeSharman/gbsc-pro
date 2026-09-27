@@ -46,12 +46,17 @@ def device():
     sys.exit(f"no capture device with USB id {USB_ID} -- is the dongle plugged in?")
 
 
-def frames(count, dev, width=WIDTH, height=HEIGHT):
-    """`count` frames after the warm-up, as (count, height, width, 3) RGB."""
+def frames(count, dev, width=WIDTH, height=HEIGHT, warmup=WARMUP):
+    """`count` frames after the warm-up, as (count, height, width, 3) RGB.
+
+    A shorter `warmup` is for a walk that takes a reading per register step and
+    never touches the link: the default is sized for a source or an output that
+    has just changed, and paying it per step is most of the walk.
+    """
     raw = subprocess.run(
         ["ffmpeg", "-hide_banner", "-v", "error", "-f", "v4l2",
          "-input_format", "yuyv422", "-video_size", f"{width}x{height}", "-i", dev,
-         "-vf", f"select=gte(n\\,{WARMUP})", "-frames:v", str(count),
+         "-vf", f"select=gte(n\\,{warmup})", "-frames:v", str(count),
          "-fps_mode", "passthrough", "-pix_fmt", "rgb24", "-f", "rawvideo", "-"],
         capture_output=True).stdout
     got = len(raw) // (width * height * 3)
