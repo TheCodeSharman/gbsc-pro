@@ -106,6 +106,13 @@ TEST_CASE("the divider keeps the line inside what the scaler can produce")
     }
 }
 
+// The pulse's own duration. hsyncStop counts from the line's origin, so it
+// carries HsyncStartPx with it and is not the pulse.
+static double widthNs(const Tv5725::OutputTiming &timing)
+{
+    return (timing.hsyncStop - timing.hsyncStart) * 1000000000.0 / timing.demandedHz();
+}
+
 TEST_CASE("the sync pulse is CEA-861's, converted to the clock the line runs at")
 {
     // The standard is a TIME, so the conversion is unambiguous: 1080p sync is
@@ -131,13 +138,11 @@ TEST_CASE("the sync pulse is CEA-861's, converted to the clock the line runs at"
 
     SUBCASE("all three are the same 296 ns, which is the point") {
         // If they were a fixed pixel count instead, this would fail at two of the
-        // three clocks.
-        CHECK_MESSAGE(at108.hsyncStop * 1000000000.0 / at108.demandedHz() > 280.0,
-                      "108 MHz pulse too short");
-        CHECK_MESSAGE(at1296.hsyncStop * 1000000000.0 / at1296.demandedHz() < 320.0,
-                      "129.6 MHz pulse too long");
-        CHECK_MESSAGE(at648.hsyncStop * 1000000000.0 / at648.demandedHz() > 280.0,
-                      "64.8 MHz pulse too short");
+        // three clocks. The WIDTH, not the stop: the stop counts from the line's
+        // origin and so carries HsyncStartPx, which is not sync time.
+        CHECK_MESSAGE(widthNs(at108) > 280.0, "108 MHz pulse too short");
+        CHECK_MESSAGE(widthNs(at1296) < 320.0, "129.6 MHz pulse too long");
+        CHECK_MESSAGE(widthNs(at648) > 280.0, "64.8 MHz pulse too short");
     }
 }
 
@@ -175,18 +180,34 @@ TEST_CASE("the SD modes carry less of the line than their standard states")
     }
 }
 
+// The delay slides the whole window and does not resize it, so taking it back off
+// the far edge recovers the raster the standard publishes. Anything sizing the
+// SAMPLING from the raster has to use that, or a placement constant reaches the
+// divider and cannot be tuned without invalidating itself.
+TEST_CASE("the delay slides the window without changing what the raster holds")
+{
+    const OutputTiming at108 = Mode1080p.solve(50.0f, 108000000u);
+    const long published = at108.activeStop - OutputMode::TransmittedWindowDelayPx;
+    CHECK(published == at108.activeStart - OutputMode::TransmittedWindowDelayPx
+                           + at108.activeWidth());
+    CHECK(at108.activeStop - at108.activeStart == at108.activeWidth());
+}
+
 TEST_CASE("the far end is the mode's active fraction, floored by the board's porch")
 {
     // 1080p is 1920 of CEA's 2200, so a 1920 px line carries 1675 and a 2304 px
     // one 2010 -- a fraction, so it grows with the raster where a duration
     // would not.
+    // The start is the mode's own sync and porch plus the transmitted window's
+    // delay, so it is taken from activeStart rather than restated as a literal
+    // that moves whenever the delay does.
     OutputTiming at108 = Mode1080p.solve(50.0f, 108000000u);
     CHECK(at108.horizontalTotal == 1920);
-    CHECK(at108.activeStop == 152 + 1675);
+    CHECK(at108.activeStop == at108.activeStart + 1675);
 
     OutputTiming at1296 = Mode1080p.solve(50.0f, 129600000u);
     CHECK(at1296.horizontalTotal == 2304);
-    CHECK(at1296.activeStop == 179 + 2010);
+    CHECK(at1296.activeStop == at1296.activeStart + 2010);
 
     SUBCASE("the fraction floors, because a part pixel past the end is lost") {
         // 1920 x 1920 / 2200 is 1675.6. Rounding up puts the picture's far edge
@@ -505,8 +526,12 @@ TEST_CASE("the encoder's window opens a fixed count of samples after our blankin
     // leading samples fall off the emitted frame and the same width comes back
     // as black at the far end: 27 px of 1920 at 1080p.
     // ../docs/investigations/the-transmitted-window-opens-late.md
-    CHECK(Mode1080p.solve(50.0f, 108000000u).activeStart == 152);
-    CHECK(Mode1024p.solve(50.0f, 108000000u).activeStart == 372);
+    // Stated as the mode's own sync and back porch plus the delay, so these do
+    // not have to be re-derived every time the delay is tuned.
+    CHECK(Mode1080p.solve(50.0f, 108000000u).activeStart
+          == 140 + OutputMode::TransmittedWindowDelayPx);
+    CHECK(Mode1024p.solve(50.0f, 108000000u).activeStart
+          == 360 + OutputMode::TransmittedWindowDelayPx);
 
     SUBCASE("and the window's WIDTH is unchanged, so the picture only moves") {
         // Measured 1671.09 against the 1675 the fraction states at 1080p and
@@ -584,4 +609,21 @@ TEST_CASE("an output mode carries the same fraction of the line at every field r
         // it is 1424 - activeStart, which throws picture away.
         CHECK(at75.activeWidth() == 1440 * 1280 / 1800);
     }
+}
+
+// Measured off the emitted frame against the card's one-pixel green border, on a
+// re-locked link: the picture rides the pulse, so moving the pulse later moves
+// the picture earlier against the sink's reference and hands back emitted pixels
+// at the left. Thirteen samples is what puts the source's outermost pixel on the
+// frame's outermost pixel at 640x480@60; two, four and ten all leave black there.
+// docs/investigations/full-screen-framing-on-the-vesa-modes.md
+TEST_CASE("the output hsync pulse starts thirteen samples into the line")
+{
+    CHECK(OutputMode::HsyncStartPx == 13);
+
+    // And the standard's width survives the offset, so the pulse is not
+    // shortened by what the start gains. 1080p sync is 44 of 2200, which is 32
+    // units of a 1600 raster.
+    const OutputTiming at108 = Mode1080p.solve(60.0f, 108000000u);
+    CHECK(at108.hsyncStop - at108.hsyncStart == 32);
 }

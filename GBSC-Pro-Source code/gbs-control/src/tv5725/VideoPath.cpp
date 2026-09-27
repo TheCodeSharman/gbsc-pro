@@ -810,9 +810,18 @@ uint16_t VideoPath::dividerCeilingForOutput() const
     if (!raster.usable())
         return 0;
 
+    // The PUBLISHED raster's far edge, with the transmitted window's delay taken
+    // back off it. The delay slides our whole window earlier to meet a chain
+    // that starts carrying video late; it does not change how much capture the
+    // raster can hold. Leaving it in puts a placement compensation into the
+    // sampling decision, and then every adjustment of it moves the divider,
+    // which moves the capture, the scale and the stride -- so the aperture that
+    // was correct before the change is not correct after it, and the constant
+    // cannot be tuned at all.
     const uint16_t showable =
         OutputWindow::maximumCapture(AxisHorizontal, raster.horizontalTotal, 0,
-                                     raster.activeStop);
+                                     (uint16_t)(raster.activeStop
+                                                - OutputMode::TransmittedWindowDelayPx));
     if (showable == 0)
         return 0;
 

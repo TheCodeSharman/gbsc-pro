@@ -122,10 +122,23 @@ public:
     // 20 left the picture inside the window at the near end: 640x480@60 into
     // 1080p carried a black band at the left and none at the right, and moving
     // the picture and the aperture eight samples earlier closed it across three
-    // re-locks. Walking VDS_DIS_HB_SP there puts the window's own start at
-    // 152.7 against a back porch ending at 140.
+    // re-locks.
+    //
+    // THREE. The aperture decides how much of the card's green border is shown,
+    // and the border is the whole measurement: at 640x480@60 into 1080p this
+    // puts VDS_DIS_HB_SP at 143 and the emitted frame carries NO blank column at
+    // the left, the border starting on column 0. It cannot go much further --
+    // the samples this opens into are where the horizontal scaler's left-edge
+    // artefact lives, so the aperture is bounded by an artefact rather than by
+    // the raster.
+    //
+    // It must not reach the sampling clock. VideoPath::dividerCeilingForOutput()
+    // takes it back off the published raster's far edge for that reason: left
+    // in, every adjustment of this moves the divider, which moves the capture,
+    // the scale and the stride, so the value that was correct before the change
+    // is wrong after it and the constant cannot be tuned at all.
     // docs/investigations/full-screen-framing-on-the-vesa-modes.md
-    static const uint16_t TransmittedWindowDelayPx = 12;
+    static const uint16_t TransmittedWindowDelayPx = 3;
 
     // Where the output hsync pulse STARTS. Not zero: on the line's own origin
     // the left-most two columns lose two bands of 34 emitted rows -- measured
@@ -133,13 +146,26 @@ public:
     // and beyond clean, so it is the first samples of a line rather than
     // anything in the picture.
     //
-    // Two samples clears them and four is too many: the picture rides the
-    // pulse, so the far edge retreats by whatever the near edge gains and at
-    // four the green border is off the right. The pulse's WIDTH does not come
-    // into it -- 2..32 and 2..34 measure identical -- so only the offset is
-    // stated here and the width stays the standard's duration.
-    // docs/photos/2026-09-27-golden-640x480-full-screen/README.md
-    static const uint16_t HsyncStartPx = 2;
+    // THIRTEEN, and the picture rides the pulse: moving the pulse later moves
+    // the picture earlier against the sink's reference. Measured at 640x480@60
+    // into 1080p on a re-locked link, against the card's one-pixel green border,
+    // which marks the source's outermost pixel: at two, four and ten the frame
+    // carries blank columns at the left, and at thirteen the border sits on
+    // column 0 with none. Two of them clear the bands; the rest is framing, and
+    // what it costs is at the far edge -- the picture rides the pulse as a
+    // whole, so the right gains blank columns as the left loses them.
+    //
+    // It is not in activeStart, so it reaches neither the aperture nor the
+    // sampling clock -- only VDS_HS_ST and VDS_HS_SP move with it.
+    //
+    // The pulse's WIDTH stays the standard's duration, and the offset must not
+    // eat into it -- at a stop left where a smaller offset put it the pulse is
+    // short of the standard by the difference. The stop is the start plus the
+    // duration for that reason. Widening it beyond the standard buys nothing
+    // measurable: 30, 32 and 36 units hold the emitted edge to 44.50 px with a
+    // spread of 0.1 px over 120 frames each, and lose no frames.
+    // docs/investigations/full-screen-framing-on-the-vesa-modes.md
+    static const uint16_t HsyncStartPx = 13;
 
     static const uint16_t HorizontalTotalMax = 4096;  // VDS_HSYNC_RST is 12 bits
     static const uint16_t VerticalTotalMax = 2048;  // VDS_VSYNC_RST is 11 bits

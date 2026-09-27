@@ -35,7 +35,7 @@ using namespace Tv5725;
 // What a 1080p raster affords this source: Axis::maximumCapture(1600), rounded
 // even. Not a constant of the part -- change the output resolution and it
 // changes with it.
-static const uint16_t RasterDivider = 1456;
+static const uint16_t RasterDivider = 1444;
 
 // The bench RiscPC as SolvedEngine seeds it, but solved through the layer
 // rather than by calling the engine's own poll().
