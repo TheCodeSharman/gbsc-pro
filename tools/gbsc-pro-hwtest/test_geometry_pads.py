@@ -102,6 +102,14 @@ def units_for(pixels, scale_reg, granularity=HORIZONTAL_GRANULE):
 # stale.
 SCALE_UNITY = 1024
 
+# Tv5725::SyncProcessor::RetimeOriginSamples: how far behind the retime window's
+# stop the retimed pulse sits, in ADC samples. Measured, not derived.
+RETIME_ORIGIN_SAMPLES = 63
+
+# The duty is read a pass after the stop is written and STATUS_SYNC_PROC_HLOW_LEN
+# wobbles by about a sample either way, so the two cannot be equal.
+RETIME_TOLERANCE_SAMPLES = 4
+
 OutputAxis = collections.namedtuple(
     "OutputAxis",
     "name capture_sp capture_st window_sp window_st display_sp display_st "
@@ -1684,16 +1692,34 @@ def test_the_sampling_divider_is_one_quantity_in_three_registers(
     # the table's business and it moved 2553 -> 2558 across this very run; what
     # must hold is that the three registers describe the SAME line.
 
-    # Tv5725::SourceMeasurement::ifLineFor and ::retimeStopFor. The IF counts the ADC line
-    # after decimation by two; the retime stop sits 93% of the way along it.
+    # The IF counts the ADC line after decimation by two.
     assert if_line == divider // 2, (
         f"IF_HSYNC_RST is {if_line}, want {divider // 2} for PLLAD_MD {divider}. "
         f"The input formatter is counting to the end of a line the ADC is not "
         f"delivering -- 2026-08-09, solid green screen.")
-    assert retime == divider * 93 // 100, (
-        f"SP_RT_HS_SP is {retime}, want {divider * 93 // 100} for PLLAD_MD "
-        f"{divider}. The sync processor's retime window is sized for a divider "
-        f"that is no longer in force.")
+
+    # Tv5725::SyncProcessor::retimeStopFor, re-derived from the live sync width
+    # rather than from a fraction. The window's stop is the capture counter's
+    # ORIGIN and follows the source's own pulse; 93% of the divider is only
+    # right where that pulse takes 7% of the line.
+    #
+    # A tolerance, not an equality: the duty is read a pass after the stop is
+    # written and drifts by an ADC sample, and STATUS_SYNC_PROC_HLOW_LEN wobbles
+    # by about the same again.
+    low = read_named(host, "STATUS_SYNC_PROC_HLOW_LEN")
+    assert low, "STATUS_SYNC_PROC_HLOW_LEN came back 0, so there is no pulse"
+    want = divider - low + RETIME_ORIGIN_SAMPLES
+    assert abs(retime - want) <= RETIME_TOLERANCE_SAMPLES, (
+        f"SP_RT_HS_SP is {retime}, want {want} for PLLAD_MD {divider} and a "
+        f"sync width of {low}. The capture counter's origin is not where the "
+        f"source's sync pulse is.")
+
+    # A stop past the end of the line is inert -- the picture does not move at
+    # any value and every reading around it freezes, which reads as a control
+    # that does nothing rather than as a value out of range.
+    assert retime <= divider, (
+        f"SP_RT_HS_SP is {retime}, past PLLAD_MD {divider}, so the retime "
+        f"window closes after the line ends and nothing it places takes.")
 
     # The latch, and ONLY once the source is counting. Both readings come from
     # one /getregs burst: segment 0 holds live measurements, so fetching them

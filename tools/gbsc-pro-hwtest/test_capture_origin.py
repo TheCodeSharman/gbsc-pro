@@ -7,19 +7,18 @@ sum:
   * head blanking of 22 units, applied only where the line doubler IS in
     circuit: the capture path writes past the hsync pulse there, and a window
     opened at the pulse's end captures that as saturated green;
-  * the hsync pulse, which is only at the head of the line while the pulse is
-    positive-going. STATUS_SYNC_PROC_HSPOL says which, and where it reads 0 the
-    origin is the pulse's trailing edge, the sync interval is already behind it,
-    and excluding it again throws away video.
+  * the hsync pulse, which is at the head WHATEVER POLARITY THE SOURCE SENDS.
+    SyncProcessor::normaliseHsyncPolarity() inverts a high-active one before the
+    count is taken, so every source reaches this counter as a low-active pulse on
+    the leading edge, and compensating for the polarity here applies it a second
+    time.
+    docs/investigations/the-capture-floor-followed-a-normalised-polarity.md
 
 THERE IS NO CAPTURE LAG. This suite carried one of 72 units for four modes'
 worth of measurement, and the whole of it was SP_HS_LOOP_SEL taking the sync
 retiming out of circuit -- engaging the retiming accounts for 77.4 counter
 units against the 77.6 the correction applied.
 docs/investigations/the-capture-lag-was-the-retiming-bypassed.md
-
-Every AKF50 640x480 and 1280x480 mode is sync_pol 3, so an inverted pulse is one
-`printf 'MODE X640 Y480 C256 F60\\n' | nc <riscpc> 6502` away.
 
 docs/investigations/a-standard-mode-loses-both-edges-while-every-stage-measures-correct.md
 
@@ -39,12 +38,18 @@ from gbs_unit import get_json, locked_steadily, read_fields, wait_for
 # carries.
 DOUBLED_HEAD_BLANKING_UNITS = 22
 
-# The sync processor's own validity window for the hsync duty, and what the
-# retimer is configured for when the reading falls outside it.
-DUTY_MIN, DUTY_MAX, FALLBACK_DUTY = 0.041, 0.152, 0.07
+# Tv5725::HsyncPulse's own window on the duty. NOTHING IS SUBSTITUTED OUTSIDE
+# IT: an HsyncPulse has been judged a pulse where it was taken, so a reading
+# outside this means the engine has not solved against the source in front of
+# it, and asserting a floor against a guess is what this suite must not do.
+DUTY_MIN, DUTY_MAX = 0.041, 0.152
+
+# Tv5725::CaptureWindow::FirstCapturableUnit. IF_HB_SP2 at 0 doubles and smears
+# the picture, and 1 is clean with every other register identical.
+FIRST_CAPTURABLE_UNIT = 1
 
 FIELDS = ["PLLAD_MD", "IF_HSYNC_RST", "IF_LD_RAM_BYPS",
-          "STATUS_SYNC_PROC_HLOW_LEN", "STATUS_SYNC_PROC_HSPOL"]
+          "STATUS_SYNC_PROC_HLOW_LEN"]
 
 
 @pytest.fixture
@@ -60,11 +65,12 @@ def solved(host):
     return at
 
 
+def duty_of(at):
+    return at["STATUS_SYNC_PROC_HLOW_LEN"] / at["PLLAD_MD"] if at["PLLAD_MD"] else 0.0
+
+
 def sync_units(at):
-    duty = at["STATUS_SYNC_PROC_HLOW_LEN"] / at["PLLAD_MD"] if at["PLLAD_MD"] else 0.0
-    if duty < DUTY_MIN or duty > DUTY_MAX:
-        duty = FALLBACK_DUTY
-    return math.ceil((at["IF_HSYNC_RST"] + 1) * duty)
+    return math.ceil((at["IF_HSYNC_RST"] + 1) * duty_of(at))
 
 
 def first_capture(at):
@@ -78,34 +84,24 @@ def first_capture(at):
     return at["geometry"]["fh"]
 
 
+def test_the_source_reads_as_a_pulse_at_all(solved):
+    """Or every floor below is asserted against a duty the engine refused."""
+    duty = duty_of(solved)
+    assert DUTY_MIN <= duty <= DUTY_MAX, (
+        f"the sync width reads {solved['STATUS_SYNC_PROC_HLOW_LEN']} of "
+        f"{solved['PLLAD_MD']}, a duty of {duty:.4f}, outside the "
+        f"{DUTY_MIN}..{DUTY_MAX} an HsyncPulse is judged on -- so the engine has "
+        f"not solved against the source in front of it")
+
+
 def test_the_capture_opens_past_what_the_path_writes_over(solved):
     doubled = solved["IF_LD_RAM_BYPS"] == 0
     blanking = DOUBLED_HEAD_BLANKING_UNITS if doubled else 0
-    head_guard = sync_units(solved) if solved["STATUS_SYNC_PROC_HSPOL"] else 0
-    due = blanking + head_guard
-
-    # The floor never reaches zero: measured at 640x480@60, whose pulse is
-    # behind the origin, IF_HB_SP2 at 0 doubles and smears the picture.
-    due = max(due, 1)
+    due = max(blanking + sync_units(solved), FIRST_CAPTURABLE_UNIT)
 
     assert first_capture(solved) == due, (
-        f"line doubled {doubled}, hsync positive "
-        f"{bool(solved['STATUS_SYNC_PROC_HSPOL'])}, sync {sync_units(solved)} units: "
+        f"line doubled {doubled}, sync {sync_units(solved)} units: "
         f"first capture should be {due}, engine reports {first_capture(solved)}")
-
-
-def test_an_inverted_pulse_does_not_cost_a_sync_width(solved):
-    """The head guard belongs to the polarity that puts the pulse at the head.
-
-    On the other one the sync interval is behind the origin, so a guard there is
-    video thrown away -- 86 units of it on 640x480@75, 132 on 640x480@60.
-    """
-    if solved["STATUS_SYNC_PROC_HSPOL"]:
-        pytest.skip("hsync is positive-going: the pulse really is at the head")
-
-    assert first_capture(solved) < sync_units(solved), (
-        f"hsync is inverted, so the {sync_units(solved)}-unit pulse is behind the "
-        f"origin, but the capture still starts at {first_capture(solved)}")
 
 
 def test_only_a_doubled_line_is_blanked_at_the_head(solved):
@@ -113,8 +109,7 @@ def test_only_a_doubled_line_is_blanked_at_the_head(solved):
     the capture path write past the pulse.
     """
     doubled = solved["IF_LD_RAM_BYPS"] == 0
-    head_guard = sync_units(solved) if solved["STATUS_SYNC_PROC_HSPOL"] else 0
-    without_sync = first_capture(solved) - head_guard
+    without_sync = first_capture(solved) - sync_units(solved)
 
     if doubled:
         assert without_sync == DOUBLED_HEAD_BLANKING_UNITS, (
@@ -123,6 +118,6 @@ def test_only_a_doubled_line_is_blanked_at_the_head(solved):
     else:
         # Nothing is written past an undoubled line's pulse, so the floor is the
         # pulse and the one-unit clamp under it.
-        assert without_sync <= 1, (
+        assert without_sync <= FIRST_CAPTURABLE_UNIT, (
             f"undoubled, so nothing but the pulse is due, "
             f"engine reports {without_sync} past it")
