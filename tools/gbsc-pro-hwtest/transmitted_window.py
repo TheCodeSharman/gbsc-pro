@@ -60,6 +60,17 @@ MOVED = 6.0
 STEP = 20
 POINTS = 12
 
+# Whether the solve got the scale it ASKED for, which is what makes the aperture
+# the thing the window can be compared against. Tv5725::Scale clamps to 342 and
+# 1023, and an output mode with fewer active lines than the source needs a
+# minification the part cannot express -- so the picture is cropped instead and
+# no longer fills the aperture, while VDS_HSCALE sits nowhere near a bound.
+#
+# Asking the register is therefore not enough. `capture x Unity / scale` against
+# the aperture's own width catches both, and says by how much.
+SCALE_UNITY = 1024
+FILLS_APERTURE_PX = 2.0
+
 
 def columns(dev):
     return hdmi_capture.luma(hdmi_capture.frames(3, dev)[-1]).mean(axis=0)
@@ -199,6 +210,10 @@ def measure(host, dev, output, step, points, do_relock):
     if not settled(host):
         return None
     filled = fill(host, dev)
+    # The capture the scale is fitted to, read in the same breath as the scale:
+    # the two together say what the solve PRODUCED, and a solve that did not get
+    # the scale it asked for produces something narrower than its own aperture.
+    capture = (gbs_unit.get_json(host, "/geometry")[1] or {}).get("eh", 0)
     solved = gbs_unit.read_fields(host, ["VDS_DIS_HB_SP", "VDS_DIS_HB_ST",
                                          "VDS_HSYNC_RST", "VDS_HSCALE"])
     opens, closes = solved["VDS_DIS_HB_SP"], solved["VDS_DIS_HB_ST"]
@@ -216,7 +231,12 @@ def measure(host, dev, output, step, points, do_relock):
     start, nearSlope, nearUsed, nearOff = crossing(near)
     stop, farSlope, farUsed, farOff = crossing(far)
     gbs_unit.get(host, "/sc?B")
-    return dict(output=output, filled=filled, total=solved["VDS_HSYNC_RST"] + 1,
+    scale = solved["VDS_HSCALE"]
+    produced = (float(capture) * SCALE_UNITY / scale) if scale else 0.0
+    aperture = float(closes - opens)
+    return dict(output=output, filled=filled, scale=scale, produced=produced,
+                clamped=abs(produced - aperture) > FILLS_APERTURE_PX,
+                total=solved["VDS_HSYNC_RST"] + 1,
                 apertureStart=opens, apertureStop=closes,
                 start=start, stop=stop, nearSlope=nearSlope, farSlope=farSlope,
                 nearUsed=nearUsed, farUsed=farUsed, near=near, far=far,
@@ -243,8 +263,15 @@ def report(found, verbose):
     if found["start"] is None or found["stop"] is None:
         print(f"  {found['output']:7} raster {found['total']:5}   "
               f"NOT MEASURED -- the blanking never moved with the register "
+              f"scale {found['scale']}, "
               f"({found['nearUsed']} near, {found['farUsed']} far points"
               f"{'' if found['filled'] else ', and the picture never filled the frame'})")
+        return
+    if found["clamped"]:
+        aperture = found["apertureStop"] - found["apertureStart"]
+        print(f"  {found['output']:7} raster {found['total']:5}   "
+              f"EXCLUDED -- the scale is clamped: VDS_HSCALE {found['scale']} "
+              f"produces {found['produced']:.1f} into an aperture of {aperture}")
         return
     width = found["stop"] - found["start"]
     aperture = found["apertureStop"] - found["apertureStart"]
@@ -255,7 +282,7 @@ def report(found, verbose):
           f"start {found['start'] - found['apertureStart']:+7.2f}  "
           f"width {width - aperture:+7.2f}   "
           f"px/unit {found['nearSlope']:.4f} / {found['farSlope']:.4f}"
-          f"   worst {found['worst']:.1f} px")
+          f"   scale {found['scale']:4}   worst {found['worst']:.1f} px")
     if verbose:
         for name in ("near", "far"):
             print("      " + name + ": " +

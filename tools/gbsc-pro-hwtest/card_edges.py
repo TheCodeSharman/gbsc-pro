@@ -7,9 +7,19 @@
 
 `PATTERN CARD` draws a one-pixel green frame on the source's outermost pixels
 (`PROCframe` in PatLib), so it marks exactly where the source's active video
-begins and ends. A default framing is correct when the capture window is the
-source's active window: both green edges land on the emitted frame and nothing
-outside them is shown.
+begins and ends.
+
+**THE GOAL, WHICH IS WHAT THIS ASSERTS.** A default framing puts the source's
+outermost pixel on the emitted frame's outermost pixel:
+
+    left    the green column is flush, column 0
+    top     the green row is flush, row 0
+    bottom  the green row is flush, the last row
+    right   almost flush -- ONE pixel of slack, for the width parity the
+            HSCALE corruption workaround carries
+
+`docs/investigations/full-screen-framing-on-the-vesa-modes.md` is the goal and
+what has been measured against it.
 
 Read off the USB capture rather than the panel, so an edge is a column index
 and not a judgement. `docs/bench-output-capture.md`.
@@ -70,6 +80,15 @@ JOIN = 8
 # Over half a second at 30 fps, so both phases of the ring's flash are in it.
 CLIP_FRAMES = 40
 
+# What "flush" allows, in output pixels. The green frame is one source pixel
+# wide and lands on a fraction of an output one, so its captured edge is a
+# column either way.
+FLUSH = 1
+
+# The far edge additionally carries the width parity, which the HSCALE
+# corruption workaround can leave a pixel of.
+PARITY = 1
+
 
 def green_runs(clip, axis):
     """Where the frame's green lies along `axis`, as (start, stop) runs.
@@ -113,8 +132,16 @@ def judge(clip, axis, allowance):
         return None, None, "one edge: the window is shifted off the picture"
     margins = (near[0][0], extent - 1 - far[-1][1])
     shown = extent - (far[-1][1] - near[0][0] + 1)
-    if shown > allowance:
-        return shown, margins, f"{shown} of the source's own blanking is on screen"
+    # Each edge on its own, because the goal is per-edge: the near edge and both
+    # vertical edges are flush, and only the far edge carries the parity. A span
+    # test passes a picture that is short at one end and over at the other.
+    over = []
+    if margins[0] > allowance:
+        over.append(f"{margins[0]} at the near edge")
+    if margins[1] > allowance + PARITY:
+        over.append(f"{margins[1]} at the far edge")
+    if over:
+        return shown, margins, "not flush: " + ", ".join(over)
     return shown, margins, None
 
 
@@ -172,8 +199,8 @@ def main():
     parser.add_argument("--modes", default=None,
                         help="comma separated, e.g. 'X800 Y600 C256 F60'; default is "
                              "every mode the monitor definition allows at 256 colours")
-    parser.add_argument("--allowance", type=int, default=4,
-                        help="output pixels of source blanking to tolerate (default 4)")
+    parser.add_argument("--allowance", type=int, default=FLUSH,
+                        help=f"output pixels to tolerate at a flush edge (default {FLUSH})")
     parser.add_argument("--keep-framing", action="store_true")
     args = parser.parse_args()
 
@@ -194,8 +221,8 @@ def main():
         sys.exit("no modes to sweep -- is ModeServ answering?")
 
     dev = hdmi_capture.device()
-    print(f"{len(modes)} modes, {args.host}, {args.allowance} px of blanking "
-          f"allowed\n")
+    print(f"{len(modes)} modes, {args.host}, flush within {args.allowance} px "
+          f"({args.allowance + PARITY} at the far edge)\n")
     failed = []
     for mode in modes:
         found, why = sweep_mode(args.host, dev, source, mode, args.allowance,
