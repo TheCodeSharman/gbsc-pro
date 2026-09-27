@@ -259,8 +259,8 @@ static void checkBenchGeometry()
     // The raster the engine solved, one less than the total on each axis.
     CHECK(VideoProcessor::VDS_HSYNC_RST::read() == 1915);
     CHECK(VideoProcessor::VDS_VSYNC_RST::read() == 1124);
-    CHECK(VideoProcessor::VDS_HS_ST::read() == 0);
-    CHECK(VideoProcessor::VDS_HS_SP::read() == 32);
+    CHECK(VideoProcessor::VDS_HS_ST::read() == OutputMode::HsyncStartPx);
+    CHECK(VideoProcessor::VDS_HS_SP::read() == OutputMode::HsyncStartPx + 32);
     CHECK(VideoProcessor::VDS_VS_ST::read() == 0);
     CHECK(VideoProcessor::VDS_VS_SP::read() == 5);
     CHECK(VideoProcessor::VDS_VSYN_SIZE1::read() == 1126);

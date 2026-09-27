@@ -116,13 +116,15 @@ TEST_CASE("the sync pulse is CEA-861's, converted to the clock the line runs at"
     // since a shorter frame buys a longer line.
     OutputTiming at108 = Mode1080p.solve(50.0f, 108000000u);
     CHECK(at108.horizontalTotal == 1920);
-    CHECK(at108.hsyncStart == 0);
-    CHECK(at108.hsyncStop == 32);
+    // The pulse is offset from the line's origin by HsyncStartPx and keeps the
+    // standard's width; the active window is not offset with it.
+    CHECK(at108.hsyncStart == OutputMode::HsyncStartPx);
+    CHECK(at108.hsyncStop == OutputMode::HsyncStartPx + 32);
     CHECK(at108.activeStart == 32 + 108 + OutputMode::TransmittedWindowDelayPx);
 
     OutputTiming at1296 = Mode1080p.solve(50.0f, 129600000u);
     CHECK(at1296.horizontalTotal == 2304);
-    CHECK(at1296.hsyncStop == 38);
+    CHECK(at1296.hsyncStop == OutputMode::HsyncStartPx + 38);
 
     OutputTiming at648 = Mode1080p.solve(50.0f, 64800000u);
     CHECK(at648.horizontalTotal == 1152);

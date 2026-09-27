@@ -9,6 +9,7 @@ namespace Tv5725 {
 const uint32_t OutputMode::WorkingCeilingHz;
 const uint32_t OutputMode::EngineCeilingHz;
 const uint16_t OutputMode::MaxHorizontalTotal;
+const uint16_t OutputMode::HsyncStartPx;
 const uint16_t OutputMode::FrontPorchMinPx;
 const uint16_t OutputMode::HorizontalTotalMax;
 const uint16_t OutputMode::VerticalTotalMax;
@@ -175,8 +176,11 @@ OutputTiming OutputMode::solve(float fieldRateHz, uint32_t ceilingHz) const
         width = 1;
     long porch = scaled(backPorchPx_, clockHz);
 
-    solved.hsyncStart = 0;
-    solved.hsyncStop = (uint16_t)width;
+    // The pulse is offset from the line's origin, and the active window is NOT
+    // offset with it: the window is placed against the back porch as before,
+    // and only the pulse moves. Measured golden with the aperture unmoved.
+    solved.hsyncStart = HsyncStartPx;
+    solved.hsyncStop = (uint16_t)(HsyncStartPx + width);
 
     // The active window is the standard's FRACTION of the line, and that is a
     // different quantity from a duration. The encoder resamples the line into

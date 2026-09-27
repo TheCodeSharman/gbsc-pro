@@ -127,6 +127,20 @@ public:
     // docs/investigations/full-screen-framing-on-the-vesa-modes.md
     static const uint16_t TransmittedWindowDelayPx = 12;
 
+    // Where the output hsync pulse STARTS. Not zero: on the line's own origin
+    // the left-most two columns lose two bands of 34 emitted rows -- measured
+    // at 640x480@60 into 1080p at rows 35..68 and 1014..1047, with columns 2
+    // and beyond clean, so it is the first samples of a line rather than
+    // anything in the picture.
+    //
+    // Two samples clears them and four is too many: the picture rides the
+    // pulse, so the far edge retreats by whatever the near edge gains and at
+    // four the green border is off the right. The pulse's WIDTH does not come
+    // into it -- 2..32 and 2..34 measure identical -- so only the offset is
+    // stated here and the width stays the standard's duration.
+    // docs/photos/2026-09-27-golden-640x480-full-screen/README.md
+    static const uint16_t HsyncStartPx = 2;
+
     static const uint16_t HorizontalTotalMax = 4096;  // VDS_HSYNC_RST is 12 bits
     static const uint16_t VerticalTotalMax = 2048;  // VDS_VSYNC_RST is 11 bits
 
