@@ -187,6 +187,31 @@ TEST_CASE("the engine uses the divider it was GIVEN, not the one in the register
 
 }
 
+TEST_CASE("the retime stop and the capture windows come from one duty reading")
+{
+    // The stop is the capture counter's ORIGIN and the windows are placed in
+    // that counter, so a solve taking them from two readings places the windows
+    // against an origin that is not the one they were measured for.
+    SolvedEngine solved;
+
+    const uint16_t divider = Wire.field(5, 0x12, 0, 12);
+    const uint32_t stopAtSolve = Wire.field(5, 0x4B, 0, 12);
+    const float before = solved.sampling.hsync().syncDuty();
+
+    // A different sync width on the same line, read by the measurement and not
+    // handed to the engine: the divider does not move, so nothing re-installs
+    // the clock, and no pass of the acquisition layer runs.
+    Wire.sourceHsync(120, divider, true);
+    for (uint8_t pass = 0; pass < 40; ++pass)
+        measureOnce(solved.sampling);
+    // Or the case proves nothing about a duty that moved.
+    REQUIRE(solved.sampling.hsync().syncDuty() != before);
+
+    REQUIRE(solved.engine.resolve());
+
+    CHECK(Wire.field(5, 0x4B, 0, 12) == stopAtSolve);
+}
+
 TEST_CASE("the retime stop follows a duty measured after the clock is installed")
 {
     // The retime window's stop is the capture counter's origin and it is a
@@ -197,25 +222,21 @@ TEST_CASE("the retime stop follows a duty measured after the clock is installed"
     // carries the PREVIOUS source's sync width.
     // ../docs/investigations/the-retime-stop-is-the-counters-origin.md
     SolvedEngine solved;
-    solved.engine.setOutputMode(&Tv5725::Mode1080p);
-    solved.engine.inputTimingsChanged(4);
-    REQUIRE(pollUntilSolved(solved.acquisition));
 
     const uint16_t divider = Wire.field(5, 0x12, 0, 12);
     const float before = solved.sampling.hsync().syncDuty();
 
-    // A different sync width on the same line: the divider does not move, so
-    // nothing re-installs the clock.
     Wire.sourceHsync(120, divider, true);
     for (uint8_t pass = 0; pass < 40; ++pass)
         measureOnce(solved.sampling);
-    // Or the case proves nothing about a duty that moved.
     REQUIRE(solved.sampling.hsync().syncDuty() != before);
-    REQUIRE(solved.engine.resolve());
 
-    CHECK(Wire.field(5, 0x12, 0, 12) == divider);
+    // The acquisition layer is what hands a reading to the engine.
+    REQUIRE(resolveUntilSolved(solved.acquisition));
+
     CHECK(Wire.field(5, 0x4B, 0, 12)
-          == SyncProcessor::retimeStopFor(divider, solved.sampling.hsync()));
+          == SyncProcessor::retimeStopFor((uint16_t)Wire.field(5, 0x12, 0, 12),
+                                          solved.sampling.hsync()));
 }
 
 TEST_CASE("a preset load computes the divider it uses")

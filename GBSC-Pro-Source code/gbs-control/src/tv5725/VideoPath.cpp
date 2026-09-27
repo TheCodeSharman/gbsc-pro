@@ -754,13 +754,14 @@ void VideoPath::applySampling(uint16_t divider, bool doubled, uint8_t oversample
 // The retime window's stop is the capture counter's ORIGIN, so it takes the
 // source's own sync width rather than a fraction of the line: the counter
 // zeroes on the retimed pulse, and a pulse laid anywhere but on the incoming
-// one moves every window the solve places in it.
+// one moves every window the solve places in it. From the reading the windows
+// were sized from, or they are placed against an origin they never saw.
 void VideoPath::writeRetimeStop()
 {
     if (installedDivider_ == 0)
         return;
     SyncProcessor::writeRetimeStop(
-        SyncProcessor::retimeStopFor(installedDivider_, sampling_.hsync()));
+        SyncProcessor::retimeStopFor(installedDivider_, reading_));
 }
 
 void VideoPath::applySamplingClock(uint16_t divider)
