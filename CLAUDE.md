@@ -1485,6 +1485,25 @@ one the same way; the rules below are each a wasted session.
   way and did not exist.
 - **Freeze automation first**, or the solver rewrites the windows underneath the
   experiment.
+- **BUT A FROZEN POKE CANNOT JUDGE WHERE THE PICTURE STARTS ON THE EMITTED
+  FRAME**, because the transmitted window's start is latched at link-up and no
+  register write re-locks it. Measured at 640x480@60: the pair the engine solves
+  puts the source's outermost pixel off the left of the frame when written by
+  hand into a frozen acquisition, and four columns inside it once the link has
+  re-acquired — same two registers, opposite verdicts, and the frozen one is
+  stable and repeatable.
+- **SO RE-LOCK THE LINK BETWEEN THE STATE AND THE CLIP, AND DO IT WITH A SOURCE
+  MODE ROUND TRIP.** Re-issuing the source's `MODE` while automation is FROZEN is
+  the instrument: the source leaves and returns, the encoder re-acquires, the
+  engine cannot re-solve, and so the hand-set register survives — which is what
+  makes a one-register A/B valid at all. It agrees with `card_edges.py` on both
+  in-scope VESA modes. **A `PAD_SYNC_OUT_ENZ` toggle also re-locks and lands the
+  picture somewhere else**: at 800x600@60 one solve reads 12 columns of black at
+  the left after a mode round trip and 1 after a toggle, with no register
+  touched. And the dongle needs ten seconds or so to deliver a usable frame
+  after either, so a clip taken too early is all black and reads as a dead
+  output. Read the register back afterwards — a frozen unit is not an inert one.
+  `docs/investigations/full-screen-framing-on-the-vesa-modes.md`.
 - **An open window past the end of the picture is not corruption.** It shows
   whatever the playback stage fetches, which looks like a fault and is only
   absence of data. Establish that there IS picture under the window before
