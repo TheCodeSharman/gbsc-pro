@@ -138,6 +138,36 @@ mode as `1280 x 960/60Hz` off a 1790 x 1000 raster -- `Mode960p`'s
 count, which is why `carriedPx / totalPx` is the right shape for the width.
 
 
+## It does not reach a margin measured at 100% framing
+
+The latch reaches an ABSOLUTE position read off the emitted frame, so
+`full_margins.py` -- which converts a dongle column to a capture unit through the
+encoder's line total -- carries it where `counter_origin.py` does not, the latter
+creeping the capture window's own start until the feature leaves and so asking the
+counter directly.
+
+Measured on three modes spanning a 19-sample error range, both instruments on the
+same states, scaling path, 1080p output:
+
+| mode | `full_margins` | `counter_origin` |
+|---|---|---|
+| 640x480@60 | +0.5 samples | +1.4 |
+| 1024x768@60 | −1.3 | −1.9 |
+| 1280x1024@60 | +16.1 | +17.0 |
+
+**They agree within a sample**, so the anchor contributed nothing to any of them
+and a margin taken at 100% framing on the scaling path can be read as the
+counter's own. That is the positive form of what was already suspected once every
+`OutputMode` stated a standard's timings: a sink locking to a mode it recognises
+places it the same way every time.
+
+**The scope is those conditions and not more.** All three sit at 1080p output with
+the scaler's raster within four units of 1600, and the comparison crosses no
+output-resolution change and no pass-through excursion -- which is where the 57
+and ~150 column displacements came from. It says the latch is quiet across
+ordinary source mode changes on one held path; it does not touch the overlay
+measurement above, which is a different experiment and stands.
+
 ## What it locks ONTO is the blanking edge, not the first content
 
 Two models fitted the measurements above: the window latches at
