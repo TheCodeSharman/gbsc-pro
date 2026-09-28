@@ -151,7 +151,8 @@ void HdBypass::enable()
 }
 
 void HdBypass::enterFor(bool component, bool csync, uint32_t lineRateHz,
-                        const SourceTiming &timing, uint16_t frameLines)
+                        const SourceTiming &timing, uint16_t frameLines,
+                        const HsyncPulse &pulse)
 {
     Chip::enterHdBypass();
     enable();
@@ -169,17 +170,19 @@ void HdBypass::enterFor(bool component, bool csync, uint32_t lineRateHz,
 
     // LAST of the group, because it installs the sampling the played-out
     // raster is derived from, and it is the one writer of PLLAD_MD here.
-    applyForSource(dividerFor(lineRateHz), lineRateHz, timing, frameLines);
+    applyForSource(dividerFor(lineRateHz), lineRateHz, timing, frameLines,
+                   pulse);
 
     Chip::dacsFollowInput();
     Chip::OUT_SYNC_CNTRL::write(1);
 }
 
 void HdBypass::applyForSource(uint16_t divider, uint32_t lineRateHz,
-                              const SourceTiming &timing, uint16_t frameLines)
+                              const SourceTiming &timing, uint16_t frameLines,
+                              const HsyncPulse &pulse)
 {
     timing_ = timing;
-    applyPassThroughSampling(divider, lineRateHz);
+    applyPassThroughSampling(divider, lineRateHz, pulse);
     SyncProcessor::applySdVsyncPosition();
     applyVerticalBlanking(timing.activeStartLine(frameLines),
                           timing.activeStopLine(frameLines));
@@ -215,6 +218,7 @@ uint16_t HdBypass::dividerFor(uint32_t lineRateHz)
 }
 
 void HdBypass::applyPassThroughSampling(uint16_t divider, uint32_t lineRateHz,
+                                        const HsyncPulse &pulse,
                                         uint8_t oversample)
 {
     if (divider == 0)
@@ -238,11 +242,11 @@ void HdBypass::applyPassThroughSampling(uint16_t divider, uint32_t lineRateHz,
     // the line the ADC is delivering here, not the one a scaling solve last
     // sized it for.
     //
-    // THE FRACTION AND NOT THE MEASURED SYNC WIDTH, which the scaling path
-    // takes. There the retime is the capture counter's origin and the rule is
-    // measured against the emitted frame; here the input formatter is out of
-    // circuit and nothing has measured what this window places.
-    SyncProcessor::writeRetimeStop(SyncProcessor::retimeStopFor(divider));
+    // From the SOURCE'S MEASURED SYNC WIDTH, the same rule the scaling path
+    // takes. A fraction of the line is only right for a source whose pulse is
+    // that fraction, and an unmeasured source gets nothing written rather than
+    // a window placed from the divider alone.
+    SyncProcessor::writeRetimeStop(SyncProcessor::retimeStopFor(divider, pulse));
 
     holdHsyncPulse(ChannelSyncStart, ChannelSyncStart + SyncPulseWidth);
     holdVsyncPulse(ChannelVsyncStart, ChannelVsyncStop);

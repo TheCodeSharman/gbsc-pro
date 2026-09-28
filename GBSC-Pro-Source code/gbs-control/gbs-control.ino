@@ -2998,7 +2998,8 @@ void enterHdBypass()
                                Tv5725::SyncMeasurement::isCsync(),
                                sourceSampling.lineRateHz(),
                                geometry.sourceTiming(),
-                               sourceSampling.sourceLines() + 1);
+                               sourceSampling.sourceLines() + 1,
+                               sourceSampling.hsync());
 
     restartAfterBypassSwitch();
 
@@ -3280,7 +3281,8 @@ static void applySampleClock(bool apply, uint16_t divider, uint8_t oversample)
     }
 
     if (passingThrough)
-        Tv5725::HdBypass::applyPassThroughSampling(wanted, lineRateHz, ratio);
+        Tv5725::HdBypass::applyPassThroughSampling(wanted, lineRateHz,
+                                                   sourceSampling.hsync(), ratio);
     else
         geometry.applyChosenSampling(wanted, ratio);
 

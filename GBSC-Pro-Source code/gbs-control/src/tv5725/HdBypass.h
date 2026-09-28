@@ -2,6 +2,7 @@
 #define TV5725_HD_BYPASS_H
 
 #include "Adc.h"
+#include "HsyncPulse.h"
 #include "SourceTiming.h"
 #include "Tv5725.h"
 
@@ -226,7 +227,8 @@ public:
     // for the source. The two together are the ADC clock, which is what chooses
     // the PLL's crossover row -- so neither can be left out.
     static void applyForSource(uint16_t divider, uint32_t lineRateHz,
-                               const SourceTiming &timing, uint16_t frameLines);
+                               const SourceTiming &timing, uint16_t frameLines,
+                               const HsyncPulse &pulse);
 
     // Put the chip into the pass-through configuration for this source: the
     // route, this block, the colour path, the sync processor's half, the ADC
@@ -235,7 +237,8 @@ public:
     // The caller still owns what is not the chip -- the bring-up, the display
     // clock, FrameSync, the colour patches and the phase search that follows.
     static void enterFor(bool component, bool csync, uint32_t lineRateHz,
-                         const SourceTiming &timing, uint16_t frameLines);
+                         const SourceTiming &timing, uint16_t frameLines,
+                         const HsyncPulse &pulse);
 
     // The sync-on-green slice a composite-sync source is handed on entry, and
     // the two phase adjusters pass-through starts from.
@@ -269,7 +272,7 @@ public:
     // hand unlocks the PLL -- Adc::applySampleRate() underneath is the only
     // thing that writes all of it.
     static void applyPassThroughSampling(
-        uint16_t divider, uint32_t lineRateHz,
+        uint16_t divider, uint32_t lineRateHz, const HsyncPulse &pulse,
         uint8_t oversample = Adc::OversampleAsClockAllows);
 
     // What the sync processor reports about the SOURCE's sync edges: the two

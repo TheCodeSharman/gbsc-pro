@@ -316,15 +316,20 @@ static const uint32_t BenchLineRateHz = 37879;
 // cases are about.
 static const Tv5725::SourceTiming Unpublished(0.0f);
 
+// A sync width to place the retime window from. Pass-through takes the source's
+// measured pulse like every other path.
+static const Tv5725::HsyncPulse BenchPulse(169.0f / 1444.0f);
+
 static void applyForSource(uint16_t divider = DividerBeforeLadder,
                            uint32_t lineRateHz = BenchLineRateHz,
                            const Tv5725::SourceTiming &timing = Unpublished,
-                           uint16_t frameLines = 0)
+                           uint16_t frameLines = 0,
+                           const Tv5725::HsyncPulse &pulse = BenchPulse)
 {
     Wire.reset();
     Wire.poison(Poison);
     Adc::PLLAD_MD::write(DividerBeforeLadder);
-    HdBypass::applyForSource(divider, lineRateHz, timing, frameLines);
+    HdBypass::applyForSource(divider, lineRateHz, timing, frameLines, pulse);
 }
 
 // ONE PATH FOR EVERY SOURCE. This dispatched on rto->videoStandardInput into
@@ -535,7 +540,7 @@ TEST_CASE("the sync polarities are not this block's to invert")
     ModeDetect::MD_HS_FLIP::write(1);
     ModeDetect::MD_VS_FLIP::write(1);
 
-    HdBypass::applyForSource(2039, 31469, Unpublished, 0);
+    HdBypass::applyForSource(2039, 31469, Unpublished, 0, BenchPulse);
 
     CHECK(SyncProcessor::SP_HS2PLL_INV_REG::read() == 1);
     CHECK(SyncProcessor::SP_CS_P_SWAP::read() == 1);
@@ -557,7 +562,7 @@ TEST_CASE("the coast lengths are not written here")
     SyncProcessor::SP_POST_COAST::write(3);
     SyncProcessor::SP_DLT_REG::write(0xC0);
 
-    HdBypass::applyForSource(2039, 31469, Unpublished, 0);
+    HdBypass::applyForSource(2039, 31469, Unpublished, 0, BenchPulse);
 
     CHECK(SyncProcessor::SP_PRE_COAST::read() == 7);
     CHECK(SyncProcessor::SP_POST_COAST::read() == 3);
@@ -575,7 +580,7 @@ TEST_CASE("oversampling costs the channel nothing, so pass-through takes it all"
 
     SUBCASE("the played-out line is the divider, not the divider over the ratio") {
         Wire.reset();
-        HdBypass::applyPassThroughSampling(2039, 37879, 2);
+        HdBypass::applyPassThroughSampling(2039, 37879, BenchPulse, 2);
         REQUIRE(Adc::ADC_CLK_ICLK1X::read() == 1);   // ratio two really applied
 
         CHECK(HdBypass::HD_HSYNC_RST::read() == 2039 + 8);
@@ -584,11 +589,11 @@ TEST_CASE("oversampling costs the channel nothing, so pass-through takes it all"
 
     SUBCASE("the raster is the same at either ratio") {
         Wire.reset();
-        HdBypass::applyPassThroughSampling(2039, 37879, 1);
+        HdBypass::applyPassThroughSampling(2039, 37879, BenchPulse, 1);
         const uint16_t undecimated = HdBypass::HD_HSYNC_RST::read();
 
         Wire.reset();
-        HdBypass::applyPassThroughSampling(2039, 37879, 2);
+        HdBypass::applyPassThroughSampling(2039, 37879, BenchPulse, 2);
 
         CHECK(HdBypass::HD_HSYNC_RST::read() == undecimated);
     }
@@ -624,7 +629,7 @@ TEST_CASE("a source running no published raster keeps the window it had")
     Wire.poison(Poison);
     HdBypass::HD_VB_SP::write(64);
 
-    HdBypass::applyForSource(2039, 31469, Unpublished, 0);
+    HdBypass::applyForSource(2039, 31469, Unpublished, 0, BenchPulse);
 
     CHECK(HdBypass::HD_VB_SP::read() == 64);
 }
@@ -637,7 +642,7 @@ TEST_CASE("no divider means no sampling to install and no raster to size")
     HdBypass::enable();
     Adc::PLLAD_MD::write(DividerBeforeLadder);
 
-    HdBypass::applyForSource(0, BenchLineRateHz, Unpublished, 0);
+    HdBypass::applyForSource(0, BenchLineRateHz, Unpublished, 0, BenchPulse);
 
     CHECK(Adc::PLLAD_MD::read() == DividerBeforeLadder);
     CHECK(HdBypass::HD_HSYNC_RST::read() == 1023);
@@ -663,7 +668,7 @@ static Tv5725::HdBypass::SourceSyncEdges edges(bool hFound, bool hPositive,
 TEST_CASE("a positive source hsync puts the channel's pulse start first")
 {
     Wire.reset();
-    HdBypass::applyPassThroughSampling(2039, 37879);
+    HdBypass::applyPassThroughSampling(2039, 37879, BenchPulse);
 
     HdBypass::applyChannelSyncEdges(edges(true, true, false, false));
 
@@ -675,7 +680,7 @@ TEST_CASE("a positive source hsync puts the channel's pulse start first")
 TEST_CASE("a negative source hsync puts the channel's pulse stop first")
 {
     Wire.reset();
-    HdBypass::applyPassThroughSampling(2039, 37879);
+    HdBypass::applyPassThroughSampling(2039, 37879, BenchPulse);
 
     HdBypass::applyChannelSyncEdges(edges(true, false, false, false));
 
@@ -687,7 +692,7 @@ TEST_CASE("a negative source hsync puts the channel's pulse stop first")
 TEST_CASE("an hsync the sync processor cannot see leaves the pulse alone")
 {
     Wire.reset();
-    HdBypass::applyPassThroughSampling(2039, 37879);
+    HdBypass::applyPassThroughSampling(2039, 37879, BenchPulse);
     Tv5725::SyncProcessor::SP_HS2PLL_INV_REG::write(1);
 
     HdBypass::applyChannelSyncEdges(edges(false, false, false, false));
@@ -700,7 +705,7 @@ TEST_CASE("an hsync the sync processor cannot see leaves the pulse alone")
 TEST_CASE("a positive source vsync puts the channel's vertical start first")
 {
     Wire.reset();
-    HdBypass::applyPassThroughSampling(2039, 37879);
+    HdBypass::applyPassThroughSampling(2039, 37879, BenchPulse);
 
     HdBypass::applyChannelSyncEdges(edges(false, false, true, true));
 
@@ -711,7 +716,7 @@ TEST_CASE("a positive source vsync puts the channel's vertical start first")
 TEST_CASE("a negative source vsync puts the channel's vertical stop first")
 {
     Wire.reset();
-    HdBypass::applyPassThroughSampling(2039, 37879);
+    HdBypass::applyPassThroughSampling(2039, 37879, BenchPulse);
 
     HdBypass::applyChannelSyncEdges(edges(false, false, true, false));
 
@@ -725,7 +730,7 @@ TEST_CASE("a vsync the sync processor cannot see leaves the vertical pair alone"
     // the csync path, so the found bit answers the same question the sync type
     // was being asked. ../CLAUDE.md
     Wire.reset();
-    HdBypass::applyPassThroughSampling(2039, 37879);
+    HdBypass::applyPassThroughSampling(2039, 37879, BenchPulse);
     HdBypass::applyChannelSyncEdges(edges(false, false, true, false));
 
     HdBypass::applyChannelSyncEdges(edges(false, false, false, true));
@@ -756,7 +761,7 @@ TEST_CASE("the channel's entry records the oversampling it leaves the ADC on")
     Wire.reset();
     REQUIRE(Adc::applySampleRate(2250, 15574, Adc::OversampleAsClockAllows) == 4);
 
-    HdBypass::applyForSource(2039, 31469, Unpublished, 0);
+    HdBypass::applyForSource(2039, 31469, Unpublished, 0, BenchPulse);
 
     // 2039 samples on a 31469 Hz line is CKO 64.2 MHz, which the crossover
     // table takes at post divider one -- so two is all the tap can carry.
@@ -960,14 +965,26 @@ TEST_CASE("the pass-through divider is even, like every other divider")
 // window has to be sized for the line the ADC is actually delivering.
 //
 // Left behind, it keeps whatever the last scaling solve computed: measured on
-// the bench in pass-through at PLLAD_MD 2038, SP_RT_HS_SP read 1339, which is
-// 93% of 1440 -- the scaling path's divider -- so the window closed at 66% of
-// the line instead of 93%.
+// the bench in pass-through at PLLAD_MD 2038, SP_RT_HS_SP read 1339 -- the
+// scaling path's divider -- so the window closed two thirds of the way along
+// the line instead of on the source's own sync.
 TEST_CASE("pass-through sizes the retime window from its own divider")
 {
     Wire.reset();
-    HdBypass::applyPassThroughSampling(2038, 37879);
+    const Tv5725::HsyncPulse pulse(169.0f / 1444.0f);
+    HdBypass::applyPassThroughSampling(2038, 37879, pulse);
 
     CHECK(Tv5725::SyncProcessor::SP_RT_HS_SP::read()
-          == Tv5725::SyncProcessor::retimeStopFor(2038));
+          == Tv5725::SyncProcessor::retimeStopFor(2038, pulse));
+}
+
+// The origin is the SOURCE'S, so a reading that never found a pulse leaves the
+// register alone rather than placing the window from the divider.
+TEST_CASE("pass-through leaves the retime window alone with nothing measured")
+{
+    Wire.reset();
+    Tv5725::SyncProcessor::SP_RT_HS_SP::write(1234);
+    HdBypass::applyPassThroughSampling(2038, 37879, Tv5725::HsyncPulse());
+
+    CHECK(Tv5725::SyncProcessor::SP_RT_HS_SP::read() == 1234);
 }

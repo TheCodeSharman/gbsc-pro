@@ -12,22 +12,16 @@
 
 namespace Tv5725 {
 
-const uint16_t SyncProcessor::RetimeStopPercent;
 const uint16_t SyncProcessor::RetimeOriginSamples;
-
-uint16_t SyncProcessor::retimeStopFor(uint16_t divider)
-{
-    return (uint16_t)(((uint32_t)divider * RetimeStopPercent) / 100);
-}
 
 uint16_t SyncProcessor::retimeStopFor(uint16_t divider, const HsyncPulse &pulse)
 {
     if (!pulse.isPulse())
-        return retimeStopFor(divider);
+        return 0;
 
     const uint32_t sync = (uint32_t)lrintf((float)divider * pulse.syncDuty());
     if (sync < RetimeOriginSamples)
-        return divider;
+        return 0;
     return (uint16_t)(divider - sync + RetimeOriginSamples);
 }
 
@@ -534,9 +528,8 @@ void SyncProcessor::selectExternalSync(uint8_t sel)
 void SyncProcessor::init()
 {
     SP_SOG_P_INV::write(0x0);                    // s5_20[2:2]
-    // The retime window's START. Its partner SP_RT_HS_SP is 93% of PLLAD_MD and
-    // belongs to SourceMeasurement, which holds all three of that quantity's
-    // registers off one divider.
+    // The retime window's START. Its partner SP_RT_HS_SP is placed from the
+    // source's measured sync width and belongs to SourceMeasurement.
     SP_RT_HS_ST::write(0x0);                     // s5_4a[11:0]
     SP_SYNC_TGL_THD::write(0x18);                // s5_21[7:0]
     SP_L_DLT_REG::write(0xF);                    // s5_22[7:0]
@@ -579,6 +572,8 @@ void SyncProcessor::init()
 
 void SyncProcessor::writeRetimeStop(uint16_t samples)
 {
+    if (samples == 0)
+        return;
     SP_RT_HS_SP::write(samples);
 }
 

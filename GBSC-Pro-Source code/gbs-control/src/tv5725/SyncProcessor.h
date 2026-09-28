@@ -200,12 +200,6 @@ public:
     // s5_63 written together, so bit 7 -- RESERVED -- is left as found.
     static void driveTestBus(uint8_t module, uint8_t signal);
 
-    // How far along the line hsync retiming stops, in percent. Upstream's,
-    // and what the retime window falls back to where no sync width is known --
-    // a fraction that is only right for a source whose pulse takes 7% of the
-    // line, which is the one it was inherited against.
-    static const uint16_t RetimeStopPercent = 93;
-
     // WHERE THE RETIMED PULSE SITS BEHIND THE WINDOW'S STOP, in ADC samples.
     // Laying the pulse exactly on the incoming one leaves the input formatter's
     // line counter taking its origin this far BEFORE the source's sync edge,
@@ -225,7 +219,10 @@ public:
     // A stop past the end of the line is inert -- measured, the picture does
     // not move at any value above PLLAD_MD -- so a pulse that carries no
     // reading falls back to the fraction rather than reaching for one.
-    static uint16_t retimeStopFor(uint16_t divider);
+    // 0 where the source's sync was not measured, and then nothing is written:
+    // this register is the capture counter's ORIGIN, so a value invented from
+    // the divider alone places every window the solve makes against an origin
+    // nothing observed.
     static uint16_t retimeStopFor(uint16_t divider, const HsyncPulse &pulse);
 
     // Whether ANY sync is reaching this block, counted off its own output stage

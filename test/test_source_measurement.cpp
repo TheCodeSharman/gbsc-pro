@@ -488,44 +488,20 @@ TEST_CASE("the retime window's stop follows the source's sync width")
         CHECK(SyncProcessor::retimeStopFor(960, HsyncPulse(94.0f / 960.0f)) == 929);
     }
 
-    SUBCASE("a pulse narrower than the origin cannot push the stop past the line") {
+    SUBCASE("a pulse narrower than the origin has no answer") {
         // The narrowest duty HsyncPulse accepts is 41 per mille, which at this
         // divider is 59 samples -- fewer than the origin sits behind the stop.
-        // Carried through the subtraction that lands beyond the end of the
-        // line, where the register does nothing at all.
-        CHECK(SyncProcessor::retimeStopFor(1440, HsyncPulse(0.041f)) <= 1440);
+        // Carried through the subtraction it lands beyond the end of the line,
+        // where the register does nothing at all, so there is no stop to write.
+        CHECK(SyncProcessor::retimeStopFor(1440, HsyncPulse(0.041f)) == 0);
     }
 
-    SUBCASE("a stop past the end of the line is inert, so it is never written") {
-        // Measured: SP_RT_HS_SP above PLLAD_MD moves the picture not at all,
-        // and every reading around it is frozen -- which reads as a control
-        // that does nothing rather than as a value out of range.
-        CHECK(SyncProcessor::retimeStopFor(1200, HsyncPulse(0.0f)) <= 1200);
-    }
-}
-
-TEST_CASE("the sync processor's retime window is the divider a third time")
-{
-    // SP_RT_HS_SP is the third register holding this quantity: the stop of the
-    // sync processor's retiming window, in the same ADC samples PLLAD_MD divides
-    // the line into. Measured on the unit, which holds 2553 and 2374.
-    CHECK(SyncProcessor::retimeStopFor(BenchDivider) == 2374);
-
-    SUBCASE("and it follows a divider that changes") {
-        // 2212 is what recommendedDivider() asks for at the bench line rate.
-        // Leaving 2374 behind would put the stop past the end of the line.
-        CHECK(SyncProcessor::retimeStopFor(2212) == 2057);
-        CHECK(SyncProcessor::retimeStopFor(1276) == 1186);
-    }
-
-    SUBCASE("it is integer arithmetic, and agrees with the float it replaces") {
-        // The sketch wrote `PLLAD_MD::read() * 0.93f` and truncated. The ESP8266
-        // has no FPU and this runs on every solve; the two must not disagree by
-        // a sample, so every legal divider is checked rather than a sample of
-        // them.
-        for (uint32_t d = 0; d <= Adc::DividerMax; d++) {
-            CHECK(SyncProcessor::retimeStopFor((uint16_t)d) == (uint16_t)(d * 0.93f));
-        }
+    SUBCASE("a reading that is not a pulse has no answer") {
+        // This register is the capture counter's ORIGIN. A value not measured
+        // from the source's own sync places every window the solve makes
+        // against an origin nothing observed, so nothing is written and the
+        // stop in force stays where the last measurement put it.
+        CHECK(SyncProcessor::retimeStopFor(1200, HsyncPulse(0.0f)) == 0);
     }
 }
 

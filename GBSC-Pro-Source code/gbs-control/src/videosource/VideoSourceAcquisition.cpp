@@ -199,7 +199,8 @@ void VideoSourceAcquisition::resizePassThrough()
     const uint32_t lineRateHz = sampling_.lineRateHz();
     Tv5725::HdBypass::applyForSource(Tv5725::HdBypass::dividerFor(lineRateHz),
                                      lineRateHz, videoPath_.sourceTiming(),
-                                     sampling_.sourceLines() + 1);
+                                     sampling_.sourceLines() + 1,
+                                     sampling_.hsync());
 }
 
 float VideoSourceAcquisition::sourceFieldRateHz() const { return sampling_.fieldRateHz(); }
