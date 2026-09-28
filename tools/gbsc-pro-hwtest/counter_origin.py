@@ -66,7 +66,7 @@ FIELDS = ["PLLAD_MD", "IF_HSYNC_RST", "IF_HB_SP2", "IF_HB_ST2",
           "VDS_HSYNC_RST", "VDS_VSYNC_RST", "SP_RT_HS_SP",
           "STATUS_SYNC_PROC_VTOTAL", "STATUS_SYNC_PROC_HLOW_LEN", "IF_HBIN_SP",
           "PLLAD_KS", "ADC_CLK_ICLK1X", "ADC_CLK_ICLK2X",
-          "STATUS_SYNC_PROC_HTOTAL"]
+          "STATUS_SYNC_PROC_HTOTAL", "STATUS_SYNC_PROC_HSPOL", "SP_HS_INV_REG"]
 
 
 def set_field(host, spec, value):
@@ -216,6 +216,15 @@ def measure(host, dev, mode, h, v, clock, label):
           f"  KS {field['PLLAD_KS']}  oversample x{ratio}"
           f"  htotal {field['STATUS_SYNC_PROC_HTOTAL']} against md"
           f" {field['PLLAD_MD']}", flush=True)
+    # The polarity as the chip MEASURED it, and the pulse retimeStopFor()
+    # subtracts, against what the file wants. The two polarities do not read
+    # that pulse equally, and the difference reaches the origin.
+    print(f"    hs pol {field['STATUS_SYNC_PROC_HSPOL']}"
+          f"  SP_HS_INV_REG {field['SP_HS_INV_REG']}", flush=True)
+    low, md = field["STATUS_SYNC_PROC_HLOW_LEN"], field["PLLAD_MD"]
+    pulse, filed = min(low, md - low), md * h[0] / float(sum(h))
+    print(f"    hlow {low}  pulse {pulse} against {filed:6.1f} filed"
+          f" ({pulse - filed:+5.1f})", flush=True)
     # No floor on the sampling density here. The frame is unreadable below about
     # 1.4 capture units per source pixel when its POSITION is wanted; a clip is
     # a presence test, and 1024x768@60 reads to a tenth of a sample at 1.07.
