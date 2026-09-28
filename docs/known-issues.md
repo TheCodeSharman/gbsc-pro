@@ -35,6 +35,34 @@ Vertically the picture is flush: 0 or 1 output pixel of the source's own
 blanking on screen across six DMT modes.
 `docs/investigations/the-transmitted-window-is-latched-from-our-blanking.md`.
 
+### Composite sync captures the doubled line 24.5 source pixels early
+
+**The line doubler's FIFO reset wants a different value on each sync type**, and
+the shipped one is sized for separate sync. Measured on `vga` at
+`X320 Y256 C256 F50`, one source and one mode, with the divider, the output raster
+and the capturable window unchanged:
+
+| sync type | wants `IF_HBIN_SP` |
+|---|---|
+| separate, `SP_SOG_MODE` 0, coast 0/0 | 147 |
+| composite, `SP_SOG_MODE` 1, coast 7/6 | 55 |
+
+`InputFormatter::LineDoubleReset` is 160, so on composite sync the capture starts
+24.5 source pixels into the source's line -- about 8% of a 320-pixel line -- and
+every window the solve places follows it. The reset pans at one ADC sample per
+register unit, so nothing downstream compensates.
+
+92 samples is nearly three times the 32 the field-rate split spans, so this is the
+larger of the two unexplained origin terms and any mechanism for either has to
+account for this one first. It is the scaler's and not the source's: `SYNC` changes
+only which pin carries sync and leaves VIDC20's horizontal registers alone. The
+sync duty is not the explanation, 154 against 156 being noise.
+
+**Do not move the constant on this.** It is one reading; its vertical companion
+could not be taken at all, because on composite sync the feature lands 2.8 lines
+into the capture and the creep has no run-up. Replicate it on a second source
+first. `docs/investigations/the-line-doubler-resets-the-fifo-late.md`.
+
 ### A held field rate 1.4% high survives the source returning, and the frame time lock cannot converge on it
 
 **Measured on the bench RISC PC at `X320 Y256 C256 F50`, after a run of mode
