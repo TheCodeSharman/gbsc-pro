@@ -10,6 +10,37 @@ regardless of which step is in flight.
 
 ## Reaches the picture
 
+### hdmi_capture.borders() overstates the picture on the bench RISC PC
+
+**An isolated dim blob at columns 1880..1899, peak luma 44.8 with dead black
+either side, sits past the end of the picture** and clears the tool's `BLACK`
+threshold of 24. On `X320 Y256 C256 F50` at the default framing that puts the
+reported right margin at **35** where the card's content ends at column 1588 and
+the true margin is **331**; the left margin reads 200 either way.
+
+Thresholded at 60 or 120 the span is 200..1588 both times, so the blob is the
+only thing between them. What emits it is not established -- it is one 20-column
+group, not a tail off the picture.
+
+**Every margin taken with the default threshold on this source is affected**,
+and a measurement that creeps an edge until the picture stops will stop at the
+blob rather than at the picture.
+
+### A sub-pixel horizontal shimmer appears and clears on a timescale of hours
+
+Present at `PLLAD_MD` 2200 on the scaling path and visible at the bench, gone an
+hour later with the divider, the VCO gain and the solve unchanged. Refuted as
+causes: the ADC sampling phase (which cannot reach it -- the kept sample grid
+already visits 275 sub-pixel positions per line), the VCO gain, sampling-grid
+commensurability, the frame time lock, repeated solving, and per-acquisition
+re-rolling over eight forced round trips.
+
+**No provocation is known**, which is what blocks it: `PLLAD_MD` 2082 was
+reproducibly noisy for one interleaved pair of measurements and quiet
+afterwards. `docs/investigations/the-sampling-phase-cannot-reach-the-shimmer.md`
+carries the measurements and the two instrument traps that make it easy to
+misread.
+
 ### The transmitted window's start is latched, so the picture cannot reach both edges
 
 **The window the chain carries is the right WIDTH and starts in the wrong
