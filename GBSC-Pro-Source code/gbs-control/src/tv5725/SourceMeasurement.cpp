@@ -412,7 +412,7 @@ bool SourceMeasurement::readSource()
     // The duty rather than the register, because the divider this was counted
     // against is about to move. HsyncPulse.h.
     const uint16_t divider = Adc::dividerInForce();
-    const uint16_t low = SyncProcessor::hsyncPulseSamples(divider);
+    const uint16_t low = SyncProcessor::hsyncPulseSamples(divider, positive);
     const uint16_t lineSamples = SyncProcessor::lineSamples();
     const bool latched = Adc::dividerLatched(lineSamples);
     const float duty = divider > 0 ? (float)low / (float)divider : 0.0f;

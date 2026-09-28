@@ -14,6 +14,7 @@ namespace Tv5725 {
 
 const uint16_t SyncProcessor::RetimeOriginSamples;
 const uint16_t SyncProcessor::UndecimatedOriginSamples;
+const uint16_t SyncProcessor::InvertedPulseWidthSamples;
 
 uint16_t SyncProcessor::retimeStopFor(uint16_t divider, const HsyncPulse &pulse,
                                      uint8_t oversample)
@@ -316,13 +317,16 @@ uint16_t SyncProcessor::hsyncLowSamples()
     return GBS::STATUS_SYNC_PROC_HLOW_LEN::read();
 }
 
-uint16_t SyncProcessor::hsyncPulseSamples(uint16_t lineSamples)
+uint16_t SyncProcessor::hsyncPulseSamples(uint16_t lineSamples, bool positive)
 {
     const uint16_t low = hsyncLowSamples();
     if (lineSamples <= low)
         return low;
     const uint16_t complement = (uint16_t)(lineSamples - low);
-    return low < complement ? low : complement;
+    const uint16_t pulse = low < complement ? low : complement;
+    if (!positive || pulse <= InvertedPulseWidthSamples)
+        return pulse;
+    return (uint16_t)(pulse - InvertedPulseWidthSamples);
 }
 
 bool SyncProcessor::hsyncPositive()

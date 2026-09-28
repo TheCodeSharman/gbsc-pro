@@ -255,8 +255,9 @@ TEST_CASE("an unmeasurable line rate is retried, not settled for")
         CHECK(Wire.field(5, 0x12, 0, 12) == 2200);
         CHECK(Wire.field(1, 0x0E, 0, 11) == 1100);   // IF_HSYNC_RST, divider / 2
         // SP_RT_HS_SP: the divider less the source's sync width, plus the
-        // origin the retiming module adds. 181/2553 through 2200 is 156.
-        CHECK(Wire.field(5, 0x4B, 0, 12) == 2107);
+        // origin the retiming module adds. 181/2553 through 2200 is 156, and
+        // the source being high-active takes InvertedPulseWidthSamples off it.
+        CHECK(Wire.field(5, 0x4B, 0, 12) == 2112);
     }
 }
 

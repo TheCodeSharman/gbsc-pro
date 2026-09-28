@@ -209,11 +209,13 @@ static void checkBenchGeometry()
 
     // The sampling divider in its three registers: IF_HSYNC_RST is PLLAD_MD/2,
     // and SP_RT_HS_SP is the divider less the sync width the source measured
-    // through it, plus the origin the retiming module adds: 177 samples of
-    // pulse, so 2200 - 177 + 63. One quantity, never read back.
+    // through it, plus the origin the retiming module adds. The bench source is
+    // high-active, so InvertedPulseWidthSamples comes off the pulse first: 177
+    // samples read, 172 after it, so 2200 - 172 + 63. One quantity, never read
+    // back.
     CHECK(Adc::PLLAD_MD::read() == 2200);
     CHECK(InputFormatter::IF_HSYNC_RST::read() == 1100);
-    CHECK(SyncProcessor::SP_RT_HS_SP::read() == 2086);
+    CHECK(SyncProcessor::SP_RT_HS_SP::read() == 2091);
 
     // PLLAD_LAT is the rising edge that loads MD into the PLL, so a divider
     // written after it leaves the ADC clocking at the old one.
@@ -1498,9 +1500,12 @@ TEST_CASE("the hsync duty is counted against the divider the source is left on")
 
     // The SHARE the source spends on sync, which is what the fixture models and
     // what a key carries. The count the sync processor reports moves with the
-    // divider and the share does not.
+    // divider and the share does not. The bench source is high-active, so the
+    // share is what the inverted path reported less the width it adds.
     CHECK(sampling.hsync().syncDuty()
-          == doctest::Approx(BenchSyncWidth).epsilon(0.001));
+          == doctest::Approx(BenchSyncWidth
+                             - SyncProcessor::InvertedPulseWidthSamples / 2250.0f)
+                 .epsilon(0.001));
 }
 
 TEST_CASE("an output change re-derives the divider even where the doubling holds")

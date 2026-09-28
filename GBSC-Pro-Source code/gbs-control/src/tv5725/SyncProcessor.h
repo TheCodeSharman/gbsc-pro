@@ -464,7 +464,7 @@ public:
     static bool vsyncPositive();
 
     // The pulse width in ADC samples, which is the SHORTER of the low time and
-    // its complement.
+    // its complement, less what the inverted path adds to it.
     //
     // The register is the low time, so on a high-active source it is the line
     // minus the pulse. normaliseHsyncPolarity() is meant to remove that, and on
@@ -474,7 +474,24 @@ public:
     // line and still leave a raster, so the shorter interval IS the pulse, and
     // it needs no write to have taken effect.
     // docs/investigations/the-duty-is-the-shorter-interval.md
-    static uint16_t hsyncPulseSamples(uint16_t lineSamples);
+    //
+    // The polarity is what decides whether the count was taken through
+    // normaliseHsyncPolarity()'s inversion, which is what the width below is.
+    static uint16_t hsyncPulseSamples(uint16_t lineSamples, bool positive);
+
+    // WHAT THE INVERTED PATH ADDS TO THE COUNT, in ADC samples. The same source
+    // read through the inversion measures wider than one read directly, and
+    // retimeStopFor() subtracts the reading straight into the counter's origin,
+    // so uncorrected it places a high-active source five samples from where it
+    // places a low-active one.
+    //
+    // Seven modes in one session at oversampling ratio two, the derived pulse
+    // against the mode file: H-negative -4.4, -4.8, -2.7, -3.3 against
+    // H-positive +1.8, +1.7, +1.7 -- a split of 5.53 where the origins measured
+    // beside them step by 5.27. RetimeOriginSamples was calibrated on
+    // H-negative states, so the direct reading is the one it suits.
+    // ../../../docs/investigations/the-capture-origin-varies-by-mode-at-one-line-rate.md
+    static const uint16_t InvertedPulseWidthSamples = 5;
 
     // Whether an hsync edge was found to take the polarity from. A polarity
     // read off a status the processor could not fill is a coin toss, which is

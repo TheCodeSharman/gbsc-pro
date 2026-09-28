@@ -1411,6 +1411,9 @@ TEST_CASE("one call measures the source, and every reading comes from that pass"
 //     320x256@50   HSPOL 1   2330 / 2506 = 93.0%   complement 7.0%   mode file 7.03%
 //     800x600@60   HSPOL 1   1376 / 1566 = 87.8%   complement 12.2%  mode file 12.12%
 //     640x480@60   HSPOL 0    181 / 1566 = 11.6%                     mode file 11.75%
+//
+// InvertedPulseWidthSamples comes off a high-active source on top of that, so
+// the duty here is the complement resolved AND the inversion's width removed.
 TEST_CASE("the hsync duty is the pulse whichever polarity the source sends")
 {
     SourceMeasurement sampling(inputFormatter);
@@ -1420,7 +1423,9 @@ TEST_CASE("the hsync duty is the pulse whichever polarity the source sends")
     g_fieldRate = 50.08f;
 
     REQUIRE(measurePastGate(sampling) == SourceMeasurement::Measured);
-    CHECK(sampling.hsync().syncDuty() == doctest::Approx(181.0f / (float)BenchDivider));
+    CHECK(sampling.hsync().syncDuty()
+          == doctest::Approx((181.0f - SyncProcessor::InvertedPulseWidthSamples)
+                             / (float)BenchDivider));
 }
 
 // The correction is a WRITE, and the sync processor owns it, so the count read
@@ -1451,6 +1456,39 @@ TEST_CASE("a low-active source is left alone")
     REQUIRE(measurePastGate(sampling) == SourceMeasurement::Measured);
     CHECK(SyncProcessor::SP_HS_INV_REG::read() == 0u);
     CHECK(sampling.hsync().syncDuty() == doctest::Approx(181.0f / (float)BenchDivider));
+}
+
+// THE INVERTED PATH MEASURES THE PULSE WIDE, AND retimeStopFor() SUBTRACTS THE
+// READING STRAIGHT INTO THE COUNTER'S ORIGIN, so the same source lands in two
+// places depending on which polarity it arrives on.
+//
+// Seven modes in one session, the pulse the firmware derives against what the
+// mode file states, every one at oversampling ratio two:
+//
+//   H-negative  1280x768 -4.4  1280x800 -4.8  1024x768 -2.7  640x480 -3.3
+//   H-POSITIVE  1360x768 +1.8  1600x600 +1.7  800x600  +1.7
+//
+// mean -3.80 against +1.73, a split of 5.53 samples. The origins measured
+// beside them step by 5.27 across the same boundary, and regressed against
+// density the pulse error carries a coefficient of 0.85 where the arithmetic
+// wants 1 -- so the step IS this reading and nothing else.
+//
+// RetimeOriginSamples was calibrated on H-negative states, so the direct
+// reading is the one it suits and the inverted one is what moves.
+// ../docs/investigations/the-capture-origin-varies-by-mode-at-one-line-rate.md
+TEST_CASE("one source's pulse reads the same through the inversion as without it")
+{
+    Adc::applyDivider(1448);
+
+    seedSourceLines(798);
+    seedHsync(107, false);
+    const uint16_t lowActive = SyncProcessor::hsyncPulseSamples(1448, false);
+
+    seedSourceLines(798);
+    seedHsync(112, true);
+    const uint16_t highActive = SyncProcessor::hsyncPulseSamples(1448, true);
+
+    CHECK(lowActive == highActive);
 }
 
 // A REFUSED DUTY STALLS ACQUISITION, IT DOES NOT MERELY LOSE THE ORIGIN.
@@ -1898,7 +1936,8 @@ TEST_CASE("the pulse is the shorter interval, whatever the counter reports")
     measurePastGate(sampling);
 
     CHECK(sampling.hsync().syncDuty()
-          == doctest::Approx(181.0f / (float)BenchDivider));
+          == doctest::Approx((181.0f - SyncProcessor::InvertedPulseWidthSamples)
+                             / (float)BenchDivider));
 }
 
 // A REFUSED DUTY IS A FAULT, NOT A DEFAULT, so it has to say so. Nothing
