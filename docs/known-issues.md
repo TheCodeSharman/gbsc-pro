@@ -35,15 +35,15 @@ Vertically the picture is flush: 0 or 1 output pixel of the source's own
 blanking on screen across six DMT modes.
 `docs/investigations/the-transmitted-window-is-latched-from-our-blanking.md`.
 
-### The undoubled capture origin is wrong on POSITIVE sync only
+### The undoubled capture origin varies by mode, and the varying quantity is unknown
 
-**Measured against the mode file, the origin error is two terms, and only the
-smaller one is the scaler's.** A term that holds constant in the SOURCE's pixels
-cannot be the scaler's at all: the source's pixel clock is nowhere in the signal,
-so nothing in the chip can produce a delay in a unit it cannot measure.
+**`SyncProcessor::RetimeOriginSamples` is 63 and nine undoubled modes want 62 to
+91**, measured at full framing against the mode file. **The line-rate model is
+refuted** and nothing has replaced it.
 
-Five H-negative modes at one line rate, one field rate and one divider
-(`PLLAD_MD` 1442), spanning a four-fold range of samples per source pixel:
+Five H-negative modes at one line rate (31.47 kHz), one field rate, one polarity
+and one divider (`PLLAD_MD` 1442, so one sample rate of 45.38 MHz), spanning a
+four-fold range of samples per source pixel:
 
 | mode | samples/px | d px | d samples |
 |---|---|---|---|
@@ -53,42 +53,40 @@ Five H-negative modes at one line rate, one field rate and one divider
 | 360x480@60 | 2.711 | +3.4 | +9.1 |
 | 320x480@60 | 3.605 | +3.3 | +11.8 |
 
-14% spread in source pixels against 58% in ADC samples, so **the source emits its
-active video about 3 of its own pixels after the mode file's nominal start** and
-the scaler's term is zero across this whole family. `h active` reads +0.0
-throughout, so the card is not drawn inset -- the whole active region is late.
+Nine samples of disagreement with the line rate, the field rate, the polarity,
+the divider and the sample rate all held. The sync width runs 100 to 170 samples
+across the set without ordering the result either.
 
-**The timing twins prove the split.** `800x600@60` and `1600x600@60` present an
-identical sync waveform and differ only in pixel clock, by exactly two. Raw they
-read +6.1/+8.5 source pixels and +8.2/+5.8 ADC samples, agreeing in neither.
-Take 3.0 source pixels off and they agree in **ADC samples**, +4.2 against +3.7 --
-the unit the chip works in, and the only decomposition that makes a matched pair
-consistent.
+**Whether the correction belongs in ADC samples or in source pixels is NOT
+established, and the `d px` column above must not be read as constant.** These
+are anchored readings: `full_margins.py` maps dongle column zero to the capture
+window's start, which `counter_origin.py` measures at about **2.6 ADC samples**.
+That is a constant within one output raster but 2.89 SOURCE PIXELS at 0.901
+samples/px against 0.72 at 3.605, so leaving it in flattens the `d px` column.
+Removed, the relative spread goes from 14.1% to 68.0% in source pixels and from
+57.9% to 96.3% in samples -- neither is constant.
 
-What is left splits by sync polarity:
+**Two modes indistinguishable to the chip still differ by 2.4 samples.**
+`1600x600@60` is `800x600@60` with every horizontal field doubled at twice the
+pixel clock, so the sync pulse is 3.2000 us in both, the line 26.400 us, the
+active start 5.4000 us, the polarity and field rate the same, and the engine
+solves the same divider and retime stop. Nothing the TV5725 can observe differs.
+They read +8.2 against +5.8 `d samples`, the anchor cancelling across a pair at
+one raster, and each repeats to 0.3 to 0.4 samples. **A pixel-clock explanation
+of that is suspect and unverified** -- nothing reaching the retiming can see the
+source's pixel clock, and a source-side delay common to its own sync and video
+cancels against a scaler that times video from the sync edge. Repeat the pair
+with `counter_origin.py` before building on it.
 
-| sync | modes | residual in samples |
-|---|---|---|
-| H-negative | six, at 31.5 and 48.4 kHz | −1.1 .. +1.1 |
-| H-positive | 800x600@60, 1600x600@60 (37.9 kHz) | +4.2, +3.7 |
-| H-positive | 1280x1024@60, 1280x960@60 (64.0, 60.0 kHz) | +14.3, +15.2 |
+`STATUS_SYNC_PROC_HLOW_LEN` reads about 98 ns narrower on H-negative sync than on
+H-positive, tighter as a time than as a count, which `retimeStopFor()` subtracts.
+At two to five samples it is not the spread.
 
-**`SyncProcessor::RetimeOriginSamples` at 63 is already right on negative sync**,
-over six modes and two line rates. The defect is positive-sync only, it grows
-with line rate, and it is in ADC samples -- observable, so correctable. Why it
-grows is not established and rests on two clusters, so nothing is fitted.
-
-`STATUS_SYNC_PROC_HLOW_LEN` splits on the same boundary, reading about 98 ns
-narrower on H-negative than H-positive and tighter as a time than as a count,
-which `retimeStopFor()` subtracts. At two to five samples it is not the whole
-residual, but a positive-going source is measured through an extra inversion in
-`SP_HS_INV_REG`.
-
-**The line-rate model is superseded**, and the pixel clock, the back porch and
-the sample rate are each refuted by a control rather than a correlation.
-`docs/investigations/the-origin-error-splits-into-the-sources-pixels-and-the-scalers-samples.md`
-has them; `docs/investigations/the-line-doubler-resets-the-fifo-late.md` has the
-doubled counterpart.
+Undoubled sources are the ones whose rasters the engine is entitled to derive a
+capture window from, so this bounds how well a published-raster framing can do.
+`docs/investigations/the-capture-origin-varies-by-mode-at-one-line-rate.md` has
+the controls; `docs/investigations/the-line-doubler-resets-the-fifo-late.md` has
+the doubled counterpart.
 
 **Origin readings taken at 75 Hz are not repeatable.** 1125 lines at 75 Hz is not
 a standard mode, and `800x600@75` read +8, +29, +17 and +15 samples on four
