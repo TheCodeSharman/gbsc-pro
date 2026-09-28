@@ -105,6 +105,10 @@ def green_edges(clip, axis, expected):
     The span is known from the scale and the card's own size; only the POSITION
     is being measured, so using it to identify the edges begs no question. The
     residual is printed, so a bad pick is visible rather than silent.
+
+    The far edge is `None` where no pair can be formed, which is what a picture
+    overrunning the emitted frame leaves. The near edge still places the
+    picture, so the lead is still a measurement.
     """
     greenest = np.zeros(clip.shape[1 + axis], np.float32)
     for rgb in clip:
@@ -118,12 +122,13 @@ def green_edges(clip, axis, expected):
         weight = np.maximum(greenest[run[0]:run[1] + 1] - card_edges.GREEN_HUE, 0)
         return float((at * weight).sum() / weight.sum()) if weight.sum() else None
 
-    at = [(run, centroid(run)) for run in runs]
-    pairs = [(abs(far - near), near, far)
-             for _, near in at for _, far in at
-             if near is not None and far is not None and far > near]
-    if not pairs:
+    at = [c for _, c in ((run, centroid(run)) for run in runs) if c is not None]
+    if not at:
         return None, runs, None
+    pairs = [(abs(far - near), near, far)
+             for near in at for far in at if far > near]
+    if not pairs:
+        return (min(at), None), runs, None
     best = min(pairs, key=lambda p: abs(p[0] - expected))
     return (best[1], best[2]), runs, best[0] - expected
 
@@ -157,6 +162,20 @@ def report(mode, field, geo, clip, h, v, clock):
           f"   md {field['PLLAD_MD']} (x{doubling})")
     if across is None or down is None:
         print(f"  NO FRAME on both edges: across {runs} down {vruns}")
+        return
+
+    # A picture overrunning the emitted frame leaves no far edge to take the
+    # ruler from, and the lead does not need one: an IF unit is `seed` source
+    # pixels by construction, and where the pair IS found that agrees with
+    # their separation to 0.1%. The line total is what the measured ruler is
+    # for, so it is not claimed here.
+    if across[1] is None or down[1] is None:
+        near = field["IF_HB_SP2"] + across[0] / per_unit
+        print(f"  green   near {across[0]:7.1f} px = units {near:7.1f}"
+              f"   NO FAR EDGE, ruler computed   across {runs} down {vruns}")
+        print(f"  margins h lead {near / seed:.1f}/{h[0] + h[1] + h[2]}"
+              f" ({near / seed - (h[0] + h[1] + h[2]):+.1f})"
+              f"   {seed:.5f} units/px")
         return
 
     left = field["IF_HB_SP2"] + across[0] / per_unit
