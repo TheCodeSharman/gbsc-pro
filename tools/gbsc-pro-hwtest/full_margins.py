@@ -12,8 +12,15 @@ The card's green frame is drawn on the outermost pixels of the framebuffer, so
 the two green edges are `active - 1` source units apart whatever the source is
 doing. That separation is the ruler: it gives capture units per source pixel,
 and the line counter divided by it is how many pixels the source really puts on
-a line. The transmitted window's latch shifts both edges together and so cancels
-out of every span; it reaches only the absolute figures, by a few columns.
+a line.
+
+The transmitted window's latch shifts both edges together and so cancels out of
+every span. It reaches the ABSOLUTE figures in principle, and measured against
+`counter_origin.py` -- which carries no anchor -- it contributes under a sample on
+the scaling path at 1080p, across three modes spanning a 19-sample range. An
+output-resolution change or a pass-through excursion is a different matter and
+was never in that comparison.
+../../docs/investigations/the-shown-window-is-latched-at-lock.md
 
 An IF unit is TWO ADC samples on a line-doubled source and one otherwise, so
 every figure the sync processor reports -- it counts in ADC samples -- is
