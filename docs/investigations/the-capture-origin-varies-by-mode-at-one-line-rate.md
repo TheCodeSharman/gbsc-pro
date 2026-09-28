@@ -63,10 +63,73 @@ They repeat to better than 0.1 source pixels and land 2.2 samples apart. **Both
 sample at one rate**, so *constant in ADC samples* and *constant in time* are one
 hypothesis across this pair, and it is refuted.
 
-A delay common to a source's sync and its video cancels, because the scaler
-times video from the sync edge. What does not cancel is a *differential* delay
-between a pixel-clocked video path and the sync generator beside it, which is
-what a video FIFO produces.
+**RE-TAKEN AFTER BOTH CORRECTIONS AND AFTER THE NEAR-EDGE GUARD**, so the
+instrument defect that made a run on the emitted frame's first column read as
+the card's near edge cannot be what produced them:
+
+| | units/px | lead against the file | d samples |
+|---|---|---|---|
+| 800x600@60, 40 MHz | 1.363 | 215.6 against 216 | **-0.5**, -0.5 |
+| 1600x600@60, 80 MHz | 0.681 | 427.7 against 432 | **-3.0** |
+
+Still 2.5 samples apart, with the engine solving `SP_RT_HS_SP` 1330 for both.
+
+**NO MECHANISM IS MEASURED.** A delay common to a source's sync and its video
+cancels, because the scaler times video from the sync edge, so what the numbers
+require is a *differential* delay between the video path and the sync generator
+beside it. Nothing here has measured one, and a mechanism proposed to fit these
+numbers is a story until a probe carries it.
+
+Two candidates are refuted rather than untried. **A mis-stated reference is
+not available**: the mode file's blanking is VESA DMT exactly -- 640x480
+`96+48=144`, 800x600 `128+88=216`, 1024x768 `136+160=296` -- and the card's
+green frame is on framebuffer column 0, `PROCframe` drawing `PROCpix(0,0,1,H%)`.
+**Nor is a smeared marker**: a band-limited feature is detected LATE and its
+smear is a fixed time, so it would cost more source pixels at 80 MHz than at 40
+and push the 80 MHz reading positive. It reads 3.9 source pixels more negative.
+
+## The scope settles it, and the predictions are registered
+
+The twin pair is the only place on the bench where sync timings are identical
+and the pixel clock is not, so a probe on HSYNC and GREEN measures the one thing
+no measurement through the scaler can separate. Both modes are H+, so the raster
+is counted from the sync pulse's RISING edge:
+
+| | 800x600@60, 40 MHz | 1600x600@60, 80 MHz | difference |
+|---|---|---|---|
+| sync width | 3.2000 us | 3.2000 us | 0 |
+| line | 26.4000 us | 26.4000 us | 0 |
+| video where the file says | 5.4000 us | 5.4000 us | **0 ns** |
+| video lagging by 4.10 source px | 5.5025 us | 5.4513 us | **51.3 ns** |
+
+**Read the DIFFERENCE, not the absolute number.** Probe skew, cable length and
+trigger offset are identical across the pair and cancel; an absolute reading
+carries all three.
+
+**TAKE IT ON `PM5544`, NOT ON `CARD`.** `CARD`'s green frame is ONE source
+pixel -- 25 ns at 40 MHz and 12.5 ns at 80 MHz -- and a pulse that narrow need
+not reach full amplitude through the DAC and the cable, which makes a 50%
+threshold ambiguous in exactly the direction that would fake the effect.
+`PM5544` marks the same edge with a feature that does reach it, and needs no
+change to the source:
+
+- its left castellation band starts at framebuffer column 0, `PROCcastell`
+  drawing `PROCpix(0, FNgy(j%)+1, e%, ...)` over a white ground filled from
+  `0,0`, so it is the same edge the frame marks;
+- it is `e% = CW% DIV 3` wide, and `CW%` computes to **47 source pixels in both
+  twins** -- 375 ns and 187 ns, both full amplitude;
+- `NY%` is fixed at 13 and `FNgy()` depends only on `H%`, which is 600 in both,
+  so the white/black alternation down the left edge is IDENTICAL in the pair and
+  drops out of the difference the same way probe skew does.
+
+Its animation flips the corner squares yellow against white, both full scale on
+the green channel and so invisible there; `ANIM OFF` regardless.
+
+**THE BORDER IS THE TRAP, AND IT IS ASYMMETRIC.** `1600x600@60` carries 78
+source pixels of left border where `800x600@60` carries none, and a border drawn
+in a colour fires the measurement 975 ns early -- twenty times the effect, on one
+mode only. `PROCpatinit` forces it black with the flash off. The tell is that
+1600x600 must read about 5.40 us and not about 4.43.
 
 **They are not one entry doubled.** Sync 128 -> 256 and the line total
 1056 -> 2112 both double, while the back porch goes 88 -> 98 and a 78-pixel
