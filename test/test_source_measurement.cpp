@@ -1453,6 +1453,33 @@ TEST_CASE("a low-active source is left alone")
     CHECK(sampling.hsync().syncDuty() == doctest::Approx(181.0f / (float)BenchDivider));
 }
 
+// A REFUSED DUTY STALLS ACQUISITION, IT DOES NOT MERELY LOSE THE ORIGIN.
+// takeDuty() leaves dutyMeasured_ false, measureDuty() answers Settling on
+// every pass and the source never solves. Measured on the bench at
+// 1280x720@60: "duty: 37 pulse / 1444 divider, positive, NOT A PULSE" printing
+// for as long as the source was connected, with no picture at any point.
+//
+// CEA-861 states sync pulses this narrow throughout, and they are a published
+// raster rather than a bad reading:
+//
+//   720p60   40 of 1650 = 24.2 per mille     1080p60  44 of 2200 = 20.0
+//   720p50   40 of 1980 = 20.2               1080p24  44 of 2750 = 16.0
+//
+// The retime stop still cannot express an origin behind a pulse narrower than
+// RetimeOriginSamples, so such a source captures against whatever origin the
+// last one left. That is a placement to improve, not a reason to refuse the
+// measurement.
+TEST_CASE("a CEA-861 sync pulse is narrow, and the source measures anyway")
+{
+    SourceMeasurement sampling(inputFormatter);
+    Adc::applyDivider(1444);
+    seedSourceLines(750);
+    Wire.sourceHsync(35, 1444, true);
+    g_fieldRate = 60.0f;
+
+    CHECK(measurePastGate(sampling) == SourceMeasurement::Measured);
+}
+
 // THE COUNT IS ONLY THE PULSE WHILE THE PROCESSOR IS COUNTING THE LINE THE
 // SAMPLES ARE DIVIDED BY. STATUS_SYNC_PROC_HTOTAL counts real ADC clocks per
 // line, so locked it echoes the divider in force; while it disagrees, the low

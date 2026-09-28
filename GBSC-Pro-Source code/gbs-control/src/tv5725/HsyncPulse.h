@@ -38,9 +38,18 @@ public:
     // it is the ONLY bound: nothing substitutes a value for a reading outside
     // it, because a guess that happens to suit the bench source is invisible on
     // every other mode.
+    //
+    // A READING OUTSIDE IT STALLS ACQUISITION rather than losing the origin
+    // alone: SourceMeasurement::takeDuty() keeps dutyMeasured_ false and the
+    // source never leaves Settling. So the floor has to clear the narrowest
+    // raster a source may publish, not the narrowest the bench happens to send.
     bool isPulse() const;
 
-    static const uint16_t PulseFloorPerMille = 41;
+    // CVT reduced blanking fixes hsync at 32 pixels inside 160 of blanking, so
+    // its duty is 32 / (active + 160) -- 15 per mille at 1920 active and 12 at
+    // 2560. CEA-861's narrowest is 1920x1080@24 at 16, and 720p60 is 24.
+    // A floor of 41 refused every one of them.
+    static const uint16_t PulseFloorPerMille = 10;
     static const uint16_t PulseCeilingPerMille = 152;
 
 private:
