@@ -133,6 +133,46 @@ value: **160**, which takes every mode within 23 samples where 272 was out by
 127. The best a single value can do is 158, at 21 — the readings run 137 to 179
 — and two samples do not buy a change.
 
+## The sync type moves it further than the field rate does
+
+One reading, on `vga` at X320 Y256 C256 F50 with nothing else changed -- same
+divider, same output raster, same capturable window, the source's own horizontal
+registers untouched because `SYNC` alters only which pin carries sync:
+
+| sync type | `HLOW_LEN` | `VTOTAL` | the card's left frame | wants |
+|---|---|---|---|---|
+| separate, `SP_SOG_MODE` 0, coast 0/0 | 156 | 311 | 106.9 px | 147 |
+| composite, `SP_SOG_MODE` 1, coast 7/6 | 154 | 308 | 85.5 px | 55 |
+
+**92 samples, against the field rate's 32.** The source's content sits 21.4 source
+pixels earlier in the capture on composite sync, so at the shipped 160 the picture
+is taken 24.5 pixels early there -- about 8% of a 320-pixel line. The separate-sync
+row reproduces the 147 read on a different day, so the instrument is repeatable
+across sessions.
+
+It is the scaler's, not the source's: VIDC20's horizontal timing registers do not
+change with `SYNC`, so what moves is where the sync processor puts the retimed
+hsync the FIFO resets against. **The sync duty is not the explanation** -- 154
+against 156 is within noise, and the 222 that would have made a story of it was
+read off a stranded engine rather than a healthy one.
+
+**This is ONE reading and no constant should move on it.** Its vertical companion
+failed outright, and a second sync type multiplying the number of origin values
+wants replication on another source before anything is keyed on it.
+
+**The vertical origin is not measurable on composite sync with this instrument.**
+The feature lands 2.8 lines into the capture, so the creep has no room for its
+run-up: started at 3 against an expected crossing of 28, it reported 5.5, and a
+crossing 22 units from where the observation put it is a failed reading rather
+than a small one.
+
+**Round-tripping the sync type strands the engine, and `/sc?~` is the recovery.**
+After several `SYNC` changes the engine sat at `state: absent` with the sync
+processor counting 311 perfectly beside it, `IF_VB_SP` collapsed to 2..0 so the
+vertical window could never fire, and the framing untuned. Neither clearing the
+framing override nor waiting out `HeldRateRejectionLimit` released it;
+`/sc?~` restored the framing, the count and the picture in one pass.
+
 ## What it is worth, engine-solved with nothing hand-set
 
 The source's active start against the mode file:
