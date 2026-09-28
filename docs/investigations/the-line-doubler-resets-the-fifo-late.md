@@ -51,6 +51,22 @@ the playback fetch sized for the old width, so past the picture's new end the
 aperture shows memory nothing wrote — as often green as anything else, and it
 reads as a feature that never leaves.
 
+**A GREEN RUN ON THE EMITTED FRAME'S OWN FIRST COLUMN IS NOT THE CARD, and
+taking it as the near edge reads the source's video 64.8 px early.** Measured on
+the bench source at full framing, the runs are `(0,5)`, `(280,287)` and
+`(1596,1603)`: under a 20-unit step of `SP_RT_HS_SP` the card's two edges moved
+19 columns together and the run at 0..5 did not move at all. `near_run()` refuses
+a run touching either boundary now, and the reading it refuses is a plausible
+number rather than a broken one — which is what made it expensive.
+
+**So every reading in the tables below predates that guard**, and the bench mode
+re-reads on the corrected instrument at a null of `IF_HBIN_SP` **181** against
+the 147 filed here, repeatable to 0.1 sample and giving one null from four
+different `IF_HBIN_SP` values. Only 5 of that 34 is the retime correction
+`SyncProcessor::InvertedPulseWidthSamples` accounts for. **The whole set wants
+re-measuring before the constant moves**, and what moved the other 29 is not
+known.
+
 ## The reset is the whole doubled term, at one sample per register unit
 
 `X320 Y256 F50`, `PLLAD_MD` 2200, everything else held:
