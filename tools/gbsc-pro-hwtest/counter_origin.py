@@ -64,7 +64,9 @@ OUTPUTS = {"1080p": "s", "960p": "f", "720p": "g", "1024p": "p"}
 FIELDS = ["PLLAD_MD", "IF_HSYNC_RST", "IF_HB_SP2", "IF_HB_ST2",
           "IF_VB_SP", "IF_VB_ST", "VDS_HSCALE", "VDS_VSCALE",
           "VDS_HSYNC_RST", "VDS_VSYNC_RST", "SP_RT_HS_SP",
-          "STATUS_SYNC_PROC_VTOTAL", "STATUS_SYNC_PROC_HLOW_LEN", "IF_HBIN_SP"]
+          "STATUS_SYNC_PROC_VTOTAL", "STATUS_SYNC_PROC_HLOW_LEN", "IF_HBIN_SP",
+          "PLLAD_KS", "ADC_CLK_ICLK1X", "ADC_CLK_ICLK2X",
+          "STATUS_SYNC_PROC_HTOTAL"]
 
 
 def set_field(host, spec, value):
@@ -206,6 +208,14 @@ def measure(host, dev, mode, h, v, clock, label):
           f" v {field['IF_VB_SP']}..{field['IF_VB_ST']}"
           f"  {units / float(sum(h)):.2f} units/px"
           f"  source clock {clock / 1e6:.3f} MHz", flush=True)
+    # The ADC clock group the reading was taken under. PLLAD_KS crosses at
+    # CKO 80 MHz and takes the oversampling ratio with it, so a reading paired
+    # with a later register read can be paired with the wrong row.
+    ratio = 4 if field["ADC_CLK_ICLK2X"] else (2 if field["ADC_CLK_ICLK1X"] else 1)
+    print(f"    cko {field['PLLAD_MD'] * clock / sum(h) / 1e6:.2f} MHz"
+          f"  KS {field['PLLAD_KS']}  oversample x{ratio}"
+          f"  htotal {field['STATUS_SYNC_PROC_HTOTAL']} against md"
+          f" {field['PLLAD_MD']}", flush=True)
     # No floor on the sampling density here. The frame is unreadable below about
     # 1.4 capture units per source pixel when its POSITION is wanted; a clip is
     # a presence test, and 1024x768@60 reads to a tenth of a sample at 1.07.
@@ -282,6 +292,14 @@ def main():
     parser.add_argument("--hold", type=int, default=0,
                         help="hold PLLAD_MD here, so the whole engine solves "
                              "around it. 0 releases a hold a previous run left.")
+    parser.add_argument("--osr", type=int, default=0,
+                        help="press /sc?o this many times once the state is "
+                             "frozen, cycling the oversampling ratio 1-2-4. The "
+                             "kept rate is unchanged -- PLLAD_CKOS and the "
+                             "decimators move together -- so the geometry the "
+                             "engine solved stays valid, which is what makes "
+                             "the ratio separable from the PLLAD_KS row it "
+                             "normally moves with.")
     parser.add_argument("--hbin", default="",
                         help="IF_HBIN_SP values to read the origin at, comma "
                              "separated. The line doubler's FIFO reset, which "
@@ -320,6 +338,9 @@ def main():
             if not shear.freeze(args.host, True):
                 print("  the freeze would not take")
                 continue
+            for _ in range(args.osr):
+                gbs_unit.get(args.host, "/sc?o")
+                time.sleep(1.5)
             specs = setfield.load_map()
             held = gbs_unit.read_named(args.host, "IF_HBIN_SP")
             try:
