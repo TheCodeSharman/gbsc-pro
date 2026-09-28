@@ -161,12 +161,25 @@ counter's own. That is the positive form of what was already suspected once ever
 `OutputMode` stated a standard's timings: a sink locking to a mode it recognises
 places it the same way every time.
 
-**The scope is those conditions and not more.** All three sit at 1080p output with
-the scaler's raster within four units of 1600, and the comparison crosses no
-output-resolution change and no pass-through excursion -- which is where the 57
-and ~150 column displacements came from. It says the latch is quiet across
-ordinary source mode changes on one held path; it does not touch the overlay
-measurement above, which is a different experiment and stands.
+**And each pair is two INDEPENDENT acquisitions, which is the stronger claim.**
+The two runs are separate sessions with their own `MODE` commands, and the
+raster moved between the modes in both -- 1600, 1596, 1600 -- so
+`VideoPath::solveRaster()` set `encoderMoved_` and the sync pad was held away
+each time. The sink therefore re-acquired between every reading, and the window
+still landed within a sample of where it had been.
+
+**So the scaling path is not susceptible to a re-lock, and bypass is.** That is
+the difference the ~150 column pass-through figure records, and it has a
+mechanism: in bypass the SOURCE'S own timing reaches the encoder, so the sink
+locks to a different HDMI mode for every source, while on the scaling path the
+emitted mode is one `Tv5725::OutputMode` states a standard's timings for and a
+raster moving four units is a small analog change inside the mode the sink
+already recognises.
+
+**The scope is those conditions and not more.** All three sit at 1080p output,
+and the comparison crosses no output-RESOLUTION change and no pass-through
+excursion. It does not touch the overlay measurement above, which is a different
+experiment and stands.
 
 ## What it locks ONTO is the blanking edge, not the first content
 
