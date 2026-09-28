@@ -436,6 +436,7 @@ private:
 
     bool sizeCaptureWindow(CaptureWindow &capture);
     bool calculateInputFormatterRegisters(CaptureWindow &capture);
+    static uint16_t marginTaken(const CaptureWindow &capture, const Axis &axis);
     OutputWindow imageFor(const CaptureWindow &capture) const;
 
     // Ordered so the headroom never dips: the solver always takes the whole

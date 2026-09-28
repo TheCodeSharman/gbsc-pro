@@ -46,6 +46,39 @@ static Tv5725::OutputTiming rasterOf(uint16_t linePx, uint16_t frameLines,
     return raster;
 }
 
+// A MARGIN THE CAPTURE NEVER TOOK IS NOT CHARGED TO THE WINDOW.
+//
+// captureOn() puts a spare unit under each end of the picture, but it clamps to
+// the counter's own bounds -- so a framing across the whole capturable region
+// gets NO margin, while the window went on charging captureMargin() for one. The
+// picture was then placed a margin after the write started and the aperture
+// closed a margin after it ended, showing memory nothing wrote.
+//
+// Measured at 320x256@50, 100% framing: IF_VB 1..622 with the picture also
+// 1..622, VDS_VSCALE 589, VDS_VB_SP 36 -- so the write runs 37.6 .. 1117.2 --
+// and VDS_DIS_VB_ST sat at 1120. Three bright rows across the bottom of the
+// emitted frame, stable frame to frame. At the default framing, where the margin
+// fits, the write over-reaches the aperture and the same rows read 0.
+TEST_CASE("an aperture never closes past the end of the write")
+{
+    const Tv5725::OutputTiming raster = rasterOf(1917, 1125, 1815, 1120, 142, 41);
+
+    for (const Tv5725::Axis *axis : {&Tv5725::AxisHorizontal, &Tv5725::AxisVertical}) {
+        // The margins the counter's bounds left, which across the whole line is
+        // none of them.
+        const OutputWindow solved(998, 621, raster, 0, 0);
+        const Tv5725::OutputMapping &m =
+            axis->vertical() ? solved.vertical() : solved.horizontal();
+
+        const float writeEnds = (float)m.memory().stop()
+                              + OutputWindow::originOffset(*axis,
+                                                           m.scale().magnification())
+                              + m.produced();
+
+        CHECK((float)m.display().start() <= writeEnds);
+    }
+}
+
 // --- the bench readings, as this suite's own oracle ---------------------------
 
 // Where the scaler starts writing, measured at the near edge across the

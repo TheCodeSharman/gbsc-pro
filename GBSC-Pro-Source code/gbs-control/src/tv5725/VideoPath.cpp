@@ -996,13 +996,31 @@ bool VideoPath::calculateInputFormatterRegisters(CaptureWindow &capture)
     return capture.usable() ? true : fail();
 }
 
+// The leading margin the capture window actually opened on, which is the axis's
+// own only where the counter had room for it.
+uint16_t VideoPath::marginTaken(const CaptureWindow &capture, const Axis &axis)
+{
+    const BlankingTiming picture = capture.pictureOn(axis);
+    const BlankingTiming window = axis.vertical() ? capture.vertical()
+                                                  : capture.horizontal();
+    const int32_t taken = picture.stop() - window.stop();
+    return taken < 0 ? 0 : (uint16_t)taken;
+}
+
 OutputWindow VideoPath::imageFor(const CaptureWindow &capture) const
 {
     // The PICTURE, not the register pair. The pair carries the interpolator's
     // margin at each end; fitting that to the raster scales the margin onto the
     // screen, leaving the picture short of both edges by what it costs.
+    //
+    // WITH THE MARGINS THE CAPTURE GOT, which a framing across the whole
+    // capturable region does not get: the counter's own bounds clamp them away,
+    // and a margin charged but not taken places the picture after the write
+    // starts and closes the aperture after it ends.
     return OutputWindow(capture.pictureOn(AxisHorizontal).width(),
-                        capture.pictureOn(AxisVertical).width(), raster_);
+                        capture.pictureOn(AxisVertical).width(), raster_,
+                        marginTaken(capture, AxisHorizontal),
+                        marginTaken(capture, AxisVertical));
 }
 
 void VideoPath::write(const OutputWindow &solved, const CaptureWindow &capture)

@@ -40,8 +40,20 @@ public:
     // the picture's own edge units interpolate from samples beyond them, and
     // those extra units are produced into the blanking rather than onto the
     // screen.
+    // The margins are the ones the CAPTURE actually got, which at a framing
+    // across the whole capturable region is not the axis's nominal one: the
+    // counter's own bounds clamp them away, and charging for a margin that is
+    // not there places the picture after the write starts and closes the
+    // aperture after it ends.
+    // ../../../docs/investigations/the-capture-margin-is-clamped-away-at-full-framing.md
     OutputWindow(uint16_t horizontalPicture, uint16_t verticalPicture,
-                 const OutputTiming &raster);
+                 const OutputTiming &raster,
+                 uint16_t horizontalMargin = NominalMargin,
+                 uint16_t verticalMargin = NominalMargin);
+
+    // Stands for "the axis's own captureMargin()", so a caller with no reason to
+    // say otherwise does not have to name it.
+    static const uint16_t NominalMargin = 0xFFFF;
 
     // Each axis's whole answer: its scale, what that produced, and the two
     // blanking windows bounding it.
@@ -72,6 +84,10 @@ public:
     static uint16_t maximumCapture(const Axis &axis, uint16_t rasterTotal,
                                    uint16_t activeStart, uint16_t activeStop);
 
+    // Where the WRITE begins after VDS_?B_SP, which is what says whether an
+    // aperture reaches past it. docs/scaler-geometry-model.md.
+    static float originOffset(const Axis &axis, float magnification);
+
 private:
     // Pipeline latency before the first write, per axis:
     // write start = VDS_?B_SP + constant + perMagnification x magnification.
@@ -86,7 +102,8 @@ private:
     // The scale that fits a capture to the room the raster offers.
     static RasterFit fitToRaster(const Axis &axis, uint16_t capture,
                                  uint16_t rasterTotal, uint16_t activeStart = 0,
-                                 uint16_t activeStop = 0);
+                                 uint16_t activeStop = 0,
+                                 uint16_t margin = NominalMargin);
 
     // This axis's four output registers, from a capture in whatever units the
     // input formatter counted it in. The display window IS the picture at both
@@ -95,7 +112,9 @@ private:
     // docs/investigations/display-window-opens-early.md
     static OutputMapping solve(const Axis &axis, uint16_t capture, Scale scale,
                               uint16_t rasterTotal, uint16_t activeStart = 0,
-                              uint16_t activeStop = 0);
+                              uint16_t activeStop = 0,
+                              uint16_t margin = NominalMargin);
+
 
     // The biggest picture this raster can hold, bounded at the NEAR end by the
     // write floor and at the FAR end by the front porch.
@@ -105,12 +124,17 @@ private:
     static uint16_t minimumCapture(const Axis &axis, uint16_t rasterTotal,
                                    uint16_t activeStart = 0, uint16_t activeStop = 0);
 
-    static float originOffset(const Axis &axis, float magnification);
+
 
     // How far the picture starts after VDS_?B_SP. The write begins an
     // originOffset() in and produces the capture's leading margin before it
     // reaches the picture, so the picture is that much further still.
-    static float pictureOffset(const Axis &axis, float magnification);
+    static float pictureOffset(const Axis &axis, float magnification,
+                               uint16_t margin = NominalMargin);
+
+    // The margin to charge: the axis's own unless the caller names the one the
+    // capture actually got.
+    static uint16_t marginOn(const Axis &axis, uint16_t margin);
 
     // Whether the WRITE FLOOR decides where the picture starts, rather than the
     // raster's own back porch. The two regimes charge the write origin
@@ -135,7 +159,8 @@ private:
     // the write floor and overscans off the far end.
     static PictureOrigin placePicture(const Axis &axis, float produced,
                                       uint16_t rasterTotal, float magnification,
-                                      uint16_t activeStart = 0);
+                                      uint16_t activeStart = 0,
+                                      uint16_t margin = NominalMargin);
 
     static float placementFloor(const Axis &axis, float offset,
                                 uint16_t activeStart);

@@ -45,19 +45,21 @@ uint16_t OutputWindow::widestCapture(const Axis &axis, const OutputTiming &raste
 OutputWindow::OutputWindow() {}
 
 OutputWindow::OutputWindow(uint16_t horizontalPicture, uint16_t verticalPicture,
-                           const OutputTiming &raster)
+                           const OutputTiming &raster,
+                           uint16_t horizontalMargin, uint16_t verticalMargin)
 {
     horizontal_ = solve(AxisHorizontal, horizontalPicture,
                         fitToRaster(AxisHorizontal, horizontalPicture,
                                     raster.horizontalTotal, raster.activeStart,
-                                    raster.activeStop).scale(),
-                        raster.horizontalTotal, raster.activeStart, raster.activeStop);
+                                    raster.activeStop, horizontalMargin).scale(),
+                        raster.horizontalTotal, raster.activeStart, raster.activeStop,
+                        horizontalMargin);
     vertical_ = solve(AxisVertical, verticalPicture,
                       fitToRaster(AxisVertical, verticalPicture,
                                   raster.verticalTotal, raster.activeLinesStart,
-                                  raster.activeLinesStop).scale(),
+                                  raster.activeLinesStop, verticalMargin).scale(),
                       raster.verticalTotal, raster.activeLinesStart,
-                      raster.activeLinesStop);
+                      raster.activeLinesStop, verticalMargin);
 }
 
 const OutputMapping &OutputWindow::horizontal() const { return horizontal_; }
@@ -111,10 +113,16 @@ float OutputWindow::originOffset(const Axis &axis, float magnification)
     return writeStart(axis).constant + writeStart(axis).perMagnification * magnification;
 }
 
-float OutputWindow::pictureOffset(const Axis &axis, float magnification)
+uint16_t OutputWindow::marginOn(const Axis &axis, uint16_t margin)
+{
+    return margin == NominalMargin ? axis.captureMargin() : margin;
+}
+
+float OutputWindow::pictureOffset(const Axis &axis, float magnification,
+                                  uint16_t margin)
 {
     return originOffset(axis, magnification)
-         + (float)axis.captureMargin() * magnification;
+         + (float)marginOn(axis, margin) * magnification;
 }
 
 bool OutputWindow::writeFloorBinds(const Axis &axis, uint16_t activeStart)
@@ -151,7 +159,7 @@ float OutputWindow::maxDisplayWindow(const Axis &axis, uint16_t rasterTotal,
 
 RasterFit OutputWindow::fitToRaster(const Axis &axis, uint16_t capture,
                                     uint16_t rasterTotal, uint16_t activeStart,
-                                    uint16_t activeStop)
+                                    uint16_t activeStop, uint16_t margin)
 {
     float room = maxDisplayWindow(axis, rasterTotal, activeStart, activeStop);
     if (capture == 0 || room <= 0.0f)
@@ -168,7 +176,7 @@ RasterFit OutputWindow::fitToRaster(const Axis &axis, uint16_t capture,
     const float onFloor = (farBound(rasterTotal, activeStop)
                            - (float)writeStart(axis).floor - writeStart(axis).constant)
                         * capture / (capture + writeStart(axis).perMagnification
-                                     + (float)axis.captureMargin());
+                                     + (float)marginOn(axis, margin));
     const float behindPorch = (float)farBound(rasterTotal, activeStop) - (float)activeStart;
     float produced = onFloor < behindPorch ? onFloor : behindPorch;
     if (produced > room)
@@ -203,9 +211,9 @@ RasterFit OutputWindow::fitToRaster(const Axis &axis, uint16_t capture,
 
 PictureOrigin OutputWindow::placePicture(const Axis &axis, float produced,
                                          uint16_t rasterTotal, float magnification,
-                                         uint16_t activeStart)
+                                         uint16_t activeStart, uint16_t margin)
 {
-    float offset = pictureOffset(axis, magnification);
+    float offset = pictureOffset(axis, magnification, margin);
     int32_t corner = lrintf((rasterTotal - produced) / 2.0f);
     int32_t windowStop = lrintf(corner - offset);
     if (windowStop < (int32_t)writeStart(axis).floor) {
@@ -229,7 +237,7 @@ PictureOrigin OutputWindow::placePicture(const Axis &axis, float produced,
 
 OutputMapping OutputWindow::solve(const Axis &axis, uint16_t capture, Scale scale,
                                  uint16_t rasterTotal, uint16_t activeStart,
-                                 uint16_t activeStop)
+                                 uint16_t activeStop, uint16_t margin)
 {
     OutputMapping solved;
     solved.scale_ = scale;
@@ -238,7 +246,7 @@ OutputMapping OutputWindow::solve(const Axis &axis, uint16_t capture, Scale scal
         return solved;
 
     PictureOrigin placed = placePicture(axis, solved.produced_, rasterTotal,
-                                    scale.magnification(), activeStart);
+                                    scale.magnification(), activeStart, margin);
     // The front porch, or the raster's edge where no porch is known. ST registers
     // wrap rather than clamp, and a wrapped VDS_VB_ST rolls the frame.
     int32_t lastUsable = (int32_t)farBound(rasterTotal, activeStop);
@@ -256,7 +264,7 @@ OutputMapping OutputWindow::solve(const Axis &axis, uint16_t capture, Scale scal
     // for it by opening wider, which is what Axis::captureMargin is for. Giving
     // it back out of the aperture instead is a black bar no zoom can close.
     const float pictureEnds = (float)placed.windowStop()
-                            + pictureOffset(axis, scale.magnification())
+                            + pictureOffset(axis, scale.magnification(), margin)
                             + solved.produced_;
     int32_t apertureStart = (int32_t)floorf(pictureEnds);
     if (apertureStart < placed.corner())
@@ -297,7 +305,8 @@ OutputMapping OutputWindow::solve(const Axis &axis, uint16_t capture, Scale scal
     // the write starts at a fraction of a pixel and the register is a whole
     // one, so rounding to nearest blanks a column the write had reached.
     int32_t displayStop = (int32_t)floorf((float)placed.windowStop()
-                                          + pictureOffset(axis, scale.magnification()));
+                                          + pictureOffset(axis, scale.magnification(),
+                                                          margin));
     if (displayStop < 0)
         displayStop = 0;
     if (displayStop > apertureStart)
