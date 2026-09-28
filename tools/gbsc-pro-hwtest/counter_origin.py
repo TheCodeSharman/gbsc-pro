@@ -184,7 +184,7 @@ def choose_output(host, command):
     return gbs_unit.wait_for(held, timeout=30.0) is not None
 
 
-def measure(host, dev, mode, h, v, label):
+def measure(host, dev, mode, h, v, clock, label):
     field = gbs_unit.read_fields(host, FIELDS)
     doubling = max(1, int(round(field["PLLAD_MD"] / float(field["IF_HSYNC_RST"]))))
     units = field["IF_HSYNC_RST"] + 1
@@ -204,7 +204,8 @@ def measure(host, dev, mode, h, v, label):
           f"  raster {field['VDS_HSYNC_RST'] + 1}"
           f"  window h {field['IF_HB_SP2']}..{field['IF_HB_ST2']}"
           f" v {field['IF_VB_SP']}..{field['IF_VB_ST']}"
-          f"  {units / float(sum(h)):.2f} units/px", flush=True)
+          f"  {units / float(sum(h)):.2f} units/px"
+          f"  source clock {clock / 1e6:.3f} MHz", flush=True)
     # No floor on the sampling density here. The frame is unreadable below about
     # 1.4 capture units per source pixel when its POSITION is wanted; a clip is
     # a presence test, and 1024x768@60 reads to a tenth of a sample at 1.07.
@@ -293,7 +294,7 @@ def main():
         if found is None:
             print(f"{mode}: no entry in the mode file")
             continue
-        h, v, _clock = found
+        h, v, clock = found
         print(f"{mode}", flush=True)
         for output in [o.strip() for o in args.outputs.split(",") if o.strip()] or [None]:
             shear.freeze(args.host, False)
@@ -330,7 +331,7 @@ def main():
                             continue
                         time.sleep(1.0)
                         label = f"{label}, IF_HBIN_SP {hbin}"
-                    measure(args.host, dev, mode, h, v, label)
+                    measure(args.host, dev, mode, h, v, clock, label)
             finally:
                 set_field(args.host, specs["IF_HBIN_SP"], held)
                 shear.freeze(args.host, False)
