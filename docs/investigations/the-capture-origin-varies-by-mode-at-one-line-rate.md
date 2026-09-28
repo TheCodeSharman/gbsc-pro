@@ -1,142 +1,134 @@
-# The capture origin varies by mode at one line rate, and the unit is unsettled
+# The capture origin has a term at each end of the cable
 
 `SyncProcessor::RetimeOriginSamples` is 63 ADC samples, added to the retime stop
 the input formatter's line counter takes its origin from. Measured against the
-mode file at full framing, undoubled modes want anything from 62 to 91, and the
-spread has been read as a function of the line rate.
+mode file at full framing, the source's active region lands anywhere from 2.5
+samples early to 17 late, and which it is varies by mode.
 
-**It is not the line rate alone**, and what the varying quantity IS has not been
-established. This page is the controls that narrow it and the two traps that
-have produced wrong answers here.
+**Two controls settle that this is not one quantity.** Neither end of the cable
+can produce what the other's control measures, so both contribute and no single
+correction absorbs either:
 
-## The line-rate model is refuted
+- **The scaler has a term**, because holding one source at one mode and moving
+  only the divider moves the offset by 6.9 samples. The source cannot see the
+  divider.
+- **The source has a term**, because two modes the chip cannot tell apart land
+  2.2 samples apart. The scaler cannot see the pixel clock that separates them.
 
-Five H-negative modes, all at 31.47 kHz and 59.9 Hz, all solved at `PLLAD_MD`
-1442 and so at one sample rate of 45.38 MHz, spanning a four-fold range of
-samples per source pixel. `full_margins.py` at full framing, `PATTERN CARD`,
-`ANIM OFF`:
+Every reading here is anchor-free: `counter_origin.py`, which creeps the capture
+window's own start until the feature leaves the counter. `full_margins.py` reads
+about two samples higher and that has to come off first.
 
-| mode | htotal | samples/px | `HLOW_LEN` | d px | d samples |
-|---|---|---|---|---|---|
-| 1280x480 | 1600 | 0.901 | 167 | +3.1 | +2.8 |
-| 720x480 | 858 | 1.681 | 100 | +2.7 | +4.6 |
-| 640x480 | 800 | 1.803 | 169 | +2.4 | +4.3 |
-| 360x480 | 532 | 2.711 | 170 | +3.4 | +9.1 |
-| 320x480 | 400 | 3.605 | 148 | +3.3 | +11.8 |
+## The divider moves it, with the source untouched
 
-One line rate, one field rate, one polarity, one divider, one sample rate — and
-nine samples of disagreement. Whatever varies the origin, the line rate is not
-it, and the sync width runs from 100 to 170 samples across the set without
-ordering the result either.
+One mode, one source, the engine solving the whole geometry around a held
+divider, with its own unheld choice beside them:
 
-## TRAP: these readings carry an anchor, and it is not a constant in source pixels
+| `PLLAD_MD` | units/px | sample rate | d samples | d source px |
+|---|---|---|---|---|
+| 800 | 2.00 | 25.17 MHz | +3.2 | +1.6 |
+| 1400 | 3.50 | 44.06 MHz | +9.4 | +2.7 |
+| 1440, unheld | 3.60 | 45.31 MHz | +10.1 | +2.8 |
 
-`full_margins.py` maps dongle column zero to the capture window's start.
-`counter_origin.py` creeps the window's own start until the feature leaves and
-so carries no anchor. On three 60 Hz modes:
+Neither unit is constant, so the offset is neither a fixed count of samples nor
+a fixed time. The held points and the unheld one lie on one trend, which is what
+says a hold is a sound way to take this.
 
-| mode | anchor-free | against the mode file | difference |
+## The pixel clock moves it, with every observable timing identical
+
+`800x600@60` and `1600x600@60` are the monitor definition's only pixel-clock
+twins: sync 3.2000 us, line 26.400 us, active starting 5.4000 us in, same
+polarity and field rate, and the engine solves the same `PLLAD_MD` 1438 and the
+same retime stop 1325. Nothing the TV5725 can observe differs. Three interleaved
+acquisitions each:
+
+| | units/px | d samples | d source px |
 |---|---|---|---|
-| 1024x768@60 | +0.1 | +2.1 | 2.0 |
-| 800x600@60 | +5.1 | +8.2 | 3.1 |
-| 1280x960@60 | +15.0 | +17.7 | 2.7 |
+| 800x600@60, 40 MHz | 1.363 | +5.1, +5.1, +5.1 | +3.7, +3.8, +3.7 |
+| 1600x600@60, 80 MHz | 0.681 | +2.9, +2.9, +2.9 | +4.2, +4.2, +4.2 |
 
-**The anchor is about 2.6 ADC samples**, and it is constant within one output
-raster — so an anchored reading is sound for comparing two modes at one raster,
-and the fifteen-sample spread beside it is the counter's own.
+They repeat to better than 0.1 source pixels and land 2.2 samples apart. **Both
+sample at one rate**, so *constant in ADC samples* and *constant in time* are one
+hypothesis across this pair, and it is refuted.
 
-But 2.6 samples is 2.89 SOURCE PIXELS at 0.901 samples/px and 0.72 at 3.605.
-**So leaving it in flattens the `d px` column and manufactures a constant that is
-not there:**
+A delay common to a source's sync and its video cancels, because the scaler
+times video from the sync edge. What does not cancel is a *differential* delay
+between a pixel-clocked video path and the sync generator beside it, which is
+what a video FIFO produces.
 
-| | relative spread across the five |
-|---|---|
-| raw, source pixels | 14.1% |
-| raw, ADC samples | 57.9% |
-| anchor removed, source pixels | 68.0% |
-| anchor removed, ADC samples | 96.3% |
+**They are not one entry doubled.** Sync 128 -> 256 and the line total
+1056 -> 2112 both double, while the back porch goes 88 -> 98 and a 78-pixel
+border appears either side. What the comparison needs is doubled: the sync
+width, the line total and the distance to the first framebuffer pixel. The
+**75 Hz pair is not a twin for this question** -- its active regions start
+4848.5 and 3393.9 ns in -- so it compares quantities belonging to the sync path
+and not the placement of video.
 
-With it removed neither unit is constant, and **no claim that the correction
-belongs in source pixels rather than ADC samples survives this table.** Subtract
-the anchor before converting an anchored reading to source pixels, or do not
-convert it.
+## A line in sampling density fits one family and does not generalise
 
-## The twins are indistinguishable to the chip and still differ
+Seven H-negative readings at 25 to 45 MHz, spanning three modes, three dividers
+and a four-fold range of density, fit
 
-`1600x600@60` is `800x600@60` with every horizontal field doubled at twice the
-pixel clock, so every one of them is the same TIME. From the mode file:
+    d = 3.97 x (units per source pixel) - 4.33 ADC samples
 
-| | 800x600@60, 40 MHz | 1600x600@60, 80 MHz |
+to a residual rms of 0.56 samples and a worst case of 0.86 over a 10-sample
+range, with six H-positive readings a constant 4.2 above it. **Five modes
+outside that set refute it.** Fitted over all thirteen states, the best model in
+density, sample rate and polarity leaves a residual rms of 4.4 samples, and the
+residuals are structured rather than scattered: both 1024x768 modes sit 8.5
+low and both 108 MHz modes 5 to 7 high.
+
+**So those coefficients describe one family of modes and are not a correction.**
+What survives the wider set is the pair of controls, not the line through them.
+
+## Two anomalies the density line does not reach
+
+| mode | pixel clock | d samples |
 |---|---|---|
-| sync | 128 px = 3.2000 us | 256 px = 3.2000 us |
-| line | 1056 px = 26.400 us | 2112 px = 26.400 us |
-| active starts | 432 px = **5.4000 us** | 216 px = **5.4000 us** |
-| polarity, field rate | 0, 60.32 Hz | 0, 60.32 Hz |
+| 1024x768@60 | 65.0 MHz | -1.9 |
+| 1024x768@70 | 75.0 MHz | -2.5 |
+| 1280x960@60 | 108.0 MHz | **+17.1** |
+| 1280x1024@60 | 108.0 MHz | **+17.3** |
 
-**Every timing the TV5725 can observe is identical.** It solves the same
-`PLLAD_MD` 1442 and the same retime stop, its sync processor sees the same
-waveform, and the filed lead is the same 294.1 samples for both. The only
-difference is that it samples a faster pixel clock. So the two pictures must
-land in the same place.
+The two 108 MHz modes land about 190 ns late where every mode at or below
+80 MHz lands within 10 samples of the file. They repeat to 0.2 samples within a
+session and to about 2 across sessions, and they carry the two highest pixel
+clocks the bench can measure. Two explanations are closed:
 
-They do not. `d samples` reads **+8.2 against +5.8**, and the anchor is
-common-mode across a pair at one output raster so it cancels out of that
-comparison. Each mode repeats to 0.3 to 0.4 samples across runs, so the 2.4
-samples between them is outside the noise.
-
-**That 2.4 samples is the open anomaly of this page.** A pixel-clock explanation
-of it is SUSPECT and unverified: nothing that reaches the retiming can see the
-source's pixel clock, and a source-side delay common to the source's own sync
-and video cancels, because the scaler times video from the sync edge. An
-explanation would need the source's sync and video paths to differ in depth, and
-nothing here measures that.
-
-**Verify the 2.4 samples before building on it.** The cheap check is to repeat
-the pair several times in one session with `counter_origin.py`, which carries no
-anchor at all, rather than with the anchored instrument used here.
-
-## What the other controls rule out
-
-Each is a control rather than a curve: the quantity named is the only one moving.
-
-**The sample rate.** The 60 Hz pair samples at 54.5 MHz and the 75 Hz pair at
-54.7 MHz, and they read 21 samples apart.
-
-**The back porch.** `800x600@75` and `1600x600@75` share a sync waveform and a
-line period but not a back porch — 3.23 against 1.78 us — which the filed lead
-accounts for.
-
-## The measured pulse is biased by polarity
-
-`STATUS_SYNC_PROC_HLOW_LEN` against the mode file's own sync width at the divider
-in force, nine modes:
-
-| sync | bias in samples | in time |
-|---|---|---|
-| H-negative | −5.4, −3.1, −3.2, −4.4 | −77.6, −68.3, −73.2, −62.6 ns |
-| H-positive | +1.7, +1.7, +2.4, +2.3, +2.1 | +31.2, +31.1, +26.0, +26.6, +26.7 ns |
-
-Both are tighter as a time than as a count — 11% against 29% on negative sync,
-9% against 17% on positive — so this is a delay rather than a counting error, and
-the two polarities are about 98 ns apart. `retimeStopFor()` subtracts this
-reading, so it reaches the origin directly, and a positive-going source is
-measured through an extra inversion in `SP_HS_INV_REG`. At two to five samples
-it is not the whole spread.
+- **Not the source's video bandwidth.** `1280x960@60` at 256 colours asks
+  73.7 MB/s of video DMA, four times what it asks at 16 colours. The two read
+  **+17.1 and +16.9**, with the same solved divider, raster and density. A fetch
+  that could not keep up would move the picture and does not.
+- **Not a raster the source cannot deliver.** The measured line rate matches the
+  file to 0.00% on both -- 60.000 kHz against 60.000, and 63.981 against
+  63.981 -- with the vertical totals right as well. The source is producing
+  exactly what the definition states at 108 MHz.
 
 ## Traps
 
-- **`full_margins.py` needs both of the card's green edges** to measure its
-  ruler. A mode whose picture overruns the emitted frame has only one, and the
-  lead is then read from the near edge with the ruler computed instead —
-  `units / htotal`, which agrees with the separation to 0.10% on every mode where
-  the pair is found.
-- **The 75 Hz output raster does not give a repeatable reading.** 1125 lines at
-  75 Hz is not a standard mode, and `800x600@75` read +8, +29, +17 and +15
-  samples on four acquisitions while `1600x600@75` twice lost the picture off the
-  right of the frame. Every 60 Hz mode here repeats to 0.3 samples.
-- **`d px` and `d samples` answer different questions**, and the anchor converts
-  between them differently per mode. Say which unit a figure is in, and whether
-  the anchor is still in it.
+- **The anchor belongs in ADC samples, not in source pixels, and it is not quite
+  a constant either.** Anchored against anchor-free over five modes spanning a
+  four-fold range of density it runs 1.67 to 2.76 samples -- a 48% spread,
+  against 184% for the same differences read as source pixels. Some of that 48%
+  is the cross-session drift below. Take it off before converting an anchored
+  reading to source pixels, or do not convert it.
+- **`VDS_HSCALE` is 10 bits and the scaler cannot shrink**, so the captured line
+  has to fit the output raster, and that is what caps a divider hold -- about
+  `PLLAD_MD` 1780 against a 1600-unit raster. Above it the card's far edge
+  leaves the frame and the reading is refused rather than wrong. The same bound
+  refuses `1400x1050@60` outright.
+- **A feature below one capture unit per source pixel is caught by a single
+  sample**, which quantises the crossing by half a unit -- 0.5 samples against
+  the 2.2 the twins differ by, so it does not account for them. `PROCframe`
+  draws one pixel and takes no width, so a thicker feature needs a source change.
+- **One mode's reading moves about 2 samples between sessions** while repeating
+  to 0.2 within one. Compare readings taken in one session, or carry the spread.
+- **Origin readings at 75 Hz do not repeat at all.** 1125 lines at 75 Hz is not a
+  standard mode; `800x600@75` read +8, +29, +17 and +15 samples on four
+  acquisitions.
+- **A reading taken while anything else drives the source is not a reading.** A
+  mode change landing inside a creep moves the picture under a frozen unit, and
+  the crossing that comes back is neither state -- measured, `1280x1024@60` read
+  +10.2 that way against +17.3 undisturbed.
 - **`counter_origin.py`'s vertical creep reports its own failure** by disagreeing
-  with its expectation. `1024x768@60` crept 4..39 expecting 29 and crossed at
-  5.5, which is the run-up clamped away at the floor rather than a reading.
+  with its expectation. The horizontal is the sound one.

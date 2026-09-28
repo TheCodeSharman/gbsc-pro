@@ -35,52 +35,63 @@ Vertically the picture is flush: 0 or 1 output pixel of the source's own
 blanking on screen across six DMT modes.
 `docs/investigations/the-transmitted-window-is-latched-from-our-blanking.md`.
 
-### The undoubled capture origin varies by mode, and the varying quantity is unknown
+### The undoubled capture origin has a term at each end of the cable
 
-**`SyncProcessor::RetimeOriginSamples` is 63 and nine undoubled modes want 62 to
-91**, measured at full framing against the mode file. **The line-rate model is
-refuted** and nothing has replaced it.
+**`SyncProcessor::RetimeOriginSamples` is 63 and thirteen measured states want
+anything from 60 to 80.** Two controls settle that this is not one quantity, and
+each rules out the other's explanation:
 
-Five H-negative modes at one line rate (31.47 kHz), one field rate, one polarity
-and one divider (`PLLAD_MD` 1442, so one sample rate of 45.38 MHz), spanning a
-four-fold range of samples per source pixel:
+- **A scaler term.** One mode, one source, only the divider moving: `PLLAD_MD`
+  800 / 1400 / 1440 give **+3.2 / +9.4 / +10.1** samples. The source cannot see
+  the divider.
+- **A source term.** `800x600@60` and `1600x600@60` are the definition's only
+  pixel-clock twins -- sync 3.2000 us, line 26.400 us, active starting
+  5.4000 us in, same polarity and field rate, same solved `PLLAD_MD` 1438 and
+  retime stop 1325, so **nothing the TV5725 can observe differs**. They read
+  **+5.1 against +2.9** samples, three interleaved acquisitions each, repeating
+  to better than 0.1 source pixels. Both sample at one rate, so a constant count
+  and a constant time are one hypothesis here and both are refuted.
 
-| mode | samples/px | d px | d samples |
+**No single model fits.** A line in sampling density fits seven H-negative
+readings at 25 to 45 MHz to a residual rms of 0.56 samples, and five modes
+outside that set refute it: over all thirteen states the best model in density,
+sample rate and polarity leaves a structured rms of 4.4. Do not ship a
+correction from it.
+
+Anchor-free, at the engine's own divider:
+
+| mode | units/px | d samples | d source px |
 |---|---|---|---|
-| 1280x480@60 | 0.901 | +3.1 | +2.8 |
-| 720x480@60 | 1.681 | +2.7 | +4.6 |
-| 640x480@60 | 1.803 | +2.4 | +4.3 |
-| 360x480@60 | 2.711 | +3.4 | +9.1 |
-| 320x480@60 | 3.605 | +3.3 | +11.8 |
+| 1024x768@70 | 0.94 | -2.5 | -2.7 |
+| 1024x768@60 | 1.07 | -1.9 | -1.8 |
+| 1280x480@60 | 0.90 | +0.0 | +0.0 |
+| 720x480@60 | 1.68 | +2.0 | +1.2 |
+| 640x480@60 | 1.80 | +2.0 | +1.1 |
+| 1600x600@60 | 0.68 | +2.9 | +4.2 |
+| 800x600@60 | 1.36 | +5.1 | +3.7 |
+| 360x480@60 | 2.72 | +7.2 | +2.6 |
+| 320x480@60 | 3.60 | +10.1 | +2.8 |
+| **1280x960@60** | 0.80 | **+17.1** | +21.3 |
+| **1280x1024@60** | 0.86 | **+17.3** | +20.2 |
 
-Nine samples of disagreement with the line rate, the field rate, the polarity,
-the divider and the sample rate all held. The sync width runs 100 to 170 samples
-across the set without ordering the result either.
+**The two 108 MHz modes are outliers with two explanations already closed.** It
+is not the machine's video bandwidth -- `1280x960@60` reads +17.1 at 256 colours
+and +16.9 at 16, a four-fold change in video DMA -- and it is not a raster the
+source cannot deliver, the measured line rate matching the file to 0.00% on
+both.
 
-**Whether the correction belongs in ADC samples or in source pixels is NOT
-established, and the `d px` column above must not be read as constant.** These
-are anchored readings: `full_margins.py` maps dongle column zero to the capture
-window's start, which `counter_origin.py` measures at about **2.6 ADC samples**.
-That is a constant within one output raster but 2.89 SOURCE PIXELS at 0.901
-samples/px against 0.72 at 3.605, so leaving it in flattens the `d px` column.
-Removed, the relative spread goes from 14.1% to 68.0% in source pixels and from
-57.9% to 96.3% in samples -- neither is constant.
+**Take these with `counter_origin.py`, not `full_margins.py`.** The anchored
+instrument reads about two samples higher, and that difference belongs in ADC
+samples rather than source pixels: over five modes spanning a four-fold range of
+density it runs 1.67 to 2.76 samples, a 48% spread against 184% for the same
+differences read as source pixels. Converting an anchored reading to source
+pixels without taking it off manufactures a constant that is not there.
 
-**Two modes indistinguishable to the chip still differ by 2.4 samples.**
-`1600x600@60` is `800x600@60` with every horizontal field doubled at twice the
-pixel clock, so the sync pulse is 3.2000 us in both, the line 26.400 us, the
-active start 5.4000 us, the polarity and field rate the same, and the engine
-solves the same divider and retime stop. Nothing the TV5725 can observe differs.
-They read +8.2 against +5.8 `d samples`, the anchor cancelling across a pair at
-one raster, and each repeats to 0.3 to 0.4 samples. **A pixel-clock explanation
-of that is suspect and unverified** -- nothing reaching the retiming can see the
-source's pixel clock, and a source-side delay common to its own sync and video
-cancels against a scaler that times video from the sync edge. Repeat the pair
-with `counter_origin.py` before building on it.
-
-`STATUS_SYNC_PROC_HLOW_LEN` reads about 98 ns narrower on H-negative sync than on
-H-positive, tighter as a time than as a count, which `retimeStopFor()` subtracts.
-At two to five samples it is not the spread.
+`STATUS_SYNC_PROC_HLOW_LEN` reads about 98 ns narrower on H-negative sync than
+on H-positive, tighter as a time than as a count, and `retimeStopFor()`
+subtracts that reading straight into the stop -- 3.2 samples at 45 MHz against
+4.9 at 70 MHz. It is a real defect in the measured pulse and it is not the
+spread.
 
 Undoubled sources are the ones whose rasters the engine is entitled to derive a
 capture window from, so this bounds how well a published-raster framing can do.
@@ -88,9 +99,11 @@ capture window from, so this bounds how well a published-raster framing can do.
 the controls; `docs/investigations/the-line-doubler-resets-the-fifo-late.md` has
 the doubled counterpart.
 
-**Origin readings taken at 75 Hz are not repeatable.** 1125 lines at 75 Hz is not
-a standard mode, and `800x600@75` read +8, +29, +17 and +15 samples on four
-acquisitions where every 60 Hz mode repeats to 0.3.
+**One mode's reading moves about 2 samples between sessions** while repeating to
+0.2 within one, so compare readings taken in one session or carry the spread.
+**Readings at 75 Hz do not repeat at all**: 1125 lines at 75 Hz is not a
+standard mode, and `800x600@75` read +8, +29, +17 and +15 samples on four
+acquisitions.
 
 ### Composite sync captures the doubled line 24.5 source pixels early
 

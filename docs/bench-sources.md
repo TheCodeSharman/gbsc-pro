@@ -262,30 +262,44 @@ It is **not** needed to separate `IF_PRGRSV_CNTRL`'s two meanings, which the two
 existing sources already do between them -- see below. That was the earlier case
 for it and it is weaker than this one.
 
-### The monitor definition carries TIMING TWINS, and they pin the whole sync path
+### The monitor definition carries ONE TIMING TWIN, and it separates the source from the scaler
 
-Two modes whose horizontal timings are the same multiple throughout present the
-chip with an **identical sync waveform** and differ only in pixel clock. Same
-duty, same line rate, same vertical total, same polarity -- so the engine solves
-the same divider and the same retime stop, and anything that reads differently
-between them is downstream of sync.
+`X800 Y600 F60` and `X1600 Y600 F60` present the chip with an **identical sync
+waveform** and differ only in pixel clock -- 40.0 against 80.0 MHz, so 1.362
+against 0.681 capture units per source pixel. Sync 3.2000 us, line 26.400 us,
+active starting 5.4000 us in, same polarity and field rate, and the engine
+solves the same `PLLAD_MD` and the same retime stop for both. **Anything that
+reads differently between them is downstream of sync**, and cannot be anything
+the TV5725 measures.
 
-| pair | duty | line rate | pixel clocks | samples/px |
-|---|---|---|---|---|
-| `X800 Y600 F75` / `X1600 Y600 F75` | 7.576% | 46.88 kHz | 49.5 / 99.0 MHz | 1.104 / 0.552 |
-| `X800 Y600 F60` / `X1600 Y600 F60` | 12.12% | 37.88 kHz | 40.0 / 80.0 MHz | 1.362 / 0.681 |
+**They are not one entry doubled**, and only what the comparison needs is
+doubled: sync 128 -> 256 and the line total 1056 -> 2112, while the back porch
+goes 88 -> 98 and a 78-pixel border appears either side. What matters is that
+the sync width, the line total and the distance to the first framebuffer pixel
+all scale by two.
 
-**That is the control for anything suspected of following the sampling density**,
-and it needs no divider hold: a quantity that is a property of the sync path must
-read the same across a pair, and one that follows the pixel clock or the source's
-own pixels must differ by two.
+**The 75 Hz pair is NOT a twin for where video sits.** `X800 Y600 F75` and
+`X1600 Y600 F75` share a sync waveform and a line period, so they still compare
+quantities belonging to the sync path -- but their active regions start 4848.5
+and 3393.9 ns in, so they cannot compare the placement of video. Readings at
+75 Hz do not repeat in any case.
+
+**A twin pair cannot isolate the sampling density**, because density and pixel
+clock move together across one. Holding `PLLAD_MD` on a single mode is what
+separates them: same source, same raster, only the sample rate moving.
 
 **And five modes share 31.47 kHz at ~60 Hz on H-negative sync** -- `X720 Y480`,
 `X320 Y480`, `X1280 Y480`, `X640 Y480`, `X360 Y480` -- with duties from 7.23% to
-12.00% and htotals from 400 to 1600. One line rate, one field rate, one polarity,
-one divider, and a **four-fold** range of samples per source pixel. That is what
-separates a sync-width term from a line-rate one, which no single mode per line
-rate can do.
+12.00% and htotals from 400 to 1600. One line rate, one field rate, one
+polarity, one divider, and a **four-fold** range of samples per source pixel.
+That is what separates a sync-width term from a line-rate one, which no single
+mode per line rate can do.
+
+**The two 108 MHz modes are the bench's outliers.** `X1280 Y960 F60` and
+`X1280 Y1024 F60` place their active region about 190 ns later than the
+definition states, where every mode at or below 80 MHz lands within 10 ADC
+samples of it. The colour depth makes no difference, so it is not the machine's
+video bandwidth.
 
 `docs/investigations/the-capture-origin-varies-by-mode-at-one-line-rate.md` is what these
 were built for.
