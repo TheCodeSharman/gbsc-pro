@@ -133,8 +133,18 @@ acquisitions.
 **`retimeStopFor()` cannot express an origin behind a pulse narrower than
 `RetimeOriginSamples`.** The stop is `PLLAD_MD - pulse + origin`, so a pulse
 under 63 samples -- 79 at oversampling ratio one -- puts it past the end of the
-line, where the register is measured inert. Nothing is written and the counter
-keeps whatever the source before it left.
+line, **where the counter cannot use it at all**. Nothing is written and the
+counter keeps whatever the source before it left.
+
+**A STOP ONE UNIT PAST THE LINE TEARS THE CAPTURE, so the refusal is protecting
+the picture rather than declining to guess.** Crept a unit at a time on the
+bench source at `PLLAD_MD` 2200, frozen: the picture moves 1.000 ADC samples per
+unit and holds to 0.01 dongle columns all the way to 2200, and at **2201** every
+line lands at its own offset in green. Five captures at one frozen value
+disagree by 262 dongle columns where a healthy state repeats to 0.01, and the
+lit column count goes 1329 to 1918 -- the picture is smeared across the frame
+rather than sitting anywhere. So the choice is not between a wrong origin and no
+origin: writing what the rule asks for loses the picture outright.
 
 Measured at 1920x1080@60: `PLLAD_MD` 1440, pulse **31** samples, the rule wanting
 `SP_RT_HS_SP` 1472 against a line of 1440, and the register holding **1338** --
@@ -152,10 +162,17 @@ those rasters at 4.1%, and a refused duty leaves
 as it was connected and never showed a picture. The floor is 1.0% now and both
 720p and 1080p acquire and paint: 1068 of 1080 rows lit at 720p, 1079 at 1080p.
 
-What would close it: whether a stop above `PLLAD_MD` is truly inert or wraps
-modulo the line. One bench run on a source with a wide pulse, creeping
-`SP_RT_HS_SP` from below the divider to above it with automation frozen, settles
-it. The measurement behind "inert" is one mode at one setting.
+**So the only shape a fix can take is to place the stop at the largest value the
+counter accepts and take the shortfall off the capture window.** At 1920x1080@60
+that is an origin of 31 where 63 is wanted, leaving 32 samples for the window to
+absorb -- and the doubled path's own origin register cannot carry them, because
+`IF_HBIN_SP` is held at `NoHeadBlanking` on a progressive source and the part
+blanks the whole line above 18 there.
+
+Untested: whether the largest value the counter accepts is `PLLAD_MD` itself or
+wants a guard below it. 2200 is clean and 2201 is not on a source whose
+`STATUS_SYNC_PROC_HTOTAL` reads 2200 exactly; a source whose count dithers has
+not been tried, and each sample of guard is one more for the window to absorb.
 
 ### Composite sync captures the doubled line 24.5 source pixels early
 

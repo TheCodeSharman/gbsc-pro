@@ -109,10 +109,23 @@ other axis and a horizontal retime cannot reach it.
 
 ## Traps
 
-- **`SP_RT_HS_SP` above `PLLAD_MD` is inert.** The stop sits past the end of the
-  line, the picture does not move at any value, and every reading around it is
-  frozen — which reads as a control that does nothing rather than as a value out
-  of range.
+- **`SP_RT_HS_SP` ABOVE `PLLAD_MD` TEARS THE CAPTURE, and the earlier reading
+  that it is inert is REFUTED.** Crept a unit at a time on the bench source at
+  `PLLAD_MD` 2200, the picture moves 1.000 ADC samples per unit and stays put to
+  0.01 dongle columns all the way to 2200 — and at **2201** every line lands at
+  its own offset, in green. Five captures at one frozen value then disagree by
+  262 dongle columns where a healthy state repeats to 0.01, and the lit column
+  count goes 1329 to 1918 because the picture is smeared across the whole frame
+  rather than sitting anywhere.
+
+  The stop is therefore not a control that runs out of range: it is a value the
+  counter cannot use, and `retimeStopFor()` returning 0 for a pulse narrower
+  than the origin is protecting the picture rather than declining to guess.
+
+  **The "inert" reading was the tear seen through a green feature.** A torn
+  capture puts green everywhere, so a clip test finds a feature that never
+  leaves and every reading around it reads frozen — which is the same trap
+  `counter_origin.py` carries for a window shortened instead of moved.
 - **A held divider outlives the run that set it.** `/sampleclock?hold=` is not
   cleared by a mode change, so the next measurement runs at the previous one's
   divider and says nothing about the state it names.
