@@ -35,6 +35,41 @@ Vertically the picture is flush: 0 or 1 output pixel of the source's own
 blanking on screen across six DMT modes.
 `docs/investigations/the-transmitted-window-is-latched-from-our-blanking.md`.
 
+### The undoubled capture origin is fitted to three low-line-rate modes
+
+**`SyncProcessor::RetimeOriginSamples` is 63 and nine undoubled modes want 62 to
+91**, measured at full framing against the mode file. It read as settled because
+the only three ever taken are the three it was fitted on, and all three are at or
+below 48.4 kHz:
+
+| mode | line rate | wants |
+|---|---|---|
+| 640x480@60 | 31.5 kHz | 64 |
+| 640x480@75 | 37.5 | 65 |
+| 800x600@60 | 37.9 | 70 |
+| 800x600@75 | 46.9 | 71 |
+| 1024x768@60 | 48.4 | 62 |
+| 1024x768@70 | 56.5 | 79 |
+| 1280x960@60 | 60.0 | 80 |
+| 1280x1024@60 | 64.0 | 79 |
+| 1152x864@75 | 67.5 | 91 |
+
+The error grows with line rate -- `r` = +0.865 against it, +0.824 against the
+pixel clock, and only +0.280 against the field rate, which is the opposite of the
+doubled path's split. At 1152x864@75 it costs 38.4 source pixels of lead, and the
+active width is still exact, so the whole error is the picture sitting too far
+along the line.
+
+**Neither obvious model fits.** As a constant time it spreads 19%, as a constant
+count 12%, and linear in the sample rate leaves a residual of 6.5 samples with one
+point 13 out. 73 would be the best single value and halves the worst error, but it
+is a fit to nine readings and nothing explains the spread.
+
+Undoubled sources are the ones whose rasters the engine is entitled to derive a
+capture window from, so this bounds how well a published-raster framing can do.
+`docs/investigations/the-line-doubler-resets-the-fifo-late.md` has the doubled
+counterpart.
+
 ### Composite sync captures the doubled line 24.5 source pixels early
 
 **The line doubler's FIFO reset wants a different value on each sync type**, and
