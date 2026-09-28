@@ -262,6 +262,34 @@ It is **not** needed to separate `IF_PRGRSV_CNTRL`'s two meanings, which the two
 existing sources already do between them -- see below. That was the earlier case
 for it and it is weaker than this one.
 
+### The monitor definition carries TIMING TWINS, and they pin the whole sync path
+
+Two modes whose horizontal timings are the same multiple throughout present the
+chip with an **identical sync waveform** and differ only in pixel clock. Same
+duty, same line rate, same vertical total, same polarity -- so the engine solves
+the same divider and the same retime stop, and anything that reads differently
+between them is downstream of sync.
+
+| pair | duty | line rate | pixel clocks | samples/px |
+|---|---|---|---|---|
+| `X800 Y600 F75` / `X1600 Y600 F75` | 7.576% | 46.88 kHz | 49.5 / 99.0 MHz | 1.104 / 0.552 |
+| `X800 Y600 F60` / `X1600 Y600 F60` | 12.12% | 37.88 kHz | 40.0 / 80.0 MHz | 1.362 / 0.681 |
+
+**That is the control for anything suspected of following the sampling density**,
+and it needs no divider hold: a quantity that is a property of the sync path must
+read the same across a pair, and one that follows the pixel clock or the source's
+own pixels must differ by two.
+
+**And five modes share 31.47 kHz at ~60 Hz on H-negative sync** -- `X720 Y480`,
+`X320 Y480`, `X1280 Y480`, `X640 Y480`, `X360 Y480` -- with duties from 7.23% to
+12.00% and htotals from 400 to 1600. One line rate, one field rate, one polarity,
+one divider, and a **four-fold** range of samples per source pixel. That is what
+separates a sync-width term from a line-rate one, which no single mode per line
+rate can do.
+
+`docs/investigations/the-capture-origin-is-not-a-sample-count.md` is what these
+were built for.
+
 ## The Wii
 
 **IT DIMS TO A FLAT GREY FIELD WHEN IT IS LEFT IDLE, AND THAT IS THE SOURCE
