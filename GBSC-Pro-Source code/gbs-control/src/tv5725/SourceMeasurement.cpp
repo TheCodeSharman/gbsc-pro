@@ -28,7 +28,7 @@ bool SourceMeasurement::rateFollowsCount(uint16_t lines, uint32_t lineRateHz,
         return true;
 
     return VideoSignal::ratesAgree(lineRateHz, heldLineRateHz,
-                                   RateFollowsCountPerMille);
+                                   RateFollowsCountPerThousand);
 }
 
 // HPERIOD_IF IS A CHANGE DETECTOR AND NOTHING ELSE, AND SAYING SO IS THE POINT.
@@ -75,15 +75,15 @@ bool SourceMeasurement::hasLineRateMoved(uint16_t reference)
     if (now == 0)
         return false;
 
-    return !VideoSignal::ratesAgree(now, reference, LinePeriodMovedPerMille);
+    return !VideoSignal::ratesAgree(now, reference, LinePeriodMovedPerThousand);
 }
 
 // --- the chosen divider, held ----------------------------------------------
 
 const uint8_t SourceMeasurement::SteadySamples;
-const uint16_t SourceMeasurement::RateAgreementPerMille;
-const uint16_t SourceMeasurement::RateFollowsCountPerMille;
-const uint16_t SourceMeasurement::LinePeriodMovedPerMille;
+const uint16_t SourceMeasurement::RateAgreementPerThousand;
+const uint16_t SourceMeasurement::RateFollowsCountPerThousand;
+const uint16_t SourceMeasurement::LinePeriodMovedPerThousand;
 const uint8_t SourceMeasurement::RateAgreementAttempts;
 const uint8_t SourceMeasurement::LatchSettlePasses;
 
@@ -232,7 +232,7 @@ bool SourceMeasurement::rateSettled()
     if (previous > 0.0f && fieldRateHz_ > 0.0f) {
         float error = fieldRateHz_ > previous ? fieldRateHz_ / previous
                                               : previous / fieldRateHz_;
-        if (error < 1.0f + (float)RateAgreementPerMille / 1000.0f)
+        if (error < 1.0f + (float)RateAgreementPerThousand / 1000.0f)
             return true;
     }
     return rateAttempts_ >= RateAgreementAttempts;

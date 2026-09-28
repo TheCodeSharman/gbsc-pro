@@ -508,8 +508,8 @@ TEST_CASE("the retime window's stop follows the source's sync width")
     }
 
     SUBCASE("a pulse narrower than the origin has no answer") {
-        // The narrowest duty HsyncPulse accepts is 41 per mille, which at this
-        // divider is 59 samples -- fewer than the origin sits behind the stop.
+        // A duty of 4.1% is 59 samples at this divider -- fewer than the origin
+        // sits behind the stop.
         // Carried through the subtraction it lands beyond the end of the line,
         // where the register does nothing at all, so there is no stop to write.
         CHECK(SyncProcessor::retimeStopFor(1440, HsyncPulse(0.041f), 2) == 0);
@@ -1500,8 +1500,8 @@ TEST_CASE("one source's pulse reads the same through the inversion as without it
 // CEA-861 states sync pulses this narrow throughout, and they are a published
 // raster rather than a bad reading:
 //
-//   720p60   40 of 1650 = 24.2 per mille     1080p60  44 of 2200 = 20.0
-//   720p50   40 of 1980 = 20.2               1080p24  44 of 2750 = 16.0
+//   720p60   40 of 1650 = 2.4%     1080p60  44 of 2200 = 2.0%
+//   720p50   40 of 1980 = 2.0%     1080p24  44 of 2750 = 1.6%
 //
 // The retime stop still cannot express an origin behind a pulse narrower than
 // RetimeOriginSamples, so such a source captures against whatever origin the

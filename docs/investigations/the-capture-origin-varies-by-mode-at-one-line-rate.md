@@ -83,11 +83,79 @@ density, sample rate and polarity leaves a residual rms of 4.4 samples, and the
 residuals are structured rather than scattered: both 1024x768 modes sit 8.5
 low and both 108 MHz modes 5 to 7 high.
 
-**The 108 MHz half of that structure is the oversampling step below**, and
-correcting it leaves the 1024x768 pair as the open part.
+**THE 1024x768 HALF OF THAT STRUCTURE DOES NOT SURVIVE THE OVERSAMPLING FIX, AND
+NOTHING NEEDS MEASURING ON THOSE MODES.** The 8.5 was fitted while the two
+108 MHz modes still carried their 16-sample step, which drags the line they were
+fitted with. Refitting the same eleven anchor-free states with the step
+corrected:
+
+| model | rms | 1024x768 residuals |
+|---|---|---|
+| density alone | 1.99 | -2.84, -2.68 |
+| density and polarity | **1.28** | **-0.97, -0.95** |
+
+-- inside the two samples one mode's reading moves between sessions. A divider
+hold on `1024x768@60` cannot say otherwise either: the output raster caps its
+density at 0.71..1.07, which the fitted slope turns into 1.6 samples of travel.
 
 **So those coefficients describe one family of modes and are not a correction.**
 What survives the wider set is the pair of controls, not the line through them.
+
+## The polarity step is the measured PULSE, and it is corrected
+
+`retimeStopFor()` writes `PLLAD_MD - pulse + origin`, so whatever the pulse
+reads wrong places the source by the same amount. The pulse does not read the
+same on both polarities.
+
+Seven modes in ONE session, every one at oversampling ratio two, the pulse the
+firmware derives against what the mode file states, read in the same pass as the
+origin beside it:
+
+| mode | u/px | sample rate | polarity | pulse - filed | d samples |
+|---|---|---|---|---|---|
+| 1280x768@60 | 0.87 | 69.17 MHz | negative | -4.4 | -1.4 |
+| 1280x800@60 | 0.87 | 72.64 MHz | negative | -4.8 | -2.6 |
+| 1024x768@60 | 1.07 | 69.55 MHz | negative | -2.7 | -1.9 |
+| 640x480@60 | 1.81 | 45.57 MHz | negative | -3.3 | +3.3 |
+| 1360x768@60 | 0.81 | 69.26 MHz | **positive** | **+1.8** | +2.3 |
+| 1600x600@60 | 0.68 | 54.40 MHz | **positive** | **+1.7** | +2.9 |
+| 800x600@60 | 1.36 | 54.40 MHz | **positive** | **+1.7** | +5.1 |
+
+Mean **-3.80** against **+1.73**, a split of **5.53 ADC samples**. The origins
+taken beside them step **5.27** across the same boundary -- a line fitted on this
+session's H-negative modes alone puts the three H-positive ones +4.95, +6.30 and
++4.56 above it.
+
+**The two are the same quantity and the regression says so.** Fitted against
+sampling density, `d` carries the pulse error with a coefficient of **0.85**
+where `stop = MD - pulse + origin` wants exactly 1, at a residual rms of 0.90.
+Nothing else in the set moves with it.
+
+**The polarity is read from the chip, not from the mode file.** The definition's
+`sync_pol` is two bits and only values 0 and 3 had ever been measured, which
+leaves the horizontal and vertical polarities moving together. `1280x768@60` and
+`1280x800@60` are `sync_pol` 1 -- H-negative with V positive -- and both read
+`STATUS_SYNC_PROC_HSPOL` 0 and sit on the H-negative side. The step follows the
+horizontal polarity alone.
+
+**It is the INVERTED PATH that reads wide, not the complement arithmetic.** On
+every high-active state here `SP_HS_INV_REG` was 1 and the register held the
+pulse rather than its complement, so `hsyncPulseSamples()` never took a
+complement at all. What differs is that the count was taken through
+`normaliseHsyncPolarity()`'s inversion.
+
+**A constant count rather than a constant time**, so far as one divider can say:
+the three H-positive states sit at `PLLAD_MD` 1438 and 1444 while their sample
+rates differ by 27%, and the error reads +1.7, +1.7 and +1.8 where a fixed time
+would have run +1.7 to +2.2. The H-negative side cannot arbitrate -- it spreads
+22% as a count and 21% as a time, which is the register's own wobble.
+
+`SyncProcessor::InvertedPulseWidthSamples` is **5**, taken off a high-active
+source's pulse where the reading is made. Two measurements that share no model
+choose it: the split itself, and the value minimising the seven origins'
+residual against density -- 0.64 samples at 5, against 2.53 uncorrected and 0.76
+at 6. `RetimeOriginSamples` was calibrated on H-negative states, so the direct
+reading is the one it suits and the inverted one is what moves.
 
 ## The two 108 MHz modes were the only two at oversampling ratio one
 

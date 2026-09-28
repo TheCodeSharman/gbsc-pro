@@ -2157,7 +2157,7 @@ TEST_CASE("a rate that moves without changing the source leaves the divider alon
     const uint16_t chosen = Adc::dividerInForce();
     REQUIRE(chosen != 0);
 
-    // Inside SourceIdentityPerMille and outside what the divider quantises to,
+    // Inside SourceIdentityPerThousand and outside what the divider quantises to,
     // so the same source asks for a different divider -- which is the whole of
     // the limit cycle's step.
     g_fieldRate = 60.0f * (1.0f + 4.0f / 1000.0f);

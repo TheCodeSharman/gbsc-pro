@@ -469,7 +469,7 @@ bool VideoPath::installSampling(SamplingReason reason)
         inputFormatter_.scanIsDoubled() == lineDoubled_
         && (derivedFromMeasurement
                 ? VideoSignal::ratesAgree(rate, installedRateHz_,
-                                          SourceIdentityPerMille)
+                                          SourceIdentityPerThousand)
                 : divider == inForce);
     if (inForce != 0 && alreadyInForce)
         return true;

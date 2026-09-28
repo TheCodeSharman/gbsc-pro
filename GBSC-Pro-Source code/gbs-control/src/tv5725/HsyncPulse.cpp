@@ -10,9 +10,9 @@ float HsyncPulse::syncDuty() const { return syncDuty_; }
 
 bool HsyncPulse::isPulse() const
 {
-    const float perMille = syncDuty_ * 1000.0f;
-    return perMille >= (float)PulseFloorPerMille
-        && perMille <= (float)PulseCeilingPerMille;
+    const float perThousand = syncDuty_ * 1000.0f;
+    return perThousand >= (float)PulseFloorPerThousand
+        && perThousand <= (float)PulseCeilingPerThousand;
 }
 
 }  // namespace Tv5725

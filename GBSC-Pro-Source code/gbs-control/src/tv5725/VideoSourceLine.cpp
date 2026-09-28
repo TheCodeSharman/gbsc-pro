@@ -5,7 +5,7 @@
 namespace Tv5725 {
 
 const uint16_t VideoSourceLine::DoubledHeadBlankingUnits;
-const uint16_t VideoSourceLine::SeparatorOriginPerMille;
+const uint16_t VideoSourceLine::SeparatorOriginPerThousand;
 const uint16_t VideoSourceLine::SeparatorFrameLeadLines;
 
 VideoSourceLine::VideoSourceLine(uint16_t units)
@@ -40,7 +40,7 @@ VideoSourceLine VideoSourceLine::forDuty(uint16_t units, const HsyncPulse &pulse
     // outside the capture rather than half in it. HsyncPulse's ceiling keeps it
     // under a sixth of the line, so what is left is always the greater part.
     const uint16_t lead = separated
-        ? (uint16_t)lrintf(units * (float)SeparatorOriginPerMille / 1000.0f)
+        ? (uint16_t)lrintf(units * (float)SeparatorOriginPerThousand / 1000.0f)
         : 0;
     return VideoSourceLine(units, (uint16_t)ceilf(units * pulse.syncDuty()),
                            lineDoubled ? DoubledHeadBlankingUnits : 0, lead);

@@ -46,11 +46,11 @@ public:
     bool isPulse() const;
 
     // CVT reduced blanking fixes hsync at 32 pixels inside 160 of blanking, so
-    // its duty is 32 / (active + 160) -- 15 per mille at 1920 active and 12 at
-    // 2560. CEA-861's narrowest is 1920x1080@24 at 16, and 720p60 is 24.
-    // A floor of 41 refused every one of them.
-    static const uint16_t PulseFloorPerMille = 10;
-    static const uint16_t PulseCeilingPerMille = 152;
+    // its duty is 32 / (active + 160) -- 1.5% at 1920 active and 1.2% at 2560.
+    // CEA-861's narrowest is 1920x1080@24 at 1.6%, and 720p60 is 2.4%. A floor
+    // of 4.1% refused every one of them.
+    static const uint16_t PulseFloorPerThousand = 10;
+    static const uint16_t PulseCeilingPerThousand = 152;
 
 private:
     float syncDuty_;

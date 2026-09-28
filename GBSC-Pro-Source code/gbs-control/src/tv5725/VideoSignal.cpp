@@ -25,11 +25,11 @@ uint32_t VideoSignal::lineRateFor(uint16_t sourceLines, float fieldRateHz)
     return (uint32_t)(fieldRateHz * (float)(sourceLines + 1));
 }
 
-bool VideoSignal::ratesAgree(uint32_t a, uint32_t b, uint16_t perMille)
+bool VideoSignal::ratesAgree(uint32_t a, uint32_t b, uint16_t perThousand)
 {
     const uint32_t larger = a > b ? a : b;
     const uint32_t smaller = a > b ? b : a;
-    return (larger - smaller) * 1000u <= (uint32_t)perMille * smaller;
+    return (larger - smaller) * 1000u <= (uint32_t)perThousand * smaller;
 }
 
 }  // namespace Tv5725

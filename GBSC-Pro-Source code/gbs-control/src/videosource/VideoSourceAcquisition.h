@@ -32,7 +32,7 @@ public:
     // band -- and it must stay wide, because a source may change rate at a
     // constant count and a RISC PC does.
     // ../../../docs/investigations/the-rate-tolerance-answered-five-questions.md
-    static const uint16_t RateCorroborationPerMille = 5;
+    static const uint16_t RateCorroborationPerThousand = 5;
 
     // How long a settled source goes before the held rate is checked against a
     // fresh reading. A vsync spin every few hundred passes, against a fault

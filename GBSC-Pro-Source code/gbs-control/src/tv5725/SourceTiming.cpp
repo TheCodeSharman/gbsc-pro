@@ -66,7 +66,7 @@ const float SyncDutyTolerance = 0.015f;
 // 50 Hz mode at 50.081, and its 800x600@60 at DMT's 60.317 exactly. A source
 // that names a rate is not obliged to run it.
 // ../../../docs/investigations/the-rate-tolerance-answered-five-questions.md
-const uint16_t StandardRateDeviationPerMille = 50;
+const uint16_t StandardRateDeviationPerThousand = 50;
 
 }  // namespace
 
@@ -89,7 +89,7 @@ const SourceTiming::Raster *SourceTiming::lookUp(const SourceKey &measured)
         const Raster &raster = Published[i];
         if (measured.lines() + 1 != raster.totalLines
             || (fabsf(measured.rateHz() - (float)raster.rateHz) * 1000.0f
-                > (float)StandardRateDeviationPerMille * (float)raster.rateHz))
+                > (float)StandardRateDeviationPerThousand * (float)raster.rateHz))
             continue;
 
         const float duty = (float)raster.syncPixels / (float)raster.totalPixels;

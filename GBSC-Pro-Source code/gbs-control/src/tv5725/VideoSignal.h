@@ -50,7 +50,7 @@ public:
     // that question.
     static uint32_t lineRateFor(uint16_t sourceLines, float fieldRateHz);
 
-    // Whether two rates are within `perMille` of each other.
+    // Whether two rates are within `perThousand` of each other.
     //
     // **THE TOLERANCE IS THE CALLER'S AND THERE IS NO DEFAULT**, because the
     // sites asking this are not asking the same question: whether a reading is
@@ -60,7 +60,7 @@ public:
     // was applied to a fifth -- a divider, which is a derived integer carrying
     // no measurement noise at all -- and forgave a deliberate 3.9% change.
     // ../../../docs/investigations/the-rate-tolerance-answered-five-questions.md
-    static bool ratesAgree(uint32_t a, uint32_t b, uint16_t perMille);
+    static bool ratesAgree(uint32_t a, uint32_t b, uint16_t perThousand);
 };
 
 }  // namespace Tv5725

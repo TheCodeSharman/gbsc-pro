@@ -124,6 +124,14 @@ is what a stock file reaches.
 Two things about that file are worth knowing before reading a measurement taken
 on it.
 
+**The CEA-861 block is the only narrow-sync source here.** Its HD entries state
+sync pulses far below anything Acorn or VESA DMT does -- 720p60 is 24 per mille,
+720p50 and 1080p60 are 20, 1080p24 is 16, against 62 to 121 for the modes a
+session normally reaches for. That makes them the only way to exercise a pulse
+the retime stop cannot express, and `HsyncPulse::PulseFloorPerMille` refused all
+of them until it came down to 10. `docs/known-issues.md` has what they still
+cannot do.
+
 **Thirteen modes carry a `mode_name:` and the rest do not.** That field is what
 puts a mode on the Display Manager menu -- AKF50's own version history says so
 -- and a nameless mode is still reachable by `MODE` and by ModeServ. So the

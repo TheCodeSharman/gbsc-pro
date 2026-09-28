@@ -98,7 +98,7 @@ TEST_CASE("the key is quantised as finely as the instrument is repeatable")
 
 TEST_CASE("a rate change too small to be movement does not change identity")
 {
-    // ratesAgree() calls two rates within HeldRateTolerancePerMille the same
+    // ratesAgree() calls two rates within HeldRateTolerancePerThousand the same
     // measurement, so a change inside it arms no mode change. If the key moved
     // there, solveForSource() would swap the stored framing with no re-solve
     // behind it -- a silent reframing on drift.

@@ -66,9 +66,15 @@ Ratio four is not a further step of the same kind.
 
 **No single model fits the remainder.** A line in sampling density fits seven
 H-negative readings at 25 to 45 MHz to a residual rms of 0.56 samples, and five
-modes outside that set refute it. Do not ship a correction from it. The
-`1024x768` pair sitting about 8.5 below the best thirteen-state model is the
-open part.
+modes outside that set refute it. Do not ship a correction from it.
+
+**THE `1024x768` PAIR IS NOT AN OUTLIER AND WANTS NO MEASUREMENT.** The 8.5 it
+was filed at was fitted while the 108 MHz pair still carried its 16-sample step.
+Refitting the same eleven anchor-free states with the step corrected leaves it
+at **-0.97 and -0.95** against a residual rms of 1.28, inside the two samples one
+mode moves between sessions. A divider hold there has no power either: the
+output raster caps its density at 0.71..1.07, which the fitted slope turns into
+1.6 samples of travel.
 
 Anchor-free, at the engine's own divider:
 
@@ -91,11 +97,17 @@ density it runs 1.67 to 2.76 samples, a 48% spread against 184% for the same
 differences read as source pixels. Converting an anchored reading to source
 pixels without taking it off manufactures a constant that is not there.
 
-`STATUS_SYNC_PROC_HLOW_LEN` reads about 98 ns narrower on H-negative sync than
-on H-positive, tighter as a time than as a count, and `retimeStopFor()`
-subtracts that reading straight into the stop -- 3.2 samples at 45 MHz against
-4.9 at 70 MHz. It is a real defect in the measured pulse and it is not the
-spread.
+**The polarity half of the remainder is closed.** The inverted path measures the
+pulse wide, `retimeStopFor()` subtracts the reading straight into the stop, and
+`SyncProcessor::InvertedPulseWidthSamples` now takes 5 samples off a high-active
+source where the reading is made. Seven modes in one session gave a pulse error
+of -3.80 against +1.73 either side of the boundary, a split of 5.53, beside an
+origin step of 5.27 -- and regressed against density the pulse error carries a
+coefficient of 0.85 where the arithmetic wants 1.
+
+The earlier reading of this as 98 ns, tighter as a time than as a count, does
+not survive the wider set: at one divider and a 27% range of sample rate the
+H-positive error is +1.7, +1.7, +1.8, where a fixed time wants +1.7 to +2.2.
 
 Undoubled sources are the ones whose rasters the engine is entitled to derive a
 capture window from, so this bounds how well a published-raster framing can do.
@@ -108,6 +120,35 @@ the doubled counterpart.
 **Readings at 75 Hz do not repeat at all**: 1125 lines at 75 Hz is not a
 standard mode, and `800x600@75` read +8, +29, +17 and +15 samples on four
 acquisitions.
+
+### A CEA-861 HD source acquires, and its capture origin is the previous source's
+
+**`retimeStopFor()` cannot express an origin behind a pulse narrower than
+`RetimeOriginSamples`.** The stop is `PLLAD_MD - pulse + origin`, so a pulse
+under 63 samples -- 79 at oversampling ratio one -- puts it past the end of the
+line, where the register is measured inert. Nothing is written and the counter
+keeps whatever the source before it left.
+
+Measured at 1920x1080@60: `PLLAD_MD` 1440, pulse **31** samples, the rule wanting
+`SP_RT_HS_SP` 1472 against a line of 1440, and the register holding **1338** --
+640x480@60's value. The picture is there and is misplaced by the difference.
+
+At the divider the engine picks, 63 samples is about 44 per mille, so every
+CEA-861 HD raster is below it: 720p60 is 24, 720p50 and 1080p60 are 20,
+1080p24 is 16. A bigger divider buys a wider pulse, but 720p60 would need
+`PLLAD_MD` 2603, which is past the IF line counter's 2047 samples.
+
+**This is what the pulse floor coming down traded for.** `HsyncPulse` refused
+those rasters at 41 per mille, and a refused duty leaves
+`SourceMeasurement::takeDuty()` with `dutyMeasured_` false and the source at
+`Settling` for ever -- measured, 1280x720@60 printed `NOT A PULSE` for as long
+as it was connected and never showed a picture. The floor is 10 now and both
+720p and 1080p acquire and paint: 1068 of 1080 rows lit at 720p, 1079 at 1080p.
+
+What would close it: whether a stop above `PLLAD_MD` is truly inert or wraps
+modulo the line. One bench run on a source with a wide pulse, creeping
+`SP_RT_HS_SP` from below the divider to above it with automation frozen, settles
+it. The measurement behind "inert" is one mode at one setting.
 
 ### Composite sync captures the doubled line 24.5 source pixels early
 

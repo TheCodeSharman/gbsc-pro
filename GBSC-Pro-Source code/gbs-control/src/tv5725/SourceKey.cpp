@@ -7,10 +7,10 @@
 
 namespace Tv5725 {
 
-const uint16_t SourceIdentityPerMille = 50;
+const uint16_t SourceIdentityPerThousand = 50;
 
 // Identity may be wider than movement but never narrower. See SourceKey.h.
-static_assert(SourceIdentityPerMille >= SourceMeasurement::RateFollowsCountPerMille,
+static_assert(SourceIdentityPerThousand >= SourceMeasurement::RateFollowsCountPerThousand,
               "a rate change that moves the key must also arm a mode change");
 
 namespace {
@@ -23,7 +23,7 @@ bool ratesWithinTolerance(float a, float b)
     const float smaller = a > b ? b : a;
     if (smaller <= 0.0f)
         return false;
-    return (larger - smaller) * 1000.0f <= (float)SourceIdentityPerMille * smaller;
+    return (larger - smaller) * 1000.0f <= (float)SourceIdentityPerThousand * smaller;
 }
 
 }  // namespace

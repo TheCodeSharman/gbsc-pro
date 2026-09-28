@@ -42,7 +42,7 @@ public:
     // a RISC PC does -- and every such change inside this is refused until
     // HeldRateRejectionLimit lets it through.
     // ../../../docs/investigations/the-rate-tolerance-answered-five-questions.md
-    static const uint16_t RateFollowsCountPerMille = 50;
+    static const uint16_t RateFollowsCountPerThousand = 50;
     explicit SourceMeasurement(InputFormatter &inputFormatter);
 
     // A sampling clock has just been latched, so nothing counted in ADC samples
@@ -273,13 +273,13 @@ private:
 
     // --- bounds nothing outside this class states ----------------------------
 
-    static const uint16_t RateAgreementPerMille = 1;
+    static const uint16_t RateAgreementPerThousand = 1;
 
 
     // How far settledLinePeriod() must move to count as movement. A different
     // quantity from the one above: HPERIOD_IF is a change detector read in its
     // own units, compared only against its own earlier value.
-    static const uint16_t LinePeriodMovedPerMille = 50;
+    static const uint16_t LinePeriodMovedPerThousand = 50;
 
     // The 15.7 kHz broadcast line, split from the 31.5 kHz VGA one clear of
     // both and of the ~21.8 kHz a programmable source reaches between them.

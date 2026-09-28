@@ -23,7 +23,7 @@ namespace Tv5725 {
 // one rate are 364, 449 and 525, and their rates sit 0.01% to 0.3% apart --
 // modes differing only in pixel clock, which this chip cannot separate anyway.
 // The frame time lock steers out what is left.
-extern const uint16_t SourceIdentityPerMille;
+extern const uint16_t SourceIdentityPerThousand;
 
 // What the stored rate is quantised to, in steps per hertz. The key is what
 // the output raster is generated from, so the quantisation lands in the raster
