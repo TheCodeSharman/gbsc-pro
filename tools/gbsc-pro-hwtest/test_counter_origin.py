@@ -44,3 +44,22 @@ def test_an_artefact_on_the_far_boundary_is_not_the_far_edge():
 
 def test_a_picture_with_only_boundary_runs_is_refused():
     assert counter_origin.near_run(frame([0, WIDTH - 1]), 1) == (None, None)
+
+
+def clipped(leading, width, low, high):
+    """A feature `width` counter units wide, clipped from the left by the
+    window's start, as the (register, amplitude) walk the creep collects."""
+    return [(v, max(0.0, leading + width - max(v, leading)))
+            for v in range(low, high + 1)]
+
+
+def test_the_crossing_is_the_features_leading_edge_not_its_centre():
+    """A half-amplitude point sits half a feature past where it starts, and the
+    feature is one SOURCE pixel -- so the error is half a source pixel however
+    many counter units that is, and it differs between two modes at one line
+    rate. Measured on the twins it is 0.68 units against 0.35."""
+    for width in (1.363, 0.681, 2.0, 4.3):
+        for leading in (293.0, 293.25, 293.5, 293.75):
+            found = counter_origin.leading_edge(clipped(leading, width, 280, 305),
+                                                width)
+            assert abs(found - leading) <= 0.35, (width, leading, found)

@@ -127,6 +127,20 @@ def half_crossing(walk):
     return None
 
 
+def leading_edge(walk, width):
+    """Where the feature STARTS, from the walk and the feature's own width.
+
+    half_crossing() answers where it is half gone, which is its CENTRE -- and
+    the feature is one SOURCE pixel, so that is half a source pixel however many
+    counter units the density makes it. At one line rate two modes then read
+    half a source pixel apart for no reason but their pixel size: 0.68 counter
+    units at 800x600@60 against 0.35 at 1600x600@60, a third of the gap measured
+    between them.
+    """
+    centre = half_crossing(walk)
+    return None if centre is None else centre - width / 2.0
+
+
 def creep(host, dev, spec, axis, start, stop, expected_at, per_register):
     """Creep one window edge through the feature, a unit at a time.
 
@@ -246,13 +260,16 @@ def measure(host, dev, mode, h, v, clock, label):
     # Only a START edge clips cleanly: the first captured unit is written at the
     # same output pixel whatever the window holds, so the feature travels
     # through the band as the start rises and is gone once it passes.
+    # The feature's own width in the counter each axis is crept in: one source
+    # pixel across, one source line down. leading_edge() needs it.
     plan = (
-        ("IF_HB_SP2", 1, across[0], per_unit, field["IF_HB_SP2"]),
-        ("IF_VB_SP", 0, down[0], per_line, field["IF_VB_SP"]),
+        ("IF_HB_SP2", 1, across[0], per_unit, field["IF_HB_SP2"],
+         units / float(sum(h))),
+        ("IF_VB_SP", 0, down[0], per_line, field["IF_VB_SP"], float(doubling)),
     )
     found = {}
     try:
-        for name, axis, at, travel, window_start in plan:
+        for name, axis, at, travel, window_start, width in plan:
             crosses = window_start + at / travel
             # A feature close to the window's own start leaves no room for the
             # whole run-up, and a negative register value is not a reading.
@@ -265,6 +282,7 @@ def measure(host, dev, mode, h, v, clock, label):
             at_start = at - (start - window_start) * travel
             crossing, walk = creep(host, dev, specs[name], axis, start, stop,
                                    at_start, travel)
+            crossing = leading_edge(walk, width) if crossing is not None else None
             found[name] = crossing
             print(f"    {name:10} crept {start}..{stop}, expected {crosses:.0f}"
                   f"  crossing {crossing if crossing is None else round(crossing, 1)}"
