@@ -1525,6 +1525,13 @@ one the same way; the rules below are each a wasted session.
   **Nothing records the picture moving between two acquisitions while one path is
   held**, and nothing records it on pass-through at all.
 
+  **AND IT IS NOW MEASURED QUIET ON THE SCALING PATH.** `full_margins.py` carries
+  the anchor and `counter_origin.py` does not, and on three modes spanning a
+  19-sample error range at 1080p they agree within a sample -- so a margin taken
+  at 100% framing reads the counter's own placement and needs no re-lock. The
+  comparison crosses no output-resolution change and no pass-through excursion,
+  which is where the 57 and ~150 column figures came from.
+
   So a blanking edge found in pass-through is a real edge and does not need
   re-checking against a second acquisition. **Read as a general licence to
   explain away a discrepancy, this entry invents constants**: a pass-through
