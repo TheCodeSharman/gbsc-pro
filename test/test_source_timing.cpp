@@ -42,41 +42,24 @@ TEST_CASE("a VESA source is placed where its own raster puts active video")
 
 TEST_CASE("the vertical axis comes from the same raster")
 {
-    // 525 lines, 2 of sync and 33 of back porch before 480 of picture, and a
-    // counter whose origin is 7 lines after the pulse's leading edge.
+    // 525 lines, 2 of sync and 33 of back porch before 480 of picture, counted
+    // from the pulse's leading edge as the horizontal is. Where the counter's
+    // origin sits after that edge is VideoSourceLine's.
     SourceTiming dmt = SourceTiming::matching(SourceKey(524, 59.94f, 96.0f / 800.0f, SourceKey::Negative, SourceKey::Negative));
 
     REQUIRE(dmt.published());
-    CHECK_NEAR(dmt.activeStart(AxisVertical), 28.0f / 525.0f, 0.0005f);
+    CHECK_NEAR(dmt.activeStart(AxisVertical), 35.0f / 525.0f, 0.0005f);
     CHECK_NEAR(dmt.activeExtent(AxisVertical), 480.0f / 525.0f, 0.0005f);
 }
 
-// THE VERTICAL COUNTER'S ORIGIN IS A FIXED DISTANCE AFTER THE VSYNC LEADING
-// EDGE, AND IT IS NOT THE PULSE WIDTH. Measured on the RiscPC on vga by forcing
-// a 100% framing and reading the card's one-line green frame off the emitted
-// picture, which gives the counter line the source's own first active line
-// arrives at:
-//
-//     mode           sync + back porch   arrives at   difference
-//     640x480@60          2 + 33 = 35        27.7       -7.3
-//     800x600@60          4 + 23 = 27        19.7       -7.3
-//     1024x768@60         6 + 29 = 35        27.6       -7.4
-//     640x480@75          3 + 16 = 19        11.1       -7.9
-//
-// Four pulse widths and one difference, so the origin does not follow the
-// pulse: what the standard states from the leading edge is where video lands,
-// less the origin. Taking the back porch alone instead is right only where the
-// pulse happens to be 7 lines, and cost five lines off the top of 640x480@60
-// with the source's own blanking shown at the bottom in their place.
-// docs/investigations/the-vertical-capture-window-is-placed-late.md
-TEST_CASE("the vertical start is the standard's, less the counter's origin")
+TEST_CASE("the vertical start is the standard's own, whatever the pulse")
 {
     // 800x600@60 is 628 lines: 4 of sync, 23 of back porch, 600 of picture.
     SourceTiming dmt = SourceTiming::matching(
         SourceKey(627, 60.32f, 128.0f / 1056.0f, SourceKey::Positive, SourceKey::Positive));
     REQUIRE(dmt.published());
 
-    CHECK_NEAR(dmt.activeStart(AxisVertical), 20.0f / 628.0f, 0.0005f);
+    CHECK_NEAR(dmt.activeStart(AxisVertical), 27.0f / 628.0f, 0.0005f);
 }
 
 TEST_CASE("a measured rate anywhere in the bucket still matches")
@@ -106,7 +89,7 @@ TEST_CASE("a source running neither standard is left unpublished")
     // Placing a source from a raster it is not emitting crops picture, so an
     // unrecognised sync width takes the assumption rather than the nearest row.
     CHECK_FALSE(SourceTiming::matching(SourceKey(524, 59.94f, 0.20f, SourceKey::Negative, SourceKey::Negative)).published());
-    CHECK_FALSE(SourceTiming::matching(SourceKey(311, 50.08f, 0.071f, SourceKey::Positive, SourceKey::Positive)).published());
+    CHECK_FALSE(SourceTiming::matching(SourceKey(311, 50.08f, 0.140f, SourceKey::Positive, SourceKey::Positive)).published());
     CHECK_FALSE(SourceTiming::matching(SourceKey(97, 50.08f, 0.12f, SourceKey::Positive, SourceKey::Positive)).published());
 }
 
@@ -155,4 +138,30 @@ TEST_CASE("a source matching no raster names no line to blank to")
     REQUIRE_FALSE(unknown.published());
 
     CHECK(unknown.activeStartLine(311) == 0);
+}
+
+// AKF50's 15.6 kHz PAL family: 512 pixel clocks at 8 MHz, 36 of sync, 30 of
+// back porch and a 44-pixel border either side of 320 of picture; vertically
+// 312 lines, 3 of sync, 16 of back porch and a 17-line border either side of
+// 256. The tier states the PICTURE, not the border around it, so a source
+// running one of these opens filling the screen rather than showing its own
+// border as black.
+TEST_CASE("an Acorn 15 kHz mode is placed on the picture inside its border")
+{
+    SourceTiming akf = SourceTiming::matching(
+        SourceKey(311, 50.08f, 36.0f / 512.0f, SourceKey::Negative, SourceKey::Negative));
+
+    REQUIRE(akf.published());
+    CHECK_NEAR(akf.activeStart(AxisHorizontal), 110.0f / 512.0f, 0.0005f);
+    CHECK_NEAR(akf.activeExtent(AxisHorizontal), 320.0f / 512.0f, 0.0005f);
+}
+
+TEST_CASE("the Acorn mode's vertical picture starts inside its top border")
+{
+    SourceTiming akf = SourceTiming::matching(
+        SourceKey(311, 50.08f, 36.0f / 512.0f, SourceKey::Negative, SourceKey::Negative));
+
+    REQUIRE(akf.published());
+    CHECK_NEAR(akf.activeStart(AxisVertical), 36.0f / 312.0f, 0.0005f);
+    CHECK_NEAR(akf.activeExtent(AxisVertical), 256.0f / 312.0f, 0.0005f);
 }

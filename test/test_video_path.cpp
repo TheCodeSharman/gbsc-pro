@@ -228,9 +228,10 @@ static void checkBenchGeometry()
     CHECK(Adc::PLLAD_FS::read() == 1);
     CHECK(Adc::PLLAD_BPS::read() == 1);
 
-    // The capture window: this source runs no raster the standards state, so it
-    // is placed across the envelope of what real sources put on a line. The
-    // doubler is in the path here, so the vertical counts half-lines.
+    // The capture window: this source runs AKF50's 15.6 kHz PAL raster, so it
+    // is placed on the 320 picture pixels of 512 rather than on the envelope,
+    // and the 44-pixel border either side stays outside. The doubler is in the
+    // path here, so the vertical counts half-lines.
     //
     // BOTH windows carry Axis::captureMargin units at EACH end: the aperture
     // shows the whole write, so the margin is what covers the units the write
@@ -238,10 +239,10 @@ static void checkBenchGeometry()
     // one-pixel frame, which lands on exactly those lines; the doubler is in
     // the path here, so that margin is a half-line rather than a line, which
     // is NOT measured.
-    CHECK(InputFormatter::IF_HB_SP2::read() == 128);
-    CHECK(InputFormatter::IF_HB_ST2::read() == 1081);
-    CHECK(InputFormatter::IF_VB_SP::read() == 36);
-    CHECK(InputFormatter::IF_VB_ST::read() == 622);
+    CHECK(InputFormatter::IF_HB_SP2::read() == 236);
+    CHECK(InputFormatter::IF_HB_ST2::read() == 926);
+    CHECK(InputFormatter::IF_VB_SP::read() == 60);
+    CHECK(InputFormatter::IF_VB_ST::read() == 576);
 
     // The progressive line window spans exactly one line from where it starts,
     // and may run past the end of the line without that being a fault.
@@ -249,8 +250,8 @@ static void checkBenchGeometry()
     CHECK(InputFormatter::IF_LINE_SP::read() == 1165);
 
     // Both scales computed from the capture and the raster, never inherited.
-    CHECK(VideoProcessor::VDS_HSCALE::read() == 583);
-    CHECK(VideoProcessor::VDS_VSCALE::read() == 552);
+    CHECK(VideoProcessor::VDS_HSCALE::read() == 422);
+    CHECK(VideoProcessor::VDS_VSCALE::read() == 486);
     CHECK(VideoProcessor::VDS_HSCALE_BYPS::read() == 0);
     CHECK(VideoProcessor::VDS_VSCALE_BYPS::read() == 0);
     CHECK(VideoProcessor::VDS_SYNC_EN::read() == 0);
@@ -278,8 +279,8 @@ static void checkBenchGeometry()
     // interpolates between two capture units, so the last unit an aperture
     // closing on the picture would show reads the unit after the last one
     // captured -- which is what the trailing captureMargin puts under it.
-    CHECK(VideoProcessor::VDS_HB_ST::read() == 1813);
-    CHECK(VideoProcessor::VDS_VB_ST::read() == 1121);
+    CHECK(VideoProcessor::VDS_HB_ST::read() == 1812);
+    CHECK(VideoProcessor::VDS_VB_ST::read() == 1119);
 
     // And the horizontal window is an ODD number of units wide, which is what
     // reaches the picture: an even one shears.
@@ -296,19 +297,19 @@ static void checkBenchGeometry()
     // The memory window opens earlier still, by what the capture's leading
     // margin produces: the write has to reach the picture with the
     // interpolator already fed.
-    CHECK(VideoProcessor::VDS_HB_SP::read() == 42);
-    CHECK(VideoProcessor::VDS_VB_SP::read() == 36);
+    CHECK(VideoProcessor::VDS_HB_SP::read() == 25);
+    CHECK(VideoProcessor::VDS_VB_SP::read() == 35);
     // The aperture opens ON the picture, both axes: the margin before it is
     // the source's own blanking, and showing it is a black band the picture
     // never reaches.
-    CHECK(VideoProcessor::VDS_DIS_HB_SP::read() == 142);
+    CHECK(VideoProcessor::VDS_DIS_HB_SP::read() == 143);
     CHECK(VideoProcessor::VDS_DIS_VB_SP::read() == 41);
     CHECK(VideoProcessor::VDS_DIS_VB_SP::read() > VideoProcessor::VDS_VS_SP::read());
 
     // The playback burst, sized from the capture width so the fetch rate does
     // not move with the scale.
     CHECK(FrameBuffer::PB_CAP_OFFSET::read() == 276);
-    CHECK(FrameBuffer::PB_FETCH_NUM::read() == 239);
+    CHECK(FrameBuffer::PB_FETCH_NUM::read() == 173);
 
     // The rest of what PLLAD_LAT loads, and the decimators that follow the tap
     // it selects. 2508 samples on a 15574 Hz line is 39.1 MHz, just inside the
@@ -840,10 +841,10 @@ TEST_CASE("a reset puts the framing back without re-deriving the rest")
     CHECK(g_fieldRateCalls - before == 0);
     CHECK_FALSE(engine.changing());
 
-    CHECK(InputFormatter::IF_HB_SP2::read() == 128);
-    CHECK(InputFormatter::IF_HB_ST2::read() == 1081);
-    CHECK(InputFormatter::IF_VB_SP::read() == 36);
-    CHECK(InputFormatter::IF_VB_ST::read() == 622);
+    CHECK(InputFormatter::IF_HB_SP2::read() == 236);
+    CHECK(InputFormatter::IF_HB_ST2::read() == 926);
+    CHECK(InputFormatter::IF_VB_SP::read() == 60);
+    CHECK(InputFormatter::IF_VB_ST::read() == 576);
 
     // And leaves everything the framing does not own exactly as it was. The
     // divider, the raster and the clock are still the ones the mode change
@@ -906,7 +907,7 @@ TEST_CASE("changing the output keeps the framing the user tuned")
     engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(acquisition));
 
-    frameAt(engine, 300, 120, 40, -15);
+    frameAt(engine, 100, 120, 40, -15);
     const PanAndZoom tuned = engine.framing();
 
     engine.setOutputMode(&Mode480p);
@@ -985,7 +986,7 @@ TEST_CASE("a source comes back to the framing it was left at")
     engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(acquisition));
 
-    frameAt(engine, 300, 120, 40, -15);
+    frameAt(engine, 100, 120, 40, -15);
     const PanAndZoom tuned = engine.framing();
 
     // Away to another source entirely, and back.
@@ -1124,7 +1125,7 @@ TEST_CASE("a press stores the framing without leaving the source")
     REQUIRE(pollUntilSolved(acquisition));
     REQUIRE(framings.count() == 0);
 
-    frameAt(engine, 300, 120, 40, -15);
+    frameAt(engine, 100, 120, 40, -15);
 
     PanAndZoom stored;
     REQUIRE(framings.find(SourceKey(311, 50.08f, BenchSyncWidth, BenchPolarity, BenchPolarity), &stored));
@@ -1147,7 +1148,7 @@ TEST_CASE("a reset forgets what the table stored for this source")
     REQUIRE(pollUntilSolved(acquisition));
     const PanAndZoom untouched = engine.framing();
 
-    frameAt(engine, 300, 120, 40, -15);
+    frameAt(engine, 100, 120, 40, -15);
     REQUIRE(framings.count() == 1);
 
     REQUIRE(engine.reset());
@@ -1178,7 +1179,7 @@ TEST_CASE("the table says when it has something new to write")
     }
 
     SUBCASE("and a source change that stores a tuning moves it") {
-        frameAt(engine, 300, 120, 40, -15);
+        frameAt(engine, 100, 120, 40, -15);
         seedSourceLines(524);
         engine.setOutputMode(benchMode());
         engine.inputTimingsChanged(4);
@@ -1224,17 +1225,17 @@ TEST_CASE("a framed picture holds every window against the framing")
     const long wideScale = VideoProcessor::VDS_HSCALE::read();
     const long tallScale = VideoProcessor::VDS_VSCALE::read();
 
-    frameAt(engine, 300, 120, 40, -15);
+    frameAt(engine, 100, 120, 40, -15);
     Wire.reset();
     poisonChip();
     seedSourceMeasurement();
     REQUIRE(engine.resolve());
 
-    // The capture narrows 300 units horizontally and 120 vertically, then moves
+    // The capture narrows 100 units horizontally and 120 vertically, then moves
     // 40 right and 15 up. The near edge carries the pan alone and the far edge
     // carries both, because the zoom takes its units off the far end.
     CHECK(InputFormatter::IF_HB_SP2::read() == captureStart + 40);
-    CHECK(InputFormatter::IF_HB_ST2::read() == captureStop + 40 - 300);
+    CHECK(InputFormatter::IF_HB_ST2::read() == captureStop + 40 - 100);
     CHECK(InputFormatter::IF_VB_SP::read() == linesStart - 15);
     CHECK(InputFormatter::IF_VB_ST::read() == linesStop - 15 - 120);
     CHECK(InputFormatter::IF_LINE_ST::read() == 64);
@@ -1262,7 +1263,7 @@ TEST_CASE("a framed picture holds every window against the framing")
     // The near edge follows where the transmitted window opens, less the write
     // origin and the capture's leading margin, rather than resting on the
     // floor of 8.
-    CHECK(VideoProcessor::VDS_HB_SP::read() == 21);
+    CHECK(VideoProcessor::VDS_HB_SP::read() == 14);
     CHECK(VideoProcessor::VDS_VB_SP::read() > 0);
     CHECK(VideoProcessor::VDS_DIS_HB_SP::read() > VideoProcessor::VDS_HB_SP::read());
     CHECK(VideoProcessor::VDS_DIS_VB_SP::read() > VideoProcessor::VDS_VB_SP::read());

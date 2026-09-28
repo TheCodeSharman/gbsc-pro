@@ -7,15 +7,28 @@
 
 namespace Tv5725 {
 
-// VESA DMT and CEA-861: the total, the sync width, where active video starts and
-// how long it runs, per axis. Progressive modes only -- an interlaced source
-// arrives as a field, and what its line count reads as has not been measured.
+// VESA DMT, CEA-861 and Acorn: the total, the sync width, where the PICTURE
+// starts and how long it runs, per axis. Progressive modes only -- an
+// interlaced source arrives as a field, and what its line count reads as has
+// not been measured.
 //
-// BOTH START COLUMNS ARE THE STANDARD'S OWN, counted from the sync pulse's
-// leading edge: sync plus back porch, as stated. Where a counter's origin sits
-// relative to that edge is the counter's business rather than the raster's, and
-// the two blocks that read this table do not agree on it -- so each subtracts
-// its own, and `vsync` is what the pulse takes for the one that ends there.
+// BOTH START COLUMNS ARE COUNTED FROM THE SYNC PULSE'S LEADING EDGE. Where a
+// counter's origin sits relative to that edge is the counter's business rather
+// than the raster's, and the two blocks that read this table do not agree on it
+// -- so each subtracts its own, and `vsync` is what the pulse takes for the one
+// that ends there.
+//
+// **THE PICTURE, NOT THE ACTIVE REGION.** The two are the same thing in DMT and
+// CEA, which state no border. An Acorn mode file states `sync, back porch, left
+// border, display, right border, front porch`, and the border is black ACTIVE
+// video -- so a window opened on the active region shows it as a black bar the
+// source drew. The start is sync plus back porch plus border, and a source
+// whose layout differs from the row that matched it overruns rather than
+// underfills. ../../../docs/capture-window-default-tiers.md
+//
+// The Acorn rows are LAST because a mode file is not a standard: where one of
+// them describes a raster DMT or CEA also states, the standard's row is the one
+// a source running it is emitting.
 const SourceTiming::Raster SourceTiming::Published[] = {
     // frame  rate  total  sync  start  active  vsync  vstart  vactive
     {  525,   60,    800,   96,   144,    640,    2,      35,    480},  // 640x480@60
@@ -31,30 +44,13 @@ const SourceTiming::Raster SourceTiming::Published[] = {
     { 1066,   60,   1688,  112,   360,   1280,    3,      41,   1024},  // 1280x1024@60
     {  525,   60,    858,   62,   122,    720,    6,      36,    480},  // 720x480p
     {  625,   50,    864,   64,   132,    720,    5,      44,    576},  // 720x576p
+    {  312,   50,    512,   36,   110,    320,    3,      36,    256},  // AKF50 15.6 kHz PAL
 };
 
 const uint16_t SourceTiming::PublishedCount =
     sizeof(SourceTiming::Published) / sizeof(SourceTiming::Published[0]);
 
 namespace {
-
-// WHERE THE VERTICAL COUNTER'S ORIGIN SITS, in lines after the vsync pulse's
-// LEADING edge. It is a property of the chip's vsync detection rather than of
-// the source: measured across four pulse widths -- 2, 3, 4 and 6 lines -- the
-// distance from the leading edge to the source's first active line is the
-// standard's own figure less 7.3 to 7.9 lines, whatever the pulse.
-//
-// Taking the back porch alone instead treats the origin AS the trailing edge,
-// which is right only where the pulse is 7 lines wide and is five lines late at
-// 640x480@60 -- the top of the picture cut and the source's own blanking shown
-// at the bottom in its place, with every register self-consistent.
-//
-// IT IS THE INPUT FORMATTER'S COUNTER AND NOTHING SAYS IT IS THE HD CHANNEL'S.
-// Pass-through blanks against a counter in another block, which nothing here
-// has measured, so activeStartLine() keeps taking the pulse's end as its origin
-// -- which is where it has always put it.
-// ../../../docs/investigations/the-vertical-capture-window-is-placed-late.md
-const uint16_t VerticalOriginLines = 7;
 
 // The bench reads 11.57% where DMT states 12.00%, so the match cannot be exact;
 // the standards it has to tell apart are 4.8 points away from each other.
@@ -107,13 +103,9 @@ float SourceTiming::activeStart(const Axis &axis) const
 {
     if (!published())
         return 0.0f;
-    if (!axis.vertical())
-        return (float)raster_->activeStartPixel / (float)raster_->totalPixels;
-
-    const uint16_t start = raster_->activeStartLine > VerticalOriginLines
-                         ? (uint16_t)(raster_->activeStartLine - VerticalOriginLines)
-                         : 0;
-    return (float)start / (float)raster_->totalLines;
+    return axis.vertical()
+        ? (float)raster_->activeStartLine / (float)raster_->totalLines
+        : (float)raster_->activeStartPixel / (float)raster_->totalPixels;
 }
 
 float SourceTiming::activeExtent(const Axis &axis) const

@@ -82,6 +82,17 @@ public:
     // ../../../../docs/investigations/the-separator-moves-the-counters-origin.md
     static const uint16_t SeparatorFrameLeadLines = 16;
 
+    // WHERE THE FRAME COUNTER'S OWN ORIGIN SITS, in units after the vsync
+    // pulse's leading edge, with the source sending its own vertical sync.
+    //
+    // **A COUNT OF UNITS, NOT OF THE SOURCE'S LINES**, which is what splits the
+    // two: three doubled sources whose pulses differ by a factor of two agree
+    // on 10.0..10.2 units, where a figure in source lines would double with the
+    // counter and put the window two lines early.
+    // ../../../../docs/known-issues.md
+    static const uint16_t FrameOriginUnits = 7;
+    static const uint16_t DoubledFrameOriginUnits = 10;
+
     // Where the counter rolls over.
     uint16_t units() const;
 

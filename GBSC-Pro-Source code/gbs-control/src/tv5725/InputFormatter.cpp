@@ -27,10 +27,13 @@ VideoSourceLine InputFormatter::capturableFrame(uint16_t sourceLines,
                                                 bool separated) const
 {
     const uint16_t perLine = doubled_ ? 2 : 1;
+    const uint16_t origin = doubled_ ? VideoSourceLine::DoubledFrameOriginUnits
+                                     : VideoSourceLine::FrameOriginUnits;
     return VideoSourceLine::frame(
         (uint16_t)(perLine * (sourceLines + 1)),
-        separated ? (uint16_t)(perLine * VideoSourceLine::SeparatorFrameLeadLines)
-                  : 0);
+        separated
+            ? (uint16_t)(origin + perLine * VideoSourceLine::SeparatorFrameLeadLines)
+            : origin);
 }
 
 uint16_t InputFormatter::verticalPeriod()

@@ -33,9 +33,11 @@ public:
     float fieldRateHz() const;
     bool published() const;
 
-    // Where active video starts and how far it runs, as a fraction of the whole
-    // line on the horizontal axis and of the whole frame on the vertical.
-    // Meaningless unless published().
+    // Where the picture starts and how far it runs, as a fraction of the whole
+    // line on the horizontal axis and of the whole frame on the vertical, both
+    // counted from the sync pulse's leading edge. Where the COUNTER's origin
+    // sits relative to that edge belongs to VideoSourceLine, which is what
+    // holds the counter. Meaningless unless published().
     float activeStart(const Axis &axis) const;
     float activeExtent(const Axis &axis) const;
 

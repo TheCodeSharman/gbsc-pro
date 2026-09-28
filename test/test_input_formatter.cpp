@@ -557,11 +557,30 @@ TEST_CASE("the block states the counters a capture window sits in")
 
         block.applyScan(2000, false, false);
         CHECK(block.capturableFrame(627, true).originLeadUnits()
-              == VideoSourceLine::SeparatorFrameLeadLines);
+              == VideoSourceLine::FrameOriginUnits
+                 + VideoSourceLine::SeparatorFrameLeadLines);
 
         block.applyScan(2000, true, false);
         CHECK(block.capturableFrame(311, true).originLeadUnits()
-              == 2 * VideoSourceLine::SeparatorFrameLeadLines);
+              == VideoSourceLine::DoubledFrameOriginUnits
+                 + 2 * VideoSourceLine::SeparatorFrameLeadLines);
+    }
+
+    // The counter's own origin sits after the vsync pulse's leading edge, and
+    // it is a count of UNITS rather than of the source's lines -- so doubling
+    // the counter does not double it.
+    SUBCASE("the counter's origin does not double with the line") {
+        InputFormatter block;
+
+        block.applyScan(2000, false, false);
+        CHECK(block.capturableFrame(627, false).originLeadUnits()
+              == VideoSourceLine::FrameOriginUnits);
+
+        block.applyScan(2000, true, false);
+        CHECK(block.capturableFrame(311, false).originLeadUnits()
+              == VideoSourceLine::DoubledFrameOriginUnits);
+        CHECK(VideoSourceLine::DoubledFrameOriginUnits
+              < 2 * VideoSourceLine::FrameOriginUnits);
     }
 }
 

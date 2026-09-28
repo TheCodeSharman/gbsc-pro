@@ -13,6 +13,8 @@
 // docs/chip-initialisation.md
 
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
+#include <math.h>
+
 #include "CheckNear.h"
 #include "MeasuredSource.h"
 #include "SolvedEngine.h"
@@ -23,6 +25,7 @@
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SyncProcessor.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/InputFormatter.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SyncMeasurement.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/VideoSourceLine.h"
 
 static Tv5725::InputFormatter inputFormatter;
 
@@ -926,12 +929,14 @@ TEST_CASE("a source on the sync separator is captured earlier in the line")
     SyncMeasurement::set(false);
 
     // The framing is unmoved, so it names the same part of the source both
-    // times and the window opens earlier to take it. The lead is 7% of this
-    // source's 1101-unit counter; the floor does not move with it, so on a
-    // doubled line the window reaches the floor before it has spent the whole
-    // lead and the rest of that part of the line is not capturable.
-    CHECK(separated < ownHsync);
-    CHECK(separated == solved.engine.firstUnitOn(AxisHorizontal));
+    // times and the window opens earlier to take it, by the whole lead: 7% of
+    // this source's 1101-unit counter. The floor does not move with the lead,
+    // so a window the default placed nearer the head of the line would reach
+    // it and spend only part of one.
+    const long lead = lrintf((float)solved.engine.lineUnitsOn(AxisHorizontal)
+                             * VideoSourceLine::SeparatorOriginPerThousand / 1000.0f);
+    CHECK(ownHsync - separated == lead);
+    CHECK(separated > solved.engine.firstUnitOn(AxisHorizontal));
 }
 
 // THE FRAMING THE BOUNDS REALISE AT EACH ZOOM STOP. The framing is clamped
@@ -948,10 +953,10 @@ TEST_CASE("the framing realised at a zoom stop is the same whichever bound binds
             solved.engine.zoom(-40, 0);
             solved.engine.zoom(0, -40);
         }
-        CHECK(solved.engine.originUnitsOn(AxisHorizontal) == 129);
-        CHECK(solved.engine.extentUnitsOn(AxisHorizontal) == 970);
-        CHECK(solved.engine.originUnitsOn(AxisVertical) == 38);
-        CHECK(solved.engine.extentUnitsOn(AxisVertical) == 582);
+        CHECK(solved.engine.originUnitsOn(AxisHorizontal) == 237);
+        CHECK(solved.engine.extentUnitsOn(AxisHorizontal) == 862);
+        CHECK(solved.engine.originUnitsOn(AxisVertical) == 72);
+        CHECK(solved.engine.extentUnitsOn(AxisVertical) == 550);
     }
 
     SUBCASE("zoomed in to where the magnification stops") {
@@ -959,9 +964,9 @@ TEST_CASE("the framing realised at a zoom stop is the same whichever bound binds
             solved.engine.zoom(40, 0);
             solved.engine.zoom(0, 40);
         }
-        CHECK(solved.engine.originUnitsOn(AxisHorizontal) == 129);
+        CHECK(solved.engine.originUnitsOn(AxisHorizontal) == 237);
         CHECK(solved.engine.extentUnitsOn(AxisHorizontal) == 559);
-        CHECK(solved.engine.originUnitsOn(AxisVertical) == 38);
+        CHECK(solved.engine.originUnitsOn(AxisVertical) == 72);
         CHECK(solved.engine.extentUnitsOn(AxisVertical) == 361);
     }
 }
