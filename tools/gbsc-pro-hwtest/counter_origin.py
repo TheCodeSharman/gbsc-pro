@@ -217,7 +217,7 @@ def creep(host, dev, spec, axis, start, stop):
     """
     step = 1 if stop >= start else -1
     values, found, walk = [], [], []
-    for value in range(start, stop + step * (GONE_STEPS + OVERRUN), step):
+    for value in range(start, stop + step * GONE_STEPS, step):
         if not set_field(host, spec, value):
             break
         time.sleep(0.45)
