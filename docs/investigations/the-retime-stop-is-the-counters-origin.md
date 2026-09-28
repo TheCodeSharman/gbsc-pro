@@ -81,6 +81,10 @@ It is the one number here with no account of itself. What is known:
 - It is a count of **ADC samples**, not a fraction and not a time: it holds
   across a 480-unit range of divider on one source and across two sources whose
   dividers match to four units.
+- **All four states run oversampling ratio two, and ratio one wants 16 more.**
+  The decimators are out of circuit there and the captured video lands that much
+  later in the counter. `SyncProcessor::UndecimatedOriginSamples` carries it.
+  [`the-capture-origin-varies-by-mode-at-one-line-rate.md`](the-capture-origin-varies-by-mode-at-one-line-rate.md)
 - Both sources are **undoubled**. Whether it is the same count on a doubled line
   is untested, and an IF unit is two ADC samples there.
 - Putting it in `SP_RT_HS_SP` rather than downstream is what keeps the counter's

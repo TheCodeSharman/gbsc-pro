@@ -37,9 +37,10 @@ blanking on screen across six DMT modes.
 
 ### The undoubled capture origin has a term at each end of the cable
 
-**`SyncProcessor::RetimeOriginSamples` is 63 and thirteen measured states want
-anything from 60 to 80.** Two controls settle that this is not one quantity, and
-each rules out the other's explanation:
+**`SyncProcessor::RetimeOriginSamples` is 63 and the measured states want
+anything from 60 to 66 once the oversampling step below is taken off.** Two
+controls settle that the remainder is not one quantity, and each rules out the
+other's explanation:
 
 - **A scaler term.** One mode, one source, only the divider moving: `PLLAD_MD`
   800 / 1400 / 1440 give **+3.2 / +9.4 / +10.1** samples. The source cannot see
@@ -52,11 +53,22 @@ each rules out the other's explanation:
   to better than 0.1 source pixels. Both sample at one rate, so a constant count
   and a constant time are one hypothesis here and both are refuted.
 
-**No single model fits.** A line in sampling density fits seven H-negative
-readings at 25 to 45 MHz to a residual rms of 0.56 samples, and five modes
-outside that set refute it: over all thirteen states the best model in density,
-sample rate and polarity leaves a structured rms of 4.4. Do not ship a
-correction from it.
+**The 108 MHz outliers are solved and fixed: they were the only two states at
+oversampling ratio ONE.** CKO above 80 MHz puts `PLLAD_KS` on row 0, which leaves
+the post divider no room for a ratio, so both decimators are bypassed and the
+captured video lands **15.9 ADC samples** later in the line counter. Measured by
+holding the divider across the crossover with the source untouched, on both
+modes, and separated from the PLL's own row by forcing ratio one at row one with
+`/sc?o` -- one divider, one VCO, one geometry, **+0.7 at ratio two against +16.8
+at ratio one**. `SyncProcessor::UndecimatedOriginSamples` is 16, and the two modes
+now read within about a sample of their published raster.
+Ratio four is not a further step of the same kind.
+
+**No single model fits the remainder.** A line in sampling density fits seven
+H-negative readings at 25 to 45 MHz to a residual rms of 0.56 samples, and five
+modes outside that set refute it. Do not ship a correction from it. The
+`1024x768` pair sitting about 8.5 below the best thirteen-state model is the
+open part.
 
 Anchor-free, at the engine's own divider:
 
@@ -71,14 +83,6 @@ Anchor-free, at the engine's own divider:
 | 800x600@60 | 1.36 | +5.1 | +3.7 |
 | 360x480@60 | 2.72 | +7.2 | +2.6 |
 | 320x480@60 | 3.60 | +10.1 | +2.8 |
-| **1280x960@60** | 0.80 | **+17.1** | +21.3 |
-| **1280x1024@60** | 0.86 | **+17.3** | +20.2 |
-
-**The two 108 MHz modes are outliers with two explanations already closed.** It
-is not the machine's video bandwidth -- `1280x960@60` reads +17.1 at 256 colours
-and +16.9 at 16, a four-fold change in video DMA -- and it is not a raster the
-source cannot deliver, the measured line rate matching the file to 0.00% on
-both.
 
 **Take these with `counter_origin.py`, not `full_margins.py`.** The anchored
 instrument reads about two samples higher, and that difference belongs in ADC

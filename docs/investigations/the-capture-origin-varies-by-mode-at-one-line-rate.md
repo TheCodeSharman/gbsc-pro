@@ -3,11 +3,16 @@
 `SyncProcessor::RetimeOriginSamples` is 63 ADC samples, added to the retime stop
 the input formatter's line counter takes its origin from. Measured against the
 mode file at full framing, the source's active region lands anywhere from 2.5
-samples early to 17 late, and which it is varies by mode.
+samples early to 10 late, and which it is varies by mode.
 
-**Two controls settle that this is not one quantity.** Neither end of the cable
-can produce what the other's control measures, so both contribute and no single
-correction absorbs either:
+**One term of it is found and corrected.** Oversampling ratio one puts the origin
+16 samples earlier than ratio two, and the two 108 MHz modes were the only states
+reaching it -- which is what they were reading 17 samples off for.
+`SyncProcessor::UndecimatedOriginSamples` carries it.
+
+**Two controls settle that the remainder is not one quantity.** Neither end of
+the cable can produce what the other's control measures, so both contribute and
+no single correction absorbs either:
 
 - **The scaler has a term**, because holding one source at one mode and moving
   only the divider moves the offset by 6.9 samples. The source cannot see the
@@ -78,31 +83,83 @@ density, sample rate and polarity leaves a residual rms of 4.4 samples, and the
 residuals are structured rather than scattered: both 1024x768 modes sit 8.5
 low and both 108 MHz modes 5 to 7 high.
 
+**The 108 MHz half of that structure is the oversampling step below**, and
+correcting it leaves the 1024x768 pair as the open part.
+
 **So those coefficients describe one family of modes and are not a correction.**
 What survives the wider set is the pair of controls, not the line through them.
 
-## Two anomalies the density line does not reach
+## The two 108 MHz modes were the only two at oversampling ratio one
 
-| mode | pixel clock | d samples |
-|---|---|---|
-| 1024x768@60 | 65.0 MHz | -1.9 |
-| 1024x768@70 | 75.0 MHz | -2.5 |
-| 1280x960@60 | 108.0 MHz | **+17.1** |
-| 1280x1024@60 | 108.0 MHz | **+17.3** |
+`Adc::postDividerFor()` crosses at CKO 80 MHz and `applyOversample()` reduces the
+ratio to what the post divider has room for, so a source whose divider and line
+rate put CKO above 80 MHz runs `PLLAD_KS` 0 and oversampling ratio **one**, with
+both decimators bypassed. Of the thirteen states above those two are the only
+ones; the rest run two, and one held point runs four.
 
-The two 108 MHz modes land about 190 ns late where every mode at or below
-80 MHz lands within 10 samples of the file. They repeat to 0.2 samples within a
-session and to about 2 across sessions, and they carry the two highest pixel
-clocks the bench can measure. Two explanations are closed:
+**Holding the divider across that crossover moves the offset 16 samples with the
+source untouched** -- one pixel clock, one sync width, one line rate, one
+polarity:
 
-- **Not the source's video bandwidth.** `1280x960@60` at 256 colours asks
-  73.7 MB/s of video DMA, four times what it asks at 16 colours. The two read
-  **+17.1 and +16.9**, with the same solved divider, raster and density. A fetch
-  that could not keep up would move the picture and does not.
+| mode | `PLLAD_MD` | CKO | `KS` | ratio | d samples |
+|---|---|---|---|---|---|
+| 1280x960@60 | 1444 | 86.64 MHz | 0 | 1 | +17.0 |
+| 1280x960@60 | 1380 | 82.80 MHz | 0 | 1 | +16.0 |
+| 1280x960@60 | 1320 | 79.20 MHz | 1 | 2 | +0.8 |
+| 1280x960@60 | 1200 | 72.00 MHz | 1 | 2 | +1.1 |
+| 1280x1024@60 | 1260 | 80.62 MHz | 0 | 1 | +16.5 |
+| 1280x1024@60 | 1240 | 79.34 MHz | 1 | 2 | +0.7 |
+
+The last pair is a 1.3% change of divider either side of the boundary. **So the
+pixel clock, the sync width and the line rate are all refuted**: none of them
+moved, and a term belonging to any of them cannot do this.
+
+**It is the RATIO and not the PLL's own crossover row.** The two move together on
+every state the engine reaches, so they are separated by forcing ratio one at row
+one. `/sc?o` does it: `PLLAD_CKOS` and the decimators move together, so the kept
+rate -- and the whole solved geometry -- stays where it was, which is what makes
+the pair comparable. At `PLLAD_MD` 1240 and CKO 79.34 MHz, one divider, one VCO,
+one capture window:
+
+| ratio | d samples |
+|---|---|
+| 2 | +0.7 |
+| **1** | **+16.8** |
+
+**And it is constant in samples, not in time.** Seven ratio-one states over two
+modes, seven dividers and CKO 79.3..92.4 MHz mean **16.83** with an sd of 0.50,
+where a fixed 195 ns would have fallen 2.3 samples across that range. Four
+ratio-two states mean **0.90**, sd 0.16. The step is **15.9 ADC samples**.
+
+**Ratio four is not a further step of the same kind.** A latency of N ADC
+conversion clocks would cost N kept samples at ratio one, N/2 at two and N/4 at
+four, so a 16-sample step from one to two implies 8 more from two to four.
+`320x480@60` held at `PLLAD_MD` 800 runs ratio four and sits 0.4 samples off the
+ratio-two family's own line, not 8. `SyncProcessor::UndecimatedOriginSamples`
+therefore states a step at ratio one alone rather than a `32/ratio` law.
+
+Two explanations were closed before the divider hold, and neither was needed:
+
+- **Not the machine's video bandwidth.** `1280x960@60` at 256 colours asks
+  73.7 MB/s of video DMA, four times what it asks at 16. The two read **+17.1 and
+  +16.9**, with the same solved divider, raster and density.
 - **Not a raster the source cannot deliver.** The measured line rate matches the
   file to 0.00% on both -- 60.000 kHz against 60.000, and 63.981 against
-  63.981 -- with the vertical totals right as well. The source is producing
-  exactly what the definition states at 108 MHz.
+  63.981 -- with the vertical totals right as well.
+
+**Fixed, and measured on the unit.** `SyncProcessor::UndecimatedOriginSamples`
+is 16, added to the origin at ratio one, with the ratio-two path left alone:
+
+| mode | ratio | before | after |
+|---|---|---|---|
+| 1280x960@60 | 1 | +17.0 | **-1.1** |
+| 1280x1024@60 | 1 | +16.9 | **+1.3** |
+| 1024x768@60 | 2 | -1.9 | -1.9 |
+| 320x480@60 | 2 | +10.1 | +9.6 |
+
+The realised movement is 18.1 and 15.6 samples against the 16 written, which is
+the two-samples-between-acquisitions spread below rather than a wrong constant --
+the two before-and-after pairs are different acquisitions either side of a flash.
 
 ## Traps
 

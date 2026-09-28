@@ -295,11 +295,17 @@ polarity, one divider, and a **four-fold** range of samples per source pixel.
 That is what separates a sync-width term from a line-rate one, which no single
 mode per line rate can do.
 
-**The two 108 MHz modes are the bench's outliers.** `X1280 Y960 F60` and
-`X1280 Y1024 F60` place their active region about 190 ns later than the
-definition states, where every mode at or below 80 MHz lands within 10 ADC
-samples of it. The colour depth makes no difference, so it is not the machine's
-video bandwidth.
+**The two 108 MHz modes are the only two that reach oversampling ratio one**, so
+they are what tests the ADC's crossover row. Their line rates put CKO above
+80 MHz at the divider the output raster allows, which leaves the post divider no
+room for a ratio and bypasses both decimators. They used to place their active
+region about 190 ns late for that reason; `SyncProcessor::UndecimatedOriginSamples`
+now carries it and they land within about a sample.
+
+Nothing else on the definition reaches that row, so a change to the ratio-one
+path has exactly these two modes to be judged on -- and the divider can be held
+either side of the crossover on both, which is how the term was isolated from
+the pixel clock, the sync width and the line rate.
 
 `docs/investigations/the-capture-origin-varies-by-mode-at-one-line-rate.md` is what these
 were built for.
