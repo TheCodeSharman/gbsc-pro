@@ -46,6 +46,16 @@ def device():
     sys.exit(f"no capture device with USB id {USB_ID} -- is the dongle plugged in?")
 
 
+def write_png(path, frame):
+    """One RGB frame to a PNG. ffmpeg rather than a codec library, because the
+    dev shell has no PIL and the raw pipe is already how frames arrive."""
+    subprocess.run(["ffmpeg", "-hide_banner", "-v", "error", "-f", "rawvideo",
+                    "-pix_fmt", "rgb24",
+                    "-video_size", f"{frame.shape[1]}x{frame.shape[0]}",
+                    "-i", "-", "-frames:v", "1", "-update", "1", "-y", str(path)],
+                   input=frame.tobytes(), check=True)
+
+
 def frames(count, dev, width=WIDTH, height=HEIGHT, warmup=WARMUP):
     """`count` frames after the warm-up, as (count, height, width, 3) RGB.
 
@@ -112,10 +122,7 @@ def main():
               f"   picture {edge['width']}x{edge['height']}")
 
     if args.png:
-        subprocess.run(["ffmpeg", "-hide_banner", "-v", "error", "-f", "rawvideo",
-                        "-pix_fmt", "rgb24", "-video_size", f"{width}x{height}",
-                        "-i", "-", "-frames:v", "1", "-update", "1", "-y", args.png],
-                       input=rgb[0].tobytes(), check=True)
+        write_png(args.png, rgb[0])
         print(f"  wrote {args.png}")
     return 0
 

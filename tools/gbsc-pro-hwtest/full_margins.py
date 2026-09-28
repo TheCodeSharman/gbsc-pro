@@ -20,6 +20,7 @@ every figure the sync processor reports -- it counts in ADC samples -- is
 converted before it meets a window register.
 """
 import argparse
+import os
 import re
 import sys
 import time
@@ -201,7 +202,12 @@ def main():
     parser.add_argument("--modeserv", default=MODESERV)
     parser.add_argument("--modes", required=True)
     parser.add_argument("--repeat", type=int, default=1)
+    parser.add_argument("--save", default="",
+                        help="directory to write one PNG of the emitted frame "
+                             "per mode into, named after the mode")
     args = parser.parse_args()
+    if args.save:
+        os.makedirs(args.save, exist_ok=True)
 
     dev = hdmi_capture.device()
     for mode in [m.strip() for m in args.modes.split(",")]:
@@ -227,6 +233,10 @@ def main():
             field = gbs_unit.read_fields(args.host, FIELDS)
             clip = hdmi_capture.frames(card_edges.CLIP_FRAMES, dev)
             report(mode, field, geo, clip, h, v, clock)
+            if args.save:
+                name = re.sub(r"[^A-Za-z0-9]+", "-", mode).strip("-")
+                hdmi_capture.write_png(os.path.join(args.save, f"{name}.png"),
+                                       clip[0])
         print(flush=True)
 
 
