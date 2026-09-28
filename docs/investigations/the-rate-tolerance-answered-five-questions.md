@@ -81,6 +81,37 @@ tolerance is refused until `HeldRateRejectionLimit` lets it out. The gap between
 0.000% and 15.6% is wide, and the middle is the right place to sit. What was
 wrong was one number standing for five questions, not the number.
 
+**One of them moved afterwards, and it is the one with a settled source to ask
+about.** `RateCorroborationPerMille` is 5, not 50. The gross-error net could not
+see a held rate 13.7 per mille wrong, and the corroborating reading is the only
+site that compares two readings of a source standing still — so the
+instrument's own spread is what bounds it, not a transient's band. Acceptance
+stays at 50 for the reason above.
+
+## The re-check does not arm on a settled source
+
+Tightening the corroboration only helps if the reading is ever taken, so
+`rateMoved()` reaches it on a cadence as well as when `HPERIOD_IF` moves —
+`RateRecheckPasses`, 500 passes, about ten seconds. An arm blanks the output pad,
+so a tolerance too tight for the hardware would show as the picture blinking on
+that cadence.
+
+Measured on `vga` at `X320 Y256 C256 F50`, automation live, 200 s of console with
+the source untouched: **0 arms**, and no `sampling:` line at all. The same window
+read against an all-lines capture to prove delivery — 39 lines in 25 s, the
+frame time lock steering with `in` and `out` both 50080 mHz — because a filter
+for arms alone cannot tell a quiet source from a socket delivering nothing.
+
+**And on the Wii too, which is the harder case.** `ypbpr` in 576i settles onto a
+count of 310 after passing through 319, and an interlaced source times a FIELD
+period, so the reading the re-check corroborates against is taken on a count that
+moves. 241 s from the input selection, arms counted only after the acquisition
+settled: **0**, against 611 lines delivered.
+
+So 5 sits clear of the hardware's spread on both inputs and both sync
+arrangements, and the gap it has to hold is 0.2 per mille of quantisation below
+against the 13.7 it has to catch above.
+
 ## The grid was the dominant error, and it overshot the clock ceiling
 
 `SourceKey` rounded the rate to a whole hertz, and that rounded value is what
@@ -143,7 +174,8 @@ that had been powered for hours. Whether a source's rate walks thermally over
 tens of minutes, or differs across a cold start, is unmeasured — which is why
 `SourceIdentityPerMille` stays at 50 rather than following the instrument down.
 
-**Only two sources, both RGBHV from one machine.** The Wii on `ypbpr` is the
-bench's only sync-on-green and only interlaced source and has not been sampled
-this way. An interlaced field count alternates, so `rates` would be read against
-a count that is itself moving.
+**Only two sources, both RGBHV from one machine**, for the spreads above. The
+Wii on `ypbpr` has been through the re-check cadence and arms nothing, but its
+field rate has not been sampled at the 250-reading depth the tolerances were
+sized from — and an interlaced field count alternates, so `rates` there is read
+against a count that is itself moving.
