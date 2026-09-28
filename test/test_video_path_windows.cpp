@@ -749,6 +749,30 @@ TEST_CASE("a forced full framing captures everything the source offers")
 }
 
 
+// The override is a VIEW of the capture, not an edit of the framing. Every solve
+// writes the framing it solved back into the held one, so a solve taken while the
+// override was on replaced what the user had tuned with the full region -- and
+// turning the override off then solved from that, with autosave persisting it.
+// A bench instrument that opens the framing to measure through it costs the
+// source's stored tuning, and nothing says so.
+TEST_CASE("a forced full framing does not consume the framing it overrides")
+{
+    SolvedEngine solved(523, 60.0f, 181, &Mode1080p, false);
+
+    REQUIRE(solved.engine.zoom(80, 40));
+    const uint16_t tuned = solved.engine.extentUnitsOn(AxisHorizontal);
+    REQUIRE(tuned < solved.engine.lineUnitsOn(AxisHorizontal));
+
+    solved.engine.forceFullFraming(true);
+    REQUIRE(resolveUntilSolved(solved.acquisition));
+
+    solved.engine.forceFullFraming(false);
+    REQUIRE(resolveUntilSolved(solved.acquisition));
+
+    CHECK(solved.engine.extentUnitsOn(AxisHorizontal) == tuned);
+}
+
+
 // The clamp is a window in ADC samples, so it moves with the divider: the same
 // fraction of a 1900-sample line and of a 1566-sample one are 112 and 92. Left
 // where a previous divider put it, it reaches past the back porch and takes the

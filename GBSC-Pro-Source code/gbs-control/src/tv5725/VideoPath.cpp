@@ -164,13 +164,20 @@ uint16_t VideoPath::sourceActiveStartLine() const { return activeStartLine_; }
 
 const SourceTiming &VideoPath::sourceTiming() const { return timing_; }
 
+// The window IN FORCE, which is not the framing held while the override is on:
+// it shows the whole reach and the held framing is left as the user tuned it.
+// framing() is the other question -- the proportion the table stores.
 uint16_t VideoPath::originUnitsOn(const Axis &axis) const
 {
+    if (fullFraming_)
+        return firstUnitOn(axis);
     return (uint16_t)lrintf(framing_.originOn(axis) * (float)lineUnitsOn(axis));
 }
 
 uint16_t VideoPath::extentUnitsOn(const Axis &axis) const
 {
+    if (fullFraming_)
+        return (uint16_t)(reachOn(axis) - firstUnitOn(axis));
     return (uint16_t)lrintf(framing_.extentOn(axis) * (float)lineUnitsOn(axis));
 }
 
@@ -972,7 +979,14 @@ bool VideoPath::calculateInputFormatterRegisters(CaptureWindow &capture)
     narrowToRaster(wanted, capture, AxisHorizontal);
     narrowToRaster(wanted, capture, AxisVertical);
     capture.setFraming(wanted);
-    framing_ = capture.framing();
+
+    // Only what the framing ASKED for is adopted. The solve adjusts it -- an
+    // untuned axis is seeded and both are narrowed to the raster -- and holding
+    // that is what makes a press start from where the picture is. Adopting it
+    // under the override instead consumes the framing the override exists to
+    // look past, and autosave then persists the full region over the tuning.
+    if (!fullFraming_)
+        framing_ = capture.framing();
     usableHorizontal_ = capture.lineUnitsOn(AxisHorizontal);
     usableVertical_ = capture.lineUnitsOn(AxisVertical);
     reachHorizontal_ = capture.reachOn(AxisHorizontal);
