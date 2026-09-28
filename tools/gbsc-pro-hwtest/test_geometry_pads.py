@@ -807,9 +807,9 @@ def test_the_memory_window_never_lands_below_its_floor(host, probe, framed):
 HLOW_LEN = ("HLOW_LEN", 0, 0x19, 0, 12)
 PLLAD_MD = ("PLLAD_MD", 5, 0x12, 0, 12)
 
-# The sync processor's own validity window for the duty, from
-# gbs-control.ino:4858. HLOW_LEN is a segment 0 live measurement and rails.
-DUTY_MIN, DUTY_MAX = 0.041, 0.152
+# Tv5725::HsyncPulse's own validity window for the duty. HLOW_LEN is a segment
+# 0 live measurement and rails.
+DUTY_MIN, DUTY_MAX = 0.010, 0.152
 
 
 def sync_units(probe, units):

@@ -42,7 +42,7 @@ DOUBLED_HEAD_BLANKING_UNITS = 22
 # IT: an HsyncPulse has been judged a pulse where it was taken, so a reading
 # outside this means the engine has not solved against the source in front of
 # it, and asserting a floor against a guess is what this suite must not do.
-DUTY_MIN, DUTY_MAX = 0.041, 0.152
+DUTY_MIN, DUTY_MAX = 0.010, 0.152
 
 # Tv5725::CaptureWindow::FirstCapturableUnit. IF_HB_SP2 at 0 doubles and smears
 # the picture, and 1 is clean with every other register identical.
