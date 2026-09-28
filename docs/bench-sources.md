@@ -287,7 +287,7 @@ one divider, and a **four-fold** range of samples per source pixel. That is what
 separates a sync-width term from a line-rate one, which no single mode per line
 rate can do.
 
-`docs/investigations/the-capture-origin-is-not-a-sample-count.md` is what these
+`docs/investigations/the-origin-error-splits-into-the-sources-pixels-and-the-scalers-samples.md` is what these
 were built for.
 
 ## The Wii
