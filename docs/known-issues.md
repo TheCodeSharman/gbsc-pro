@@ -35,40 +35,50 @@ Vertically the picture is flush: 0 or 1 output pixel of the source's own
 blanking on screen across six DMT modes.
 `docs/investigations/the-transmitted-window-is-latched-from-our-blanking.md`.
 
-### The undoubled capture origin is fitted to three low-line-rate modes
+### The undoubled capture origin is carried in the wrong unit
 
-**`SyncProcessor::RetimeOriginSamples` is 63 and nine undoubled modes want 62 to
-91**, measured at full framing against the mode file. It read as settled because
-the only three ever taken are the three it was fitted on, and all three are at or
-below 48.4 kHz:
+**`SyncProcessor::RetimeOriginSamples` is 63 ADC samples, and what it has to
+carry is a count of the SOURCE's pixels.** So no single value in it can be right
+for two modes whose sampling densities differ, and the 62-to-91 spread measured
+across nine modes is what that costs.
 
-| mode | line rate | wants |
-|---|---|---|
-| 640x480@60 | 31.5 kHz | 64 |
-| 640x480@75 | 37.5 | 65 |
-| 800x600@60 | 37.9 | 70 |
-| 800x600@75 | 46.9 | 71 |
-| 1024x768@60 | 48.4 | 62 |
-| 1024x768@70 | 56.5 | 79 |
-| 1280x960@60 | 60.0 | 80 |
-| 1280x1024@60 | 64.0 | 79 |
-| 1152x864@75 | 67.5 | 91 |
+Five H-negative modes at one line rate, one field rate and one divider
+(`PLLAD_MD` 1442), spanning a four-fold range of samples per source pixel:
 
-The error grows with line rate -- `r` = +0.865 against it, +0.824 against the
-pixel clock, and only +0.280 against the field rate, which is the opposite of the
-doubled path's split. At 1152x864@75 it costs 38.4 source pixels of lead, and the
-active width is still exact, so the whole error is the picture sitting too far
-along the line.
+| mode | samples/px | d px | d samples |
+|---|---|---|---|
+| 1280x480@60 | 0.901 | +3.1 | +2.8 |
+| 720x480@60 | 1.681 | +2.7 | +4.6 |
+| 640x480@60 | 1.803 | +2.4 | +4.3 |
+| 360x480@60 | 2.711 | +3.4 | +9.1 |
+| 320x480@60 | 3.605 | +3.3 | +11.8 |
 
-**Neither obvious model fits.** As a constant time it spreads 19%, as a constant
-count 12%, and linear in the sample rate leaves a residual of 6.5 samples with one
-point 13 out. 73 would be the best single value and halves the worst error, but it
-is a fit to nine readings and nothing explains the spread.
+14% spread in source pixels against 58% in ADC samples. **The line-rate model is
+superseded** -- these five share a line rate and still disagree by nine samples,
+and the pixel clock, the back porch and the sample rate are each refuted by a
+control rather than by a correlation.
+
+About 3.0 source pixels of it is the source's own, being independent of the pixel
+clock over that four-fold range, which is what a video chip's output pipeline is.
+Taking that off, the residual splits by **sync polarity**: H-negative reads
+−1.1 to +1.1 samples over six modes at 31.5 and 48.4 kHz, so **the shipped 63 is
+already right there**, while H-positive reads +4.0 at 37.9 kHz and +14.8 at 60
+to 64 kHz. Why the positive-sync residual grows is not established; it rests on
+two clusters.
+
+`STATUS_SYNC_PROC_HLOW_LEN` splits on the same boundary, reading about 98 ns
+narrower on H-negative sync than on H-positive, which `retimeStopFor()`
+subtracts -- but at two to five samples it is not the spread.
 
 Undoubled sources are the ones whose rasters the engine is entitled to derive a
 capture window from, so this bounds how well a published-raster framing can do.
-`docs/investigations/the-line-doubler-resets-the-fifo-late.md` has the doubled
-counterpart.
+`docs/investigations/the-capture-origin-is-not-a-sample-count.md` has the
+controls; `docs/investigations/the-line-doubler-resets-the-fifo-late.md` has the
+doubled counterpart.
+
+**Origin readings taken at 75 Hz are not repeatable.** 1125 lines at 75 Hz is not
+a standard mode, and `800x600@75` read +8, +29 and +17 samples on three
+acquisitions where every 60 Hz mode repeats to 0.3.
 
 ### Composite sync captures the doubled line 24.5 source pixels early
 
