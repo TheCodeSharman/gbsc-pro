@@ -125,11 +125,11 @@ Two things about that file are worth knowing before reading a measurement taken
 on it.
 
 **The CEA-861 block is the only narrow-sync source here.** Its HD entries state
-sync pulses far below anything Acorn or VESA DMT does -- 720p60 is 24 per mille,
-720p50 and 1080p60 are 20, 1080p24 is 16, against 62 to 121 for the modes a
-session normally reaches for. That makes them the only way to exercise a pulse
-the retime stop cannot express, and `HsyncPulse::PulseFloorPerMille` refused all
-of them until it came down to 10. `docs/known-issues.md` has what they still
+sync pulses far below anything Acorn or VESA DMT does -- 720p60 is 2.4% of the
+line, 720p50 and 1080p60 are 2.0%, 1080p24 is 1.6%, against 6% to 12% for the
+modes a session normally reaches for. That makes them the only way to exercise a pulse
+the retime stop cannot express, and `HsyncPulse::PulseFloorPerThousand` refused all
+of them until it came down to 1.0%. `docs/known-issues.md` has what they still
 cannot do.
 
 **Thirteen modes carry a `mode_name:` and the rest do not.** That field is what

@@ -7,7 +7,7 @@ published raster states, by **7% of the line**, and a capture window placed as
 though it had its own hsync line cuts the left of the picture and leaves black
 at the right.
 
-`VideoSourceLine::SeparatorOriginPerMille` is 70.
+`VideoSourceLine::SeparatorOriginPerThousand` is 70.
 
 ## It is a fraction, not a count, and not a time
 

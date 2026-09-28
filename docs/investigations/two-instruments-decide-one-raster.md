@@ -34,7 +34,7 @@ so the fallback is the less precise instrument and it is the one that decides
 the raster whenever the counter cannot answer.
 
 **Nothing corrects it afterwards.** `ratesAgree()` is 5%
-(`HeldRateTolerancePerMille` 50), so 15625 and 15575 *agree* -- the counter
+(`HeldRateTolerancePerThousand` 50), so 15625 and 15575 *agree* -- the counter
 recovering later does not re-arm a solve, and the raster stays where the fallback
 put it for the life of that acquisition.
 

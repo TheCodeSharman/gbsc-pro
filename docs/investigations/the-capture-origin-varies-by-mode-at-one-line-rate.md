@@ -5,10 +5,17 @@ the input formatter's line counter takes its origin from. Measured against the
 mode file at full framing, the source's active region lands anywhere from 2.5
 samples early to 10 late, and which it is varies by mode.
 
-**One term of it is found and corrected.** Oversampling ratio one puts the origin
-16 samples earlier than ratio two, and the two 108 MHz modes were the only states
-reaching it -- which is what they were reading 17 samples off for.
-`SyncProcessor::UndecimatedOriginSamples` carries it.
+**Two terms of that are found and corrected, and both were the scaler's.**
+Oversampling ratio one puts the origin 16 samples earlier than ratio two, which
+is what the two 108 MHz modes were reading 17 samples off for
+(`UndecimatedOriginSamples`); and the inverted sync path measures the pulse 5
+samples wide, which `retimeStopFor()` subtracts straight into the origin on
+every high-active source (`InvertedPulseWidthSamples`).
+
+**What is left is one line in sampling density, fitting seven modes to a
+residual rms of 0.48 samples**, with a slope of about four SOURCE PIXELS. That
+is the term at the source's end, and the scaler cannot see the pixel clock it
+would need to measure it.
 
 **Two controls settle that the remainder is not one quantity.** Neither end of
 the cable can produce what the other's control measures, so both contribute and
@@ -69,7 +76,7 @@ width, the line total and the distance to the first framebuffer pixel. The
 4848.5 and 3393.9 ns in -- so it compares quantities belonging to the sync path
 and not the placement of video.
 
-## A line in sampling density fits one family and does not generalise
+## A line in sampling density fitted one family before the corrections
 
 Seven H-negative readings at 25 to 45 MHz, spanning three modes, three dividers
 and a four-fold range of density, fit
@@ -99,7 +106,10 @@ hold on `1024x768@60` cannot say otherwise either: the output raster caps its
 density at 0.71..1.07, which the fitted slope turns into 1.6 samples of travel.
 
 **So those coefficients describe one family of modes and are not a correction.**
-What survives the wider set is the pair of controls, not the line through them.
+What survived the wider set was the pair of controls, not the line through them
+-- until the two scaler terms came off. With the oversampling step and the
+polarity step both corrected, a line in density fits seven modes spanning both
+polarities to a residual rms of 0.48 samples, which is the section below.
 
 ## The polarity step is the measured PULSE, and it is corrected
 
@@ -156,6 +166,35 @@ choose it: the split itself, and the value minimising the seven origins'
 residual against density -- 0.64 samples at 5, against 2.53 uncorrected and 0.76
 at 6. `RetimeOriginSamples` was calibrated on H-negative states, so the direct
 reading is the one it suits and the inverted one is what moves.
+
+**Measured on the unit afterwards, the same seven modes in one session:**
+
+| mode | polarity | before | after | moved |
+|---|---|---|---|---|
+| 1280x768@60 | negative | -1.4 | -1.4 | 0.0 |
+| 1280x800@60 | negative | -2.6 | -2.6 | 0.0 |
+| 1024x768@60 | negative | -1.9 | -1.9 | 0.0 |
+| 640x480@60 | negative | +3.3 | +1.7 | -1.6 |
+| 1360x768@60 | **positive** | +2.3 | **-3.2** | -5.5 |
+| 1600x600@60 | **positive** | +2.9 | **-2.9** | -5.8 |
+| 800x600@60 | **positive** | +5.1 | **-0.6** | -5.7 |
+
+`SP_RT_HS_SP` moved by exactly +5 on each high-active mode -- 1415 to 1420 at
+`1360x768@60` -- and the realised displacement is 5.5 to 5.8, the same overshoot
+the oversampling step showed. The one H-negative mode that moved is the
+session's own spread.
+
+**The polarity term is retired.** The offset of the H-positive modes from a line
+fitted on the session's H-negative ones falls from **+5.27 to -0.36**, and a
+model in sampling density alone now fits all seven to a residual rms of **0.48
+samples** where it left 2.53 before. Adding a polarity term to that buys 0.03
+and gives it a coefficient of -0.37.
+
+**What is left is the slope.** `d = 4.10 x (units per source pixel) - 5.93` over
+the seven, which is about four SOURCE PIXELS -- the term the scaler cannot
+measure, because it cannot see the source's pixel clock. The intercept is
+already centred for the density range the bench reaches, so moving
+`RetimeOriginSamples` trades one end of it for the other.
 
 ## The two 108 MHz modes were the only two at oversampling ratio one
 

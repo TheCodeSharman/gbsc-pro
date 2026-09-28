@@ -97,7 +97,7 @@ It is the one number here with no account of itself. What is known:
 
 ## What this leaves contaminated
 
-`VideoSourceLine::SeparatorOriginPerMille` is 70, fitted on composite sync with
+`VideoSourceLine::SeparatorOriginPerThousand` is 70, fitted on composite sync with
 the retime wrong by 61 samples on the source it was fitted against. It has to be
 re-measured, and how much of its 70 per mille survives is the test of whether the
 offset was being counted twice.

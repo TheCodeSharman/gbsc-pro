@@ -64,9 +64,16 @@ at ratio one**. `SyncProcessor::UndecimatedOriginSamples` is 16, and the two mod
 now read within about a sample of their published raster.
 Ratio four is not a further step of the same kind.
 
-**No single model fits the remainder.** A line in sampling density fits seven
-H-negative readings at 25 to 45 MHz to a residual rms of 0.56 samples, and five
-modes outside that set refute it. Do not ship a correction from it.
+**WHAT IS LEFT IS ONE LINE IN SAMPLING DENSITY, AND ITS SLOPE IS THE SOURCE'S.**
+With the oversampling step and the polarity step both corrected, seven modes
+spanning both polarities in one session fit `d = 4.10 x (units per source pixel)
+- 5.93` to a residual rms of **0.48 samples**; a polarity term added to that
+buys 0.03 and takes a coefficient of -0.37. The slope is about four SOURCE
+PIXELS, which is the source's video lagging its own sync -- nothing downstream
+of the sync separator can measure or correct it, because the scaler cannot see
+the pixel clock. The intercept is already centred for the density range the
+bench reaches, so moving `RetimeOriginSamples` trades one end of it for the
+other.
 
 **THE `1024x768` PAIR IS NOT AN OUTLIER AND WANTS NO MEASUREMENT.** The 8.5 it
 was filed at was fitted while the 108 MHz pair still carried its 16-sample step.
@@ -133,16 +140,16 @@ Measured at 1920x1080@60: `PLLAD_MD` 1440, pulse **31** samples, the rule wantin
 `SP_RT_HS_SP` 1472 against a line of 1440, and the register holding **1338** --
 640x480@60's value. The picture is there and is misplaced by the difference.
 
-At the divider the engine picks, 63 samples is about 44 per mille, so every
-CEA-861 HD raster is below it: 720p60 is 24, 720p50 and 1080p60 are 20,
-1080p24 is 16. A bigger divider buys a wider pulse, but 720p60 would need
+At the divider the engine picks, 63 samples is about 4.4% of the line, so every
+CEA-861 HD raster is below it: 720p60 is 2.4%, 720p50 and 1080p60 are 2.0%,
+1080p24 is 1.6%. A bigger divider buys a wider pulse, but 720p60 would need
 `PLLAD_MD` 2603, which is past the IF line counter's 2047 samples.
 
 **This is what the pulse floor coming down traded for.** `HsyncPulse` refused
-those rasters at 41 per mille, and a refused duty leaves
+those rasters at 4.1%, and a refused duty leaves
 `SourceMeasurement::takeDuty()` with `dutyMeasured_` false and the source at
 `Settling` for ever -- measured, 1280x720@60 printed `NOT A PULSE` for as long
-as it was connected and never showed a picture. The floor is 10 now and both
+as it was connected and never showed a picture. The floor is 1.0% now and both
 720p and 1080p acquire and paint: 1068 of 1080 rows lit at 720p, 1079 at 1080p.
 
 What would close it: whether a stop above `PLLAD_MD` is truly inert or wraps
@@ -573,7 +580,7 @@ sync on green both -- lands earlier in them than its published raster states.
 
 | axis | constant | value | shape |
 |---|---|---|---|
-| horizontal | `VideoSourceLine::SeparatorOriginPerMille` | 70 | a fraction of the LINE |
+| horizontal | `VideoSourceLine::SeparatorOriginPerThousand` | 70 | a fraction of the LINE |
 | vertical | `VideoSourceLine::SeparatorFrameLeadLines` | 16 | a count of the source's LINES |
 
 Measured on one cable and one raster with the sync type the only variable:

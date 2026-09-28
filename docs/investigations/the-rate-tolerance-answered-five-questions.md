@@ -1,6 +1,6 @@
 # One rate tolerance answered five questions, and the field rate does not wander
 
-`VideoSignal::RateTolerancePerMille` was a single constant, 50, compared
+`VideoSignal::RateTolerancePerThousand` was a single constant, 50, compared
 against by five sites. Its own comment sized it as a gross-error net: *the
 bench transient is 15.6% out and a settled source drifts by tenths of one, so
 anything between separates them.* Both of those numbers are from a measurement
@@ -45,7 +45,7 @@ only while the LINE COUNT is unsettled, and `rateFollowsCount()` requires
 `lines == heldLines` before it compares rates at all, so those readings never
 reach a tolerance.
 
-**A settled reading is repeatable, not merely close.** `RateAgreementPerMille`
+**A settled reading is repeatable, not merely close.** `RateAgreementPerThousand`
 is 1 — two successive readings must agree to 0.1% for `rateSettled()` to take
 the fast path — and it has always passed, which corroborates the above
 independently of this measurement.
@@ -72,7 +72,7 @@ measurement noise, and the only spread it has is quantisation — a field rate
 wobbling across a step chose 2506 and 2508, which is 0.08%. Applying a net sized
 for a 15.6% transient forgave 480p's divider against 576p's, which is a
 deliberate 4% apart, and the two SD modes shared whichever clock was arrived
-from. `DividerJitterPerMille` is 2.
+from. `DividerJitterPerThousand` is 2.
 
 **The values did not move.** Tightening the rate ones costs genuine movement: a
 source may change rate at a constant count — a RISC PC does, and that is the
@@ -82,7 +82,7 @@ tolerance is refused until `HeldRateRejectionLimit` lets it out. The gap between
 wrong was one number standing for five questions, not the number.
 
 **One of them moved afterwards, and it is the one with a settled source to ask
-about.** `RateCorroborationPerMille` is 5, not 50. The gross-error net could not
+about.** `RateCorroborationPerThousand` is 5, not 50. The gross-error net could not
 see a held rate 13.7 per mille wrong, and the corroborating reading is the only
 site that compares two readings of a source standing still — so the
 instrument's own spread is what bounds it, not a transient's band. Acceptance
@@ -162,9 +162,9 @@ measurements work to.
 
 **The persisted framing line still carries whole hertz.** `FramingLine::write()`
 serialises `lrintf(key.rateHz())` and the parser reads an integer. A key read
-back sits inside `SourceIdentityPerMille` of the live one, so lookups match, and
+back sits inside `SourceIdentityPerThousand` of the live one, so lookups match, and
 the file's rate reaches no raster — `framedKey_` is built from the measurement
-on every solve. Tightening `SourceIdentityPerMille` below about 1% would break
+on every solve. Tightening `SourceIdentityPerThousand` below about 1% would break
 that, and the file format would have to carry the fraction first.
 
 ## What is not measured
@@ -172,7 +172,7 @@ that, and the file format would have to carry the fraction first.
 **Long-term drift.** Every run here spans seconds to about a minute, on a unit
 that had been powered for hours. Whether a source's rate walks thermally over
 tens of minutes, or differs across a cold start, is unmeasured — which is why
-`SourceIdentityPerMille` stays at 50 rather than following the instrument down.
+`SourceIdentityPerThousand` stays at 50 rather than following the instrument down.
 
 **Only two sources, both RGBHV from one machine**, for the spreads above. The
 Wii on `ypbpr` has been through the re-check cadence and arms nothing, but its

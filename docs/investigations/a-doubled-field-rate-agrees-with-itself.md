@@ -2,7 +2,7 @@
 
 `rateSettled()` is what a reading must pass before it is promoted to the judged
 rate and before a divider is sized from it, and it passes on a PAIR of readings
-agreeing to `RateAgreementPerMille`. A reading taken off half a frame agrees
+agreeing to `RateAgreementPerThousand`. A reading taken off half a frame agrees
 with the next one taken the same way, so the pair is no evidence at all.
 
 `a-transient-becomes-the-judged-rate.md` is what put promotion behind

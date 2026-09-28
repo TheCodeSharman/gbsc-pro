@@ -43,7 +43,7 @@ and 71.4286 -- and one line at any of them is wider than that, so the whole
 hertz flips on which sample happened to be taken. `VideoPath::solveRaster()`
 reads the key rather than the measurement, so the raster is then sized for the
 wrong rate for the LIFE of the source: identity is deliberately wider than the
-rounding -- `RateTolerancePerMille` is 50 -- so the two compare EQUAL,
+rounding -- `RateTolerancePerThousand` is 50 -- so the two compare EQUAL,
 `adoptSourceKey()` never replaces the key, and every later correct reading is
 absorbed.
 
@@ -56,7 +56,7 @@ agree with each other and with the source while the output raster is out.
 
 | band | width | against one line |
 |---|---|---|
-| `SourceMeasurement::RateAgreementPerMille` = 1 | 0.1% | narrower at 627 lines (0.16%) and at 311 (0.32%); **wider at 1125** (0.089%) |
+| `SourceMeasurement::RateAgreementPerThousand` = 1 | 0.1% | narrower at 627 lines (0.16%) and at 311 (0.32%); **wider at 1125** (0.089%) |
 | `Clock::RateAgreement` -- 0.833% relative, 0.5 Hz absolute | 0.833% | wider everywhere |
 
 So on an SD or 800x600 source a one-line sample disagrees and costs a settling
