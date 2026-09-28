@@ -41,16 +41,22 @@ import hdmi_capture
 import setfield
 import shear
 
-# Dongle pixels either side of where the feature is expected. Wide enough for
-# the interpolator's smear and the step's own rounding, narrow enough that the
-# card's green colour blocks stay outside it.
-SEARCH_HALF = 8
-
 # How far before the expected crossing the creep starts. A transition that
 # happens between two frames nobody saw is not a measurement, so the value is
 # crept TO rather than landed on.
-RUN_UP = 25
-OVERRUN = 10
+#
+# Wide, because the expectation comes from the dongle and an output mode change
+# moves that: measured, the anchor overstated by 22 units at 960p and understated
+# by 18 at 1080p. A run-up that falls short loses the plateau and the walk is
+# refused; an over-long one only costs steps, and the creep stops itself once the
+# feature has gone.
+RUN_UP = 45
+OVERRUN = 30
+
+# Consecutive steps with no feature that end a walk. The creep no longer runs
+# for a fixed count: the run-up is still placed from the dongle anchor, and an
+# output mode change moves that anchor by more than the run-up covers.
+GONE_STEPS = 3
 
 # Frames per step, and the dongle warm-up they are taken after. The link does
 # not move during a walk, so the warm-up a source change needs is most of it --
@@ -94,15 +100,6 @@ def greenest(clip, axis):
     return best
 
 
-def amplitude(profile, at):
-    """The feature's green weight in a band that follows where it should be."""
-    low = max(0, int(round(at)) - SEARCH_HALF)
-    high = min(len(profile), int(round(at)) + SEARCH_HALF + 1)
-    if high <= low:
-        return 0.0
-    return float(np.maximum(profile[low:high] - card_edges.GREEN_HUE, 0).sum())
-
-
 def half_crossing(walk):
     """Where the feature is half gone, from (register, amplitude) in order.
 
@@ -125,6 +122,50 @@ def half_crossing(walk):
             share = (before[1] - half) / span
             return before[0] + (after[0] - before[0]) * share
     return None
+
+
+def near_feature(clip, axis):
+    """The card frame's near edge, as (position, green weight) along `axis`.
+
+    The outermost green run that is not against the emitted frame's own
+    boundary, which is the same rule near_run() applies at both ends. Its WEIGHT
+    is what falls as the capture window's start clips it, and its POSITION is
+    what says it is still the frame rather than whatever lies further in.
+    """
+    runs = [run for run in card_edges.green_runs(clip, axis)
+            if run[0] > 0 and run[1] < clip.shape[1 + axis] - 1]
+    if not runs:
+        return None, 0.0
+    profile = greenest(clip, axis)
+    low, high = runs[0]
+    weight = float(np.maximum(profile[low:high + 1] - card_edges.GREEN_HUE, 0).sum())
+    return low, weight
+
+
+# How far the near feature may sit OUTSIDE its running minimum and still be the
+# same feature. It marches inward as the window's start rises, so a position
+# further out than it has already reached is the next thing in, not the frame.
+FEATURE_JUMP = 40
+
+
+def feature_walk(found, values):
+    """(register, weight) per step, with the feature's own outward jump as zero.
+
+    `found` is one (position, weight) from near_feature() per step.
+
+    NO PREDICTED POSITION IS USED. The band this replaces moved at a computed
+    travel per register unit, and where that disagreed with what the picture did
+    the band drifted off the feature -- collapsing the weight early, which reads
+    as a clean crossing and is one the walk never reached.
+    """
+    walk, innermost = [], None
+    for value, (at, weight) in zip(values, found):
+        if at is None or (innermost is not None and at > innermost + FEATURE_JUMP):
+            walk.append((value, 0.0))
+            continue
+        innermost = at if innermost is None else min(innermost, at)
+        walk.append((value, weight))
+    return walk
 
 
 def walk_shape(walk):
@@ -167,22 +208,26 @@ def leading_edge(walk, width):
     return None if centre is None else centre - width / 2.0
 
 
-def creep(host, dev, spec, axis, start, stop, expected_at, per_register):
+def creep(host, dev, spec, axis, start, stop):
     """Creep one window edge through the feature, a unit at a time.
 
-    `expected_at` is where the feature sits at `start`, and `per_register` how
-    far it travels per register unit -- zero for an edge whose movement does not
-    displace it.
+    The feature is found in each frame rather than looked for where it is
+    predicted to be, so nothing here depends on the mapping from dongle columns
+    to capture units -- which is what an output mode change invalidates.
     """
     step = 1 if stop >= start else -1
-    walk = []
-    for value in range(start, stop + step, step):
+    values, found, walk = [], [], []
+    for value in range(start, stop + step * (GONE_STEPS + OVERRUN), step):
         if not set_field(host, spec, value):
-            return None, walk
+            break
         time.sleep(0.45)
-        clip = hdmi_capture.frames(STEP_FRAMES, dev, warmup=STEP_WARMUP)
-        at = expected_at - (value - start) * per_register
-        walk.append((value, amplitude(greenest(clip, axis), at)))
+        values.append(value)
+        found.append(near_feature(
+            hdmi_capture.frames(STEP_FRAMES, dev, warmup=STEP_WARMUP), axis))
+        walk = feature_walk(found, values)
+        gone = [level for _at, level in walk[-GONE_STEPS:]]
+        if len(gone) == GONE_STEPS and not any(gone):
+            break
     return half_crossing(walk), walk
 
 
@@ -305,9 +350,7 @@ def measure(host, dev, mode, h, v, clock, label):
                 print(f"    {name}: the run-up would not take")
                 continue
             time.sleep(1.0)
-            at_start = at - (start - window_start) * travel
-            crossing, walk = creep(host, dev, specs[name], axis, start, stop,
-                                   at_start, travel)
+            crossing, walk = creep(host, dev, specs[name], axis, start, stop)
             crossing = leading_edge(walk, width) if crossing is not None else None
             shape = walk_shape(walk)
             if not (shape["held"] and shape["emptied"]):
