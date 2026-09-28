@@ -80,11 +80,14 @@ side already needs the measured `DEFAULT_V_ACTIVE_FRACTION_50HZ = 0.82`
 ## What the firmware does now, and what this page is still for
 
 Two answers, and neither is a curve. Where the frame, the field rate and the
-hsync duty match a raster the standards state, `Tv5725::SourceTiming` takes that
-raster's own active window, both axes. Where nothing matches, `Axis` places the
-window across the **envelope** of what real sources put on a line — 11.7% to
-98.1% horizontally, 6.1% to 99.4% vertically — so nothing is cropped and what is
-captured beyond the picture is black.
+hsync duty match a raster the firmware states, `Tv5725::SourceTiming` takes that
+raster's own picture, both axes — VESA DMT, CEA-861 and Acorn, and for an Acorn
+row that is the display inside the border rather than the whole active region.
+Where nothing matches, `Axis` places the window across the **envelope** of what
+real sources put on a line — 11.7% to 98.1% horizontally, 6.1% to 99.4%
+vertically — so nothing is cropped and what is captured beyond the picture is
+black. [capture-window-default-tiers.md](capture-window-default-tiers.md) is the
+order and what each tier states.
 [investigations/vesa-modes-are-clipped-by-default.md](investigations/vesa-modes-are-clipped-by-default.md)
 carries both, with the measurements.
 

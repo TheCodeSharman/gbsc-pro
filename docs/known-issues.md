@@ -313,17 +313,12 @@ What would settle it: a doubled source at 60 Hz that is not one of the RISC PC's
 two game modes, or the same mode's raster measured off the wire.
 `investigations/the-line-doubler-resets-the-fifo-late.md`.
 
-### The vertical origin correction reaches only a published raster
+### The vertical origin's sync arrangement is unmeasured
 
-`SourceTiming::VerticalOriginLines` is 7, documented as a property of the chip's
-vsync detection rather than of the source. It is applied inside
-`SourceTiming::activeStart()`, which returns 0 when the source matches no
-published raster -- so every Acorn SD mode falls through to `Axis`'s flat 0.061
-envelope with no origin correction at all.
-
-Measured by clipping the card's frame out of the capture, the frame counter's
-origin sits a fixed distance after the vsync pulse's LEADING edge -- and the
-scan mode splits it, as it does the horizontal:
+**The scan-mode half is closed.** The frame counter's origin sits a fixed
+distance after the vsync pulse's LEADING edge, measured by clipping the card's
+frame out of the capture, and it is a count of COUNTER UNITS rather than of the
+source's lines:
 
 | scan | sources | origin | in counter units |
 |---|---|---|---|
@@ -332,13 +327,38 @@ scan mode splits it, as it does the horizontal:
 
 Three doubled sources agree and their pulses differ by a factor of two, which is
 what says it is the counter's property rather than the source's.
+`VideoSourceLine::DoubledFrameOriginUnits` is 10 and `FrameOriginUnits` 7, and
+`InputFormatter::capturableFrame()` carries whichever the scan mode wants -- so
+it reaches every source rather than only a published raster. Measured with
+`card_edges.py` afterwards, `800x600@60` and `640x480@60` are flush at both
+vertical edges and `X320 Y256 C256 F50` is two rows off at each.
 
-**So moving the 7 onto `VideoSourceLine::frame()` is not what this supports**:
-it would carry the undoubled figure onto a scan mode measured 1.5 counter units
-away from it. What is still unmeasured is the sync arrangement --
-`InputFormatter::capturableFrame()` already passes `SeparatorFrameLeadLines` on
-a separated source, and whether the two overlap is a measurement rather than a
-deduction. `SYNC 1` on the RISC PC makes it one run.
+**What is still unmeasured is the sync arrangement.** `capturableFrame()` adds
+`SeparatorFrameLeadLines` to the origin on a separated source, which assumes the
+separator's delay is on top of the counter's own rather than replacing it.
+`SYNC 1` on the RISC PC makes that one run and nobody has taken it.
+
+### The capture window's far edge falls short of the source's last drawn pixel
+
+**Measured with `card_edges.py`, three modes, default framing, after a source
+mode round trip re-locked the link.** The card's one-pixel frame reaches the
+emitted frame's first column on every one of them and its last column on none:
+
+| mode | left edge | right edge | emitted picture |
+|---|---|---|---|
+| X320 Y256 C256 F50 | column 0 | off the panel | 1895 x 1076 of 1920 x 1080 |
+| X800 Y600 C256 F60 | column 0 | off the panel | 1915 x 1080 |
+| X640 Y480 C256 F60 | column 0 | off the panel | -- |
+
+Two of the three take their window from the DMT rows, so it is not a property of
+one tier. Crept out at `X320 Y256 C256 F50`, the right edge arrives at an extent
+of 696 capture units against the 688 the mode file's 320 display pixels give --
+and crept sideways instead, at 245 rather than 237, which puts the left edge off.
+So no single shift makes both flush and the window is about 8 units short.
+
+That is the size of the two origin terms already open above: 8 IF units is 16 ADC
+samples on this doubled source, where `InputFormatter::LineDoubleReset` is 160
+against the 147 this mode wants and the 175 the 60 Hz doubled modes want.
 
 ### The display window closes after the last written pixel, and the gap shows unwritten memory
 
