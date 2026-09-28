@@ -29,7 +29,8 @@ VideoSourceAcquisition::VideoSourceAcquisition(Tv5725::SourceMeasurement &sampli
       idle_(Tv5725::SourceMeasurement::SteadySamples),
       unusableCountArmed_(false), ownVsyncFound_(false),
       sourceState_(SourceAbsent),
-      solvedLinePeriod_(0), rateRun_(0), sourceInterrupted_(false),
+      solvedLinePeriod_(0), rateRun_(0), recheckPasses_(0),
+      sourceInterrupted_(false),
       unsettledPasses_(0), unsettledArmed_(false),
       vsyncAbsentPasses_(0), vsyncAbsentArmed_(false),
       unmeasuredPasses_(0), acquiredPasses_(0), recoveryPosition_(0),
@@ -477,8 +478,17 @@ bool VideoSourceAcquisition::rateMoved()
         return false;
     }
 
+    // The register moving is the cheap half's event. THE RECHECK IS THE OTHER
+    // WAY IN, and without it nothing on the board ever asks whether the held
+    // rate is still the source's: every arm here detects a CHANGE, so a rate
+    // taken mid-change and wrong by a per cent is kept for as long as the
+    // source stands still.
+    const bool periodMoved = sampling_.hasLineRateMoved(solvedLinePeriod_);
+    if (recheckPasses_ < RateRecheckPasses)
+        ++recheckPasses_;
+
     if (solvedLineRateHz_ == 0
-        || !sampling_.hasLineRateMoved(solvedLinePeriod_)) {
+        || !(periodMoved || recheckPasses_ >= RateRecheckPasses)) {
         rateRun_ = 0;
         return false;
     }
@@ -488,6 +498,7 @@ bool VideoSourceAcquisition::rateMoved()
         return false;
     }
     rateRun_ = 0;
+    recheckPasses_ = 0;
 
     // What the rate IS, measured a different way, and asked only here. It costs
     // a vsync spin, which is what the cheap half exists to avoid -- affordable

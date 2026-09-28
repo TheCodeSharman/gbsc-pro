@@ -22,7 +22,22 @@ public:
     // same quantity by the same instrument, so what it forgives is the
     // instrument's own spread -- measured at 0.000% over 250 samples a mode.
     // ../../../docs/investigations/the-rate-tolerance-answered-five-questions.md
-    static const uint16_t RateCorroborationPerMille = 50;
+    // What the corroborating reading has to differ by before the held rate is
+    // treated as the source's no longer. Sized by THE INSTRUMENT, not by source
+    // identity: a settled reading spreads 0.000% over 250 samples and the rate
+    // is quantised to hundredths of a hertz, 0.2 per mille at 50 Hz, while a
+    // reading taken mid-change sits in a 1.3% band. This sits in the gap.
+    //
+    // The gross-error net acceptance uses is 50, which cannot see any of that
+    // band -- and it must stay wide, because a source may change rate at a
+    // constant count and a RISC PC does.
+    // ../../../docs/investigations/the-rate-tolerance-answered-five-questions.md
+    static const uint16_t RateCorroborationPerMille = 5;
+
+    // How long a settled source goes before the held rate is checked against a
+    // fresh reading. A vsync spin every few hundred passes, against a fault
+    // that is otherwise permanent.
+    static const uint16_t RateRecheckPasses = 500;
     // What a pass decided that this layer cannot carry out. The frame time
     // lock and the external clock generator are the sketch's, so they are
     // REPORTED, the shape Tv5725::Deinterlacer::steer() already uses.
@@ -354,6 +369,7 @@ private:
     SourceState sourceState_;
     uint16_t solvedLinePeriod_;
     uint8_t rateRun_;
+    uint16_t recheckPasses_;
     bool sourceInterrupted_;
 
     // Consecutive detection passes whose line count was inside the source

@@ -445,6 +445,40 @@ TEST_CASE("an interrupt re-measures a source whose line count did not move")
     }
 }
 
+TEST_CASE("a held rate the source has left is corrected without the source moving")
+{
+    // EVERY ARM IS A CHANGE DETECTOR -- the count, the interrupt, and the line
+    // period the rate arm gates on -- so nothing asks whether what is HELD is
+    // still true. A rate taken mid-change and wrong by a per cent is then kept
+    // for as long as the source stands still.
+    //
+    // Measured on the bench: 50.766 Hz held against a source running 50.081,
+    // for 65 s, with the state acquired, the count a clean 311 and every
+    // register self-consistent, while the frame time lock slid a whole frame
+    // every 17 s under it and only a re-detection cleared it.
+    //
+    // 1.37% is this instrument's mid-change population: a settled reading
+    // spreads 0.000% and an unsettled one sits in a 1.3% band, so the error is
+    // far above the noise and far below the gross-error net acceptance uses.
+    // ../docs/investigations/the-rate-tolerance-answered-five-questions.md
+    seedBenchSource();
+    seedField(0, 0x06, 0, 9, 431);   // HPERIOD_IF, steady, as the bench reads it
+    Acquiring unit;
+
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+    REQUIRE(unit.sampling.fieldRateHz() == doctest::Approx(50.08f).epsilon(0.001f));
+
+    // The source running a rate the engine does not hold, with both registers
+    // the engine watches -- the line count and the line period -- unmoved.
+    g_fieldRate = 50.766f;
+    for (uint16_t pass = 0;
+         pass < 4 * VideoSourceAcquisition::RateRecheckPasses; ++pass)
+        unit.poll();
+
+    CHECK(unit.sampling.fieldRateHz() == doctest::Approx(50.766f).epsilon(0.001f));
+}
+
 TEST_CASE("a disturbance answered by one re-measure does not arm a second")
 {
     // The 640x480 -> 320x256 leg, measured on the bench: the source's own mode
