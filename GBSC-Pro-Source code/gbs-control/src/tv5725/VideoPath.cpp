@@ -768,7 +768,8 @@ void VideoPath::writeRetimeStop()
     if (installedDivider_ == 0)
         return;
     SyncProcessor::writeRetimeStop(
-        SyncProcessor::retimeStopFor(installedDivider_, reading_));
+        SyncProcessor::retimeStopFor(installedDivider_, reading_,
+                                     Adc::oversampleInForce()));
 }
 
 void VideoPath::applySamplingClock(uint16_t divider)

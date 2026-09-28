@@ -975,7 +975,8 @@ TEST_CASE("pass-through sizes the retime window from its own divider")
     HdBypass::applyPassThroughSampling(2038, 37879, pulse);
 
     CHECK(Tv5725::SyncProcessor::SP_RT_HS_SP::read()
-          == Tv5725::SyncProcessor::retimeStopFor(2038, pulse));
+          == Tv5725::SyncProcessor::retimeStopFor(2038, pulse,
+                                                  Tv5725::Adc::oversampleInForce()));
 }
 
 // The origin is the SOURCE'S, so a reading that never found a pulse leaves the

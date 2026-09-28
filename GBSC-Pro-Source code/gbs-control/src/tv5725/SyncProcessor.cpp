@@ -13,16 +13,20 @@
 namespace Tv5725 {
 
 const uint16_t SyncProcessor::RetimeOriginSamples;
+const uint16_t SyncProcessor::UndecimatedOriginSamples;
 
-uint16_t SyncProcessor::retimeStopFor(uint16_t divider, const HsyncPulse &pulse)
+uint16_t SyncProcessor::retimeStopFor(uint16_t divider, const HsyncPulse &pulse,
+                                     uint8_t oversample)
 {
     if (!pulse.isPulse())
         return 0;
 
+    const uint16_t origin =
+        RetimeOriginSamples + (oversample <= 1 ? UndecimatedOriginSamples : 0);
     const uint32_t sync = (uint32_t)lrintf((float)divider * pulse.syncDuty());
-    if (sync < RetimeOriginSamples)
+    if (sync < origin)
         return 0;
-    return (uint16_t)(divider - sync + RetimeOriginSamples);
+    return (uint16_t)(divider - sync + origin);
 }
 
 void SyncProcessor::driveTestBus(uint8_t module, uint8_t signal)

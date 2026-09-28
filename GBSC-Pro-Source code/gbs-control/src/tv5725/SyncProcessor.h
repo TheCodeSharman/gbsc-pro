@@ -206,9 +206,16 @@ public:
     // and every window the engine places is counted from that origin.
     //
     // Measured, not derived, and it is the one number here that wants a
-    // derivation: 61.0, 62.6, 63.6 and 63.5 across four states.
+    // derivation: 61.0, 62.6, 63.6 and 63.5 across four states, all of them at
+    // oversampling ratio two.
     // ../../../docs/investigations/the-retime-stop-is-the-counters-origin.md
     static const uint16_t RetimeOriginSamples = 63;
+
+    // What the origin gains at oversampling ratio ONE, where the decimators are
+    // out of circuit and the captured video lands later in the line counter.
+    // Ratio four is not a further step of the same kind.
+    // ../../../docs/investigations/the-capture-origin-varies-by-mode-at-one-line-rate.md
+    static const uint16_t UndecimatedOriginSamples = 16;
 
     // The retime window's stop, in the ADC samples PLLAD_MD divides the line
     // into. It is the INPUT FORMATTER'S ORIGIN: the counter every capture
@@ -223,7 +230,8 @@ public:
     // this register is the capture counter's ORIGIN, so a value invented from
     // the divider alone places every window the solve makes against an origin
     // nothing observed.
-    static uint16_t retimeStopFor(uint16_t divider, const HsyncPulse &pulse);
+    static uint16_t retimeStopFor(uint16_t divider, const HsyncPulse &pulse,
+                                  uint8_t oversample);
 
     // Whether ANY sync is reaching this block, counted off its own output stage
     // on the test bus rather than read off a status bit. STATUS_SYNC_PROC_HSACT

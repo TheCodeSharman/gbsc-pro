@@ -480,12 +480,31 @@ TEST_CASE("the retime window's stop follows the source's sync width")
     //   640x480@60         1444       169                       1338.5
     //
     // docs/investigations/the-retime-stop-is-the-counters-origin.md
-    CHECK(SyncProcessor::retimeStopFor(1440, HsyncPulse(141.0f / 1440.0f)) == 1362);
-    CHECK(SyncProcessor::retimeStopFor(1444, HsyncPulse(169.0f / 1444.0f)) == 1338);
+    CHECK(SyncProcessor::retimeStopFor(1440, HsyncPulse(141.0f / 1440.0f), 2) == 1362);
+    CHECK(SyncProcessor::retimeStopFor(1444, HsyncPulse(169.0f / 1444.0f), 2) == 1338);
 
     SUBCASE("and it follows the divider at one sync width") {
-        CHECK(SyncProcessor::retimeStopFor(1200, HsyncPulse(118.0f / 1200.0f)) == 1145);
-        CHECK(SyncProcessor::retimeStopFor(960, HsyncPulse(94.0f / 960.0f)) == 929);
+        CHECK(SyncProcessor::retimeStopFor(1200, HsyncPulse(118.0f / 1200.0f), 2) == 1145);
+        CHECK(SyncProcessor::retimeStopFor(960, HsyncPulse(94.0f / 960.0f), 2) == 929);
+    }
+
+    SUBCASE("oversampling ratio one puts the origin 16 samples earlier") {
+        // The decimators are out of circuit at ratio one, and the captured
+        // video then lands later in the line counter. Isolated from the ADC
+        // PLL's crossover row by forcing ratio one at row one: at PLLAD_MD 1240
+        // and CKO 79.34 MHz, one geometry, the origin is 0.7 samples out at
+        // ratio two and 16.8 at ratio one. Seven ratio-one states over two
+        // modes and 79..92 MHz mean 16.83 against 0.90 for four ratio-two ones.
+        // docs/investigations/the-capture-origin-varies-by-mode-at-one-line-rate.md
+        const HsyncPulse pulse(141.0f / 1440.0f);
+        CHECK(SyncProcessor::retimeStopFor(1440, pulse, 1)
+              == SyncProcessor::retimeStopFor(1440, pulse, 2) + 16);
+
+        // Four times is not a second step of the same kind: 320x480@60 held at
+        // PLLAD_MD 800 runs ratio four and sits 0.4 samples off the ratio-two
+        // family's own line, not 8.
+        CHECK(SyncProcessor::retimeStopFor(1440, pulse, 4)
+              == SyncProcessor::retimeStopFor(1440, pulse, 2));
     }
 
     SUBCASE("a pulse narrower than the origin has no answer") {
@@ -493,7 +512,7 @@ TEST_CASE("the retime window's stop follows the source's sync width")
         // divider is 59 samples -- fewer than the origin sits behind the stop.
         // Carried through the subtraction it lands beyond the end of the line,
         // where the register does nothing at all, so there is no stop to write.
-        CHECK(SyncProcessor::retimeStopFor(1440, HsyncPulse(0.041f)) == 0);
+        CHECK(SyncProcessor::retimeStopFor(1440, HsyncPulse(0.041f), 2) == 0);
     }
 
     SUBCASE("a reading that is not a pulse has no answer") {
@@ -501,7 +520,7 @@ TEST_CASE("the retime window's stop follows the source's sync width")
         // from the source's own sync places every window the solve makes
         // against an origin nothing observed, so nothing is written and the
         // stop in force stays where the last measurement put it.
-        CHECK(SyncProcessor::retimeStopFor(1200, HsyncPulse(0.0f)) == 0);
+        CHECK(SyncProcessor::retimeStopFor(1200, HsyncPulse(0.0f), 2) == 0);
     }
 }
 

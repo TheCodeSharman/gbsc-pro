@@ -432,7 +432,8 @@ TEST_CASE("a solve puts all three registers of the one quantity on the chip")
                                        ? Adc::dividerInForce() / 2
                                        : Adc::dividerInForce()));
     CHECK(retimeStopInForce()
-          == SyncProcessor::retimeStopFor(Adc::dividerInForce(), sampling.hsync()));
+          == SyncProcessor::retimeStopFor(Adc::dividerInForce(), sampling.hsync(),
+                                          Adc::oversampleInForce()));
 }
 
 TEST_CASE("a measurement that solved nothing keeps the clock, and never writes a zero")
