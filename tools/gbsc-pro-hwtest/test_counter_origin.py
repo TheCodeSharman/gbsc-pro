@@ -63,3 +63,21 @@ def test_the_crossing_is_the_features_leading_edge_not_its_centre():
             found = counter_origin.leading_edge(clipped(leading, width, 280, 305),
                                                 width)
             assert abs(found - leading) <= 0.35, (width, leading, found)
+
+
+def test_a_walk_that_brackets_the_feature_reports_its_own_ramp():
+    """The ramp is the feature's width, so a ramp that is not says the walk
+    measured something other than the feature leaving the capture."""
+    walk = clipped(293.0, 2.15, 280, 305)
+    shape = counter_origin.walk_shape(walk)
+    assert shape["held"] and shape["emptied"]
+    assert abs(shape["ramp"] - 2.15) < 1.0
+
+
+def test_a_walk_that_stops_before_the_feature_leaves_says_so():
+    assert not counter_origin.walk_shape(clipped(304.5, 2.15, 280, 305))["emptied"]
+
+
+def test_a_walk_that_starts_after_the_feature_is_going_says_so():
+    """Its own maximum is at step one, so a high first sample is not enough."""
+    assert not counter_origin.walk_shape(clipped(279.0, 2.15, 280, 305))["held"]

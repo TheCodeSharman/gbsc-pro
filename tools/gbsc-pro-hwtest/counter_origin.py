@@ -127,6 +127,32 @@ def half_crossing(walk):
     return None
 
 
+def walk_shape(walk):
+    """Whether the walk bracketed the feature, and how wide its ramp was.
+
+    A crossing is only a measurement if the feature was fully in the capture at
+    the walk's start and fully out at its end, and if what left took about its
+    own width to go. A walk that misses returns a crossing all the same, because
+    the amplitude band follows a prediction and collapses when it walks off the
+    feature -- which reads as a clean transition and is not one.
+    """
+    if not walk:
+        return {"held": False, "emptied": False, "ramp": 0.0}
+    top = max(level for _at, level in walk)
+    if top <= 0.0:
+        return {"held": False, "emptied": False, "ramp": 0.0}
+    high = [at for at, level in walk if level >= 0.9 * top]
+    low = [at for at, level in walk if level <= 0.1 * top]
+    # A PLATEAU, not just a high first sample: a walk that started after the
+    # feature had begun leaving has its own maximum at step one and would
+    # otherwise pass.
+    return {
+        "held": walk[0][1] >= 0.9 * top and len(high) >= 2,
+        "emptied": walk[-1][1] <= 0.1 * top,
+        "ramp": float(min(low) - max(high)) if high and low and min(low) > max(high) else 0.0,
+    }
+
+
 def leading_edge(walk, width):
     """Where the feature STARTS, from the walk and the feature's own width.
 
@@ -283,10 +309,15 @@ def measure(host, dev, mode, h, v, clock, label):
             crossing, walk = creep(host, dev, specs[name], axis, start, stop,
                                    at_start, travel)
             crossing = leading_edge(walk, width) if crossing is not None else None
+            shape = walk_shape(walk)
+            if not (shape["held"] and shape["emptied"]):
+                crossing = None
             found[name] = crossing
             print(f"    {name:10} crept {start}..{stop}, expected {crosses:.0f}"
                   f"  crossing {crossing if crossing is None else round(crossing, 1)}"
-                  f"   ({len(walk)} steps)", flush=True)
+                  f"   ramp {shape['ramp']:.1f} against {width:.1f}"
+                  f"{'' if shape['held'] else '  NEVER FULL'}"
+                  f"{'' if shape['emptied'] else '  NEVER EMPTY'}", flush=True)
             set_field(host, specs[name], was[name])
             time.sleep(0.6)
     finally:
