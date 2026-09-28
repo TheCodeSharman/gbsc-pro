@@ -153,8 +153,18 @@ def near_run(clip, axis):
     the card's own colour blocks sit between them, so the frame's edges are the
     first and last green anywhere. A quarter test instead refuses a reading
     whose far edge lands a column inside the boundary.
+
+    A RUN TOUCHING THE EMITTED FRAME'S OWN BOUNDARY IS NOT THE CARD. The
+    horizontal scaler leaves a green artefact at the first column which the
+    picture does not put there: measured on the bench source, it held columns
+    0..5 while the card's two edges moved 19 columns together under a 20-unit
+    step of SP_RT_HS_SP. Taken as the near edge it read the source's video 64.8
+    source pixels early, which is a plausible number and not a broken one.
+    Full framing captures the source's blanking either side of the frame, so a
+    genuine edge always has picture or blanking beyond it.
     """
-    runs = card_edges.green_runs(clip, axis)
+    runs = [run for run in card_edges.green_runs(clip, axis)
+            if run[0] > 0 and run[1] < clip.shape[1 + axis] - 1]
     if len(runs) < 2:
         return None, None
     profile = greenest(clip, axis)
