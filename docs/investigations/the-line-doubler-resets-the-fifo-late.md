@@ -83,10 +83,43 @@ What each mode wants, from the same instrument:
 | X320 Y256 F50 | 50.08 | 1800 | 152 |
 | X640 Y240 F60 | 60.1 | 2200 | 175 |
 | X640 Y200 F60 | 59.9 | 2200 | 175 |
+| X640 Y352 F60 | 60.0 | 2200 | 179 |
+| X896 Y352 F60 | 59.9 | 2200 | 175 |
 
 The 50 Hz cluster spans four source rasters -- lines of 512, 858, 1024 and 1536
-source pixels -- and two dividers, and agrees within 15 samples. The two 60 Hz modes agree with each other to one sample and sit 30
-away.
+source pixels -- and two dividers, and agrees within 15 samples. The four 60 Hz
+modes agree within 4 and sit about 32 away.
+
+**The 60 Hz side is not a property of the two 15 kHz game modes.** That was the
+live alternative -- both original 60 Hz points are 15.7 kHz, so field rate and
+those two rasters were one variable. The last two rows separate them: they are
+21.85 kHz, vertical total 364 rather than 262, horizontal totals 768 and 1100,
+and pixel clocks of 16.783 and 24 MHz, and they land on the same value. Every
+doubled mode the monitor definition offers has now been read, so the bench has no
+further point to add: below 400 lines it carries seven at 50 Hz, all of them
+vertical total 312, and four at 60 Hz.
+
+**What the split is NOT is a constant time.** The gap is a constant COUNT:
+
+| mode | wants | gap, samples | gap, time | line rate |
+|---|---|---|---|---|
+| X640 Y240 F60 | 175 | 30.5 | 0.880 us | 15.73 kHz |
+| X640 Y200 F60 | 175 | 30.5 | 0.883 us | 15.69 kHz |
+| X640 Y352 F60 | 179 | 34.5 | 0.717 us | 21.85 kHz |
+| X896 Y352 F60 | 175 | 30.5 | 0.635 us | 21.82 kHz |
+
+`PLLAD_MD` is pinned at 2200 on every doubled line, so the ADC sample period
+follows the line rate: across a 39% rise in line rate a constant time would have
+to grow the count by the same 39%, from 175 to 243. It does not move. The two
+readings that agreed on 0.88 us agreed because they are the same line rate, and
+the constant-time reading -- which pointed at the source rather than the scaler
+-- does not survive a mode at a different one.
+
+**So the split is real, it is a count, and it still has no mechanism.** Field rate
+is what it tracks on this bench, and field rate cannot be separated from vertical
+total here: every doubled 50 Hz mode the definition carries is 312 lines, and both
+doubled 60 Hz rasters are not. A branch on either is a fit to seven readings with
+nothing behind it.
 
 **Nothing on the chip differs across that split.** Read on both, every field is
 identical: `PLLAD_MD` 2200, `PLLAD_KS` 2, `PLLAD_CKOS` 0, `PLLAD_ICP` 6,
@@ -95,11 +128,10 @@ identical: `PLLAD_MD` 2200, `PLLAD_KS` 2, `PLLAD_CKOS` 0, `PLLAD_ICP` 6,
 157. The two field rates do solve different output rasters, 1916 against 1594,
 but the instrument cannot see the output at all.
 
-The two 60 Hz modes' shortfall is the same TIME rather than the same count —
-0.89 us at 13.5 MHz and 0.87 us at 16 MHz — which points at the source rather
-than the scaler, and nothing measured confirms it. A field-rate branch in a
-counter origin is a fit and not a fact, so there is one value: **160**, which
-takes every mode within 15 samples where 272 was out by 127.
+A field-rate branch in a counter origin is a fit and not a fact, so there is one
+value: **160**, which takes every mode within 23 samples where 272 was out by
+127. The best a single value can do is 158, at 21 — the readings run 137 to 179
+— and two samples do not buy a change.
 
 ## What it is worth, engine-solved with nothing hand-set
 
@@ -125,8 +157,11 @@ the vsync pulse's LEADING edge, which is the edge a video standard counts from:
 |---|---|---|---|---|
 | X320 Y256 F50 | 3 | 36 | 31.0 | 5.0 lines in |
 | X640 Y240 F60 | 6 | 21 | 15.9 | 5.1 lines in |
+| X640 Y352 F60 | 3 | 12 | 7.1 | 4.9 lines in |
+| X896 Y352 F60 | 3 | 12 | 7.0 | 5.0 lines in |
 
-Two sources whose pulses differ by a factor of two agree. **Comparing against
+Four sources agree, two of them at a vertical total of 364 against the others'
+312 and 262, and the first two have pulses differing by a factor of two. **Comparing against
 the pulse's trailing edge instead manufactures a disagreement**, because the
 pulse is then inside the comparison.
 
