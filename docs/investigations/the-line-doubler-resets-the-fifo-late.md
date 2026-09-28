@@ -59,7 +59,13 @@ the bench source at full framing, the runs are `(0,5)`, `(280,287)` and
 a run touching either boundary now, and the reading it refuses is a plausible
 number rather than a broken one — which is what made it expensive.
 
-**So every reading in the tables below predates that guard**, and the bench mode
+**A SECOND INSTRUMENT TERM SITS ON THE SAME READINGS.** `half_crossing()`
+answers where the feature is half gone, which is its CENTRE, and the tables took
+that as where it starts -- half a source pixel late, at whatever counter units
+the density makes that. `leading_edge()` takes it off now, verified on the bench
+at 1.1 counter units against a predicted 1.075.
+
+**So every reading in the tables below predates that guard and that correction**, and the bench mode
 re-reads on the corrected instrument at a null of `IF_HBIN_SP` **181** against
 the 147 filed here, repeatable to 0.1 sample and giving one null from four
 different `IF_HBIN_SP` values. Only 5 of that 34 is the retime correction

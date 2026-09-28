@@ -74,6 +74,22 @@ the card's near edge cannot be what produced them:
 
 Still 2.5 samples apart, with the engine solving `SP_RT_HS_SP` 1330 for both.
 
+**The raw crossings carry no unit conversion at all**, which is what makes the
+pair answerable: both are crept on the same counter at the same divider, where
+one unit is 18.35 ns in both, and the file puts video at 294.3 units in both.
+
+| | raw crossing | less the half-width term | filed |
+|---|---|---|---|
+| 800x600@60 | 293.9, 293.8 | 293.2 | 294.3 |
+| 1600x600@60 | 291.4, 291.4 | 291.1 | 294.3 |
+
+**Half a source pixel of the gap IS the pixel size, and it is ours**:
+`half_crossing()` reports the feature's centre, which is `width/2` counter units
+past its edge -- 0.68 at 800x600 against 0.35 at 1600x600, since a source pixel
+is 1.363 counter units on one and 0.681 on the other. That is 0.33 of the
+2.45-unit gap. **2.12 units, 39 ns, survives it**, and both modes still read
+early.
+
 **NO MECHANISM IS MEASURED.** A delay common to a source's sync and its video
 cancels, because the scaler times video from the sync edge, so what the numbers
 require is a *differential* delay between the video path and the sync generator
