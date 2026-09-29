@@ -407,9 +407,9 @@ private:
     // reasons.
     bool refused(const char *step, const CaptureWindow &capture);
 
-    // Output pixels -> input units. A press of nothing has to be skipped
-    // outright: stepUnits() floors at one granule, so an axis the press did not
-    // name would drift a unit per press.
+    // Output pixels -> input units, through the magnification this solve
+    // landed on, so a press means the same on screen whatever the source
+    // measures and whatever raster it is shown in.
     static int16_t unitsFor(int16_t pixels, const Scale &scale, const Axis &axis);
 
     // Where zoom-in stops on this axis: the capture below which the scale is

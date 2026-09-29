@@ -859,7 +859,7 @@ uint16_t VideoPath::dividerCeilingForOutput() const
 
 int16_t VideoPath::unitsFor(int16_t pixels, const Scale &scale, const Axis &axis)
 {
-    return pixels == 0 ? 0 : axis.stepUnits(pixels, scale.magnification());
+    return axis.stepUnits(pixels, scale.magnification());
 }
 
 bool VideoPath::pan(int16_t dxPixels, int16_t dyPixels)

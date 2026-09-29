@@ -58,9 +58,9 @@ public:
     // docs/scaler-geometry-model.md.
     uint16_t captureGranularity() const;
 
-    // A move of `pixels` output pixels, in capture units, quantised to something
-    // the hardware acts on: never less than one granule, always a whole number
-    // of them.
+    // A move of `pixels` output pixels, in capture units: the nearest whole
+    // number of granules to what was asked, which below half a granule is none
+    // of them. A press is stated in output pixels and answered in them.
     int16_t stepUnits(int16_t pixels, float magnification) const;
 
 private:

@@ -28,11 +28,12 @@ int16_t Axis::stepUnits(int16_t pixels, float magnification) const
     // Rounded ONCE, in output pixels. Rounding to units first and to granules
     // after biases every request upwards: 4.73 units becomes 5, then 6, when 4
     // is the nearer of the two the hardware can reach.
-    long granules = lrintf(wanted / captureGranularity_);
-    if (granules < 1)
-        granules = 1;
-
-    long units = granules * captureGranularity_;
+    //
+    // NOTHING is the nearest move to a request under half a granule, and it is
+    // returned rather than floored to one: a granule is 2 x magnification
+    // output pixels horizontally, five of them at the bench framing, so a floor
+    // moves the picture five times as far as a one-pixel press asked for.
+    const long units = lrintf(wanted / captureGranularity_) * captureGranularity_;
     return pixels < 0 ? (int16_t)-units : (int16_t)units;
 }
 
