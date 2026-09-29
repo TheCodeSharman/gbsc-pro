@@ -349,6 +349,14 @@ That is why `OutputMode::EngineCeilingHz` is 108 MHz and not the 129.6 MHz the
 part demonstrably runs at — a usability limit, since both were judged "works,
 sharp" on the bench.
 
+**There is a THIRD ceiling and it bounds the mode rather than the clock.**
+`OutputMode::EncoderCeilingHz` is the MS9288A's 165 MHz TMDS rate, against the
+clock the encoder has to transmit — `totalPx x frameLines x fieldRate`, the
+standard's raster at the source's rate, which no display clock of ours appears in.
+So a source above 66.67 Hz cannot be carried at 1080p at any clock, and
+`OutputMode::transmittableFor()` falls back to the tallest mode that can.
+`investigations/the-encoder-ceiling-is-the-raster-floor.md`.
+
 **That argument has since expired and nobody has re-run it.** The floor is
 `Axis::minimumCapture()`, the room the raster offers over the axis's floor, so the
 2298 raster floors at 721 rather than 1123 and leaves real travel. Raising `EngineCeilingHz` to 129.6 MHz would buy a

@@ -10,54 +10,48 @@ regardless of which step is in flight.
 
 ## Reaches the picture
 
-### The output raster has no floor, so a fast source collapses it
+### A fast source's output mode is bounded by the encoder, and the width bound is unsettled
 
-The raster is `clock / (fieldRate x frameLines)`, and the field rate reaches it
-only multiplied by the output mode's frame height. `OutputMode::solve()` refuses
-a total ABOVE `MaxHorizontalTotal` and `OutputTiming::usable()` checks only for
-zero, so a line too narrow to carry the mode is written out with nothing saying
-so.
+**The floor has landed and the binding quantity is derivable**, so what is open
+here is only how far down the fallback has to reach.
+`investigations/the-encoder-ceiling-is-the-raster-floor.md`.
 
-Measured on a source of 630 lines at 84.68 Hz, line rate 53435:
+What bounds the output mode is the clock the ENCODER must transmit --
+`totalPx x frameLines x fieldRate`, the standard's raster at the source's rate --
+against `OutputMode::EncoderCeilingHz`, which is the datasheet's 165 MHz. No
+display clock of ours appears in it, so a mode the encoder cannot carry cannot be
+bought back with a faster one. `OutputMode::transmittableFor()` falls back to the
+tallest mode the encoder can carry, answered per measurement so the chosen
+resolution returns when the source does.
 
-| output | frame lines | raster | output line rate | result |
-|---|---|---|---|---|
-| 1080p | 1125 | **1134** | **95.3 kHz** | unusable |
-| 720p  |  750 |   1700 |   63.5 kHz | clean |
+**WHETHER THE RASTER WIDTH BINDS AS WELL IS NOT SETTLED, and it decides whether
+the fallback is far enough.** The unusable point was 630 lines at 84.68 Hz into
+1080p: a 1134 px raster at 95.3 kHz, asking the encoder for 209.6 MHz. The
+fallback puts it on 1024p -- 152.4 MHz, in spec -- but only 1196 px, where the
+nearest clean point is 1600 and 720p's known-clean answer is 1700.
 
-At 1134 the STV9426 overlay smears into blue bands across the top of the frame,
-which is the sharpest symptom there is: the overlay is generated on the board
-against `HS_OUT`/`VS_OUT` and keyed in at U13, so it is the one thing in the
-picture that reads the output raster directly. The picture beside it is the
-encoder resampling 1134 of our columns into 1920.
+The check is one source mode: 630 lines at 84.68 Hz with the preference at 1080p.
 
-**The floor is NOT the mode's `activePx`.** 1080p solves 1600 at 60 Hz and 1916
-at 50 Hz, both clean, so a floor at 1920 would refuse every 60 Hz mode on the
-bench.
+| landing | reading |
+|---|---|
+| 1024p, clean | the encoder's ceiling was the whole of it |
+| 1024p, still smeared | a width floor is needed beside it, placed against 720p's 1700 px |
 
-**Which quantity binds is not established.** At a fixed clock the raster width
-and the output line rate are reciprocal, so every point moves both:
+**Do not guess a width floor from that one point, and it is NOT the mode's
+`activePx`.** 1080p solves 1600 at 60 Hz and 1916 at 50 Hz, both clean, so a floor
+at 1920 would refuse every 60 Hz mode on the bench.
 
-```
-56.25 kHz / 1916 px   clean      (50 Hz x 1125)
-63.5  kHz / 1700 px   clean      (84.68 Hz x 750)
-67.4  kHz / 1600 px   clean      (60 Hz x 1125)
-95.3  kHz / 1134 px   unusable   (84.68 Hz x 1125)
-```
+**The smeared overlay is not evidence the board is at fault.** It was read that
+way because the STV9426 overlay is generated on the board against
+`HS_OUT`/`VS_OUT`, so it reads the output raster directly -- but it is keyed into
+the analog video at U13, ahead of the encoder, so it reaches the panel through the
+encoder exactly as the picture does. A link 27% outside its rating corrupts both.
 
-Nothing is measured between 67.4 and 95.3 kHz, or between 1600 and 1134 px.
-
-**What separates them is the display clock**, because the line rate is
-`fieldRate x frameLines` and does not depend on it while the width scales with
-it directly: at `WorkingCeilingHz` the same source into 1125 lines gives 1360 px
-at the same 95.3 kHz. Still unusable says the line rate binds; improved says the
-width does. `EngineCeilingHz` is compile-time, so it takes a build.
-
-The fix differs on the answer. A line-rate bound picks the output mode from
-`fieldRate x frameLines`; a width bound keeps `horizontalTotal` above something
-and can be bought back with a faster clock. Either way the engine falls back to
-a mode that fits rather than refusing, so the stored preference returns when the
-source does.
+**What the ceiling changes on the bench**, since it moves modes that currently
+work: nothing below 66.67 Hz at a 1080p preference, which leaves both bench
+sources untouched -- the RISC PC at 50.475 Hz and the Wii's 480p at 59.8 Hz. The
+monitor definition's 70 Hz and faster DMT modes now run 1024p, and at 70 Hz that
+is a WIDER raster than 1080p gave, 1447 against 1371.
 
 ### hdmi_capture.borders() overstates the picture on the bench RISC PC
 
@@ -2879,6 +2873,12 @@ fetch more pixels per output line than the line has clocks.
 It is not only a zoom-out edge case. **640x480@75 solves to a capture of 1448
 against a 1280 raster**, 13% past the threshold, so the mode arrives corrupt
 with nothing touched.
+
+**That reproduction has moved and the entry stands.** 1280 was 1080p at 75 Hz,
+which asks the encoder for 185.6 MHz against its 165, so a 1080p preference now
+lands on 1024p and a 1352 px raster -- the overshoot narrows from 13% to 7% and
+the capture is still unbounded.
+`investigations/the-encoder-ceiling-is-the-raster-floor.md`.
 
 Measured at four rasters, the divider held so only the framing moves:
 
