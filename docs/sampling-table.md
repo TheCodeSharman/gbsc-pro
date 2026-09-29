@@ -29,7 +29,7 @@ converted = kept x ratio x samplesPerUnit
 ```
 
 ```
-output 1080p, showable 1120, oversampling asked for 4
+output 1080p, showable 1118, oversampling asked for 4
 kept >= pixels carries the picture; converted >= 2 x pixels clears Nyquist
 
 source                 pixels line Hz  2x?   4x div bound   2x div bound   1x div bound   PLLAD_MD over    kept  /px  converted  /2px
