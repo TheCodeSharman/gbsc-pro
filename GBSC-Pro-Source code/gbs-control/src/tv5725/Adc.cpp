@@ -212,8 +212,44 @@ uint8_t halfSampleOn(uint8_t phase)
 // The mid of the field, which is what a caller with nothing to search gets.
 const uint8_t MidField = 16;
 
-// How far the search walks. Two more than the field, so the window either side
-// of the phase it started on is scored with both its neighbours.
+// The middle of the widest run of phases the sweep counted clean, wrapping.
+//
+// **A MAXIMUM IS DECIDED BY ONE OUTLIER.** Scoring the worst window and taking
+// half a field from it is only right where the single worst reading belongs to
+// the genuine band: a phase disturbed while the walk is on it scores all
+// SamplesPerPhase of its samples, where a real band scores a fraction of them,
+// so the outlier wins and half a field from it is the band itself. Measured on
+// the bench, a band at 10..16 with the engine holding 9 and the picture
+// shimmering there. A run's middle moves by one phase when an outlier splits
+// it, and by the width of the band when the band moves, which is the
+// sensitivity wanted.
+// ../../../docs/investigations/the-sampling-phase-cannot-reach-the-shimmer.md
+uint8_t middleOfWidestCleanRun(const uint8_t *dither)
+{
+    uint8_t bestStart = 0, bestLength = 0, start = 0, length = 0;
+    for (uint16_t step = 0; step < 2 * (Adc::PhaseMax + 1); ++step) {
+        const uint8_t phase = (uint8_t)(step & Adc::PhaseMax);
+        if (dither[phase] != 0) {
+            length = 0;
+            continue;
+        }
+        if (length == 0)
+            start = phase;
+        ++length;
+        if (length > bestLength && length <= Adc::PhaseMax + 1) {
+            bestLength = length;
+            bestStart = start;
+        }
+    }
+    if (bestLength == 0)
+        return MidField;
+    return (uint8_t)((bestStart + bestLength / 2) & Adc::PhaseMax);
+}
+
+// How far the search walks. Two more than the field, so the first phases
+// reached are measured again and the second reading is the one kept: the walk
+// starts by moving off whatever phase was in force, and a phase measured
+// immediately after that move has not settled the way the rest have.
 const uint8_t SweepSteps = 34;
 
 // How many of the sweep's samples must be clean before its answer is believed.
@@ -270,8 +306,7 @@ bool Adc::acquirePhase(uint8_t oversample, bool sweep,
         return true;
     }
 
-    uint8_t worstScore = 0, worstPhase = 0, clean = 0;
-    uint8_t badHere = 0, badBefore = 0, badBeforeThat = 0;
+    uint8_t clean = 0;
     uint8_t phase = phaseSyncProcessor();
 
     // Two phases are walked twice -- the sweep is two steps longer than the
@@ -287,7 +322,7 @@ bool Adc::acquirePhase(uint8_t oversample, bool sweep,
         choosePhaseSyncProcessor(phase);
         applyPhaseSyncProcessor(phase);
 
-        badHere = 0;
+        uint8_t badHere = 0;
         uint8_t farHere = 0;
         feedWatchdog();
         delayMicroseconds(256);
@@ -306,18 +341,8 @@ bool Adc::acquirePhase(uint8_t oversample, bool sweep,
         dither[phase] = badHere;
         far[phase] = farHere;
 
-        // Scored over three neighbours, so one bad phase beside two clean ones
-        // does not out-vote a run of three.
-        const uint8_t window = (uint8_t)(badHere + badBefore + badBeforeThat);
-        if (window > worstScore) {
-            worstScore = window;
-            worstPhase = (uint8_t)((phase - 1) & PhaseMax);
-        }
         if (badHere == 0)
             ++clean;
-
-        badBeforeThat = badBefore;
-        badBefore = badHere;
     }
 
     reportScan("phase dither", dither);
@@ -326,11 +351,7 @@ bool Adc::acquirePhase(uint8_t oversample, bool sweep,
     if (clean < SweepGoodEnough)
         return false;
 
-    if (worstScore != 0) {
-        choosePhaseSyncProcessor(halfSampleOn(worstPhase));
-    } else {
-        choosePhaseSyncProcessor(MidField);
-    }
+    choosePhaseSyncProcessor(middleOfWidestCleanRun(dither));
     choosePhaseAdc(oversample == 4 ? halfSampleOn(MidField) : MidField);
 
     applyPhaseSyncProcessor(phaseSyncProcessor());

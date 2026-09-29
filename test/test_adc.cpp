@@ -653,6 +653,65 @@ TEST_CASE("the sampling phase is swept for the window furthest from the worst")
     }
 }
 
+// A sync processor that miscounts a FRACTION of the samples at each phase, so a
+// genuine band of instability and a one-off disturbance can be told apart. The
+// real thing is a fraction: the bench's own scan peaks at 6 counts of 20.
+static uint8_t g_badPerPhase[Adc::PhaseMax + 1];
+static uint8_t g_seenAtPhase[Adc::PhaseMax + 1];
+
+static uint16_t lineSamplesFractional()
+{
+    const uint8_t at = Adc::PA_SP_S::read();
+    const uint8_t n = g_seenAtPhase[at]++;
+    const bool bad = (n % 20) < g_badPerPhase[at];
+    return bad ? (uint16_t)(g_sweepDivider + 1) : g_sweepDivider;
+}
+
+TEST_CASE("one disturbed phase does not decide where the sampling phase lands")
+{
+    // THE WORST WINDOW IS A MAXIMUM, AND A MAXIMUM IS DECIDED BY ONE OUTLIER.
+    // A phase disturbed while the walk is on it scores all 20 of its samples,
+    // which beats a genuine band scoring 5 of 20 across three phases -- and
+    // half a field from the wrong answer is the genuine band itself.
+    //
+    // Measured on the bench: a band at phases 10..16, the engine holding 9, and
+    // the picture shimmering there while 25 is clean. Walking the field scored
+    // 2.126 grey levels of frame-to-frame change at 12 against 0.65 at 25, and
+    // the count read exactly 2200 at both.
+    // ../docs/investigations/the-sampling-phase-cannot-reach-the-shimmer.md
+    Wire.reset();
+    Adc::PLLAD_MD::write(2230);
+    g_sweepDivider = 2230;
+    for (uint8_t i = 0; i <= Adc::PhaseMax; ++i) {
+        g_badPerPhase[i] = 0;
+        g_seenAtPhase[i] = 0;
+    }
+    for (uint8_t i = 10; i <= 16; ++i)
+        g_badPerPhase[i] = 5;          // the genuine band
+    g_badPerPhase[25] = 20;            // one phase disturbed while the walk was on it
+
+    Adc::choosePhaseSyncProcessor(16);
+    Adc::choosePhaseAdc(16);
+    REQUIRE(Adc::acquirePhase(2, true, lineSamplesFractional, countFeed));
+
+    const uint8_t chosen = Adc::phaseSyncProcessor();
+    CHECK(g_badPerPhase[chosen] == 0);
+
+    SUBCASE("and it clears the band rather than sitting on its shoulder") {
+        uint8_t nearest = Adc::PhaseMax;
+        for (uint8_t p = 0; p <= Adc::PhaseMax; ++p) {
+            if (g_badPerPhase[p] == 0)
+                continue;
+            const uint8_t up = (uint8_t)((p - chosen) & Adc::PhaseMax);
+            const uint8_t down = (uint8_t)((chosen - p) & Adc::PhaseMax);
+            const uint8_t away = up < down ? up : down;
+            if (away < nearest)
+                nearest = away;
+        }
+        CHECK(nearest > 4);
+    }
+}
+
 // The scoreboard line's field, which is its last PhaseMax + 1 characters and is
 // indexed by PHASE rather than by the step the walk reached it on.
 static std::string scannedField(const char *prefix)
