@@ -152,18 +152,29 @@ in `produced = capture x 1024 / scale`, and that fit needs none.
 
 `Tv5725::Axis::captureGranularity()` is the number — 2 horizontally, **1
 vertically**, where every unit counts. `Axis::stepUnits()` quantises a press to
-it, so a request never rounds below one granule.
+it.
+
+**A PRESS IS STATED IN OUTPUT PIXELS AND ANSWERED IN THEM.** `stepUnits()`
+returns the nearest whole number of granules to what was asked, **including
+none**: it does not floor at one. A floor is not a rounding error, it is the
+wrong answer — one granule is `2 x magnification` output pixels horizontally,
+about five at the bench Acorn framing, so a floor moves the picture five times as
+far as a one-pixel press asked for and no small adjustment is expressible at all.
 
 **Rounded once, in output pixels.** Quantising to units and then to granules
 biases every request upwards: 8 output pixels is 4.73 units at x1.69, which
 becomes 5 and then 6, where 4 is the nearer of the two reachable values.
 
-Two things this costs, and neither is avoidable from here. One unit of pan is no
-longer one output pixel horizontally — it cannot be, when the hardware's finest
-move is 2 units and one unit is already 1.69 pixels. And **no diagnostic on the
-board can see a step that is too fine**: the register changes, the IR frame
-decodes and dispatches, the dump stays self-consistent, and only the picture
-disagrees. An odd step reads as a dead remote.
+What this costs is that a press below half a granule moves nothing, and the
+granule is what the magnification makes it: above x2 a one-pixel press is dead
+on both axes, and the smallest move the user can make is `granule x
+magnification`. **The remedy is the granularity, not the arithmetic** — and
+nothing here can round its way to a move the hardware does not have.
+
+**No diagnostic on the board can see a step that is too fine**: the register
+changes, the IR frame decodes and dispatches, the dump stays self-consistent,
+and only the picture disagrees. A press absorbed this way reports the same
+refusal a press against a limit does.
 
 The capture *start* is not forced onto a granule boundary. Which parity latches
 is unmeasured, and it does not affect whether a press moves the picture — only
