@@ -167,14 +167,21 @@ becomes 5 and then 6, where 4 is the nearer of the two reachable values.
 
 What this costs is that a press below half a granule moves nothing, and the
 granule is what the magnification makes it: above x2 a one-pixel press is dead
-on both axes, and the smallest move the user can make is `granule x
-magnification`. **The remedy is the granularity, not the arithmetic** — and
-nothing here can round its way to a move the hardware does not have.
+on both axes. **The remedy is the granularity, not the arithmetic** — nothing
+here can round its way to a move the hardware does not have.
+
+**SO A REMOTE TAP DOES NOT ASK IN PIXELS.** It asks for the smallest move the
+axis has, which is one granule, and the hold ramp multiplies that — 
+`Controls::horizontalPanFine()` and its three peers take a count of granules and
+turn it into the output pixels it is worth, through `VideoPath::granulePixels()`.
+A tap stated as one output pixel rounds to nothing above x2 and the OSD then
+reports a limit that is not there, which is indistinguishable from the control
+being broken. The web pads and the OSD bar keep asking in pixels, because there
+the number is the point.
 
 **No diagnostic on the board can see a step that is too fine**: the register
 changes, the IR frame decodes and dispatches, the dump stays self-consistent,
-and only the picture disagrees. A press absorbed this way reports the same
-refusal a press against a limit does.
+and only the picture disagrees.
 
 The capture *start* is not forced onto a granule boundary. Which parity latches
 is unmeasured, and it does not affect whether a press moves the picture — only
