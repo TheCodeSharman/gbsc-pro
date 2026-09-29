@@ -967,7 +967,7 @@ TEST_CASE("the framing realised at a zoom stop is the same whichever bound binds
         CHECK(solved.engine.originUnitsOn(AxisHorizontal) == 237);
         CHECK(solved.engine.extentUnitsOn(AxisHorizontal) == 559);
         CHECK(solved.engine.originUnitsOn(AxisVertical) == 72);
-        CHECK(solved.engine.extentUnitsOn(AxisVertical) == 361);
+        CHECK(solved.engine.extentUnitsOn(AxisVertical) == 217);
     }
 }
 

@@ -47,6 +47,6 @@ int16_t Axis::stepUnits(int16_t pixels, float magnification) const
 
 const Axis AxisHorizontal(2, 1, 0.117f, 0.864f, false, 342, Scale::Max);
 
-const Axis AxisVertical(1, 2, 0.061f, 0.933f, true, 342, Scale::Max);
+const Axis AxisVertical(1, 2, 0.061f, 0.933f, true, 205, Scale::Max);
 
 }  // namespace Tv5725

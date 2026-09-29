@@ -571,8 +571,20 @@ TEST_CASE("the scale floor is derived from the magnification, on both axes")
         // VideoPath::zoom() stops the capture where the magnification runs out,
         // so the picture stays full size and the control simply stops.
         CHECK(OutputWindow::narrowestCapture(AxisHorizontal, rasterOf(1445, 1126)) == 435);
-        CHECK(OutputWindow::narrowestCapture(AxisVertical, rasterOf(1445, 1126)) == 373);
+        CHECK(OutputWindow::narrowestCapture(AxisVertical, rasterOf(1445, 1126)) == 223);
     }
+}
+
+TEST_CASE("a short source fills the frame vertically")
+{
+    // 288 active lines into a 1080 row frame is 3.75x, inside the vertical
+    // axis's 5x and past the horizontal axis's 3x. The AKF50 modes that need it
+    // are X384 Y288 F70 and X480 Y352 F70. docs/known-issues.md
+    const OutputTiming raster = rasterOf(1445, 1126);
+    CHECK(288 > OutputWindow::narrowestCapture(AxisVertical, raster));
+
+    const OutputWindow solved(798, 288, raster);
+    CHECK(solved.vertical().scale().reg() > AxisVertical.magnificationFloor());
 }
 
 TEST_CASE("each axis carries its own magnification floor")
@@ -580,14 +592,14 @@ TEST_CASE("each axis carries its own magnification floor")
     // The floor is measured on VDS_HSCALE, and VDS_VSCALE is a different
     // register in a different stage, so an axis states its own rather than
     // reading a shared one. docs/known-issues.md
-    const Axis deepVertical(1, 2, 0.061f, 0.933f, true, 273, Scale::Max);
+    const Axis shallowVertical(1, 2, 0.061f, 0.933f, true, 410, Scale::Max);
     const OutputTiming raster = rasterOf(1445, 1126);
-    CHECK(OutputWindow::narrowestCapture(deepVertical, raster)
-          < OutputWindow::narrowestCapture(AxisVertical, raster));
+    CHECK(OutputWindow::narrowestCapture(shallowVertical, raster)
+          > OutputWindow::narrowestCapture(AxisVertical, raster));
 
-    // And one axis's floor does not reach the other.
-    CHECK(AxisVertical.magnificationFloor() == AxisHorizontal.magnificationFloor());
-    CHECK(deepVertical.magnificationFloor() == 273);
+    // And the two shipped axes stop in different places: 3.0x across, 5.0x down.
+    CHECK(AxisHorizontal.magnificationFloor() == 342);
+    CHECK(AxisVertical.magnificationFloor() == 205);
 }
 
 // --- one axis's four output registers -----------------------------------------

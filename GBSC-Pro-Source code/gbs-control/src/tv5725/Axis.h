@@ -60,11 +60,17 @@ public:
     uint16_t captureGranularity() const;
 
     // How far this axis will magnify, as VDS_?SCALE, which divides 1024 -- so
-    // the FLOOR is the most magnification. Stated per axis because the evidence
-    // is: the corruption behind the horizontal value was measured on
-    // VDS_HSCALE, and VDS_VSCALE is a different register in a different stage
-    // and is untested at any magnification. A shared constant was tried and put
-    // the horizontal finding on both. docs/known-issues.md
+    // the FLOOR is the most magnification. It is the register clamp, and it is
+    // what stops the zoom; nothing else bounds the control.
+    //
+    // 3.0x horizontally, where the horizontal scaler corrupts and no fix was
+    // found, and 5.0x vertically, which is a picture-quality choice with no
+    // measurement against it. They are separate because the evidence is:
+    // everything behind the horizontal value was measured on VDS_HSCALE, and
+    // VDS_VSCALE is a different register in a different stage. A shared
+    // constant was tried and put the horizontal finding on both, which
+    // letterboxed every source too short to reach 3.0x -- 288 active lines into
+    // a 1080 row frame is 3.75x. docs/known-issues.md
     uint16_t magnificationFloor() const;
 
     // The least magnification, as VDS_?SCALE. The 10-bit field's top on both
