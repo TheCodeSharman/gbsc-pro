@@ -1308,10 +1308,18 @@ of a clean and a corrupt framing give per-pixel standard deviations that do not
 separate -- median 0.51 against 0.50, 7501 pixels over 4 levels against 8062 --
 and the map of what moves highlights every edge in both.
 
-**FIXED by bounding the zoom at 3.0x.** `Scale::Min` is 342 -- `1024 / 3` is
-341.33, so 342 is the largest magnification at or under 3.0 -- and both axes
-read it. Nothing can now solve a scale that pins the memory window at the write
-floor, which both sources entered at `VDS_HSCALE` 334.
+**FIXED by bounding the zoom at 3.0x.** The floor is 342 -- `1024 / 3` is
+341.33, so 342 is the largest magnification at or under 3.0. Nothing can now
+solve a scale that pins the memory window at the write floor, which both sources
+entered at `VDS_HSCALE` 334.
+
+**TWO CORRECTIONS SINCE.** The write floor is a CORRELATE and not the mechanism:
+what is established is that the horizontal scaler corrupts below about
+`VDS_HSCALE` 334 and that no fix was found, and both sources entering the floor
+at one `VDS_HSCALE` is where the correlation comes from. And both axes no longer
+read it -- every reading on this page is `VDS_HSCALE`, so the floor belongs to
+the axis, `Axis::magnificationFloor()`, 342 across and 205 down.
+`../known-issues.md`.
 
 The rationale is what the zoom is FOR: bringing a source's active picture up to
 full screen. That is reached well inside 3.0x, and the range beyond it only

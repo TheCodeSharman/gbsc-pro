@@ -978,7 +978,7 @@ right and the shape was not.
 constant floors are gone and `ceil(capture / 4)` governs throughout. Measured
 on the flashed build: the engine writes 114 at capture 456 by itself, where it
 wrote 150 before, and the ratio holds 3.98..4.00 at every step down to
-`Scale::Min` -- capture 396, fetch **99**, below both constants that were
+the horizontal floor -- capture 396, fetch **99**, below both constants that were
 removed -- with the colour bars, the grey bands and the circle arcs clean at
 all of them.
 
@@ -1004,7 +1004,7 @@ the bench, the capture parks at 574 units horizontally and 361 vertically and 20
 further presses move nothing. What follows is the OUTWARD half, which is
 unchanged and was measured under the old inward behaviour.
 
-At `Scale::Min` with a small capture the outward zoom stops being applied:
+At the horizontal floor with a small capture the outward zoom stops being applied:
 measured at `VDS_HSCALE` 256, `/sc?O` grew the capture 396 -> 406, two units a
 press, and then moved nothing for as long as it was pressed. The scale is
 pinned there so only the capture can answer, and when it stops the control is
@@ -1039,15 +1039,19 @@ right shape for the fetch; the stride wants the bound that belongs to it.
 
 ### How far the scaler magnifies is a picture-quality choice, and 4.25x works
 
-**Settled: there is one name and it is `Scale::Min` 342.** The floor was carried
-under two names holding one value, split on the grounds that `Scale::Min` was
-"the register's own limits" and the axis floor a picture-quality judgement. There
-is no register limit at the bottom to name -- RD-5725-1.1 gives only
-`HSCALE = 1024 x in / out` and the field is 10 bits -- so that was one fact
-described twice. `Max = 1023` genuinely is the 10-bit field and stays where it
-is; all three bounds now sit together in `Scale.h`.
+**The floor is the AXIS's, and the two axes carry different ones**:
+`Axis::magnificationFloor()` is 342 horizontally, where the scaler corrupts, and
+205 vertically, which is 5.0x and has no measurement against it. `Scale` keeps
+`Unity` and `Max = 1023`, the 10-bit field and the only bound the part states.
 
-What remains open is WHERE the floor should sit, which no measurement settles.
+A shared constant was carried before that, on the grounds that there is no
+register limit at the bottom to name -- RD-5725-1.1 gives only
+`HSCALE = 1024 x in / out` -- so the floor was one fact described twice. That is
+right about the register and wrong about the axes: everything measured behind
+342 is horizontal, so the shared value put a horizontal finding on `VDS_VSCALE`
+as well and letterboxed every source too short to reach 3.0x.
+
+What remains open is WHERE either floor should sit, which no measurement settles.
 
 **4.0x is not a wall: 4.25x works.** Built with the floor passed to the two
 `Axis` constructors lowered to 128 and flashed, the engine solves `VDS_HSCALE`
@@ -3365,7 +3369,7 @@ a reason written down.
 ### The same framing must reproduce at every output resolution
 
 **The framing is stored as PROPORTIONS, so it scales with the raster and must
-never clamp.** `Scale::Min` is derived as `raster / maxMagnification`, so the
+never clamp.** The zoom floor is derived as `raster / maxMagnification`, so the
 reachable proportional range is raster-independent by construction: shrinking
 the output shrinks `produced` with it, which lowers the magnification and moves
 *away* from the floor. A framing that clamps at any output resolution is

@@ -80,7 +80,8 @@ had just placed, and neither control converged.
 Two consequences. **Zoom-out no longer opens the near edge**, so reaching the
 whole capturable region takes a pan first -- the zoom stops when the far edge
 reaches the end of the line. And **zoom-in stops where the MAGNIFICATION stops**,
-at `Axis::minimumCapture()`: past it `VDS_?SCALE` is already at `Scale::Min`
+at `Axis::minimumCapture()`: past it `VDS_?SCALE` is already at the axis's
+floor
 and a tighter crop is a smaller picture rather than a closer one. Measured
 holding the key before that stop existed, the scale pinned at 342 while the
 capture fell 574 -> 16 units and the window marched to the corner of the source,
@@ -351,7 +352,7 @@ part demonstrably runs at — a usability limit, since both were judged "works,
 sharp" on the bench.
 
 **That argument has since expired and nobody has re-run it.** The floor is
-`Axis::minimumCapture()`, the room the raster offers over `Scale::Min`, so the
+`Axis::minimumCapture()`, the room the raster offers over the axis's floor, so the
 2298 raster floors at 721 rather than 1123 and leaves real travel. Raising `EngineCeilingHz` to 129.6 MHz would buy a
 third more horizontal resolution; it is a live bench experiment rather than a
 settled no.
@@ -389,7 +390,8 @@ and the same framing produced different windows on the two.
 **The part still cannot minify, and that is expressed where the registers are
 solved rather than where the framing is held.** `VDS_?SCALE` divides 1024 and
 tops out at `Scale::Max`, so the least magnification it can express is 1.001;
-`Axis::fitToRaster()` clamps the scale between that and `Scale::Min`. A capture
+`Axis::fitToRaster()` clamps the scale between that and the axis's own floor --
+342 across, 205 down. A capture
 too small for the raster therefore letterboxes and one too large has its far end
 cropped — both visible, both undone by one press back, and neither able to touch
 the framing.
