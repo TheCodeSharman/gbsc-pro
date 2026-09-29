@@ -388,41 +388,61 @@ output raster pixels, and neither is constant across the three -- while the
 reading itself is worth a couple of columns either way, because the frame is one
 source pixel wide and its captured edge smears into the flashing ring beside it.
 
-### The picture is short of the transmitted window on a LINE-DOUBLED source
+### The picture is short of the transmitted window, and the strip past it is not picture
 
 **Measured by walking the aperture until the emitted frame's last column changes
-state**, which asks only where the encoder stops carrying our line and so is free
-of the capture and of the scale. Automation frozen, one acquisition per mode:
+state**, which asks only where the encoder stops carrying our line. At
+`X320 Y256 C256 F50` the last 14 of 1920 emitted columns are black at the
+engine's own framing, and opening `VDS_DIS_HB_ST` from 1831 to 1845 fills them.
 
-| mode | scan | raster | `activeStop` solved | window measured | |
-|---|---|---|---|---|---|
-| X320 Y256 C256 F50 | doubled | 1916 | 1830 | opens 156.6, closes 1844 | 14 short |
-| X640 Y200 C256 F60 | doubled | 1604 | 1558 | opens 156.6, closes 1583 | 25 short |
-| X800 Y600 C256 F60 | flat | 1592 | 1549 | closes 1547 | right |
-| X640 Y480 C256 F60 | flat | 1600 | -- | fills at the solved aperture | right |
+**WHAT FILLS THEM IS NOT PICTURE, AND THAT IS MEASURED.** With the aperture held
+open, the capture was panned 4 units -- 11.1 emitted columns -- and each region
+of the frame asked which shift best explains it:
 
-**It follows the SCAN MODE and not the field rate.** Both doubled sources are
-short and both flat ones are right, across 50 Hz and 60 Hz, so the 50 Hz raster
-is not the variable. What shows is our own blanking: at `X320 Y256 C256 F50` the
-last 14 of 1920 emitted columns are black, and opening `VDS_DIS_HB_ST` fills them
--- with the fetch running past the write, not with picture, so the aperture is
-right and the PICTURE is what falls short.
+| region | best shift | runner-up |
+|---|---|---|
+| picture, columns 1500..1900 | **11** (err 7.8) | 12 (err 112.6) |
+| picture, columns 1800..1900 | **11** (err 14.7) | 12 (err 150.6) |
+| the strip, columns 1906..1919 | **0** (err 1.7) | 1 (err 870.0) |
 
-**No mechanism is known and the correlation is four modes.** The transmitted
-window is an output-side property and the line doubler is an input-side block,
-so the two should not meet; `OutputMode::solve()` computes the window from the
-raster and the field rate alone and sees no scan mode. Either the window really
-does differ, or the produced width is under-modelled on a doubled source and the
-revealed columns are picture after all -- which one it is turns on whether the
-strip the aperture reveals is the card's content continuing or memory the write
-never reached. A photograph at `X320 Y256 C256 F50` shows the card's white band
-continuing with scattered speckle, which reads as the fetch.
+The picture moved exactly as far as the pan; the strip did not move at all, and
+columns 1908..1919 read byte-identical at both pans. **So the aperture closes
+where it should and the PICTURE is what falls short** -- there is nothing to be
+recovered by opening the window, and the encoder is not latching onto content.
+The strip is a fixed ramp, 235 falling to about 75, which follows the last
+written column rather than the source.
 
-**THE NEAR EDGE IS OUT TOO, AND BY THE SAME SIGN.** The window opens at our unit
-156.6 on both doubled modes where the solve puts the picture at 159..160, so the
-first three or four emitted columns carry our blanking. It is the same reading
-on two rasters 300 units apart, which is what says it is not a fraction of the
-line.
+**THE NEAR EDGE IS NOT OUT.** Solved from two independent anchors in one frame --
+the card's leftmost drawn pixel at raster 165.4 reading column 6, and the
+picture's end at 1829.5 reading column 1905 -- the window is 160.2 .. 1842.7 at
+1.1411 columns per unit. Our aperture opens at 160. An earlier reading of 156.6
+took the black at the LEFT for our own blanking when it is captured SOURCE
+blanking, which is the confound
+`investigations/the-transmitted-window-is-latched-from-our-blanking.md` names.
+
+**IT FOLLOWS THE FIELD RATE AND NOT THE SCAN MODE.** An earlier reading here said
+the opposite and rested on one unsound measurement -- `X640 Y200 C256 F60` walked
+downward from an aperture where the fetch returns black, which reads as a window
+edge and is not one. At the engine's own framing, with no register touched:
+
+| mode | lines | scan | raster | black at the right |
+|---|---|---|---|---|
+| X640 Y512 C256 F50 | 534 | flat | 1914 | 6 |
+| X320 Y256 C256 F50 | 312 | doubled | 1916 | 15 |
+| X640 Y480 C256 F60 | 525 | flat | 1600 | 0 |
+| X800 Y600 C256 F60 | 628 | flat | 1592 | 0 |
+| X640 Y200 C256 F60 | 262 | doubled | 1604 | 0 |
+
+Both 50 Hz sources are short and no 60 Hz one is, on either scan mode. **The
+magnitudes do not yet fit one model**: 6 columns against 15 on two 50 Hz
+rasters two units apart is more than the arithmetic accounts for, and
+`X768 Y288 C256 F50` reads 34 but is one of the rows that takes another mode's
+framing, so its picture is mis-sized before the window is reached.
+
+What `OutputMode::solve()` computes is `activeStop = activeStart +
+horizontalTotal x 1920 / 2200`, which is CEA's 60 Hz total. A 50 Hz source emits
+into 1080p50, whose CEA total is 2640 -- so the one input the model has that
+changes with the field rate is the one it does not use.
 
 ### The sync polarity cannot separate two rasters sharing a key
 
