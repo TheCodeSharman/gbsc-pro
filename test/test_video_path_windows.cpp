@@ -1011,3 +1011,47 @@ TEST_CASE("a narrower output raster brings the memory window's far edge in")
         CHECK(Wire.field(3, 0x04, 0, 12) >= Wire.field(3, 0x10, 0, 12));
     }
 }
+
+// THE RASTER'S BOUND IS NOT THE USER'S FRAMING. narrowToRaster() caps the
+// capture at what the output raster can show, in units of the line in force --
+// but the framing is a PROPORTION of that line and outlives the divider, so a
+// bound written into it comes back as a tighter crop every time the line gets
+// shorter, and narrowTo() only ever shrinks.
+//
+// Measured on the bench at 640x480@75: a solve at PLLAD_MD 2046 stored
+// 998/2047 = 0.4866, and when the divider settled at 1222 that proportion asked
+// for 595 units of a 1223-unit line where the bound allows 998. The card came
+// up cropped to its middle, and a cold boot into the same source was whole.
+// docs/investigations/the-raster-bound-is-stored-as-a-proportion.md
+TEST_CASE("a solve does not write the raster's bound into the stored framing")
+{
+    SolvedEngine solved(500, 75.0f, 181, &Mode1024p, false);
+
+    // Wider than the raster can show, so the bound bites on every solve.
+    const PanAndZoom wide(0.05f, 0.90f, 0.05f, 0.90f);
+    REQUIRE(solved.engine.applyFraming(wide));
+
+    // The ASK is kept: originUnitsOn/extentUnitsOn report the framing, which is
+    // what a press starts from and what the table stores.
+    CHECK(solved.engine.framing().extentOn(AxisHorizontal)
+          == doctest::Approx(0.90f).epsilon(0.005));
+
+    SUBCASE("while the capture that reaches the chip is still bounded") {
+        // IF_HB_* are BLANKING, so the captured span is the complement.
+        const long applied = (long)InputFormatter::IF_HB_ST2::read()
+                           - (long)InputFormatter::IF_HB_SP2::read();
+        const long asked = solved.engine.extentUnitsOn(AxisHorizontal);
+        const uint16_t widest = OutputWindow::widestCapture(
+            AxisHorizontal, Mode1024p.solve(75.0f, OutputMode::EngineCeilingHz));
+        REQUIRE(widest > 0);
+
+        CHECK(applied < asked);
+        CHECK(applied <= (long)widest + (long)AxisHorizontal.captureGranularity());
+    }
+
+    SUBCASE("so a second solve does not narrow it again") {
+        const float first = solved.engine.framing().extentOn(AxisHorizontal);
+        REQUIRE(solved.engine.resolve());
+        CHECK(solved.engine.framing().extentOn(AxisHorizontal) == doctest::Approx(first));
+    }
+}

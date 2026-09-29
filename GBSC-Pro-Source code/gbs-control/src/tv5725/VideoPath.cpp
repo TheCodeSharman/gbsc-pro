@@ -983,17 +983,25 @@ bool VideoPath::calculateInputFormatterRegisters(CaptureWindow &capture)
     // Forced, the whole capturable region every solve, so no stored framing and
     // no source change can put the bench rule back where it was.
     PanAndZoom wanted = fullFraming_ ? PanAndZoom(0.0f, 1.0f, 0.0f, 1.0f) : framing_;
-    narrowToRaster(wanted, capture, AxisHorizontal);
-    narrowToRaster(wanted, capture, AxisVertical);
-    capture.setFraming(wanted);
 
-    // Only what the framing ASKED for is adopted. The solve adjusts it -- an
-    // untuned axis is seeded and both are narrowed to the raster -- and holding
-    // that is what makes a press start from where the picture is. Adopting it
-    // under the override instead consumes the framing the override exists to
-    // look past, and autosave then persists the full region over the tuning.
+    // Seeded FIRST and adopted, so an axis nobody has framed takes the mode's
+    // default and becomes the framing, which is what makes a press start from
+    // where the picture is.
+    capture.setFraming(wanted);
     if (!fullFraming_)
         framing_ = capture.framing();
+
+    // The raster's bound is applied to THIS solve and is never adopted. It is a
+    // count of units of the line in force, and the framing is a proportion that
+    // outlives the divider -- written back, the same bound returns as a tighter
+    // crop every time the line gets shorter, and narrowTo() only ever shrinks.
+    // Measured: a solve at PLLAD_MD 2046 stored 998/2047, and at 1222 the same
+    // proportion asked for 595 units where the bound allows 998.
+    // docs/investigations/the-raster-bound-is-stored-as-a-proportion.md
+    PanAndZoom bounded = capture.framing();
+    narrowToRaster(bounded, capture, AxisHorizontal);
+    narrowToRaster(bounded, capture, AxisVertical);
+    capture.setFraming(bounded);
     usableHorizontal_ = capture.lineUnitsOn(AxisHorizontal);
     usableVertical_ = capture.lineUnitsOn(AxisVertical);
     reachHorizontal_ = capture.reachOn(AxisHorizontal);
