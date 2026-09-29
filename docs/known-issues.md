@@ -10,6 +10,55 @@ regardless of which step is in flight.
 
 ## Reaches the picture
 
+### The output raster has no floor, so a fast source collapses it
+
+The raster is `clock / (fieldRate x frameLines)`, and the field rate reaches it
+only multiplied by the output mode's frame height. `OutputMode::solve()` refuses
+a total ABOVE `MaxHorizontalTotal` and `OutputTiming::usable()` checks only for
+zero, so a line too narrow to carry the mode is written out with nothing saying
+so.
+
+Measured on a source of 630 lines at 84.68 Hz, line rate 53435:
+
+| output | frame lines | raster | output line rate | result |
+|---|---|---|---|---|
+| 1080p | 1125 | **1134** | **95.3 kHz** | unusable |
+| 720p  |  750 |   1700 |   63.5 kHz | clean |
+
+At 1134 the STV9426 overlay smears into blue bands across the top of the frame,
+which is the sharpest symptom there is: the overlay is generated on the board
+against `HS_OUT`/`VS_OUT` and keyed in at U13, so it is the one thing in the
+picture that reads the output raster directly. The picture beside it is the
+encoder resampling 1134 of our columns into 1920.
+
+**The floor is NOT the mode's `activePx`.** 1080p solves 1600 at 60 Hz and 1916
+at 50 Hz, both clean, so a floor at 1920 would refuse every 60 Hz mode on the
+bench.
+
+**Which quantity binds is not established.** At a fixed clock the raster width
+and the output line rate are reciprocal, so every point moves both:
+
+```
+56.25 kHz / 1916 px   clean      (50 Hz x 1125)
+63.5  kHz / 1700 px   clean      (84.68 Hz x 750)
+67.4  kHz / 1600 px   clean      (60 Hz x 1125)
+95.3  kHz / 1134 px   unusable   (84.68 Hz x 1125)
+```
+
+Nothing is measured between 67.4 and 95.3 kHz, or between 1600 and 1134 px.
+
+**What separates them is the display clock**, because the line rate is
+`fieldRate x frameLines` and does not depend on it while the width scales with
+it directly: at `WorkingCeilingHz` the same source into 1125 lines gives 1360 px
+at the same 95.3 kHz. Still unusable says the line rate binds; improved says the
+width does. `EngineCeilingHz` is compile-time, so it takes a build.
+
+The fix differs on the answer. A line-rate bound picks the output mode from
+`fieldRate x frameLines`; a width bound keeps `horizontalTotal` above something
+and can be bought back with a faster clock. Either way the engine falls back to
+a mode that fits rather than refusing, so the stored preference returns when the
+source does.
+
 ### hdmi_capture.borders() overstates the picture on the bench RISC PC
 
 **An isolated dim blob at columns 1880..1899, peak luma 44.8 with dead black
