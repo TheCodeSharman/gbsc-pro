@@ -113,10 +113,11 @@ away.
 
 Ruled out, each with the artefact reported present:
 
-- **`PA_ADC`.** Scored by frame-to-frame change of a static band, phases 0..10
-  give 0.73 to 0.93 with no band -- flat, where `PA_SP` peaks at 2.13. Jogged
-  the full half-field from 0 to 16 and the bench could not call it changed.
-  Consistent with the arithmetic in
+- **`PA_ADC`, refuted BLIND.** Presented at 0 and at 16 in an order drawn at
+  random and not disclosed, with the artefact reported present at both. Scored
+  independently by frame-to-frame change of a static band, phases 0..10 give
+  0.73 to 0.93 with no band -- flat, where `PA_SP` peaks at 2.13. Consistent
+  with the arithmetic in
   `investigations/the-sampling-phase-cannot-reach-the-shimmer.md`: a doubled
   line keeps 1100 samples against a 512-pixel source line, so the sampler
   already visits 275 sub-pixel positions and a global offset moves all of them
@@ -125,6 +126,15 @@ Ruled out, each with the artefact reported present:
   both 0 and `PB_CAP_BUF_STA_ADDR_A` and `_B` hold the same address, so nothing
   is switching buffers per frame.
 - **The frame time lock**, turned off outright.
+
+**THE INSTRUMENT IS PROVEN, so a negative from it means something.** Writing a
+phase adjuster over `/setreg` reproduces `Adc::applyPhaseAdc()` -- latch low,
+value, latch high, then the `BYPSZ` restart the header says the adjuster takes
+the value on -- and the writes land tens of milliseconds apart rather than back
+to back. That it reaches the hardware is not an argument but a measurement:
+`PA_SP` at 29 counts 2200 in 25 of 25 reads and at 12 counts 2199 five times and
+2201 twice, and the bench calls the picture clean at the first and clearly
+shimmering at the second.
 
 What would separate the remaining candidates is a per-column temporal measure
 rather than a displacement -- which columns change between frames, and whether
