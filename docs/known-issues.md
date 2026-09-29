@@ -10,40 +10,62 @@ regardless of which step is in flight.
 
 ## Reaches the picture
 
-### The first acquisition after a boot reads the field rate low, and nothing corrects it
+### The first acquisition after a boot holds a rate the source is not running
 
 **The frame time lock then integrates it into a tear that crawls down the
-screen.** This is the one consequence found so far, and it is enough to make the
-bias worth fixing rather than noting.
+screen.** This is the one consequence found so far, and it is what makes the
+error worth fixing rather than noting.
 
-The reading is 0.45 per thousand low on the pass that follows a boot, and it is
-held: measured three times on `vga`, `lineRateHz` 15741 against 15748 on a
-320x256@50 source and 15618 against 15625 on the mode-file raster, stable across
-six reads over eighteen seconds each time. Any later re-measure corrects it --
-`/sc?~` and a source mode change both do -- and it then stays correct.
+Every acquisition after the first is exact and repeatable. Measured on `vga`,
+one source state, four `/sc?~` cycles against the boot's reading:
 
-**Nothing arms that re-measure on its own.** `rateMoved()`'s periodic recheck
-compares a fresh reading against the held one at
-`RateCorroborationPerThousand`, and the bias is smaller than it, so the recheck
-confirms the wrong value for as long as the source stands still.
+| acquisition | field rate |
+|---|---|
+| boot | **50.5321** |
+| re-acquire x4 | 50.4744, 50.4744, 50.4744, 50.4744 |
 
-With the frame time lock enabled the cost is continuous. The lock converges on
-whatever the held rate says, so a rate 0.53 per thousand low parks the display
-clock 0.53 per thousand low and the output frame period comes out 1664 ticks
-short of the input's -- `pin in 3169874` against `pin out 3168210`. Measured over
-98 seconds the phase then walks 18918 ticks a second, 0.6% of a frame, and the
-loop yanks the clock 129 kHz every ~21 seconds when the error wraps a frame:
+**The direction is not fixed** -- the same bench has given the boot reading 1.14
+per thousand high and 0.45 per thousand low on other occasions (`lineRateHz`
+15741 against 15748, and 15618 against 15625) -- so this is a settling error
+rather than a bias.
+
+**The boot log says why.** The readings converge upward and are accepted on the
+way:
+
+```
+sampling: 311 lines x 50.43 Hz -> line rate 15734
+sampling: 311 lines x 50.52 Hz -> line rate 15764
+sampling: 311 lines x 50.53 Hz -> line rate 15768      <- accepted
+```
+
+`SourceMeasurement::rateSettled()` accepts two readings agreeing within
+`RateAgreementPerThousand`, and 50.52 against 50.53 agrees comfortably. Both are
+still climbing. Agreement rejects noise and cannot reject a common trend, which
+is the same shape as every other second-owner defect on this board.
+
+**Nothing re-judges it afterwards.** `rateMoved()`'s periodic recheck compares a
+fresh reading against the held one at `RateCorroborationPerThousand`, which is
+wider than the error, so the recheck confirms the wrong value for as long as the
+source stands still. Reaching it by threshold is not available either: the error
+is of the same order as the quantisation step.
+
+With the frame time lock enabled the cost is continuous, because the lock
+converges on whatever the held rate says:
 
 | | phase | err | pin in / out | clock |
 |---|---|---|---|---|
-| boot-biased rate held | walks 140k a sample | -1.07M to -1.50M, then wraps | 3169874 / **3168210** | parked 107942904, yanked to 108072512 |
+| boot rate held | walks 140k a sample | -1.07M to -1.50M, then wraps a frame | 3169874 / **3168210** | parked 107942904, yanked to 108072512 |
 | after `/sc?~` | +2 ticks a second | 13733, steady | 3169874 / **3169874** | 107886216, span **0 Hz** |
 
-So the lock is not at fault and neither is its tuning: it is holding the rate it
-was given. The same source, re-measured, locks dead still.
+The output frame comes out 1664 ticks short of the input's, the phase walks
+18918 ticks a second -- 0.6% of a frame -- and the loop yanks the clock 129 kHz
+every ~21 seconds when the error wraps. So the lock is not at fault and neither
+is its tuning: it is holding the rate it was given, and the same source
+re-measured locks dead still.
 
 **The workaround is one request** -- `/sc?~`, or any source mode change -- and it
-holds until the next boot.
+holds until the next boot. **The fix is to confirm the first rate once the source
+has settled** rather than to accept two agreeing readings taken while it climbs.
 
 ### The output raster has no floor, so a fast source collapses it
 
