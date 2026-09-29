@@ -75,20 +75,37 @@ group, not a tail off the picture.
 and a measurement that creeps an edge until the picture stops will stop at the
 blob rather than at the picture.
 
-### A sub-pixel horizontal shimmer appears and clears on a timescale of hours
+### The sub-pixel shimmer is the sync processor's phase, fixed on one source only
 
-Present at `PLLAD_MD` 2200 on the scaling path and visible at the bench, gone an
-hour later with the divider, the VCO gain and the solve unchanged. Refuted as
-causes: the ADC sampling phase (which cannot reach it -- the kept sample grid
-already visits 275 sub-pixel positions per line), the VCO gain, sampling-grid
-commensurability, the frame time lock, repeated solving, and per-acquisition
-re-rolling over eight forced round trips.
+**The cause is found and the fix has landed**, so what is open here is how far
+it reaches. `Adc::acquirePhase()` chose `PA_SP` by going half a field from the
+single worst three-phase window of one sweep, and a maximum is decided by one
+outlier: a phase disturbed while the walk is on it scores all 20 of its samples
+where a genuine band scores a fraction. The engine held 9 against a band at
+10..16. `Adc::middleOfWidestCleanRun()` replaces it, and five consecutive solves
+on the bench chose 29 or 30, twelve phases clear of the band.
+`investigations/the-sampling-phase-cannot-reach-the-shimmer.md`.
 
-**No provocation is known**, which is what blocks it: `PLLAD_MD` 2082 was
-reproducibly noisy for one interleaved pair of measurements and quiet
-afterwards. `docs/investigations/the-sampling-phase-cannot-reach-the-shimmer.md`
-carries the measurements and the two instrument traps that make it easy to
-misread.
+**It is proven on one source, one divider and one band position** -- the RISC PC
+on `vga` at `PLLAD_MD` 2200. Whether the band sits elsewhere on a component
+source, at a different divider, or splits into two runs is unmeasured, and a
+profile with two comparable clean runs is the case the new rule has no evidence
+for.
+
+**A second artefact on the same bench is NOT this one and must not be merged
+with it.** It reads as the picture moving right by a fraction of a pixel in one
+frame and back left in the next -- a period-2 oscillation rather than the
+flicker on fine detail above. `PA_ADC` is the candidate and is untested; the
+entry below carries what would score it.
+
+### A black frame with one green line at the top, for several seconds while detecting
+
+Seen across repeated `/sc?~` cycles on a healthy unit, clearing by itself once
+the solve lands. `DAC_RGBS_PWDNZ` 1, `PAD_SYNC_OUT_ENZ` 0 and every
+`SFTRST_*_RSTZ` 1 throughout, and the capture afterwards is a full picture, so
+it is a state the bring-up passes through rather than one it can be left in.
+What is not established is which stage emits it, and whether a sink that is
+slower to re-lock than this bench's shows it for longer.
 
 ### The transmitted window's start is latched, so the picture cannot reach both edges
 
