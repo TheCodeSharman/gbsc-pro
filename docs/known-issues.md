@@ -432,11 +432,22 @@ CEA, DMT and AKF50 resolve to 20 distinct keys with polarity in the key and 20
 without it. The seven 15.6 kHz PAL AKF50 modes are all `+/+`, the five 525-line
 ones all `-/-`.
 
-**A MONITOR DEFINITION'S `sync_pol` IS A BITFIELD OVER A POSITIVE DEFAULT**, bit
-0 inverting hsync and bit 1 inverting vsync, and nothing in the format documents
-it. Read off the bench against `STATUS_SYNC_PROC_HSPOL` and `_VSPOL`, which
-report the pin rather than the path -- `SP_HS_INV_REG` is 1 on both `+` readings
-below and the status bit is unmoved by it:
+**A MONITOR DEFINITION'S `sync_pol` IS A BITFIELD OVER AN ACTIVE-HIGH DEFAULT**,
+bit 0 inverting hsync and bit 1 inverting vsync. Documented in two places and
+confirmed on the bench:
+
+  RISC OS 3 PRM volume 5a states the field for `MDF` and for
+  `Service_ModeExtension` offset 60 -- *"bit 0 set => Hsync inverted, bit 1 set
+  => Vsync inverted"*, with 0 reading *"hsync normal, vsync normal"*.
+
+  The VIDC20 data sheet §4.1.24 says what normal IS. The Ext Register's `syn-HS`
+  and `syn-VS` select `00 HSYNC / 01 nHSYNC` and `00 VSYNC / 01 nVSYNC`, so the
+  un-inverted form is the active-HIGH one and `sync_pol 0` emits positive-going
+  pulses on both axes.
+
+Read off the bench against `STATUS_SYNC_PROC_HSPOL` and `_VSPOL`, which report
+the pin rather than the path -- `SP_HS_INV_REG` is 1 on both `+` readings below
+and the status bit is unmoved by it:
 
 | `sync_pol` | mode | HSPOL / VSPOL | | against the standard |
 |---|---|---|---|---|
@@ -448,6 +459,33 @@ below and the status bit is unmoved by it:
 **It does not follow the standard everywhere**, so it cannot be substituted for
 one: AKF60's 1024x768@60 states `sync_pol 0`, which is H+ V+, where DMT states
 H- V-.
+
+### What a raster collision actually costs
+
+**A key two rasters share is free where they want the same framing**, and what
+matters is only the pairs whose normalised windows differ. Over the 41 rows,
+resolved through the CEA -> DMT -> Acorn priority, 18 get a framing that is not
+their own -- but most of them by under two points of the line or frame:
+
+| the row that answers | is used for | worst edge, % of line or frame |
+|---|---|---|
+| 640x480@60 (DMT) | 320x480, 640x480, 1280x480 (AKF50) | 0.8 .. 1.0 |
+| 640x480@60 (DMT) | 360x480 (AKF50) | **6.6** |
+| 640x480@72 (DMT) | 320x480, 640x480, 1280x480 (AKF50) | 0.6 .. 1.0 |
+| 640x480@75 (DMT) | 640x480, 1280x480 (AKF50) | 1.5 .. 1.7 |
+| 800x600@56 (DMT) | 800x600, 1600x600 (AKF50) | 1.0 |
+| 800x600@60 (DMT) | 800x600, 1600x600 (AKF50) | none -- the framings agree |
+| 320x256 (AKF50) | 320x250, 640x250 | 1.0 |
+| 320x256 (AKF50) | 1056x250, 1056x256 | 3.4 |
+| 320x256 (AKF50) | 768x288 | **6.4** |
+| 896x352 (AKF50) | 640x352 | 1.4 |
+| 384x288 (AKF50) | 480x352 | **8.0** |
+
+`640x256` and `800x600@60`'s Acorn twins cost nothing at all: their borders sit
+in the porches, so the normalised window is the same one. **The priority is a
+best effort rather than a correct answer** -- it exists to make the engine choose
+a published raster over the envelope, and a row that is 1% out is still far
+closer than the envelope's guess.
 
 **Nor can the sync duty be sharpened enough.** 320x250 and 320x256 state the
 same 36 pixels of 512, as do 640x250 and 640x256 against 72 of 1024 -- identical
