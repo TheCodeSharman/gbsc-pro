@@ -432,6 +432,23 @@ CEA, DMT and AKF50 resolve to 20 distinct keys with polarity in the key and 20
 without it. The seven 15.6 kHz PAL AKF50 modes are all `+/+`, the five 525-line
 ones all `-/-`.
 
+**A MONITOR DEFINITION'S `sync_pol` IS A BITFIELD OVER A POSITIVE DEFAULT**, bit
+0 inverting hsync and bit 1 inverting vsync, and nothing in the format documents
+it. Read off the bench against `STATUS_SYNC_PROC_HSPOL` and `_VSPOL`, which
+report the pin rather than the path -- `SP_HS_INV_REG` is 1 on both `+` readings
+below and the status bit is unmoved by it:
+
+| `sync_pol` | mode | HSPOL / VSPOL | | against the standard |
+|---|---|---|---|---|
+| 0 | X320 Y256 C256 F50 | 1 / 1 | H+ V+ | -- |
+| 0 | X800 Y600 C256 F60 | 1 / 1 | H+ V+ | DMT states +/+ |
+| 2 | X640 Y352 C256 F60 | 1 / 0 | H+ V- | -- |
+| 3 | X640 Y480 C256 F60 | 0 / 0 | H- V- | DMT states -/- |
+
+**It does not follow the standard everywhere**, so it cannot be substituted for
+one: AKF60's 1024x768@60 states `sync_pol 0`, which is H+ V+, where DMT states
+H- V-.
+
 **Nor can the sync duty be sharpened enough.** 320x250 and 320x256 state the
 same 36 pixels of 512, as do 640x250 and 640x256 against 72 of 1024 -- identical
 in every quantity this chip can measure, differing only in active lines and in a
