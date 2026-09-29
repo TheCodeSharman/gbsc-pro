@@ -11,6 +11,20 @@ the overlay, so the analog-frame-to-panel mapping changed.
 **It is a RE-ACQUISITION LOCK, not a re-roll.** The sink establishes the window
 when it acquires, and holds it until it acquires again.
 
+**THE WINDOW DOES NOT TAKE ITS START FROM `VDS_DIS_HB_SP`, and that half is
+refuted.** Re-measured at `X320 Y256 C256 F50` into 1080p, the window sits at
+our unit 161.6 whether `VDS_DIS_HB_SP` is 143 or 200, across a source mode round
+trip and across a `PAD_SYNC_OUT_ENZ` toggle -- the toggle moves it about 11
+columns between two landings and onto neither value. What a reading of "the
+origin followed the blanking to 300.3" sees is our own aperture starting to
+paint; the black at the LEFT is what separates the two, and a window that
+followed would show none.
+[the-transmitted-window-is-latched-from-our-blanking.md](the-transmitted-window-is-latched-from-our-blanking.md).
+
+What is NOT refuted is this page's own measurement: the analog-frame-to-panel
+mapping does move across a lock, the overlay moves with it, and the two landings
+of the toggle above are the same effect at 11 columns.
+
 `OutputMode::solve()` carried the claim that the encoder "measures the pulse and
 finds active video where our blanking ends", and used it to justify stating both
 the sync pulse and the back porch as the standard's DURATIONS. Half of it is

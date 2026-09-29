@@ -1,12 +1,13 @@
 # The transmitted window opens later than our back porch, by a fixed count of samples
 
-**THE START IS SUPERSEDED. THE WIDTH IS NOT.** The delay below is not a constant
-of the chain: the window's start is LATCHED from `VDS_DIS_HB_SP` at link-up, so
-the four readings of ~20 are four samples of where the latch happened to land.
-Re-measured on one output mode across six rasters it runs 0.4 to 8.6 units, and
-a constant cannot express it because charging the aperture moves the blanking
-the latch follows. The width measurement here is confirmed by that sweep.
-[the-transmitted-window-is-latched-from-our-blanking.md](the-transmitted-window-is-latched-from-our-blanking.md).
+**THE START STANDS. Its supersession is itself refuted.** The delay was cut to 3
+on the reading that the window's start is latched from `VDS_DIS_HB_SP`, so the
+four readings of ~20 were four samples of where a latch landed. Re-measured with
+the black at the LEFT read as well, the window sits at our unit 161.6 whatever
+`VDS_DIS_HB_SP` is doing and across both kinds of re-lock, which is the delay
+this page measured.
+[the-transmitted-window-is-latched-from-our-blanking.md](the-transmitted-window-is-latched-from-our-blanking.md)
+carries what the confound was. The width was never in doubt.
 
 
 `OutputMode::solve()` used to place active video at `sync + back porch`, both

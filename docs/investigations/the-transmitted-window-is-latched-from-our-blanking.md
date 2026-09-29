@@ -1,4 +1,40 @@
-# The transmitted window's start is latched from our blanking, so it is not a constant to fit
+# The transmitted window's start is latched from our blanking -- REFUTED
+
+**THE HEADLINE IS REFUTED ON THE SCALING PATH.** Re-measured at
+`X320 Y256 C256 F50` into 1080p with the discriminator this page lacked, the
+window's start does NOT follow `VDS_DIS_HB_SP`:
+
+| | our `VDS_DIS_HB_SP` | first painted column | window, in our units |
+|---|---|---|---|
+| locked, no re-lock | 143, then 200 | 0, then 43 | 161.6 both |
+| after a source mode round trip | 143, then 200 | 0, then 43 | 161.6 both |
+| after a `PAD_SYNC_OUT_ENZ` toggle | 143, 200 | moves ~11 columns, span unchanged | not our blanking |
+
+**The discriminator is the black at the LEFT.** A window that followed our
+blanking to 200 paints our first column at column 0 and shows none; 43 columns
+of it say the window opens 38 units before our aperture and we are blanking into
+it. Every reading below was taken by walking a blanking register into the
+picture and extrapolating back to the frame's edge, which recovers the window's
+start only when nothing of ours is already blanking it -- so it reports the
+aperture whenever the aperture sits at or after the window.
+
+**The tables below are consistent with that reading.** They were taken with
+`TransmittedWindowDelayPx` at 20, which put the aperture at 158..160 on every
+raster in them -- on the window, not following it. What the pair of rows at
+raster 1914 and 1592 shows is the aperture landing 0.4 and 8.6 units from a
+window that was in the same place both times.
+
+**What is NOT explained, and wants re-taking with the left margin read**: the
+`+8 / +16 / -8` shift table further down, which reports `10 | 0` however the
+whole solve moves. Nothing here reproduces that, and it is the one measurement
+the refuted conclusion rested on that the confound above does not cover.
+
+The **width** column is untouched by any of this and is confirmed: it is the
+output mode's own active fraction, and `OutputMode::solve()` states it that way.
+
+`the-transmitted-window-opens-late.md` is the delay the start needs.
+
+---
 
 What the chain carries out of our raster is two quantities and they are not the
 same kind. Its **width** is the output mode's own active fraction, and that

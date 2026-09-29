@@ -351,14 +351,21 @@ emitted frame's first column on every one of them and its last column on none:
 | X640 Y480 C256 F60 | column 0 | off the panel | -- |
 
 Two of the three take their window from the DMT rows, so it is not a property of
-one tier. Crept out at `X320 Y256 C256 F50`, the right edge arrives at an extent
-of 696 capture units against the 688 the mode file's 320 display pixels give --
-and crept sideways instead, at 245 rather than 237, which puts the left edge off.
-So no single shift makes both flush and the window is about 8 units short.
+one tier.
 
-That is the size of the two origin terms already open above: 8 IF units is 16 ADC
-samples on this doubled source, where `InputFormatter::LineDoubleReset` is 160
-against the 147 this mode wants and the 175 the 60 Hz doubled modes want.
+**MOST OF IT WAS THE OUTPUT, and that half is fixed.** With
+`TransmittedWindowDelayPx` at 3 the emitted picture ran to column 1894 and the
+source's leftmost drawn pixel was clipped at column 0; restored to 20 it runs
+5..1904 with that pixel whole. The remaining right-hand margin is 15 columns of
+1920.
+
+What is left is the INPUT side, and it is the doubled path's origin: crept out
+at `X320 Y256 C256 F50`, the right edge arrives at an extent of 696 capture
+units against the 688 the mode file's 320 display pixels give -- and crept
+sideways instead, at 245 rather than 237, which puts the left edge off. So no
+single shift makes both flush and the window is about 8 units short. 8 IF units
+is 16 ADC samples on this doubled source, where `InputFormatter::LineDoubleReset`
+is 160 against the 147 this mode wants and the 175 the 60 Hz doubled modes want.
 
 ### The display window closes after the last written pixel, and the gap shows unwritten memory
 
@@ -1647,15 +1654,15 @@ and once from the left landing to a third in the middle, right edges 1444, 1504
 and 1545 photo columns. A drop that happens to land somewhere better reads as a
 fix, and the next one moves it again.
 
-**THE THREE LANDINGS ARE NOT A DRAW.** The encoder latches its window origin
-from our blanking at the moment it locks -- a toggle with `VDS_DIS_HB_SP` at 300
-put the origin at 300.3 -- so a landing is whatever the blanking was when the
-pad returned. `EncoderRelookMs` returns it 300 ms in, **while FrameSync is still
-steering**, so the value latched is one taken off a window that has not settled.
-That is the leading explanation for three landings at one nominal framing, and
-what would settle it is holding the pad away until the solve is quiet and
-counting the landings again.
-`investigations/the-shown-window-is-latched-at-lock.md`.
+**THE THREE LANDINGS ARE NOT A DRAW, AND THEY ARE NOT OUR BLANKING EITHER.**
+The explanation carried here -- that the encoder latches its window origin from
+`VDS_DIS_HB_SP`, so a landing is whatever the blanking was when the pad returned
+-- is **refuted**: measured at 320x256@50 into 1080p the window sits at our unit
+161.6 whether the register is 143 or 200, across a source mode round trip and
+across a pad toggle. The toggle does move the landing, about 11 columns between
+two positions with the span unchanged, so the landings are real; what they are
+not is a reading of our own blanking.
+`investigations/the-transmitted-window-is-latched-from-our-blanking.md`.
 
 **And a pass-through round trip is not a provoker either**: twenty-two of them
 across two builds moved the picture once, that once being the first round trip

@@ -522,20 +522,28 @@ what makes the encoder look guilty. Two frames either side of a mode change, an
 input change or a sync-type round trip differ by a displacement nobody wrote.
 Freeze, take both frames inside ONE acquisition, and the displacement is gone.
 
-**THAT DISPLACEMENT IS LATCHED, NOT RANDOM, AND "RE-ROLL" IS REFUTED.** The
-window the picture is shown through takes its origin from OUR blanking at the
-moment the link locks, and then holds it: a `PAD_SYNC_OUT_ENZ` toggle with
-`VDS_DIS_HB_SP` at 300 put the origin at **300.3**, following the register to a
-third of a unit. **IT IS A RE-ACQUISITION LOCK RATHER THAN A RE-ROLL**, and it
-is held DOWNSTREAM: across one such lock the STV9426 overlay -- generated on the
-board and keyed in at U13 -- itself moved 124 photo columns with the board
-frozen and no sync register touched, which nothing on the board can do. Two landings
-that differ are two different blanking values at lock, not two draws -- so a
-landing is reproducible, and treating one as unrepeatable before ruling out the
-blanking is what cost the sessions behind that page. **It can be pulled earlier
-but not pushed later**: the same toggle with the blanking LATER than what was
-latched changed nothing, because black inside the window it already holds is no
-cue. `docs/investigations/the-shown-window-is-latched-at-lock.md`.
+**THE DISPLACEMENT IS REAL, BUT "THE WINDOW FOLLOWS OUR BLANKING" IS REFUTED --
+DO NOT REACH FOR IT.** What holds is that the shown window is established when
+the link ACQUIRES and held until it acquires again, downstream of the board:
+across one such lock the STV9426 overlay -- generated on the board and keyed in
+at U13 -- moved 124 photo columns with the board frozen and no sync register
+touched, which nothing on the board can do.
+
+**What is refuted is that it takes its origin from `VDS_DIS_HB_SP`.** Measured
+at 320x256@50 into 1080p, the window sits at our unit 161.6 whether that
+register is 143 or 200, across a source mode round trip and across a
+`PAD_SYNC_OUT_ENZ` toggle; the toggle moves it about 11 columns between two
+landings and onto neither value. **The black at the LEFT is the discriminator**
+-- a window that followed would paint our first column at column 0 and show
+none, and a reading that only asks where the picture starts is reading our own
+aperture. That confound is what cut `OutputMode::TransmittedWindowDelayPx` from
+20 to 3 and left 25 of 1920 columns black at the right.
+`docs/investigations/the-transmitted-window-is-latched-from-our-blanking.md`,
+`docs/investigations/the-shown-window-is-latched-at-lock.md`.
+
+**Latching TO IMAGE CONTENT is a bypass behaviour and has never been shown on
+the scaling path**, which is the paragraph above: pan works every day, and a
+window locked to content could not survive it.
 
 **Bypass is NOT a way to get a picture out of an unknown source.** It passes the
 source's own timing to the encoder, so it only works where the DISPLAY can show
