@@ -372,6 +372,15 @@ reset is out of the path on both:
 | X800 Y600 C256 F60 | 294 | columns 4..11 | 296, flush at 298 |
 | X640 Y480 C256 F60 | 260 | columns 8..13 | -- |
 
+`X640 Y200 C256 F60` joins them at 23 columns, measured at its engine default
+once the AKF50 row placed it -- green at columns 23..31 and no right edge, with
+the vertical flush at the bottom and two rows at the top. **THE OFFSET IS NOT A
+CONSTANT IN ANY UNIT**: against `X320 Y256 C256 F50` it is 8.3 capture units
+where that is 2.2, 16.6 ADC samples against 4.4, 7.7 source pixels against 1.0
+and 481 ns against 125. Both are doubled 15.6 kHz modes on the same input, and
+what differs between them is the pixel clock and the border the mode file states
+-- 16 pixels against 44.
+
 So the picture sits 4..8 emitted columns to the right of where it should, on
 every mode, and its far end falls off by about as much. **What that is in is
 undecided**: 4..8 columns is 2.2 / 2.3 / 4.8 capture units and 5.2 / 2.9 / 6.9
