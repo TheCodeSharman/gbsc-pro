@@ -53,6 +53,25 @@ sources untouched -- the RISC PC at 50.475 Hz and the Wii's 480p at 59.8 Hz. The
 monitor definition's 70 Hz and faster DMT modes now run 1024p, and at 70 Hz that
 is a WIDER raster than 1080p gave, 1447 against 1371.
 
+### A mode change into a falling-back resolution installs one extra divider
+
+`VideoPath::dividerCeilingForOutput()` solves the raster for the mode currently
+held, and a mode above the encoder's ceiling is refused -- so the ceiling comes
+back 0, which `SamplingClock::recommendedDivider()` reads as no bound at all.
+The pass lands on `PLLAD_MD` 2046 before the fallback moves the mode, and the
+next pass lands on 1222.
+
+Measured on 800x600@60 -> 640x480@75. **It is harmless now** and costs a second
+ADC PLL latch per such mode change, but it is what put a solve on a 2047-unit
+line and so fired
+`investigations/the-raster-bound-is-stored-as-a-proportion.md`.
+
+The mode that will run is `OutputMode::transmittableFor(mode_, rate)`, which the
+ceiling could ask for. Whether it should is a question about who owns that
+choice -- `VideoSourceAcquisition::resolution_` holds it today, and asking the
+same predicate in a second place is the shape that has caused trouble here
+before.
+
 ### hdmi_capture.borders() overstates the picture on the bench RISC PC
 
 **An isolated dim blob at columns 1880..1899, peak luma 44.8 with dead black

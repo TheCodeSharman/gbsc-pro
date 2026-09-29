@@ -1,5 +1,15 @@
 # VESA modes are clipped by the default capture window
 
+**THE DMT TABLE LANDED AND THIS IS THE RECORD OF WHY, NOT AN OPEN DEFECT.**
+`CaptureWindow::place()` takes the mode's published active region wherever
+`SourceTiming` has one, and it is measured right to four decimals: 800x600@60
+lands on 0.2048/0.7576 against DMT's 20.5%/75.8%, 800x600@56 on 0.1951/0.7810
+against 19.5%/78.1%, 640x480@75 on 0.2191/0.7621 against 21.9%/76.2%. The
+centred default below is what it replaced.
+
+A mode still coming up clipped is not this: see
+[the-raster-bound-is-stored-as-a-proportion.md](the-raster-bound-is-stored-as-a-proportion.md).
+
 640x480@60 loses about 8% of its picture off the right-hand edge on a fresh
 source. The solve is not wrong — it is self-consistent to two pixels — and the
 capture window is not measured from the picture, because nothing can measure it.

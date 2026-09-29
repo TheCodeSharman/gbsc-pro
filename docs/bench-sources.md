@@ -101,6 +101,21 @@ ModeServ, TCP 6502, so a session can change it without anyone at the bench --
 `CLAUDE.md` has the commands and `RiscPc/tools/video-source/README.md` the
 detail.
 
+**`ANIM OFF` STOPS THE PATTERNS ANIMATING**, which retires the trap that a still
+of a flashing feature proves nothing: `PM5544` flips its corner squares and
+`CARD` flashes its border, and either read as a crop when caught in the wrong
+phase. Turn it off before measuring an edge and a single frame is evidence again.
+
+**`PATTERN` WITH NO ARGUMENT REDRAWS THE DEFAULT CARD RATHER THAN REPORTING THE
+CURRENT ONE**, so asking what is on screen changes what is on screen. `MODE`
+repaints as well. Re-issue `PATTERN CARD` after either, and after any mode
+change, or a measurement is taken against a card nobody selected.
+
+**`CARD` is what an edge measurement wants**: it carries a one-pixel green border
+flush to all four edges of the capturable region, so "is anything clipped" is a
+yes/no on one frame rather than a margin to compute. A green line on all four
+sides means nothing was lost.
+
 What it is the only source for: **arbitrary rasters**. A monitor definition can
 program modes no enumeration contains, which is the whole reason the input-side
 concept of a video standard does not survive here.
