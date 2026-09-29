@@ -178,6 +178,53 @@ the sync route, not the video standard and not RGBHV. A separate-sync source
 leaves the separator with nothing to extract, so the IF never completes a
 vertical measurement while the sync processor counts happily off the VSync pin.
 
+## `STATUS_INT_SOG_SW` MEANS SOMETHING ONLY ON THE CSYNC PATH
+
+The bit reports that the sync separator switched, and the section above is why
+that is a statement about one sync type: the separator is in the path when
+`SP_SOG_MODE` is 1, which is the composite-sync configuration. A separate-sync
+source does not go through one, so the bit cannot be reporting that source
+moving -- and there it **chatters**.
+
+Measured on `vga`, the RISC PC at 320x256@50, with the source standing still:
+
+| | |
+|---|---|
+| `STATUS_INT_SOG_SW` | **set in 9 of 30 reads over twelve seconds** |
+| `STATUS_SYNC_PROC_VTOTAL` | 311, still |
+| `STATUS_SYNC_PROC_HTOTAL` | 2200, = `PLLAD_MD`, still |
+| `SP_SOG_MODE` | 0 |
+| `ADC_SOGCTRL` | 12, still |
+| `STATUS_SYNC_PROC_VSACT` | 1 |
+
+Every set armed a full re-solve, so the console looped about twice a second:
+
+```
+source moved: interrupt (311 lines, solved 311)
+sampling: 311 lines x 50.47 Hz -> line rate 15748
+sampling: rate 15748 doubled 1 -> divider 2200
+rate match: source 50474 mHz, output 50475 mHz, clock 108000000 -> 107998072
+source moved: interrupt (311 lines, solved 311)
+```
+
+Each pass re-picked the divider and re-steered the Si5351 for a source that had
+not moved. `VideoSourceAcquisition::keepSourceComing()` gates the arm on
+`SyncMeasurement::isCsync()`, which is held state rather than a register read --
+`STATUS_SYNC_PROC_VSACT` could not answer it, for the reason this page opens
+with. Measured after: **zero `source moved` lines of any kind in 70 seconds**,
+source acquired and holding.
+
+**THE BIT IS STILL TAKEN EVERY PASS.** It is latched, so one left unacknowledged
+reports the same disturbance on every later poll, and the pre-emptive separator
+adjustment beside it wants the same event. A gate written as a short circuit --
+`isCsync() && takeSourceDisturbed()` -- would strand the latch set for ever.
+
+**IT WAS NEVER THE ARM FOR THE CASE IT WAS ADDED FOR.** The arm exists to catch
+a rate change at an unchanged line count, which `sourceMoved()` cannot see.
+Measured at 240x352, 449 lines in both 59.96 Hz and 70.08 Hz -- a line rate of
+26923 against 31428 -- the bit did **not** set, and `rateMoved()` is what
+noticed. So it missed the case it exists for and fired when nothing happened.
+
 ## What is *not* being claimed
 
 - **This is not the intermittent shear glitch.** That was closed as
