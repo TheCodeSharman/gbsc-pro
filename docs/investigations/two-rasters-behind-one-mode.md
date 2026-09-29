@@ -113,8 +113,3 @@ depth and not a numbered mode requested from BASIC. A resident module hooking
 the mode system fits every negative, and reaching the raster on demand needs
 whatever claims the screen.
 
-**The first acquisition after a boot holds a rate the source is not running**, by
-up to 1.1 per thousand in either direction, where every later acquisition is
-exact. It is inside one identity and so changes no key, but it is not harmless:
-with the frame time lock enabled it becomes a tear that crawls.
-`../known-issues.md`.
