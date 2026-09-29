@@ -65,10 +65,21 @@ private:
         uint16_t vsyncLines, activeStartLine, activeLines;
     };
 
-    static const Raster Published[];
-    static const uint16_t PublishedCount;
+    // One array per authority, searched in that order: a source matching rows
+    // in two of them is emitting the STANDARD, and the mode file is one
+    // machine's description of it. Expressed as separate arrays rather than as
+    // where a row sits in one, so a row added in the wrong place cannot change
+    // which authority answers.
+    static const Raster Cea[];
+    static const uint16_t CeaCount;
+    static const Raster Dmt[];
+    static const uint16_t DmtCount;
+    static const Raster Acorn[];
+    static const uint16_t AcornCount;
 
     static const Raster *lookUp(const SourceKey &measured);
+    static const Raster *lookUpIn(const Raster *rasters, uint16_t count,
+                                  const SourceKey &measured);
 
     uint16_t lineFor(uint16_t statedLine, uint16_t frameLines) const;
 

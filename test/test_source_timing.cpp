@@ -165,3 +165,31 @@ TEST_CASE("the Acorn mode's vertical picture starts inside its top border")
     CHECK_NEAR(akf.activeStart(AxisVertical), 36.0f / 312.0f, 0.0005f);
     CHECK_NEAR(akf.activeExtent(AxisVertical), 256.0f / 312.0f, 0.0005f);
 }
+
+TEST_CASE("an Acorn mode no standard states is published from the mode file")
+{
+    // AKF50's 640x200@60, 262 lines at 15.7 kHz: nothing in DMT or CEA runs
+    // 262 lines, so the mode file is the only thing that can say where its
+    // picture sits inside the borders.
+    SourceTiming akf = SourceTiming::matching(
+        SourceKey(261, 60.0f, 72.0f / 1020.0f, SourceKey::Negative, SourceKey::Negative));
+
+    REQUIRE(akf.published());
+    CHECK_NEAR(akf.activeStart(AxisHorizontal), 234.0f / 1020.0f, 0.0005f);
+    CHECK_NEAR(akf.activeExtent(AxisHorizontal), 640.0f / 1020.0f, 0.0005f);
+    CHECK_NEAR(akf.activeExtent(AxisVertical), 200.0f / 262.0f, 0.0005f);
+}
+
+TEST_CASE("a standard's raster wins over a mode file describing the same one")
+{
+    // AKF50 states 640x480@60 as well, spending 94 pixels of 800 on sync where
+    // DMT spends 96 -- a quarter of a point apart, which is inside what the
+    // sync width can be measured to. A source running either reads as both, and
+    // what it is EMITTING is the standard: the mode file is one machine's
+    // description of it, and its borders are placed differently.
+    SourceTiming akf = SourceTiming::matching(
+        SourceKey(524, 60.0f, 94.0f / 800.0f, SourceKey::Negative, SourceKey::Negative));
+
+    REQUIRE(akf.published());
+    CHECK_NEAR(akf.activeStart(AxisHorizontal), 144.0f / 800.0f, 0.0005f);
+}
