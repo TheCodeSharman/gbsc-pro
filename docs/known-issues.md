@@ -1049,6 +1049,29 @@ detail to magnify rather than the part failing. So the ceiling is the
 picture-quality judgement the entry says it is, and where it sits is the user's
 to find by zooming. How far past 4.25x it stays acceptable is unmeasured.
 
+**THE MECHANISM IS NOT ESTABLISHED, AND THE WRITE FLOOR IS A CORRELATE.** What
+is known is that the horizontal scaler corrupts the picture below about
+`VDS_HSCALE` 334 and that no fix was found. The centring account -- that the
+solve can no longer place the picture and pins the memory window at the write
+floor, and that the scaler picks wrong samples there -- states a causal chain
+the measurements do not carry; both sources entered the floor at the same
+`VDS_HSCALE`, which is where the correlation comes from. Do not quote it as the
+reason.
+
+**IT IS MEASURED ON `VDS_HSCALE` AND APPLIED TO BOTH AXES.** Every reading
+behind 342 is horizontal -- the register, the two rasters, and the artefact
+itself, which is bars splitting across a line. `VDS_VSCALE` is a different
+register in a different stage and is untested at any magnification. Three modes
+in the AKF50 set need more than 2.994x vertically and are clamped by a number no
+vertical measurement supports: `X384 Y288 F70` and `X480 Y352 F70` at 3.75x,
+`X240 Y352 F70` at 3.07x.
+
+**Whether the onset depends on the source is open.** The floor was found by a
+zoom sweep, where the capture shrinks as the magnification rises, so the two
+move together and no reading separates them. The AKF50 set spans captures of 688
+to 1228 IF units at magnifications of 1.21x to 2.43x, which is the pairing the
+sweep never produced.
+
 **The scale-clamped zone is no longer reachable by the control.** It was clean
 only because 1024/256 is exact, and 1024/342 is 2.994. That costs nothing,
 because `Axis::minimumCapture()` stops the zoom where the scale REACHES its
