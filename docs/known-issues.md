@@ -92,26 +92,97 @@ source, at a different divider, or splits into two runs is unmeasured, and a
 profile with two comparable clean runs is the case the new rule has no evidence
 for.
 
+**AND THE NEW RULE HAS SINCE LANDED INSIDE THE BAND.** A solve on that same
+source, divider and input chose `PA_SP` **10** -- the first phase of the 10..16
+band the rule exists to avoid -- with `STATUS_SYNC_PROC_HTOTAL` reading 2199
+twice and 2201 once in 15 samples against a divider of 2200, and the shimmer on
+the picture. Writing 29 by hand restores 2200 in 25 of 25. So the five
+consecutive solves that chose 29 or 30 are not the whole behaviour, and what
+decides a bad landing is unmeasured. **The count dither is the cheap check**:
+sample `STATUS_SYNC_PROC_HTOTAL` against `PLLAD_MD` twenty times and a good
+phase reads the divider back every time.
+
+It also confounds anything else being judged on the picture at the same time, so
+establish the phase is good before collecting verdicts on another artefact.
+
 **A second artefact on the same bench is NOT this one and must not be merged
 with it.** The entry below carries it.
 
-### A period-2 sub-pixel oscillation, which is not the shimmer and not the phase
+### CLOSED: the judder in moving content is the bench television, not the board
 
-The picture moves right by a fraction of a pixel in one frame and back left in
-the next. Present on 480p and 1080p alike with the same source, so it does not
-follow the output mode, and intermittent across acquisitions the way the shimmer
-was.
+A flicker between white and black at the edge of a sharp contrast change, in
+MOVING content only. **Swapping the display on the capture dongle's loop-out
+settles it**, with the board emitting a byte-identical signal on every roll:
 
-**It is not a displacement of the whole picture.** A static, detailed band of
-the emitted frame tracked over 120 frames gives position sd 0.011 px, and the
-component at the output's own half-frame-rate is 0.0025 px. **That bin is at
-2.38 CAPTURED frames, not 2**, because the dongle delivers about 60 fps against
-a 50.47 Hz output -- a test written for period 2 measures the wrong bin and
-reports nothing. So whatever moves is either localised to particular features or
-confined to moving content, and a cross-correlation over a band averages it
-away.
+| sink on the loop-out | re-acquisitions | juddering |
+|---|---|---|
+| the bench television | 6 | **6** |
+| a second display | 5 | **0** |
 
-Ruled out, each with the artefact reported present:
+The encoder's link partner is the dongle rather than the display, so the
+MS9288A is held constant along with the raster, both scales, the divider and the
+sampling phase -- `VDS_HSYNC_RST` 2139, `VDS_VSYNC_RST` 999, `VDS_HSCALE` 475,
+`PLLAD_MD` 2200, `PA_SP` 29 and `STATUS_SYNC_PROC_HTOTAL` 2200 read back on all
+eleven.
+
+**DO NOT RE-OPEN THIS AGAINST THE BOARD WITHOUT SWAPPING THE SINK FIRST.** It
+cost a session, and every upstream measurement is identical across the symptom:
+all 608 config registers, the frame time lock's converged phase, clock and
+`pin`, and four independent measures over raw captured frames.
+`investigations/the-judder-follows-the-display-not-the-signal.md` carries them,
+and the refutations of `VDS_HSCALE`, the crossover phase, the clock steering, a
+frame-rate beat, a torn frame and a per-column displacement.
+
+**What stays useful is the instrument.** `PAD_SYNC_OUT_ENZ` held away two
+seconds and restored re-acquires the link with **every config register
+byte-identical either side**, so it isolates a re-acquisition from everything
+else a mode change does, at about twenty seconds a roll. Any artefact that
+changes state across it is decided at acquisition and is not in a register.
+
+**The capture is structurally blind to output TIMING**, which is why it could
+not settle this. A set on the loop-out sees the emitted signal passed through,
+while the USB capture is re-clocked to the dongle's own ~59 fps against a
+50.47 Hz output -- so frame content survives and frame timing does not.
+
+**It does not say the emitted signal is beyond criticism.** A set that judders
+where another does not may be reacting to the 50.475 Hz field rate, the non-CEA
+raster, or timing the capture cannot measure. It says only that no register,
+solve or firmware change is implicated, because the board emits the same thing
+in both verdicts.
+
+**THE SET'S OWN "PC MODE" REDUCES IT**, which places some of the artefact in the
+set's processing rather than in what it receives. That is the first thing to try
+on any set that shows this, and it costs nothing. It does not remove it.
+
+**WHY THE MODES DIFFER IS NOT ESTABLISHED, AND THE OBVIOUS ANSWER IS REFUTED.**
+`OutputMode` states CEA-861 for 1080p/720p/480p/576p and VESA DMT for
+1024p/960p, and on this set the CEA modes are clean three for three while both
+DMT modes judder -- 480p being the exception and independently broken, its
+display window reading `VDS_DIS_VB_SP` 36 .. `VDS_DIS_VB_ST` 37, one line. But a
+set that interpolates a broadcast input and leaves a PC one alone would judder
+on exactly the modes that are clean here, so **the correlation runs against the
+mechanism that would explain it**. The same six points split equally well on
+output line rate -- 53.8 and 50.5 kHz juddering between 56.8, 37.9 and 31.6 kHz
+clean -- and six points cannot separate the two readings. **1024p and 960p
+cannot be moved to CEA** in any case: it does not define 1280x1024 or 1280x960.
+
+**THE RESIDUAL IS THE FIELD RATE, AND IT IS A TRADE RATHER THAN A DEFECT.** PC
+mode leaves it a little jerky still. The output follows the source at
+**50.475 Hz** rather than 50.000, which is the frame time lock doing its job, so
+a set whose panel runs at 50 or 60 Hz has to rate-convert and a 0.475 Hz offset
+repeats or drops a frame about every two seconds. Emitting exactly 50.000 Hz
+would let such a set show it 1:1 and would move the hitch onto the board
+instead, because the source is not at 50.000 either. **Do not reach for that as
+a fix** without measuring which end carries it better; it is the trade the lock
+already decides.
+
+So the practical configuration on this set is **1080p with PC mode on**. Note
+the artefact has been seen at 1080p once and not reproduced since, and **the
+odds per mode are unmeasured** -- the pad toggle is cheap enough to count twenty
+rolls a mode and nothing has run that.
+
+The following were ruled out while the board was still suspected, each with the
+artefact reported present:
 
 - **`PA_ADC`, refuted BLIND.** Presented at 0 and at 16 in an order drawn at
   random and not disclosed, with the artefact reported present at both. Scored
@@ -136,9 +207,24 @@ to back. That it reaches the hardware is not an argument but a measurement:
 2201 twice, and the bench calls the picture clean at the first and clearly
 shimmering at the second.
 
-What would separate the remaining candidates is a per-column temporal measure
-rather than a displacement -- which columns change between frames, and whether
-they are the same columns each time.
+A per-column temporal measure has since been taken and separates nothing: the
+displacement is uniform across twelve column strips and across fourteen row
+bands, so the picture moves as a whole where it moves at all.
+
+**A SECOND DISPLAY IS THE NEXT INSTRUMENT**, because the artefact is now known
+to be invisible to the board and to the capture, which leaves the encoder and
+the television, and only a second sink separates them. Nothing established
+licenses naming either -- reaching for the encoder is the standing wrong answer
+on the scaling path, and a poke cannot test what is decided at acquisition.
+
+**The odds are unmeasured.** The pad toggle is cheap enough to repeat twenty
+times and count, which says whether a re-acquisition is a coin flip or biased
+per mode. `VideoPath` already sets `encoderMoved_` on any solve that moves the
+horizontal total, the vertical total or the field rate, and
+`VideoSourceAcquisition` holds the pad away for `EncoderRelookMs` -- so the
+engine re-rolls this on every such solve already, with nothing able to judge the
+outcome. A "re-roll until clean" recovery needs an on-board detector, and no
+measurement here is one.
 
 ### A black frame with one green line at the top, for several seconds while detecting
 
