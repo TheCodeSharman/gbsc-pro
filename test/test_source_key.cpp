@@ -68,15 +68,14 @@ TEST_CASE("the rate is bucketed wider than it jitters")
     CHECK(SourceKey(311, 50.02f, 0.0f, SourceKey::Negative, SourceKey::Negative) == SourceKey(311, 50.13f, 0.0f, SourceKey::Negative, SourceKey::Negative));
 }
 
-TEST_CASE("readings either side of a whole hertz are still the same source")
+TEST_CASE("readings either side of a quantisation step are still the same source")
 {
-    // The rounding puts these in different hertz -- 60 and 61 -- and the
-    // tolerance is what keeps them one source, which is the reason it is wider
-    // than the rounding. Measured at 800x600@60: one unchanged source settles
-    // at 60.38 Hz after one mode change and 60.72 after the next. Were identity
-    // decided by the rounded value, the stored framing would swap with it.
-    CHECK(SourceKey(627, 60.38f, 0.0f, SourceKey::Negative, SourceKey::Negative) == SourceKey(627, 60.72f, 0.0f, SourceKey::Negative, SourceKey::Negative));
-    CHECK(SourceKey(627, 60.38f, 0.0f, SourceKey::Negative, SourceKey::Negative).rateHz() != SourceKey(627, 60.72f, 0.0f, SourceKey::Negative, SourceKey::Negative).rateHz());
+    // The tolerance is what keeps a reading that crossed a rounding boundary on
+    // its own entry, so it has to be wider than one step: a step is 0.2 per
+    // thousand at 50 Hz and 0.17 at 60. Margin rather than necessity -- the
+    // reading repeats to the digit across 24 acquisitions.
+    CHECK(SourceKey(627, 60.38f, 0.0f, SourceKey::Negative, SourceKey::Negative) == SourceKey(627, 60.39f, 0.0f, SourceKey::Negative, SourceKey::Negative));
+    CHECK(SourceKey(627, 60.38f, 0.0f, SourceKey::Negative, SourceKey::Negative).rateHz() != SourceKey(627, 60.39f, 0.0f, SourceKey::Negative, SourceKey::Negative).rateHz());
 }
 
 TEST_CASE("the key is quantised as finely as the instrument is repeatable")
@@ -96,15 +95,27 @@ TEST_CASE("the key is quantised as finely as the instrument is repeatable")
     CHECK(SourceKey(524, 59.94f, 0.0f, SourceKey::Negative, SourceKey::Negative).rateHz() == doctest::Approx(59.94f));
 }
 
-TEST_CASE("a rate change too small to be movement does not change identity")
+TEST_CASE("a rate change too small to arm a solve does not change identity")
 {
-    // ratesAgree() calls two rates within HeldRateTolerancePerThousand the same
-    // measurement, so a change inside it arms no mode change. If the key moved
-    // there, solveForSource() would swap the stored framing with no re-solve
-    // behind it -- a silent reframing on drift.
-    //
-    // 60.0 against 62.5 is 4.2%, inside the 5% that trigger allows.
-    CHECK(SourceKey(627, 60.0f, 0.0f, SourceKey::Negative, SourceKey::Negative) == SourceKey(627, 62.5f, 0.0f, SourceKey::Negative, SourceKey::Negative));
+    // A key that moved with no solve behind it swaps the stored framing with
+    // nothing recomputing the windows. The arm is RateCorroborationPerThousand,
+    // which a static_assert holds at or below identity, so every rate change
+    // that moves the key arms the solve that follows it. 60.00 against 60.12 is
+    // 2 per thousand, which is the arm and so must not move the key.
+    CHECK(SourceKey(627, 60.0f, 0.0f, SourceKey::Negative, SourceKey::Negative) == SourceKey(627, 60.12f, 0.0f, SourceKey::Negative, SourceKey::Negative));
+}
+
+// A RISC PC emits two different rasters behind one 320x256@50, and the engine
+// has to keep a framing for each. Measured on `vga`, nothing moving but the
+// source: 508 x 312 with a 38-wide sync reads 50.474 Hz at a sync width of
+// 0.0750, and the monitor definition's 512 x 312 with a 36-wide sync reads
+// 50.0801 Hz at 0.07091. The rates sit 7.87 per thousand apart and the widths
+// 0.0041, against a reading whose spread across 24 acquisitions on four modes,
+// two inputs and both sync types is 0.00 per thousand and 0.00000.
+TEST_CASE("two rasters behind one mode are two sources")
+{
+    CHECK(SourceKey(311, 50.474f, 0.07500f, SourceKey::Positive, SourceKey::Positive)
+          != SourceKey(311, 50.0801f, 0.07091f, SourceKey::Positive, SourceKey::Positive));
 }
 
 TEST_CASE("adjacent standards stay apart")

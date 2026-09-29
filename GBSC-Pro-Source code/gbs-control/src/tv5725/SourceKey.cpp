@@ -2,16 +2,9 @@
 
 #include <math.h>
 
-#include "SourceMeasurement.h"
 #include "VideoSignal.h"
 
 namespace Tv5725 {
-
-const uint16_t SourceIdentityPerThousand = 50;
-
-// Identity may be wider than movement but never narrower. See SourceKey.h.
-static_assert(SourceIdentityPerThousand >= SourceMeasurement::RateFollowsCountPerThousand,
-              "a rate change that moves the key must also arm a mode change");
 
 namespace {
 

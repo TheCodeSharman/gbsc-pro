@@ -115,6 +115,11 @@ static void seedPassThroughSource()
 // the engine chooses, which no source does.
 static const float BenchSyncWidth = 181.0f / 2250.0f;
 
+// And what a KEY carries for it: the share above less the width the inverted
+// path adds, which is what the sync processor reports on a high-active source.
+static const float BenchKeySyncWidth =
+    BenchSyncWidth - (float)SyncProcessor::InvertedPulseWidthSamples / 2250.0f;
+
 // The bench source's sync polarities, the rest of what the key carries beyond
 // the count and the rate. `sync_pol:0` in the monitor definition, which reads 1
 // in both bits on separate sync.
@@ -1093,7 +1098,7 @@ TEST_CASE("a framing restored from the file is applied when its source arrives")
     VideoSourceAcquisition acquisition(sampling, engine);
 
     const PanAndZoom stored(0.10f, 0.60f, 0.15f, 0.55f);
-    REQUIRE(framings.remember(SourceKey(311, 50.08f, BenchSyncWidth, BenchPolarity, BenchPolarity), stored));
+    REQUIRE(framings.remember(SourceKey(311, 50.08f, BenchKeySyncWidth, BenchPolarity, BenchPolarity), stored));
 
     engine.setOutputMode(benchMode());
     engine.inputTimingsChanged(4);
@@ -1129,7 +1134,7 @@ TEST_CASE("a press stores the framing without leaving the source")
     frameAt(engine, 100, 120, 40, -15);
 
     PanAndZoom stored;
-    REQUIRE(framings.find(SourceKey(311, 50.08f, BenchSyncWidth, BenchPolarity, BenchPolarity), &stored));
+    REQUIRE(framings.find(SourceKey(311, 50.08f, BenchKeySyncWidth, BenchPolarity, BenchPolarity), &stored));
     CHECK(stored == engine.framing());
 }
 
@@ -1505,9 +1510,7 @@ TEST_CASE("the hsync duty is counted against the divider the source is left on")
     // divider and the share does not. The bench source is high-active, so the
     // share is what the inverted path reported less the width it adds.
     CHECK(sampling.hsync().syncDuty()
-          == doctest::Approx(BenchSyncWidth
-                             - SyncProcessor::InvertedPulseWidthSamples / 2250.0f)
-                 .epsilon(0.001));
+          == doctest::Approx(BenchKeySyncWidth).epsilon(0.001));
 }
 
 TEST_CASE("an output change re-derives the divider even where the doubling holds")
@@ -1775,7 +1778,7 @@ TEST_CASE("a framing applied whole lands as the window it describes")
 
     SUBCASE("and the source is left framed that way for next time") {
         PanAndZoom remembered;
-        REQUIRE(framings.find(SourceKey(311, 50.08f, BenchSyncWidth, BenchPolarity, BenchPolarity), &remembered));
+        REQUIRE(framings.find(SourceKey(311, 50.08f, BenchKeySyncWidth, BenchPolarity, BenchPolarity), &remembered));
         CHECK(remembered == engine.framing());
     }
 }
@@ -1796,7 +1799,7 @@ TEST_CASE("the engine says which source the framing it holds is against")
     engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(acquisition));
 
-    CHECK(engine.framedKey() == SourceKey(311, 50.08f, BenchSyncWidth, BenchPolarity, BenchPolarity));
+    CHECK(engine.framedKey() == SourceKey(311, 50.08f, BenchKeySyncWidth, BenchPolarity, BenchPolarity));
 }
 
 
@@ -2162,7 +2165,7 @@ TEST_CASE("a rate that moves without changing the source leaves the divider alon
     // Inside SourceIdentityPerThousand and outside what the divider quantises to,
     // so the same source asks for a different divider -- which is the whole of
     // the limit cycle's step.
-    g_fieldRate = 60.0f * (1.0f + 4.0f / 1000.0f);
+    g_fieldRate = 60.0f * (1.0f + 2.5f / 1000.0f);
     REQUIRE(measureUntilTaken(sampling));
     REQUIRE(sampling.lineRateHz() != 0);
     REQUIRE(SamplingClock::recommendedDivider(sampling.lineRateHz(), 4,

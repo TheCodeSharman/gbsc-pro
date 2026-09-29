@@ -24,15 +24,20 @@ public:
     // ../../../docs/investigations/the-rate-tolerance-answered-five-questions.md
     // What the corroborating reading has to differ by before the held rate is
     // treated as the source's no longer. Sized by THE INSTRUMENT, not by source
-    // identity: a settled reading spreads 0.000% over 250 samples and the rate
-    // is quantised to hundredths of a hertz, 0.2 per mille at 50 Hz, while a
-    // reading taken mid-change sits in a 1.3% band. This sits in the gap.
+    // identity: a settled reading repeats to the digit across 24 acquisitions and
+    // the rate is quantised to hundredths of a hertz, 0.2 per mille at 50 Hz,
+    // while a reading taken mid-change sits in a 1.3% band. This sits in the gap.
     //
-    // The gross-error net acceptance uses is 50, which cannot see any of that
-    // band -- and it must stay wide, because a source may change rate at a
-    // constant count and a RISC PC does.
+    // **AND AT OR BELOW Tv5725::SourceIdentityPerThousand**, asserted in the .cpp:
+    // this is the arm, so a rate change big enough to move the key has to be big
+    // enough to arm the solve that follows it.
+    //
+    // The gross-error net acceptance uses is RateFollowsCountPerThousand, which
+    // cannot see any of that band -- and it must stay wide, because a source may
+    // change rate at a constant count and a RISC PC does, measured at 7.87 per
+    // thousand behind one 320x256@50.
     // ../../../docs/investigations/the-rate-tolerance-answered-five-questions.md
-    static const uint16_t RateCorroborationPerThousand = 5;
+    static const uint16_t RateCorroborationPerThousand = 2;
 
     // How long a settled source goes before the held rate is checked against a
     // fresh reading. A vsync spin every few hundred passes, against a fault

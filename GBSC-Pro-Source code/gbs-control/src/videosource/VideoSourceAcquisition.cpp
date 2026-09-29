@@ -11,6 +11,7 @@
 #include "../tv5725/HdBypass.h"
 #include "../tv5725/OutputMode.h"
 #include "../tv5725/RgbhvOutput.h"
+#include "../tv5725/SourceKey.h"
 #include "../tv5725/SyncMeasurement.h"
 #include "../tv5725/SyncOnGreen.h"
 #include "../tv5725/VideoRoute.h"
@@ -469,6 +470,13 @@ bool VideoSourceAcquisition::sourceMoved()
 // decision: a rail, a wrong-and-steady value or a bias all compare equal to
 // themselves, and anything that does move is confirmed by the field rate before
 // it arms anything.
+// Every key move must have a solve behind it, or the stored framing swaps on
+// drift with nothing recomputing the windows. The arm is this corroboration and
+// the key is Tv5725::SourceKey, so the arm has to be at least as sensitive.
+static_assert(VideoSourceAcquisition::RateCorroborationPerThousand
+                  <= Tv5725::SourceIdentityPerThousand,
+              "a rate change that moves the key must also arm a solve");
+
 bool VideoSourceAcquisition::rateMoved()
 {
     // The solve could not settle a reading to compare against, so this is the

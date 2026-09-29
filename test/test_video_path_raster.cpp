@@ -263,11 +263,12 @@ TEST_CASE("an unmeasurable line rate is retried, not settled for")
 
 TEST_CASE("the raster follows the key, not the reading behind it")
 {
-    // Measured on the bench across four mode changes of one unchanged 800x600
-    // source: it settles at 60.38 Hz after one and 60.72 after the next, and
-    // the raster moves 11 px with it. The source did not move, the reading did.
-    // The frame time lock closes on frame TIME continuously, so a raster in the
-    // right ballpark is steered exact -- one that jumps between solves is not.
+    // Two readings inside SourceIdentityPerThousand are one source, and the
+    // raster is generated from the key so that it is solved once for it. A
+    // raster tracking the reading instead moves several pixels between solves of
+    // a source that never moved; the frame time lock closes on frame TIME
+    // continuously, so a raster in the right ballpark is steered exact and one
+    // that jumps between solves is not.
     SettledEngine settled;
     setSourceLines(627);
     g_fieldRate = 60.38f;
@@ -277,7 +278,7 @@ TEST_CASE("the raster follows the key, not the reading behind it")
     REQUIRE(pollUntilSolved(settled.acquisition));
     const uint16_t first = horizontalTotalWritten();
 
-    g_fieldRate = 60.72f;
+    g_fieldRate = 60.53f;          // 2.5 per thousand, inside one identity
     settled.engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(settled.acquisition));
 
