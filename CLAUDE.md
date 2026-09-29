@@ -136,7 +136,8 @@ command per connection -- the close is the end of the reply. It lives in the
 
 ```sh
 printf 'MODE X320 Y256 C256 F50\n' | nc 192.168.88.10 6502   # the bench mode
-printf 'PATTERN PM5544\n'          | nc 192.168.88.10 6502   # redraw, or pick the plainer CARD
+printf 'PATTERN CARD\n'            | nc 192.168.88.10 6502   # green border on all four edges
+printf 'ANIM OFF\n'                | nc 192.168.88.10 6502   # stop the flashing, so a still is evidence
 printf 'MODES\n'                   | nc 192.168.88.10 6502   # what this monitor definition allows
 printf 'SYNC 1\n'                  | nc 192.168.88.10 6502   # 0 separate, 1 composite, 3 auto
 printf 'PING\n'                    | nc 192.168.88.10 6502   # OK ModeServ 1
@@ -1459,14 +1460,23 @@ naive edge measurement: **the engine always scales the capture to fill the
 raster**, so there is never blanking above or beside the picture to measure
 against. That is a property of the solve. Count a feature of the SOURCE.
 
-**EVERY PATTERN ANIMATES, SO A STILL OF A FLASHING FEATURE PROVES NOTHING.**
-There is no static card to fall back on: `PM5544` flips its four corner squares
-yellow/white twice a second (`PROCanimcorners`), and `CARD` flashes its border
-yellow. A feature caught in one phase and absent in the other reads exactly like
-a crop, and has been reported as one. Measure against something that does not
-animate -- the grid, the colour blocks, the frequency wedge -- or record a clip
-and compare frames in the same phase. `PatLib.bas` in the `RiscPc` repo is what
-says which is which.
+**THE PATTERNS ANIMATE BY DEFAULT, AND `ANIM OFF` STOPS THEM.** `PM5544` flips
+its four corner squares yellow/white twice a second (`PROCanimcorners`) and
+`CARD` flashes its border yellow, so a feature caught in one phase and absent in
+the other reads exactly like a crop and has been reported as one. **Turn the
+animation off and a single frame is evidence again**; without it, measure
+against something that does not animate -- the grid, the colour blocks, the
+frequency wedge -- or record a clip and compare frames in the same phase.
+`PatLib.bas` in the `RiscPc` repo says which is which.
+
+**`CARD` CARRIES A ONE-PIXEL GREEN BORDER FLUSH TO ALL FOUR EDGES**, so "is
+anything clipped" is a yes/no on one frame rather than a margin to compute.
+Green on all four sides means nothing was lost.
+
+**`PATTERN` WITH NO ARGUMENT REDRAWS THE DEFAULT rather than reporting what is
+up**, so asking what is on screen changes it -- and `MODE` repaints too. Re-issue
+`PATTERN CARD` after either, or the measurement is taken against a card nobody
+selected.
 
 ### The shape of an eye-in-the-loop measurement
 
