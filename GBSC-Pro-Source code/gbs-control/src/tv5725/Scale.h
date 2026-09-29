@@ -18,16 +18,15 @@ public:
     // gives only HSCALE = 1024 x in / out and the field is 10 bits -- so there
     // is no hardware bound here to name, and this is a picture-quality choice.
     //
-    // Past 3.0x the solve can no longer centre the picture and pins the memory
-    // window at the write floor, and there the scaler selects wrong samples --
+    // Below about VDS_HSCALE 334 the horizontal scaler corrupts the picture --
     // bars of equal source width come out unequal and split into hairlines,
-    // which no interpolation does. Measured entering the floor at VDS_HSCALE
-    // 334 on two sources with rasters 1920 and 1280, and the damage rising with
-    // magnification from there. 1024/3 is 341.33, so 342 is the largest
-    // magnification at or under 3.0.
+    // which no interpolation does -- and no fix was found. The mechanism is not
+    // established: the write floor is a correlate, not a cause. 1024/3 is
+    // 341.33, so 342 is the largest magnification at or under 3.0.
     //
-    // The zoom exists to bring a source's active picture up to full screen, and
-    // that is reached well inside this. docs/known-issues.md
+    // MEASURED ON VDS_HSCALE, AND BOTH AXES READ IT. Whether VDS_VSCALE
+    // corrupts, and at what value, is untested.
+    // ../../../docs/investigations/horizontal-scale-corruption.md
     static const uint16_t Min = 342;
 
     Scale();
