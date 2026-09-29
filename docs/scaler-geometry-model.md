@@ -278,6 +278,22 @@ narrower one is sampled more coarsely rather than shown smaller. Measured across
 the change on the bench, the picture is 1336 -> 1346 photo px across -- unchanged
 -- while `PLLAD_MD` falls 1494 -> 1446, 3.2% fewer samples kept per source line.
 
+**The porch SIZES the picture and does not step the scale.** `VDS_?SCALE` is an
+integer, so a picture fitted to the porch lands a fraction either side of it, and
+one step of the register is `produced / scale` -- 2.2 output rows at the bench
+1080p framing. Spending a whole step to pull a fractional overrun back inside the
+porch costs the card's bottom frame; the step back is reserved for the raster's
+own edge, where `VDS_?B_ST` wraps rather than clamps and a wrapped vertical rolls
+the frame. Between the two the aperture closes on the porch and the overrun is
+discarded there.
+
+**The ROUNDING is to nearest, and it is not a free choice of direction.** Short
+of the room is a black bar at the far edge; past it is picture the encoder never
+carries, because the aperture cannot open past the porch. Rounding outward was
+measured at 800x600@60 losing the card's frame outright -- 1.69 output rows of
+overrun against the 1.80 rows one source line produces -- where to nearest it
+falls 0.21 rows short and shows whole.
+
 The floor is measured in PIXELS at one clock, so whether it is really a time is
 untested. Sync and back porch remain times, because they place the pulse the
 encoder locks to and the blanking edge it finds active video after -- measured

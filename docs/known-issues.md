@@ -359,13 +359,32 @@ source's leftmost drawn pixel was clipped at column 0; restored to 20 it runs
 5..1904 with that pixel whole. The remaining right-hand margin is 15 columns of
 1920.
 
-What is left is the INPUT side, and it is the doubled path's origin: crept out
-at `X320 Y256 C256 F50`, the right edge arrives at an extent of 696 capture
-units against the 688 the mode file's 320 display pixels give -- and crept
-sideways instead, at 245 rather than 237, which puts the left edge off. So no
-single shift makes both flush and the window is about 8 units short. 8 IF units
-is 16 ADC samples on this doubled source, where `InputFormatter::LineDoubleReset`
-is 160 against the 147 this mode wants and the 175 the 60 Hz doubled modes want.
+**IT IS NOT THE DOUBLED PATH'S ORIGIN, and `InputFormatter::LineDoubleReset` is
+not the knob.** That reading rested on the Acorn mode alone. Measured on all
+three with the capture's near edge walked through the pads and the card's frame
+read off the capture at each step, the two UNDOUBLED VESA modes lose the right
+border in the same way and by a comparable amount -- and the line doubler's FIFO
+reset is out of the path on both:
+
+| mode | default `oh` | left frame at | right frame enters at `oh` |
+|---|---|---|---|
+| X320 Y256 C256 F50 | 237 | columns 6..17 | 243, and the left is gone by 241 |
+| X800 Y600 C256 F60 | 294 | columns 4..11 | 296, flush at 298 |
+| X640 Y480 C256 F60 | 260 | columns 8..13 | -- |
+
+So the picture sits 4..8 emitted columns to the right of where it should, on
+every mode, and its far end falls off by about as much. **What that is in is
+undecided**: 4..8 columns is 2.2 / 2.3 / 4.8 capture units and 5.2 / 2.9 / 6.9
+output raster pixels, and neither is constant across the three -- while the
+reading itself is worth a couple of columns either way, because the frame is one
+source pixel wide and its captured edge smears into the flashing ring beside it.
+
+**A cleaner instrument is what this wants next.** The run start of a green-hue
+test cannot separate a constant of the OUTPUT chain, which would be the same
+raster pixels on all three since they emit the same 1080p raster, from one of the
+CAPTURE, which would be the same capture units. Differencing frames at two
+`VDS_DIS_HB_SP` values gives the column-to-raster-unit mapping the comparison
+needs; `docs/investigations/the-shown-window-is-latched-at-lock.md` is the shape.
 
 ### The display window closes after the last written pixel, and the gap shows unwritten memory
 
