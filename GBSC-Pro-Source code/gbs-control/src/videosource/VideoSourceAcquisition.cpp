@@ -603,6 +603,11 @@ void VideoSourceAcquisition::keepSourceComing(uint32_t nowMs)
     // the pre-emptive separator adjustment below wants the same event, so it is
     // sampled here and nowhere else and both are handed the answer.
     //
+    // **ACTED ON ONLY WHERE THE SEPARATOR IS IN THE PATH.** A separate-sync
+    // source does not go through one, and there the bit chatters -- every set
+    // re-picking the divider and re-steering the display clock for a source
+    // standing still. docs/sync-type-selection.md
+    //
     // **IT DOES NOT COVER A RATE CHANGE AT AN UNCHANGED COUNT, so it is one of
     // two arms for that case and not the one to rely on.** Measured on the
     // bench, 240x352 at 449 lines in both 59.96 Hz and 70.08 Hz -- a line rate
@@ -611,7 +616,7 @@ void VideoSourceAcquisition::keepSourceComing(uint32_t nowMs)
     // priority, so the console printing `rate` rather than `interrupt` is what
     // says so.
     const bool disturbed = Tv5725::Interrupts::takeSourceDisturbed();
-    if (disturbed)
+    if (disturbed && Tv5725::SyncMeasurement::isCsync())
         sourceInterrupted();
 
     // Not on a component source: it chooses its own separator level and this

@@ -445,6 +445,48 @@ TEST_CASE("an interrupt re-measures a source whose line count did not move")
     }
 }
 
+TEST_CASE("the separator interrupt arms a re-measure only on the csync path")
+{
+    // STATUS_INT_SOG_SW says the sync separator switched, and a separate-sync
+    // source does not go through one -- so the bit cannot be reporting that
+    // source moving, and there it chatters. Measured: set in 9 of 30 reads over
+    // twelve seconds with the count, the line total, the separator level and
+    // the field rate all still. docs/sync-type-selection.md
+    seedBenchSource();
+    seedLineSamples(BenchDivider);
+    Acquiring unit;
+    unit.acquisition.allowMaintenance(true);
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+
+    SUBCASE("a separate-sync source is left alone") {
+        REQUIRE_FALSE(SyncMeasurement::isCsync());
+
+        g_fieldRateCalls = 0;
+        for (uint8_t i = 0;
+             i < 4 * (SourceMeasurement::SteadySamples
+                      + SourceMeasurement::LatchSettlePasses); ++i) {
+            seedField(0, 0x0F, 1, 1, 1);     // STATUS_INT_SOG_SW, latched again
+            CHECK_FALSE(unit.poll());
+        }
+        CHECK(g_fieldRateCalls == 0);
+
+        // Taken all the same. The bit is latched, so one never acknowledged
+        // reports the same disturbance on every later poll -- which is what a
+        // gate written as a short circuit would leave behind.
+        CHECK(Wire.touched[0][0x58]);
+    }
+
+    SUBCASE("a composite-sync source is measured again") {
+        SyncMeasurement::set(true);
+
+        g_fieldRateCalls = 0;
+        seedField(0, 0x0F, 1, 1, 1);         // STATUS_INT_SOG_SW, latched
+        CHECK(unit.pollUntilSolved());
+        CHECK(g_fieldRateCalls > 0);
+    }
+}
+
 TEST_CASE("a held rate the source has left is corrected without the source moving")
 {
     // EVERY ARM IS A CHANGE DETECTOR -- the count, the interrupt, and the line
