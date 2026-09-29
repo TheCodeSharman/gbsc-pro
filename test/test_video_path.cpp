@@ -279,7 +279,7 @@ static void checkBenchGeometry()
     // interpolates between two capture units, so the last unit an aperture
     // closing on the picture would show reads the unit after the last one
     // captured -- which is what the trailing captureMargin puts under it.
-    CHECK(VideoProcessor::VDS_HB_ST::read() == 1812);
+    CHECK(VideoProcessor::VDS_HB_ST::read() == 1829);
     CHECK(VideoProcessor::VDS_VB_ST::read() == 1119);
 
     // And the horizontal window is an ODD number of units wide, which is what
@@ -297,12 +297,12 @@ static void checkBenchGeometry()
     // The memory window opens earlier still, by what the capture's leading
     // margin produces: the write has to reach the picture with the
     // interpolator already fed.
-    CHECK(VideoProcessor::VDS_HB_SP::read() == 25);
+    CHECK(VideoProcessor::VDS_HB_SP::read() == 42);
     CHECK(VideoProcessor::VDS_VB_SP::read() == 35);
     // The aperture opens ON the picture, both axes: the margin before it is
     // the source's own blanking, and showing it is a black band the picture
     // never reaches.
-    CHECK(VideoProcessor::VDS_DIS_HB_SP::read() == 143);
+    CHECK(VideoProcessor::VDS_DIS_HB_SP::read() == 160);
     CHECK(VideoProcessor::VDS_DIS_VB_SP::read() == 41);
     CHECK(VideoProcessor::VDS_DIS_VB_SP::read() > VideoProcessor::VDS_VS_SP::read());
 
@@ -1263,7 +1263,7 @@ TEST_CASE("a framed picture holds every window against the framing")
     // The near edge follows where the transmitted window opens, less the write
     // origin and the capture's leading margin, rather than resting on the
     // floor of 8.
-    CHECK(VideoProcessor::VDS_HB_SP::read() == 14);
+    CHECK(VideoProcessor::VDS_HB_SP::read() == 31);
     CHECK(VideoProcessor::VDS_VB_SP::read() > 0);
     CHECK(VideoProcessor::VDS_DIS_HB_SP::read() > VideoProcessor::VDS_HB_SP::read());
     CHECK(VideoProcessor::VDS_DIS_VB_SP::read() > VideoProcessor::VDS_VB_SP::read());

@@ -627,3 +627,15 @@ TEST_CASE("the output hsync pulse starts thirteen samples into the line")
     const OutputTiming at108 = Mode1080p.solve(60.0f, 108000000u);
     CHECK(at108.hsyncStop - at108.hsyncStart == 32);
 }
+
+// WHAT PINS THE DELAY'S VALUE, which nothing did. Every other assertion states
+// activeStart as the mode's own sync and back porch PLUS the delay, so the
+// constant moves without any of them failing -- and it was cut to 3, which
+// leaves 25 of the emitted frame's 1920 columns black at the right and throws
+// the same width of picture off the left. The four measured deltas are what it
+// has to satisfy.
+TEST_CASE("the transmitted window's delay is the measured one")
+{
+    CHECK(OutputMode::TransmittedWindowDelayPx >= 19);
+    CHECK(OutputMode::TransmittedWindowDelayPx <= 21);
+}

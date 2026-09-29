@@ -11,6 +11,7 @@ const uint32_t OutputMode::EngineCeilingHz;
 const uint16_t OutputMode::MaxHorizontalTotal;
 const uint16_t OutputMode::HsyncStartPx;
 const uint16_t OutputMode::FrontPorchMinPx;
+const uint16_t OutputMode::TransmittedWindowDelayPx;
 const uint16_t OutputMode::HorizontalTotalMax;
 const uint16_t OutputMode::VerticalTotalMax;
 

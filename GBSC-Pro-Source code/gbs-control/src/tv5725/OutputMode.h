@@ -118,19 +118,16 @@ public:
     // leading samples off the emitted frame and leaves the same width black at
     // the far end.
     //
-    // A count of samples rather than a time, measured off the emitted frame.
-    // 20 left the picture inside the window at the near end: 640x480@60 into
-    // 1080p carried a black band at the left and none at the right, and moving
-    // the picture and the aperture eight samples earlier closed it across three
-    // re-locks.
+    // A count of samples rather than a time, measured off the emitted frame on
+    // four output modes at +19.5, +20.3, +19.8 and +20.8, and again by walking
+    // the aperture across the window's edge at +19.
     //
-    // THREE. The aperture decides how much of the card's green border is shown,
-    // and the border is the whole measurement: at 640x480@60 into 1080p this
-    // puts VDS_DIS_HB_SP at 143 and the emitted frame carries NO blank column at
-    // the left, the border starting on column 0. It cannot go much further --
-    // the samples this opens into are where the horizontal scaler's left-edge
-    // artefact lives, so the aperture is bounded by an artefact rather than by
-    // the raster.
+    // **THE WINDOW DOES NOT FOLLOW OUR BLANKING**, which is what a value of 3
+    // rested on. Walking VDS_DIS_HB_SP 143..200 leaves the window where it is
+    // and only blanks into it, and the black that appears at the LEFT is the
+    // discriminator -- a window that followed would show none. Refuted across a
+    // source mode round trip and a PAD_SYNC_OUT_ENZ toggle, both.
+    // docs/investigations/the-transmitted-window-opens-late.md
     //
     // It must not reach the sampling clock. VideoPath::dividerCeilingForOutput()
     // takes it back off the published raster's far edge for that reason: left
@@ -138,7 +135,7 @@ public:
     // the scale and the stride, so the value that was correct before the change
     // is wrong after it and the constant cannot be tuned at all.
     // docs/investigations/full-screen-framing-on-the-vesa-modes.md
-    static const uint16_t TransmittedWindowDelayPx = 3;
+    static const uint16_t TransmittedWindowDelayPx = 20;
 
     // Where the output hsync pulse STARTS. Not zero: on the line's own origin
     // the left-most two columns lose two bands of 34 emitted rows -- measured
