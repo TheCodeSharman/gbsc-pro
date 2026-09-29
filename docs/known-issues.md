@@ -10,6 +10,41 @@ regardless of which step is in flight.
 
 ## Reaches the picture
 
+### The first acquisition after a boot reads the field rate low, and nothing corrects it
+
+**The frame time lock then integrates it into a tear that crawls down the
+screen.** This is the one consequence found so far, and it is enough to make the
+bias worth fixing rather than noting.
+
+The reading is 0.45 per thousand low on the pass that follows a boot, and it is
+held: measured three times on `vga`, `lineRateHz` 15741 against 15748 on a
+320x256@50 source and 15618 against 15625 on the mode-file raster, stable across
+six reads over eighteen seconds each time. Any later re-measure corrects it --
+`/sc?~` and a source mode change both do -- and it then stays correct.
+
+**Nothing arms that re-measure on its own.** `rateMoved()`'s periodic recheck
+compares a fresh reading against the held one at
+`RateCorroborationPerThousand`, and the bias is smaller than it, so the recheck
+confirms the wrong value for as long as the source stands still.
+
+With the frame time lock enabled the cost is continuous. The lock converges on
+whatever the held rate says, so a rate 0.53 per thousand low parks the display
+clock 0.53 per thousand low and the output frame period comes out 1664 ticks
+short of the input's -- `pin in 3169874` against `pin out 3168210`. Measured over
+98 seconds the phase then walks 18918 ticks a second, 0.6% of a frame, and the
+loop yanks the clock 129 kHz every ~21 seconds when the error wraps a frame:
+
+| | phase | err | pin in / out | clock |
+|---|---|---|---|---|
+| boot-biased rate held | walks 140k a sample | -1.07M to -1.50M, then wraps | 3169874 / **3168210** | parked 107942904, yanked to 108072512 |
+| after `/sc?~` | +2 ticks a second | 13733, steady | 3169874 / **3169874** | 107886216, span **0 Hz** |
+
+So the lock is not at fault and neither is its tuning: it is holding the rate it
+was given. The same source, re-measured, locks dead still.
+
+**The workaround is one request** -- `/sc?~`, or any source mode change -- and it
+holds until the next boot.
+
 ### The output raster has no floor, so a fast source collapses it
 
 The raster is `clock / (fieldRate x frameLines)`, and the field rate reaches it
