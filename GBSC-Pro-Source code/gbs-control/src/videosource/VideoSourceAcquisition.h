@@ -375,6 +375,14 @@ private:
     uint16_t solvedLinePeriod_;
     uint8_t rateRun_;
     uint16_t recheckPasses_;
+
+    // Whether the rate the first solve of a boot took has been re-measured.
+    // What that solve holds is not the source's, and every later acquisition of
+    // the same source is exact. Nothing else reaches it: every arm is a change
+    // detector, and the error is inside RateCorroborationPerThousand, which
+    // cannot be narrowed past the instrument's one-line quantisation step.
+    // ../../../../docs/investigations/the-first-solve-of-a-boot-cannot-be-corroborated.md
+    bool firstRateConfirmed_;
     bool sourceInterrupted_;
 
     // Consecutive detection passes whose line count was inside the source

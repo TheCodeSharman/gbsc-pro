@@ -521,6 +521,104 @@ TEST_CASE("a held rate the source has left is corrected without the source movin
     CHECK(unit.sampling.fieldRateHz() == doctest::Approx(50.766f).epsilon(0.001f));
 }
 
+TEST_CASE("the rate a boot's first solve took is re-measured once")
+{
+    // The first acquisition runs while WiFi and the filesystem are still
+    // coming up, and the readings climb through it. Two agree on the way and
+    // the pair is accepted:
+    //
+    //     sampling: 311 lines x 50.43 Hz -> line rate 15734
+    //     sampling: 311 lines x 50.52 Hz -> line rate 15764
+    //     sampling: 311 lines x 50.53 Hz -> line rate 15768   <- accepted
+    //
+    // against the 50.4744 four later re-acquisitions all gave, on one source
+    // state. Nothing else can reach it: every arm is a change detector, and
+    // 1.14 per thousand is inside RateCorroborationPerThousand, which cannot be
+    // narrowed past the instrument's one-line quantisation step.
+    // ../docs/known-issues.md
+    seedBenchSource();
+    seedField(0, 0x06, 0, 9, 431);   // HPERIOD_IF, steady, as the bench reads it
+    Acquiring unit;
+
+    g_fieldRate = 50.5321f;
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+    REQUIRE(unit.sampling.settledFieldRateHz()
+            == doctest::Approx(50.5321f).epsilon(0.0002f));
+
+    // What the source was running all along, with the count and the line
+    // period it was solved against both unmoved.
+    g_fieldRate = 50.4744f;
+    for (uint16_t pass = 0;
+         pass < 2 * VideoSourceAcquisition::RateRecheckPasses; ++pass)
+        unit.poll();
+
+    CHECK(unit.sampling.settledFieldRateHz()
+          == doctest::Approx(50.4744f).epsilon(0.0002f));
+}
+
+TEST_CASE("an early arm does not spend the boot's one confirmation")
+{
+    // The confirmation is the RECHECK'S, not whatever reaches the rate arm
+    // first. An arm raised inside the transient re-takes the same wrong rate,
+    // and a confirmation spent there leaves the recheck corroborating it for
+    // the life of the boot -- which is the defect, arrived at the long way.
+    seedBenchSource();
+    seedField(0, 0x06, 0, 9, 431);   // HPERIOD_IF, as the bench reads it
+    Acquiring unit;
+
+    g_fieldRate = 50.5321f;
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+
+    // The line period moving with the rate still the boot's. HPERIOD_IF is
+    // read as a change detector, so this arms a re-measure on its own.
+    seedField(0, 0x06, 0, 9, 400);
+    unit.pollFor(8);
+    REQUIRE(unit.sampling.settledFieldRateHz()
+            == doctest::Approx(50.5321f).epsilon(0.0002f));
+
+    g_fieldRate = 50.4744f;
+    for (uint16_t pass = 0;
+         pass < 2 * VideoSourceAcquisition::RateRecheckPasses; ++pass)
+        unit.poll();
+
+    CHECK(unit.sampling.settledFieldRateHz()
+          == doctest::Approx(50.4744f).epsilon(0.0002f));
+}
+
+TEST_CASE("a rate confirmed once is not re-measured again")
+{
+    // One extra solve per boot. The confirmation is not a second corroboration
+    // tolerance: past it the held rate is judged the way every other one is, or
+    // a source drifting inside RateCorroborationPerThousand blanks the output
+    // every RateRecheckPasses for the life of the boot.
+    seedBenchSource();
+    seedField(0, 0x06, 0, 9, 431);
+    Acquiring unit;
+
+    g_fieldRate = 50.5321f;
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+
+    g_fieldRate = 50.4744f;
+    for (uint16_t pass = 0;
+         pass < 2 * VideoSourceAcquisition::RateRecheckPasses; ++pass)
+        unit.poll();
+    REQUIRE(unit.sampling.settledFieldRateHz()
+            == doctest::Approx(50.4744f).epsilon(0.0002f));
+
+    // The same distance again, which is a drift the corroboration is sized to
+    // ignore.
+    g_fieldRate = 50.4167f;
+    for (uint16_t pass = 0;
+         pass < 2 * VideoSourceAcquisition::RateRecheckPasses; ++pass)
+        unit.poll();
+
+    CHECK(unit.sampling.settledFieldRateHz()
+          == doctest::Approx(50.4744f).epsilon(0.0002f));
+}
+
 TEST_CASE("a disturbance answered by one re-measure does not arm a second")
 {
     // The 640x480 -> 320x256 leg, measured on the bench: the source's own mode
