@@ -678,9 +678,14 @@ TEST_CASE("a press that moves nothing says so")
 // A line the raster cannot show costs ADC clock and reaches the screen cropped:
 // 640x480@75 into a 1080p raster solved to a capture of 1448 against a window of
 // 1176 and arrived corrupt with nothing touched.
+//
+// 1024p rather than 1080p because 1080p at 75 Hz asks the encoder for 185.6 MHz
+// against its 165, so it is not an output this board emits. 1024p asks 135.0 MHz,
+// which is DMT 1280x1024@75's own clock, and its 1352 px raster is short enough
+// to bind the divider -- which is what this is about.
 TEST_CASE("the divider is bounded by the line the output raster can show")
 {
-    SolvedEngine solved(500, 75.0f, 181, &Mode1080p, false);
+    SolvedEngine solved(500, 75.0f, 181, &Mode1024p, false);
 
     const uint16_t raster = (uint16_t)(Wire.field(3, 0x01, 0, 12) + 1);
     const uint16_t showable = OutputWindow::maximumCapture(AxisHorizontal, raster, 0, 0);

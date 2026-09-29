@@ -8,6 +8,7 @@ namespace Tv5725 {
 
 const uint32_t OutputMode::WorkingCeilingHz;
 const uint32_t OutputMode::EngineCeilingHz;
+const uint32_t OutputMode::EncoderCeilingHz;
 const uint16_t OutputMode::MaxHorizontalTotal;
 const uint16_t OutputMode::HsyncStartPx;
 const uint16_t OutputMode::FrontPorchMinPx;
@@ -76,6 +77,28 @@ uint8_t OutputMode::clockDividerFor(uint16_t frameLines, float fieldRateHz,
 }
 
 
+const uint8_t OutputMode::ScaledCount;
+
+const OutputMode *const OutputMode::Scaled[OutputMode::ScaledCount] = {
+    &Mode1080p, &Mode1024p, &Mode960p, &Mode720p, &Mode576p, &Mode480p,
+};
+
+const OutputMode *OutputMode::transmittableFor(const OutputMode *asked,
+                                               float fieldRateHz)
+{
+    if (asked == 0 || asked->isBypass() || asked->encoderCanTransmit(fieldRateHz))
+        return asked;
+
+    for (uint8_t i = 0; i < ScaledCount; ++i) {
+        const OutputMode *candidate = Scaled[i];
+        if (candidate->activeLines() > asked->activeLines())
+            continue;
+        if (candidate->encoderCanTransmit(fieldRateHz))
+            return candidate;
+    }
+    return 0;
+}
+
 const OutputMode *OutputMode::forPreference(PresetPreference presetPreference)
 {
     if (presetPreference == Output1080P)
@@ -101,18 +124,9 @@ const OutputMode *OutputMode::forFrameHeight(uint16_t frameLines)
 {
     if (frameLines == 0)
         return 0;
-    if (frameLines == Mode1080p.frameLines())
-        return &Mode1080p;
-    if (frameLines == Mode1024p.frameLines())
-        return &Mode1024p;
-    if (frameLines == Mode960p.frameLines())
-        return &Mode960p;
-    if (frameLines == Mode720p.frameLines())
-        return &Mode720p;
-    if (frameLines == Mode576p.frameLines())
-        return &Mode576p;
-    if (frameLines == Mode480p.frameLines())
-        return &Mode480p;
+    for (uint8_t i = 0; i < ScaledCount; ++i)
+        if (frameLines == Scaled[i]->frameLines())
+            return Scaled[i];
     return 0;
 }
 
@@ -132,6 +146,19 @@ uint16_t OutputMode::scaled(uint16_t standardPx, float clockHz) const
     return px < 0 ? 0 : (uint16_t)px;
 }
 
+uint32_t OutputMode::transmittedClockHz(float fieldRateHz) const
+{
+    if (fieldRateHz <= 0.0f)
+        return 0;
+    const uint32_t clocksPerFrame = (uint32_t)totalPx_ * frameLines();
+    return (uint32_t)((float)clocksPerFrame * fieldRateHz + 0.5f);
+}
+
+bool OutputMode::encoderCanTransmit(float fieldRateHz) const
+{
+    return transmittedClockHz(fieldRateHz) <= EncoderCeilingHz;
+}
+
 uint16_t OutputMode::activeLines() const { return activeLines_; }
 
 bool OutputMode::isBypass() const { return this == &ModeBypass; }
@@ -144,6 +171,12 @@ uint16_t OutputMode::frameLines() const
 OutputTiming OutputMode::solve(float fieldRateHz, uint32_t ceilingHz) const
 {
     OutputTiming solved;
+
+    // Before the divider, because no divider answers it: the encoder transmits
+    // the standard's raster at the source's field rate, and a mode it cannot
+    // carry solves a raster every register agrees with.
+    if (!encoderCanTransmit(fieldRateHz))
+        return solved;
 
     uint8_t divider = OutputMode::clockDividerFor(frameLines(), fieldRateHz,
                                                ceilingHz);

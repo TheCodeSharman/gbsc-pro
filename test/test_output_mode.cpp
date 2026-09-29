@@ -639,3 +639,112 @@ TEST_CASE("the transmitted window's delay is the measured one")
     CHECK(OutputMode::TransmittedWindowDelayPx >= 19);
     CHECK(OutputMode::TransmittedWindowDelayPx <= 21);
 }
+
+// THE ENCODER'S CEILING, and it is the datasheet's rather than a swept one.
+// MS9288A-Datasheet-Rev-B0 states 165 MHz three times -- the part's maximum
+// conversion rate, the ADC's 165 MSPS, and "integrated HD TMDS transmitter,
+// operating rate 165 MHz" -- and gives 1080p@60 as the greatest resolution,
+// whose TMDS clock is 148.5 MHz.
+//
+// What the encoder has to transmit is the STANDARD's raster at the source's
+// field rate, which is a different quantity from our own raster: it resamples
+// our line into the standard's active pixel count, so our display clock does not
+// reach it. 1080p at 84.68 Hz asks 2200 x 1125 x 84.68 = 209.6 MHz whatever we
+// clock it at.
+// docs/investigations/the-encoder-ceiling-is-the-raster-floor.md
+TEST_CASE("the clock the encoder must transmit is the standard's raster at the source's rate")
+{
+    CHECK(Mode1080p.transmittedClockHz(60.0f) == 148500000u);
+    CHECK(Mode720p.transmittedClockHz(60.0f) == 74250000u);
+
+    SUBCASE("and our display clock does not reach it") {
+        // Two ceilings, one raster of ours, one transmitted clock.
+        CHECK(Mode1080p.solve(50.0f, 108000000u).horizontalTotal
+              != Mode1080p.solve(50.0f, 129600000u).horizontalTotal);
+        CHECK(Mode1080p.transmittedClockHz(50.0f) == 123750000u);
+    }
+}
+
+// THE FOUR BENCH POINTS. Three clean and one unusable, and the transmitted clock
+// is the only quantity measured that separates them -- the raster width and the
+// output line rate both fit the same four points, and neither has a number of its
+// own to be right about.
+//
+//     1080p @ 50.00 Hz   123.75 MHz   clean
+//     720p  @ 84.68 Hz   104.79 MHz   clean
+//     1080p @ 60.00 Hz   148.50 MHz   clean
+//     1080p @ 84.68 Hz   209.58 MHz   unusable
+//
+// docs/investigations/the-encoder-ceiling-is-the-raster-floor.md
+TEST_CASE("a mode the encoder cannot transmit is refused, not solved narrow")
+{
+    CHECK(Mode1080p.solve(50.0f, OutputMode::EngineCeilingHz).usable());
+    CHECK(Mode720p.solve(84.68f, OutputMode::EngineCeilingHz).usable());
+    CHECK(Mode1080p.solve(60.0f, OutputMode::EngineCeilingHz).usable());
+    CHECK_FALSE(Mode1080p.solve(84.68f, OutputMode::EngineCeilingHz).usable());
+
+    SUBCASE("and the arithmetic that used to write it out is not what was wrong") {
+        // 1134 px at 95.3 kHz, which every register agreed with. The raster was
+        // solvable; it was the mode that could not be carried.
+        CHECK(OutputMode::horizontalTotalFor(108000000u, 1125, 84.68f) == 1134);
+    }
+
+    SUBCASE("and a faster display clock does not buy it back") {
+        // The transmitted clock is the standard's raster, so our ceiling does not
+        // appear in it. This is what says the fallback has to be another MODE.
+        CHECK_FALSE(Mode1080p.solve(84.68f, OutputMode::WorkingCeilingHz).usable());
+    }
+}
+
+// The datasheet's, not a sweep: MS9288A-Datasheet-Rev-B0 gives the TMDS
+// transmitter's operating rate as 165 MHz and the greatest resolution as
+// 1080p@60, whose 148.5 MHz sits just under it.
+TEST_CASE("the encoder's ceiling is the datasheet's TMDS rate")
+{
+    CHECK(OutputMode::EncoderCeilingHz == 165000000u);
+    CHECK(Mode1080p.transmittedClockHz(60.0f) <= OutputMode::EncoderCeilingHz);
+}
+
+// THE FALLBACK. A resolution the encoder cannot carry at this source's rate has
+// to give way to one it can, or the preference is a black screen -- and it has to
+// give way without being FORGOTTEN, so the substitution is made per measurement
+// from the choice rather than written over it.
+TEST_CASE("a resolution the encoder cannot carry falls back to the tallest that fits")
+{
+    // 1080p at 84.68 Hz asks 209.6 MHz. 1024p asks 152.4 and is the tallest that
+    // fits, so that is what the source gets.
+    CHECK((OutputMode::transmittableFor(&Mode1080p, 84.68f) == &Mode1024p));
+
+    SUBCASE("and the choice is returned untouched wherever it fits") {
+        CHECK((OutputMode::transmittableFor(&Mode1080p, 50.0f) == &Mode1080p));
+        CHECK((OutputMode::transmittableFor(&Mode1080p, 60.0f) == &Mode1080p));
+        CHECK((OutputMode::transmittableFor(&Mode480p, 50.0f) == &Mode480p));
+    }
+
+    SUBCASE("and the fallback is itself transmittable") {
+        const OutputMode *fell = OutputMode::transmittableFor(&Mode1080p, 84.68f);
+        REQUIRE(fell != 0);
+        CHECK(fell->encoderCanTransmit(84.68f));
+        CHECK(fell->solve(84.68f, OutputMode::EngineCeilingHz).usable());
+    }
+}
+
+// FALL BACK, NEVER UP. 1024p costs the encoder very slightly LESS than 960p --
+// 1688 x 1066 against 1800 x 1000 -- so the one mode in this set that is taller
+// than its neighbour and cheaper than it makes the rule observable, in a window
+// about 0.03 Hz wide. 960p is refused at 91.68 Hz and 1024p is not.
+TEST_CASE("a fallback is never taller than the resolution asked for")
+{
+    REQUIRE_FALSE(Mode960p.encoderCanTransmit(91.68f));
+    REQUIRE(Mode1024p.encoderCanTransmit(91.68f));
+
+    CHECK((OutputMode::transmittableFor(&Mode960p, 91.68f) == &Mode720p));
+}
+
+// Pass-through hands the source's own timing to the encoder, so there is no
+// standard raster to bound and nothing here can answer for it.
+TEST_CASE("pass-through and a custom preset are handed back unchanged")
+{
+    CHECK((OutputMode::transmittableFor(&ModeBypass, 84.68f) == &ModeBypass));
+    CHECK((OutputMode::transmittableFor(0, 84.68f) == 0));
+}

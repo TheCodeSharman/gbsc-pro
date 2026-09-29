@@ -2490,3 +2490,42 @@ TEST_CASE("a first acquisition that never completes lets the ladder back in")
     CHECK(escalated);
     CHECK(fullReset);
 }
+
+TEST_CASE("a resolution the encoder cannot transmit gives way to one it can")
+{
+    // The bench point. 630 lines at 84.68 Hz asks 1080p for 2200 x 1125 x 84.68
+    // = 209.6 MHz of TMDS clock against the MS9288A's 165, and it used to be
+    // written out anyway: a 1134 px raster at 95.3 kHz, the STV9426 overlay
+    // smeared into blue bands across the top of the frame, and every register
+    // reading self-consistent beside it.
+    //
+    // 1024p asks 152.4 MHz and is the tallest that fits, so that is what the
+    // source gets -- and the CHOICE is not written over, so 1080p comes back
+    // with a source it can be met on.
+    // docs/investigations/the-encoder-ceiling-is-the-raster-floor.md
+    seedBenchSource();
+    seedSourceLines(630);
+    seedField(0, 0x19, 0, 12, 129);    // STATUS_SYNC_PROC_HLOW_LEN
+    seedField(0, 0x16, 0, 1, 0);       // STATUS_SYNC_PROC_HSPOL, negative-going
+    g_fieldRate = 84.68f;
+
+    Acquiring unit;
+    unit.start(&Mode1080p);
+    REQUIRE(unit.pollUntilSolved(8));
+
+    REQUIRE(unit.path.outputMode());
+    CHECK(unit.path.outputMode()->frameLines() == Mode1024p.frameLines());
+
+    SUBCASE("and the raster it lands on is one the encoder can carry") {
+        CHECK(unit.path.outputMode()->encoderCanTransmit(84.68f));
+        CHECK(VideoProcessor::VDS_VSYNC_RST::read() + 1 == Mode1024p.frameLines());
+    }
+
+    SUBCASE("and the choice returns when the source does") {
+        seedBenchSource();
+        seedLineSamples(BenchDivider);
+        unit.pollFor(8);
+
+        CHECK(unit.path.outputMode()->frameLines() == Mode1080p.frameLines());
+    }
+}

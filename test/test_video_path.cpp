@@ -1314,7 +1314,9 @@ TEST_CASE("a progressive source's vertical capture fits the counter it is on")
     FramingTable framings;
     VideoPath engine(clock, sampling, framings, inputFormatter);
     VideoSourceAcquisition acquisition(sampling, engine);
-    engine.setOutputMode(benchMode());
+    // Not the bench mode: 1080p at 75 Hz asks the encoder for 185.6 MHz against
+    // its 165 and is no output at all. The counter this is about is vertical.
+    engine.setOutputMode(&Mode1024p);
     engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(acquisition));
 
@@ -1329,11 +1331,11 @@ TEST_CASE("a progressive source's vertical capture fits the counter it is on")
     CHECK(stop < 500);
 
     const long produced = (stop - start) * 1024 / VideoProcessor::VDS_VSCALE::read();
-    // 1080p60 states 1080 active lines of its 1125, and the window opens on that
-    // porch, so the picture fills 1080 rather than the 1118 an unbounded window
-    // reached.
-    CHECK(produced > 1070);
-    CHECK(produced <= 1126);
+    // The mode states 1024 active lines of its 1066, and the window opens on that
+    // porch, so the picture fills the active region rather than the whole frame
+    // an unbounded window reached.
+    CHECK(produced > Mode1024p.activeLines() - 10);
+    CHECK(produced <= Mode1024p.frameLines());
 }
 
 // --- a divider carried over from the previous mode ---------------------------

@@ -122,7 +122,19 @@ bool VideoSourceAcquisition::setOutputResolution(const Tv5725::OutputMode *mode)
     if (outputIsPassedThrough())
         return true;
 
-    return videoPath_.setOutputMode(mode);
+    return videoPath_.setOutputMode(carriedResolution());
+}
+
+const Tv5725::OutputMode *VideoSourceAcquisition::carriedResolution() const
+{
+    return Tv5725::OutputMode::transmittableFor(resolution_,
+                                                sampling_.fieldRateHz());
+}
+
+const Tv5725::OutputMode *VideoSourceAcquisition::resolutionToMoveTo() const
+{
+    const Tv5725::OutputMode *carried = carriedResolution();
+    return carried == videoPath_.outputMode() ? 0 : carried;
 }
 
 bool VideoSourceAcquisition::resolveFromSource()
@@ -147,10 +159,15 @@ bool VideoSourceAcquisition::resolveFromSource()
         // Leaving configures the scaling path and solves nothing. The raster
         // and the line doubling both move with the output and resolve() carries
         // neither, so the whole solve is armed rather than run from here.
-        videoPath_.setOutputMode(resolution_);
+        videoPath_.setOutputMode(carriedResolution());
         videoPath_.inputTimingsChanged();
         return false;
     }
+
+    // Re-answered against the rate just measured, the same as the route above.
+    const Tv5725::OutputMode *moveTo = resolutionToMoveTo();
+    if (moveTo != 0)
+        return videoPath_.setOutputMode(moveTo);
 
     return videoPath_.resolve();
 }
@@ -749,9 +766,15 @@ bool VideoSourceAcquisition::runPass(uint32_t nowMs, bool &detectionPass)
         // mode change stays armed: the rate held names the mode pass-through was
         // entered on, so the next pass measures this source through the chip
         // setOutputMode() has just put back.
-        videoPath_.setOutputMode(resolution_);
+        videoPath_.setOutputMode(carriedResolution());
         return false;
     }
+
+    // And which resolution the encoder can carry, for the same reason. The mode
+    // change is in flight, so this only holds it; solveFromMeasurement() solves.
+    const Tv5725::OutputMode *moveTo = resolutionToMoveTo();
+    if (moveTo != 0)
+        videoPath_.setOutputMode(moveTo);
 
     if (videoPath_.solveFromMeasurement() != Tv5725::VideoPath::PollSolved)
         return false;

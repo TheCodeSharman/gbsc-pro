@@ -247,6 +247,16 @@ public:
     void sourceInterrupted();
 
 private:
+    // The resolution to RUN: the one chosen wherever the encoder can transmit it
+    // at the rate measured, and the tallest that fits where it cannot. 0 where
+    // this layer was never told one, in which case the output mode belongs to
+    // whoever set it on the path directly and there is no choice to reconcile.
+    const Tv5725::OutputMode *carriedResolution() const;
+
+    // Where the output has to move to, or 0 where it is already there. Answered
+    // per measurement, because the rate moves while the choice stands still.
+    const Tv5725::OutputMode *resolutionToMoveTo() const;
+
     bool selectionMoved();
     bool detectionDue(uint32_t nowMs);
 

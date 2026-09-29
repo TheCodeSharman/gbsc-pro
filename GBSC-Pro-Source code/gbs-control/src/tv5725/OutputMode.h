@@ -96,6 +96,18 @@ public:
     // docs/investigations/display-window-opens-early.md has the measurements.
     static const uint32_t EngineCeilingHz = 108000000;
 
+    // WHAT THE ENCODER CAN TRANSMIT. A third ceiling, and not a ceiling on any
+    // clock this board runs: it bounds the output MODE against the source's
+    // field rate, so a fast source reaches it on a tall mode and not on a short
+    // one, and no display clock of ours changes the answer.
+    //
+    // MS9288A-Datasheet-Rev-B0 states it three times -- the part's maximum
+    // conversion rate, 165 MSPS at the ADC, and an integrated HD TMDS
+    // transmitter running at 165 MHz -- and gives 1080p@60 as the greatest
+    // resolution, whose 148.5 MHz sits just under it.
+    // docs/investigations/the-encoder-ceiling-is-the-raster-floor.md
+    static const uint32_t EncoderCeilingHz = 165000000;
+
     // The part wraps the line past about 2240 PRODUCED pixels: measured clean at
     // 2225 and banded at 2250, with the window set to exactly what the scale
     // produces so nothing is unfilled. This is the raster bound that follows,
@@ -175,6 +187,17 @@ public:
     static uint8_t clockDividerFor(uint16_t frameLines, float fieldRateHz,
                                    uint32_t ceilingHz = WorkingCeilingHz);
 
+    // The clock the ENCODER has to transmit: the standard's own raster at the
+    // source's field rate. A different quantity from the raster this board
+    // runs, because the part resamples our line into the standard's active
+    // pixel count -- so no display clock of ours reaches it.
+    uint32_t transmittedClockHz(float fieldRateHz) const;
+
+    // Whether the encoder can carry this mode at this field rate. The single
+    // owner of the rule: solve() refuses on it and transmittableFor() selects
+    // on it.
+    bool encoderCanTransmit(float fieldRateHz) const;
+
     uint16_t activeLines() const;
 
     // The number of lines in a frame including porch and sync.
@@ -189,6 +212,13 @@ public:
     // ModeBypass: it resolves a raster that is on the chip, and bypass has none.
     static const OutputMode *forFrameHeight(uint16_t frameLines);
 
+    // The resolution to RUN where the encoder cannot transmit the one asked
+    // for: `asked` wherever it fits, otherwise the tallest mode that fits and is
+    // no taller. `asked` unchanged for pass-through and for 0, neither of which
+    // has a standard raster to bound.
+    static const OutputMode *transmittableFor(const OutputMode *asked,
+                                             float fieldRateHz);
+
     // The mode a preference names. NULL for a custom preset, which is not a
     // resolution. A preference is one height whatever the source runs at.
     static const OutputMode *forPreference(PresetPreference presetPreference);
@@ -199,6 +229,10 @@ public:
                         uint32_t ceilingHz = WorkingCeilingHz) const;
 
 private:
+    // Every mode that solves a raster, tallest first.
+    static const uint8_t ScaledCount = 6;
+    static const OutputMode *const Scaled[ScaledCount];
+
     // The pixel count of a standard width at the clock this line runs at.
     uint16_t scaled(uint16_t standardPx, float clockHz) const;
 
