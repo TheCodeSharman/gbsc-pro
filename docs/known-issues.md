@@ -420,6 +420,13 @@ took the black at the LEFT for our own blanking when it is captured SOURCE
 blanking, which is the confound
 `investigations/the-transmitted-window-is-latched-from-our-blanking.md` names.
 
+**IT IS REPEATABLE ACROSS ACQUISITIONS.** Six re-locks per mode through a
+`PAD_SYNC_OUT_ENZ` toggle, framing untouched and `VDS_DIS_HB_ST` unchanged at
+1831 throughout, give 14/14/14/15/14/15 black columns at `X320 Y256 C256 F50`
+and 0 six times at `X640 Y480 C256 F60`. **The left edge does not move either**,
+which is what settles it: a window placed differently at each lock would move
+both ends.
+
 **IT FOLLOWS THE FIELD RATE AND NOT THE SCAN MODE.** An earlier reading here said
 the opposite and rested on one unsound measurement -- `X640 Y200 C256 F60` walked
 downward from an aperture where the fetch returns black, which reads as a window
@@ -442,7 +449,11 @@ framing, so its picture is mis-sized before the window is reached.
 What `OutputMode::solve()` computes is `activeStop = activeStart +
 horizontalTotal x 1920 / 2200`, which is CEA's 60 Hz total. A 50 Hz source emits
 into 1080p50, whose CEA total is 2640 -- so the one input the model has that
-changes with the field rate is the one it does not use.
+changes with the field rate is the one it does not use. **The naive substitution
+goes the wrong way**, 2640 giving 72.7% where the measurement wants more than
+87.27%, so the encoder is not switching to the 50 Hz standard's blanking either.
+`investigations/the-picture-falls-short-of-the-transmitted-window.md` carries the
+whole of it, including what a second output resolution would say.
 
 ### The sync polarity cannot separate two rasters sharing a key
 
