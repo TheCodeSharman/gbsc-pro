@@ -93,10 +93,42 @@ profile with two comparable clean runs is the case the new rule has no evidence
 for.
 
 **A second artefact on the same bench is NOT this one and must not be merged
-with it.** It reads as the picture moving right by a fraction of a pixel in one
-frame and back left in the next -- a period-2 oscillation rather than the
-flicker on fine detail above. `PA_ADC` is the candidate and is untested; the
-entry below carries what would score it.
+with it.** The entry below carries it.
+
+### A period-2 sub-pixel oscillation, which is not the shimmer and not the phase
+
+The picture moves right by a fraction of a pixel in one frame and back left in
+the next. Present on 480p and 1080p alike with the same source, so it does not
+follow the output mode, and intermittent across acquisitions the way the shimmer
+was.
+
+**It is not a displacement of the whole picture.** A static, detailed band of
+the emitted frame tracked over 120 frames gives position sd 0.011 px, and the
+component at the output's own half-frame-rate is 0.0025 px. **That bin is at
+2.38 CAPTURED frames, not 2**, because the dongle delivers about 60 fps against
+a 50.47 Hz output -- a test written for period 2 measures the wrong bin and
+reports nothing. So whatever moves is either localised to particular features or
+confined to moving content, and a cross-correlation over a band averages it
+away.
+
+Ruled out, each with the artefact reported present:
+
+- **`PA_ADC`.** Scored by frame-to-frame change of a static band, phases 0..10
+  give 0.73 to 0.93 with no band -- flat, where `PA_SP` peaks at 2.13. Jogged
+  the full half-field from 0 to 16 and the bench could not call it changed.
+  Consistent with the arithmetic in
+  `investigations/the-sampling-phase-cannot-reach-the-shimmer.md`: a doubled
+  line keeps 1100 samples against a 512-pixel source line, so the sampler
+  already visits 275 sub-pixel positions and a global offset moves all of them
+  together.
+- **Frame buffer alternation.** `CAP_DOUBLE_BUFFER` and `PB_DB_BUFFER_EN` are
+  both 0 and `PB_CAP_BUF_STA_ADDR_A` and `_B` hold the same address, so nothing
+  is switching buffers per frame.
+- **The frame time lock**, turned off outright.
+
+What would separate the remaining candidates is a per-column temporal measure
+rather than a displacement -- which columns change between frames, and whether
+they are the same columns each time.
 
 ### A black frame with one green line at the top, for several seconds while detecting
 
