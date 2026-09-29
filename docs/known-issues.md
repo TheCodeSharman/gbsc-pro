@@ -561,6 +561,15 @@ their own -- but most of them by under two points of the line or frame:
 | 896x352 (AKF50) | 640x352 | 1.4 |
 | 384x288 (AKF50) | 480x352 | **8.0** |
 
+**THE 480x352 COLLISION IS NOW ISOLATED, BY A CHANGE THAT FIXED ITS NEIGHBOUR
+AND LEFT IT ALONE.** It captures 288 lines for a 352-line picture, so raising the
+vertical magnification limit took `X384 Y288 F70` from 218 black rows to 1 and
+moved `X480 Y352 F70` from letterboxed to filling the frame while OVERRUNNING it
+-- the card's border off every edge, the black-to-black margins reading 4/0/0/0
+and the border search finding neither edge on either axis. A wrong capture
+height magnified further crops instead of letterboxing; both are wrong and the
+clamp was hiding which.
+
 `640x256` and `800x600@60`'s Acorn twins cost nothing at all: their borders sit
 in the porches, so the normalised window is the same one. **The priority is a
 best effort rather than a correct answer** -- it exists to make the engine choose
@@ -1058,13 +1067,27 @@ the measurements do not carry; both sources entered the floor at the same
 `VDS_HSCALE`, which is where the correlation comes from. Do not quote it as the
 reason.
 
-**IT IS MEASURED ON `VDS_HSCALE` AND APPLIED TO BOTH AXES.** Every reading
-behind 342 is horizontal -- the register, the two rasters, and the artefact
-itself, which is bars splitting across a line. `VDS_VSCALE` is a different
-register in a different stage and is untested at any magnification. Three modes
-in the AKF50 set need more than 2.994x vertically and are clamped by a number no
-vertical measurement supports: `X384 Y288 F70` and `X480 Y352 F70` at 3.75x,
-`X240 Y352 F70` at 3.07x.
+**IT WAS MEASURED ON `VDS_HSCALE` AND APPLIED TO BOTH AXES, AND THE AXES ARE
+SEPARATE NOW.** Every reading behind 342 is horizontal -- the register, the two
+rasters, and the artefact itself, which is bars splitting across a line.
+`VDS_VSCALE` is a different register in a different stage and is untested at any
+magnification, so `AxisVertical` carries 205 -- 5.0x -- and `AxisHorizontal`
+keeps 342. **The vertical value is a choice with no measurement against it**, and
+the register clamp is what enforces it.
+
+Measured on the AKF50 set, at the engine's own framing, black rows top and
+bottom of the emitted frame:
+
+| mode | needs | before | after |
+|---|---|---|---|
+| X384 Y288 F70 | 3.75x | 89 + 129 | 0 + 1 |
+| X240 Y352 F70 | 3.07x | 0 + 27 | 0 + 1 |
+| X480 Y352 F70 | 3.75x | 89 + 129 | fills, and OVERRUNS |
+
+The other 25 modes are unchanged on both axes, which is what the arithmetic
+predicted: none of them magnifies past 2.99x vertically. What the zoom loses is
+crop depth -- the vertical extent at the stop went from 361 to 217 on one host
+raster.
 
 **Whether the onset depends on the source is open.** The floor was found by a
 zoom sweep, where the capture shrinks as the magnification rises, so the two
