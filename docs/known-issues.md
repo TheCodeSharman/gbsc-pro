@@ -30,12 +30,12 @@ the fallback is far enough.** The unusable point was 630 lines at 84.68 Hz into
 fallback puts it on 1024p -- 152.4 MHz, in spec -- but only 1196 px, where the
 nearest clean point is 1600 and 720p's known-clean answer is 1700.
 
-The check is one source mode: 630 lines at 84.68 Hz with the preference at 1080p.
+**1350 px is measured clean**, so the band is 1134..1350 rather than 1134..1600:
+640x480@75 falls back to 1024p on the bench, locks, and emits a clean full-screen
+frame. Only the 1196 px that 84.68 Hz falls back to is unmeasured.
 
-| landing | reading |
-|---|---|
-| 1024p, clean | the encoder's ceiling was the whole of it |
-| 1024p, still smeared | a width floor is needed beside it, placed against 720p's 1700 px |
+**And that check is not runnable from this source.** `RetroScaler-Acorn.mdf` tops
+out at 75 Hz, so 84.68 Hz takes a definition carrying an 85 Hz entry.
 
 **Do not guess a width floor from that one point, and it is NOT the mode's
 `activePx`.** 1080p solves 1600 at 60 Hz and 1916 at 50 Hz, both clean, so a floor

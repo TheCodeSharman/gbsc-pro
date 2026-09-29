@@ -133,6 +133,23 @@ Wii's 480p at 59.8 Hz -- so the everyday state is unchanged. What moves is the
 70 Hz and faster half of the monitor definition's DMT set, and at 70 Hz the
 fallback gives a WIDER raster than the mode it replaces, 1447 against 1371.
 
+## Confirmed on the bench
+
+640x480@75 on `vga`, preference 1080p, firmware carrying the ceiling. 1080p at
+75 Hz asks 185.6 MHz, so the fallback fires:
+
+    raster 1350 x 1066          1024p, where 1080p would have given 1280 x 1125
+    PLLAD_MD 1222               STATUS_SYNC_PROC_HTOTAL 1222, locked
+    transmitted 134.96 MHz      in spec, and DMT 1280x1024@75's own clock
+
+**The emitted frame is clean, legible and full screen** -- 1918x1080 of 1920x1080
+off the capture, no smearing and no blue bands. `/geometry` reports the output
+self-consistent, 0 px cropped by the display window and 0 lines.
+
+The picture IS clipped, at both ends of the line, and that is the capture window
+rather than this: 435..1032 of a 1223-unit line where the mode's published raster
+puts active video at 268..1200. `vesa-modes-are-clipped-by-default.md`.
+
 ## Still open
 
 **Whether the raster WIDTH binds as well is not settled, and it decides whether
@@ -141,10 +158,14 @@ was unusable -- 62 px wider, where the nearest clean point is 1600. If the width
 binds anywhere above 1196 the fallback clears the encoder and not the width, and
 the reported symptom stays.
 
-The check is one source mode: 630 lines at 84.68 Hz with the preference at 1080p.
-Landing on 1024p and clean settles it; landing on 1024p and still smeared says a
-width floor is needed beside this one, and 720p's 1700 px is the known-clean
-point to place it against.
+**1350 px is now clean, so the band is 1134..1350 rather than 1134..1600.** Only
+1196 px, which is what 84.68 Hz falls back to, is still unmeasured.
+
+**That check is not runnable from the bench source as it stands.**
+`RetroScaler-Acorn.mdf` tops out at 75 Hz -- `MODES` offers F70, F73 and F75 and
+nothing above -- and `MODE X800 Y600 C256 F85` is refused as unsuitable for the
+desktop. Reaching 84.68 Hz takes a monitor definition that carries an 85 Hz
+entry.
 
 **A width floor must not be guessed from that one point.** The old entry's own
 warning holds: the floor is not the mode's `activePx`, since 1080p solves 1600 at
