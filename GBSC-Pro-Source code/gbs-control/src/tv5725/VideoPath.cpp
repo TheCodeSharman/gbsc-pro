@@ -251,8 +251,10 @@ bool VideoPath::solveRaster()
     }
 
     // The KEY's rate, so the raster is solved once per source identity rather
-    // than per reading. The frame time lock closes on frame time continuously,
-    // so the raster only has to be in the right ballpark.
+    // than per reading. FrameSync::matchRate() then steers the display clock so
+    // the output's field rate is the source's, which is ungated and runs whether
+    // or not the frame time lock is enabled -- so the raster only has to be in
+    // the right ballpark.
     // docs/firmware-geometry-engine.md
     // EngineCeilingHz, not the higher WorkingCeilingHz the part is measured to
     // run at: a wider raster costs zoom travel. See the constant.

@@ -51,6 +51,34 @@ bool FramingLine::number(const char *&at, long &into)
     return true;
 }
 
+// The key is quantised finer than a hertz, so a record rounded to one cannot be
+// read back for a source sitting more than SourceIdentityPerThousand from an
+// integer -- 800x600@60 runs DMT's 60.3168 and a RISC PC emits 50.474 behind one
+// 320x256@50, which are 5.3 and 9.5 per thousand out.
+bool FramingLine::rateFrom(const char *&at, float &into)
+{
+    long whole = 0;
+    if (!number(at, whole))
+        return false;
+
+    float value = (float)whole;
+    if (*at == '.') {
+        ++at;
+        long fraction = 0, scale = 1;
+        while (*at >= '0' && *at <= '9') {
+            fraction = fraction * 10 + (*at - '0');
+            scale *= 10;
+            ++at;
+        }
+        if (scale == 1)
+            return false;
+        value += (float)fraction / (float)scale;
+    }
+
+    into = value;
+    return true;
+}
+
 float FramingLine::proportionOf(long tenThousandths)
 {
     return (float)tenThousandths / Whole;
@@ -69,13 +97,14 @@ bool FramingLine::empty(const char *line)
 
 bool FramingLine::read(const char *&at, SourceKey &key, PanAndZoom &framing)
 {
-    long lines = 0, rate = 0, width = 0;
+    long lines = 0, width = 0;
+    float rate = 0.0f;
     if (!number(at, lines))
         return false;
     at = skipSpace(at);
     if (*at++ != '@')
         return false;
-    if (!number(at, rate))
+    if (!rateFrom(at, rate))
         return false;
     at = skipSpace(at);
     if (*at++ != '/')
@@ -100,7 +129,7 @@ bool FramingLine::read(const char *&at, SourceKey &key, PanAndZoom &framing)
         if (!number(at, value[i]))
             return false;
 
-    const SourceKey read((uint16_t)lines, (float)rate, proportionOf(width),
+    const SourceKey read((uint16_t)lines, rate, proportionOf(width),
                          hsync, vsync);
     if (!read.valid())
         return false;
@@ -117,9 +146,10 @@ int FramingLine::write(char *out, uint8_t size, const SourceKey &key,
     if (size == 0)
         return -1;
 
+    const unsigned long hundredths = (unsigned long)lrintf(key.rateHz() * 100.0f);
     const int written = snprintf(
-        out, size, "%u@%u/%ld%c%c = %ld %ld %ld %ld",
-        (unsigned)key.lines(), (unsigned)lrintf(key.rateHz()),
+        out, size, "%u@%lu.%02lu/%ld%c%c = %ld %ld %ld %ld",
+        (unsigned)key.lines(), hundredths / 100uL, hundredths % 100uL,
         tenThousandthsOf(key.syncWidth()),
         symbolFor(key.hsyncPolarity()), symbolFor(key.vsyncPolarity()),
         tenThousandthsOf(framing.originOn(AxisHorizontal)),

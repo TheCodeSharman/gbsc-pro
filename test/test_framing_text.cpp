@@ -169,6 +169,41 @@ TEST_CASE("a buffer too small refuses rather than writing a half record")
 // THE POLARITY HAS TO REACH THE FILE, or a framing tuned on one mode is
 // restored on another that differs only in it. The 525-line 60 Hz pair the key
 // exists to separate is exactly that shape.
+// A rate off a whole hertz by more than SourceIdentityPerThousand: the bench
+// RISC PC emits 50.474 Hz behind one 320x256@50 and 800x600@60 runs DMT's
+// 60.3168, which are 9.5 and 5.3 per thousand from the nearest integer. A record
+// carrying only the integer is written and can never be read back.
+TEST_CASE("a rate off a whole hertz survives the round trip")
+{
+    const SourceKey adffs(311, 50.474f, 0.0732f, SourceKey::Positive, SourceKey::Positive);
+    const SourceKey mdf(311, 50.0801f, 0.0686f, SourceKey::Positive, SourceKey::Positive);
+    REQUIRE(adffs != mdf);
+
+    FramingTable written;
+    REQUIRE(written.remember(adffs, PanAndZoom(0.257f, 0.6412f, 0.1234f, 0.8253f)));
+
+    char line[64];
+    rendered(written, 0, line);
+
+    FramingTable read;
+    FramingText(read).readLine(line);
+
+    CHECK(read.find(adffs, 0));
+    CHECK_FALSE(read.find(mdf, 0));
+}
+
+// The file predating the fraction carries a whole hertz, and the sources whose
+// rate is within the tolerance of one must keep their tuning.
+TEST_CASE("a record written as a whole hertz is still read")
+{
+    FramingTable table;
+    FramingText(table).readLine("311@50/686++ = 2625 6249 1250 8205");
+
+    CHECK(table.count() == 1);
+    CHECK(table.find(SourceKey(311, 50.0801f, 0.0686f,
+                               SourceKey::Positive, SourceKey::Positive), 0));
+}
+
 TEST_CASE("the vertical sync polarity survives the round trip")
 {
     const SourceKey positive(311, 50.08f, 0.1213f, SourceKey::Positive, SourceKey::Positive);

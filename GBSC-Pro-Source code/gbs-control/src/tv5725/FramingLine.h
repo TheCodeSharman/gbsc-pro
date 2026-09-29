@@ -47,6 +47,11 @@ public:
     // One unsigned field, leaving `at` past it.
     static bool number(const char *&at, long &into);
 
+    // The field rate, with an optional fraction. A record carrying only a whole
+    // hertz is read as one, which is what a file written before the fraction
+    // holds.
+    static bool rateFrom(const char *&at, float &into);
+
 private:
     static float proportionOf(long tenThousandths);
     static long tenThousandthsOf(float proportion);
