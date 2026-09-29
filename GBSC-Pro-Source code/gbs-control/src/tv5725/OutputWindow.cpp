@@ -181,6 +181,12 @@ RasterFit OutputWindow::fitToRaster(const Axis &axis, uint16_t capture,
     float produced = onFloor < behindPorch ? onFloor : behindPorch;
     if (produced > room)
         produced = room;
+    // TO NEAREST, and the two directions are not equivalent: short of the room
+    // is a black bar at the far edge, past it is picture the encoder never
+    // carries, because the aperture cannot open past the front porch. Either
+    // way the error belongs inside half a step -- about a pixel -- and biasing
+    // it costs a whole source pixel off the far edge at a magnification near 2.
+    // Measured at 800x600@60, where rounding down loses the card's frame.
     long scale = lrintf(Scale::Unity * capture / produced);
     if (scale < (long)Scale::Min)
         scale = Scale::Min;
@@ -188,20 +194,20 @@ RasterFit OutputWindow::fitToRaster(const Axis &axis, uint16_t capture,
         scale = Scale::Max;
     produced = capture * (float)Scale::Unity / scale;
 
-    // Rounding the scale down makes the picture a shade larger than solved for,
-    // which would run it off the END of the line. Bounded where placePicture PINS
-    // the picture rather than where it centres it: a picture too big to centre
-    // lands on the write floor, and that is the placement that can overrun.
+    // A picture larger than solved for would eventually run off the END of the
+    // line, where the ST registers wrap rather than clamp. Bounded at the
+    // RASTER's last usable unit and not at the active window's: past activeStop
+    // is the front porch, which the encoder discards, and the aperture in
+    // solve() closes there anyway -- while one step of scale is produced /
+    // scale of picture, 2.2 output rows at the bench 1080p framing.
     //
-    // Measured in WHOLE units, because solve() closes the display window on the
-    // floor of where the write ends: an overshoot inside the last unit is
-    // blanked there and shows as nothing. One step of scale is produced / scale
-    // of picture -- 2.37 lines at the bench 1080p framing -- so bumping for a
-    // fraction of a unit pays lines to save a quarter of one.
+    // Bounded where placePicture PINS the picture rather than where it centres
+    // it: a picture too big to centre lands on the write floor, and that is the
+    // placement that can overrun.
     while (scale < Scale::Max
            && floorf(placementFloor(axis, pictureOffset(axis, (float)Scale::Unity / scale), activeStart)
                      + produced)
-                  > (float)farBound(rasterTotal, activeStop)) {
+                  > (float)farBound(rasterTotal, 0)) {
         ++scale;
         produced = capture * (float)Scale::Unity / scale;
     }

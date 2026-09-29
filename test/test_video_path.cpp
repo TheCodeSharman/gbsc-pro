@@ -249,9 +249,11 @@ static void checkBenchGeometry()
     CHECK(InputFormatter::IF_LINE_ST::read() == 64);
     CHECK(InputFormatter::IF_LINE_SP::read() == 1165);
 
-    // Both scales computed from the capture and the raster, never inherited.
-    CHECK(VideoProcessor::VDS_HSCALE::read() == 422);
-    CHECK(VideoProcessor::VDS_VSCALE::read() == 486);
+    // Both scales computed from the capture and the raster, never inherited,
+    // and rounded OUTWARD: the exact vertical fit is 485.45 and 486 would leave
+    // 2.2 black rows at the top rather than overrun a line into the porch.
+    CHECK(VideoProcessor::VDS_HSCALE::read() == 421);
+    CHECK(VideoProcessor::VDS_VSCALE::read() == 485);
     CHECK(VideoProcessor::VDS_HSCALE_BYPS::read() == 0);
     CHECK(VideoProcessor::VDS_VSCALE_BYPS::read() == 0);
     CHECK(VideoProcessor::VDS_SYNC_EN::read() == 0);
@@ -275,12 +277,11 @@ static void checkBenchGeometry()
     // playback never walks past the written picture.
     CHECK(VideoProcessor::VDS_HB_ST::read() == VideoProcessor::VDS_DIS_HB_ST::read());
     CHECK(VideoProcessor::VDS_VB_ST::read() == VideoProcessor::VDS_DIS_VB_ST::read());
-    // Horizontally two units short of where the picture ends: the scaler
-    // interpolates between two capture units, so the last unit an aperture
-    // closing on the picture would show reads the unit after the last one
-    // captured -- which is what the trailing captureMargin puts under it.
-    CHECK(VideoProcessor::VDS_HB_ST::read() == 1829);
-    CHECK(VideoProcessor::VDS_VB_ST::read() == 1119);
+    // On the front porch, both axes: the picture overruns the active window and
+    // the aperture closes where the encoder stops carrying it. Horizontally one
+    // unit inside it, which the width parity takes.
+    CHECK(VideoProcessor::VDS_HB_ST::read() == 1831);
+    CHECK(VideoProcessor::VDS_VB_ST::read() == 1121);
 
     // And the horizontal window is an ODD number of units wide, which is what
     // reaches the picture: an even one shears.

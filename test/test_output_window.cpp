@@ -489,7 +489,9 @@ TEST_CASE("a filling framing reaches the raster at every edge")
     // memory window rather than this one: the width parity bias keeps it odd
     // against the zoom shear.
     // ../docs/investigations/horizontal-scale-corruption.md
-    const OutputWindow solved(1008, 512, rasterOf(1916, 1126, 1812, 1100, 140, 40));
+    const uint16_t ActiveStopH = 1812, ActiveStopV = 1100;
+    const OutputWindow solved(1008, 512, rasterOf(1916, 1126, ActiveStopH, ActiveStopV,
+                                                  140, 40));
 
     for (const Axis *axis : {&AxisHorizontal, &AxisVertical}) {
         const OutputMapping &m = on(solved, *axis);
@@ -502,7 +504,12 @@ TEST_CASE("a filling framing reaches the raster at every edge")
         // is the single exception to filling the screen.
         const float owed = axis->vertical() ? 1.0f
                                             : 1.0f + m.scale().magnification();
-        CHECK_MESSAGE((float)m.display().start() >= writeEndOf(m, *axis) - owed,
+        // Or at the front porch, where the fit let the picture overrun it: the
+        // scale is rounded outward, so the write can end inside blanking the
+        // encoder discards and the aperture closes on the porch instead.
+        const float porch = (float)(axis->vertical() ? ActiveStopV : ActiveStopH);
+        const float closes = writeEndOf(m, *axis) - owed;
+        CHECK_MESSAGE((float)m.display().start() >= (closes < porch ? closes : porch),
                       "the aperture closes on the write end, not before it");
     }
 }
@@ -746,6 +753,36 @@ TEST_CASE("the scale is not bumped for an overshoot the window already clips")
 
     SUBCASE("and the display window still closes by the front porch") {
         CHECK(solved.vertical().display().start() <= (int32_t)ActiveStop);
+    }
+
+    // The bench Acorn framing: 512 captured lines into the same region, and 688
+    // captured units into 160..1832. The exact vertical fit is 485.45, so 485
+    // overruns by a whole line -- and a step back to 486 pays 2.2 output rows
+    // for it, where the line it saves is in the front porch. Horizontally the
+    // same step costs 4 columns.
+    SUBCASE("nor for one a WHOLE unit past the front porch") {
+        const OutputWindow bench(688, 512, rasterOf(1916, Raster, 1832, ActiveStop,
+                                                    160, ActiveStart));
+        CHECK(bench.vertical().scale().reg() == 485);
+        CHECK(bench.horizontal().scale().reg() == 421);
+    }
+}
+
+TEST_CASE("a picture may overrun the front porch but never the raster")
+{
+    // The step back exists for the raster's own edge, where VDS_?B_ST wraps
+    // rather than clamps and a wrapped vertical rolls the frame. Everything
+    // between the front porch and that edge is blanking the encoder discards,
+    // so a picture reaching into it costs nothing and the aperture closes on
+    // the porch regardless.
+    const uint16_t Raster = 1916, Lines = 1125, ActiveStop = 1832, ActiveStart = 160;
+
+    for (uint16_t capture = 500; capture <= 900; ++capture) {
+        const OutputWindow solved(capture, 512, rasterOf(Raster, Lines, ActiveStop,
+                                                         1121, ActiveStart, 41));
+        const OutputMapping &h = solved.horizontal();
+        REQUIRE(writeEndOf(h, AxisHorizontal) < (float)(Raster - 2));
+        REQUIRE(h.display().start() <= (int32_t)ActiveStop);
     }
 }
 
@@ -1059,7 +1096,7 @@ TEST_CASE("the vertical aperture opens on the picture, not a capture unit later"
         const uint16_t ActiveStart = 41;
         const OutputWindow solved(800, 512, rasterOf(1916, 1125, 1852, 1121,
                                                      0, ActiveStart));
-        REQUIRE(solved.vertical().scale().reg() == 486);
+        REQUIRE(solved.vertical().scale().reg() == 485);
         // Within a row of it: the memory window is a whole line and the write
         // origin is not, so the floored aperture may open one before.
         CHECK(solved.vertical().display().stop() >= ActiveStart - 1);
@@ -1220,3 +1257,4 @@ int main(int argc, char **argv)
     }
     return doctest::Context(argc, argv).run();
 }
+
