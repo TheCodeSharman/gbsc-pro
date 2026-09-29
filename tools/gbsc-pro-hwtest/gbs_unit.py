@@ -244,9 +244,7 @@ def locked_steadily(host, samples=LOCK_SAMPLES, interval=0.4):
     return True
 
 
-# The pad each framing field moves on, as (increase, decrease). One press moves
-# at least one capture granule, so a press of one output pixel is the smallest
-# move the hardware acts on whatever the scale happens to be.
+# The pad each framing field moves on, as (increase, decrease).
 #
 # **The zoom pads read backwards here.** Zooming in CROPS, so the pad that
 # increases an extent is the zoom-out one.
@@ -260,12 +258,50 @@ def press(host, pad, pixels=None):
     return get(host, path)[0] == 200
 
 
+# The largest request worth making before a still framing means the control has
+# stopped rather than the step being too fine. A press is answered in the OUTPUT
+# PIXELS it asked for, and below half a capture granule that is no move at all --
+# a granule being granularity x magnification pixels, six at the most the engine
+# magnifies by.
+MOST_PIXELS_PER_GRANULE = 16
+
+
+def press_until_moved(host, pad, field, pixels):
+    """One press, with the request grown until the framing moves.
+
+    Reports (where it landed, what it cost), or (None, cost) where even the
+    largest step moved nothing -- which is the control against its stop.
+    """
+    at = get_json(host, "/geometry")[1]
+    if at is None:
+        return None, pixels
+    asked = max(1, pixels)
+    while True:
+        press(host, pad, asked)
+        # /sc queues into a global loop() reads on its next tick, so a 200 is
+        # not a press that has landed.
+        moved = wait_for(
+            lambda: (lambda now: now if now and now[field] != at[field] else None)(
+                get_json(host, "/geometry")[1]),
+            timeout=4.0)
+        if moved is not None:
+            return moved, asked
+        if asked >= MOST_PIXELS_PER_GRANULE:
+            return None, asked
+        asked = min(MOST_PIXELS_PER_GRANULE, asked * 2)
+
+
 def framing_to(host, field, wanted, attempts=64):
     """Walk one framing field to `wanted` through the pads, and report where it
-    landed. A solve clamps the framing it is given, so not every value is
-    reachable and the caller must read the answer rather than assume it."""
+    landed.
+
+    A solve clamps the framing it is given and the capture moves on a granule of
+    its own, so not every value is reachable and the caller must read the answer
+    rather than assume it.
+    """
     up, down = FRAMING_PADS[field]
     pixels = 1
+    approaching = None
     for _ in range(attempts):
         at = get_json(host, "/geometry")[1]
         if at is None:
@@ -273,18 +309,19 @@ def framing_to(host, field, wanted, attempts=64):
         remaining = wanted - at[field]
         if remaining == 0:
             return at
-        press(host, up if remaining > 0 else down, pixels)
-        # /sc queues into a global loop() reads on its next tick, so a 200 is
-        # not a press that has landed.
-        moved = wait_for(
-            lambda: (lambda now: now if now and now[field] != at[field] else None)(
-                get_json(host, "/geometry")[1]),
-            timeout=6.0)
+        # Past it, having been short of it: the grid this field moves on does
+        # not carry `wanted`, and pressing on walks it back and forth for ever.
+        if approaching is not None and (remaining > 0) != approaching:
+            return at
+        approaching = remaining > 0
+
+        moved, cost = press_until_moved(host, up if remaining > 0 else down,
+                                        field, pixels)
         if moved is None:
-            return at         # clamped, or the press was absorbed
+            return at         # against the stop
         # Output pixels per unit, learned rather than assumed: the scale is the
         # engine's and moves with every solve.
-        per_pixel = abs(moved[field] - at[field]) / float(pixels)
+        per_pixel = abs(moved[field] - at[field]) / float(cost)
         pixels = max(1, int(abs(wanted - moved[field]) / per_pixel))
     return get_json(host, "/geometry")[1]
 
