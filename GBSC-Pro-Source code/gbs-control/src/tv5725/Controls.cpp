@@ -36,6 +36,31 @@ bool Controls::verticalZoom(int16_t pixels)
     return moved;
 }
 
+int16_t Controls::finePixels(const Axis &axis, int16_t steps) const
+{
+    return (int16_t)lrintf(steps * engine_.granulePixels(axis));
+}
+
+bool Controls::horizontalPanFine(int16_t steps)
+{
+    return horizontalPan(finePixels(AxisHorizontal, steps));
+}
+
+bool Controls::verticalPanFine(int16_t steps)
+{
+    return verticalPan(finePixels(AxisVertical, steps));
+}
+
+bool Controls::horizontalZoomFine(int16_t steps)
+{
+    return horizontalZoom(finePixels(AxisHorizontal, steps));
+}
+
+bool Controls::verticalZoomFine(int16_t steps)
+{
+    return verticalZoom(finePixels(AxisVertical, steps));
+}
+
 VideoPath &Controls::engine() const { return engine_; }
 
 void Controls::report(const char *control, int16_t pixels) const

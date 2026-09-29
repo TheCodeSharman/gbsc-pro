@@ -81,6 +81,12 @@ public:
     uint16_t originUnitsOn(const Axis &axis) const;
     uint16_t extentUnitsOn(const Axis &axis) const;
 
+    // One capture granule in OUTPUT PIXELS: the smallest move this axis has,
+    // at the magnification the last solve landed on. A press is stated in
+    // output pixels, so a caller wanting the finest step has to ask what that
+    // costs -- it follows the output mode, the capture width and the divider.
+    float granulePixels(const Axis &axis) const;
+
     // Hold the framing at the whole capturable region and ignore every press,
     // so a bench run can check one rule against any source and any output: at
     // 100% the capture takes the source's blanking on all four sides, and the

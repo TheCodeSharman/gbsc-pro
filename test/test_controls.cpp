@@ -107,3 +107,42 @@ TEST_CASE("a press with nowhere to go leaves the framing where it was")
         panel.controls.horizontalPan(16);
     CHECK(panel.origin(AxisHorizontal) == atLimit);
 }
+
+// AN OSD TAP ASKS FOR THE SMALLEST MOVE THERE IS, not for a number of output
+// pixels. One capture granule is 2 x magnification output pixels across, five
+// of them at the bench Acorn framing, so a tap stated as one pixel rounds to
+// nothing and the remote reports a limit that is not there.
+TEST_CASE("a fine press moves one granule, whatever that costs in pixels")
+{
+    Panel panel;
+
+    SUBCASE("one tap is one granule on each axis") {
+        // Cropped first, or there is nothing to pan within.
+        panel.controls.horizontalZoom(400);
+        panel.controls.verticalZoom(100);
+
+        const long horizontal = panel.origin(AxisHorizontal);
+        REQUIRE(panel.controls.horizontalPanFine(1));
+        CHECK(panel.origin(AxisHorizontal) - horizontal
+              == AxisHorizontal.captureGranularity());
+
+        const long vertical = panel.origin(AxisVertical);
+        REQUIRE(panel.controls.verticalPanFine(-1));
+        CHECK(vertical - panel.origin(AxisVertical)
+              == AxisVertical.captureGranularity());
+    }
+
+    SUBCASE("and the hold ramp multiplies it") {
+        const long before = panel.extent(AxisHorizontal);
+        REQUIRE(panel.controls.horizontalZoomFine(4));
+        CHECK(before - panel.extent(AxisHorizontal)
+              == 4 * AxisHorizontal.captureGranularity());
+    }
+
+    SUBCASE("the vertical zoom answers the same way") {
+        const long before = panel.extent(AxisVertical);
+        REQUIRE(panel.controls.verticalZoomFine(3));
+        CHECK(before - panel.extent(AxisVertical)
+              == 3 * AxisVertical.captureGranularity());
+    }
+}

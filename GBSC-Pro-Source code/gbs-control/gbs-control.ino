@@ -8388,8 +8388,7 @@ void OSD_selectOption()
                 case IRKeyRight:
                     Tim_menuItem = millis();
                     // The press reports its own limit: neither stop shows in a register.
-                    if (!geometryControls.horizontalPan(-Tv5725::ControlSteps::Fine
-                            * geometryHold.multiplierFor(irKey, millis()))) {
+                    if (!geometryControls.horizontalPanFine(-geometryHold.multiplierFor(irKey, millis()))) {
                         for (int p = 0; p <= 400; p++) {
                             colour1 = 0x14;
                             number_stroca = stroca1;
@@ -8412,8 +8411,7 @@ void OSD_selectOption()
                     break;
                 case IRKeyLeft:
                     Tim_menuItem = millis();
-                    if (!geometryControls.horizontalPan(+Tv5725::ControlSteps::Fine
-                            * geometryHold.multiplierFor(irKey, millis()))) {
+                    if (!geometryControls.horizontalPanFine(+geometryHold.multiplierFor(irKey, millis()))) {
                         for (int p = 0; p <= 400; p++) {
                             colour1 = 0x14;
                             number_stroca = stroca1;
@@ -8439,13 +8437,11 @@ void OSD_selectOption()
                 // by hand and re-solved nothing.
                 case IRKeyUp:
                     Tim_menuItem = millis();
-                    geometryControls.verticalPan(+Tv5725::ControlSteps::Fine
-                            * geometryHold.multiplierFor(irKey, millis()));
+                    geometryControls.verticalPanFine(+geometryHold.multiplierFor(irKey, millis()));
                     break;
                 case IRKeyDown:
                     Tim_menuItem = millis();
-                    geometryControls.verticalPan(-Tv5725::ControlSteps::Fine
-                            * geometryHold.multiplierFor(irKey, millis()));
+                    geometryControls.verticalPanFine(-geometryHold.multiplierFor(irKey, millis()));
                     break;
                 case IRKeyExit:
                     oled_menuItem = 0;
@@ -8493,8 +8489,7 @@ void OSD_selectOption()
                     break;
                 case IRKeyRight:
                     Tim_menuItem = millis();
-                    if (!geometryControls.horizontalZoom(+Tv5725::ControlSteps::Fine
-                            * geometryHold.multiplierFor(irKey, millis()))) {
+                    if (!geometryControls.horizontalZoomFine(+geometryHold.multiplierFor(irKey, millis()))) {
                         for (int p = 0; p <= 400; p++) {
                             colour1 = 0x14;
                             number_stroca = stroca2;
@@ -8509,8 +8504,7 @@ void OSD_selectOption()
                     break;
                 case IRKeyLeft:
                     Tim_menuItem = millis();
-                    if (!geometryControls.horizontalZoom(-Tv5725::ControlSteps::Fine
-                            * geometryHold.multiplierFor(irKey, millis()))) {
+                    if (!geometryControls.horizontalZoomFine(-geometryHold.multiplierFor(irKey, millis()))) {
                         for (int p = 0; p <= 400; p++) {
                             colour1 = 0x14;
                             number_stroca = stroca2;
@@ -8528,8 +8522,7 @@ void OSD_selectOption()
                 // it moves the bottom edge down and Down is what grows it.
                 case IRKeyUp:
                     Tim_menuItem = millis();
-                    if (!geometryControls.verticalZoom(-Tv5725::ControlSteps::Fine
-                            * geometryHold.multiplierFor(irKey, millis()))) {
+                    if (!geometryControls.verticalZoomFine(-geometryHold.multiplierFor(irKey, millis()))) {
                         for (int p = 0; p <= 400; p++) {
                             colour1 = 0x14;
                             number_stroca = stroca2;
@@ -8544,8 +8537,7 @@ void OSD_selectOption()
                     break;
                 case IRKeyDown:
                     Tim_menuItem = millis();
-                    if (!geometryControls.verticalZoom(+Tv5725::ControlSteps::Fine
-                            * geometryHold.multiplierFor(irKey, millis()))) {
+                    if (!geometryControls.verticalZoomFine(+geometryHold.multiplierFor(irKey, millis()))) {
                         for (int p = 0; p <= 400; p++) {
                             colour1 = 0x14;
                             number_stroca = stroca2;

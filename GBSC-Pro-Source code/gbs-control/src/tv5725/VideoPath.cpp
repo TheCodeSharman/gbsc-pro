@@ -181,6 +181,13 @@ uint16_t VideoPath::extentUnitsOn(const Axis &axis) const
     return (uint16_t)lrintf(framing_.extentOn(axis) * (float)lineUnitsOn(axis));
 }
 
+float VideoPath::granulePixels(const Axis &axis) const
+{
+    const OutputMapping &mapped = axis.vertical() ? output_.vertical()
+                                                  : output_.horizontal();
+    return (float)axis.captureGranularity() * mapped.scale().magnification();
+}
+
 // Solve every register from what is held. A caller that has only moved the
 // framing wants solveWindows(); this is for one that has just been handed a
 // fresh reading, or whose previous solve was refused against the one it had.

@@ -24,9 +24,24 @@ public:
     bool horizontalZoom(int16_t pixels);
     bool verticalZoom(int16_t pixels);
 
+    // `steps` of the SMALLEST move the axis has, rather than of output pixels:
+    // what a remote tap asks for, and what its hold ramp multiplies. A number
+    // of pixels cannot express it -- one capture granule is
+    // granularity x magnification pixels, which the solve decides -- and asking
+    // for one pixel rounds to nothing above x2, where the press reports a limit
+    // that is not there.
+    bool horizontalPanFine(int16_t steps);
+    bool verticalPanFine(int16_t steps);
+    bool horizontalZoomFine(int16_t steps);
+    bool verticalZoomFine(int16_t steps);
+
     VideoPath &engine() const;
 
 private:
+    // One granule of `axis`, in the output pixels a press is stated in, times
+    // `steps`.
+    int16_t finePixels(const Axis &axis, int16_t steps) const;
+
     // The ADJ line: what the press asked for and the registers it landed in.
     // Under GBS_DEBUG, like every other console line.
     void report(const char *control, int16_t pixels) const;
