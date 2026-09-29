@@ -75,7 +75,7 @@ uint16_t OutputWindow::minimumCapture(const Axis &axis, uint16_t rasterTotal,
                                       uint16_t activeStart, uint16_t activeStop)
 {
     // produced = capture x Unity / scale, and the scale bottoms out at
-    // Scale::Min, so the capture that reaches the floor is room x Min / Unity
+    // this axis's floor, so the capture that reaches it is room x floor / Unity
     // -- rounded UP, one unit short leaving a bar.
     //
     // Where the WRITE FLOOR binds rather than the porch, fitToRaster takes the
@@ -89,7 +89,8 @@ uint16_t OutputWindow::minimumCapture(const Axis &axis, uint16_t rasterTotal,
     const float charged = writeFloorBinds(axis, activeStart)
                         ? writeStart(axis).perMagnification
                               + (float)axis.captureMargin() : 0.0f;
-    const float smallest = room * (float)Scale::Min / (float)Scale::Unity - charged;
+    const float smallest = room * (float)axis.magnificationFloor()
+                         / (float)Scale::Unity - charged;
     return smallest <= 0.0f ? 0 : (uint16_t)ceilf(smallest);
 }
 
@@ -99,10 +100,10 @@ uint16_t OutputWindow::maximumCapture(const Axis &axis, uint16_t rasterTotal,
     // fitToRaster solves produced = room x capture / (capture + startPerMag +
     // captureMargin), so the scale it asks for is Unity x that sum over room.
     // The capture the room still holds is the largest that keeps it at or under
-    // Scale::Max, and the write offset and the leading margin are charged
+    // this axis's ceiling, and the write offset and the leading margin are charged
     // because they come out of the same room.
     const float room = maxDisplayWindow(axis, rasterTotal, activeStart, activeStop);
-    const float largest = room * (float)Scale::Max / (float)Scale::Unity
+    const float largest = room * (float)axis.scaleCeiling() / (float)Scale::Unity
                         - writeStart(axis).perMagnification
                         - (float)axis.captureMargin();
     return largest <= 0.0f ? 0 : (uint16_t)largest;
@@ -163,7 +164,7 @@ RasterFit OutputWindow::fitToRaster(const Axis &axis, uint16_t capture,
 {
     float room = maxDisplayWindow(axis, rasterTotal, activeStart, activeStop);
     if (capture == 0 || room <= 0.0f)
-        return RasterFit(Scale(Scale::Max), 0.0f);
+        return RasterFit(Scale(axis.scaleCeiling()), 0.0f);
 
     // Where the picture starts is the LATER of the output mode's back porch and
     // the write floor plus the origin, and which one binds decides whether the
@@ -188,10 +189,10 @@ RasterFit OutputWindow::fitToRaster(const Axis &axis, uint16_t capture,
     // it costs a whole source pixel off the far edge at a magnification near 2.
     // Measured at 800x600@60, where rounding down loses the card's frame.
     long scale = lrintf(Scale::Unity * capture / produced);
-    if (scale < (long)Scale::Min)
-        scale = Scale::Min;
-    if (scale > Scale::Max)
-        scale = Scale::Max;
+    if (scale < (long)axis.magnificationFloor())
+        scale = axis.magnificationFloor();
+    if (scale > (long)axis.scaleCeiling())
+        scale = axis.scaleCeiling();
     produced = capture * (float)Scale::Unity / scale;
 
     // A picture larger than solved for would eventually run off the END of the
@@ -204,7 +205,7 @@ RasterFit OutputWindow::fitToRaster(const Axis &axis, uint16_t capture,
     // Bounded where placePicture PINS the picture rather than where it centres
     // it: a picture too big to centre lands on the write floor, and that is the
     // placement that can overrun.
-    while (scale < Scale::Max
+    while (scale < (long)axis.scaleCeiling()
            && floorf(placementFloor(axis, pictureOffset(axis, (float)Scale::Unity / scale), activeStart)
                      + produced)
                   > (float)farBound(rasterTotal, 0)) {

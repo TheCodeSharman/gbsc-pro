@@ -616,7 +616,7 @@ TEST_CASE("zooming out stops where the raster stops, on the horizontal axis too"
 
 
 // The magnification runs out before the capture does. Once VDS_?SCALE is at
-// Scale::Min the picture cannot grow with the crop any more, so every
+// the magnification floor the picture cannot grow with the crop any more, so every
 // further press of zoom-in SHRINKS it and the solve re-centres what is left.
 // Measured holding the key on the bench: the scale pinned at 342 while the
 // capture fell 574 -> 16 units and the window marched to the corner of the
@@ -650,7 +650,7 @@ TEST_CASE("zooming in stops where the magnification stops, not where the capture
 
 // Neither stop is visible in VDS_?SCALE, so the press itself has to report it.
 // Measured on the bench: zoom-in stops with VDS_HSCALE 343 and VDS_VSCALE 342 --
-// one either side of Scale::Min, because the scale is lrintf(Unity x capture /
+// one either side of the floor, because the scale is lrintf(Unity x capture /
 // room) and the rounding is the mode's -- and zoom-out stops at 579 and 554,
 // nowhere near Scale::Max, because the capture reaches the end of the line long
 // before the scaler is asked to minify. The OSD draws its "limit" off this.

@@ -30,7 +30,7 @@ static void pressFraming(Tv5725::VideoPath &engine, bool vertical, bool zooming,
 }
 
 // The most output pixels one granule can cost: the capture moves in twos and
-// the engine magnifies by at most Scale::Unity / Scale::Min, so a request this
+// the engine magnifies by at most Scale::Unity / AxisHorizontal.magnificationFloor(), so a request this
 // large has always crossed half a granule.
 static const int16_t MostPixelsPerGranule = 16;
 

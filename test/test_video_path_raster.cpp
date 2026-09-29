@@ -380,7 +380,7 @@ static bool within(int got, int wanted)
 
 TEST_CASE("the framing is a proportion, so it reproduces at every output size")
 {
-    // THE FRAMING IS STORED AS PROPORTIONS, SO IT MUST NEVER CLAMP. Scale::Min
+    // THE FRAMING IS STORED AS PROPORTIONS, SO IT MUST NEVER CLAMP. The floor
     // is raster / maxMagnification, which makes the reachable range
     // raster-independent by construction: a smaller output shrinks what the
     // scaler produces with it, lowering the magnification and moving AWAY from
@@ -436,7 +436,7 @@ TEST_CASE("the framing is a proportion, so it reproduces at every output size")
 
         // Nothing clamped: the scale stayed off its floor, which is what a
         // raster-independent range means.
-        CHECK(GBS::VDS_HSCALE::read() > Scale::Min);
+        CHECK(GBS::VDS_HSCALE::read() > AxisHorizontal.magnificationFloor());
     }
 }
 

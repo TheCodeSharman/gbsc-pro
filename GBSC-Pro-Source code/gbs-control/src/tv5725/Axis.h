@@ -18,7 +18,8 @@ namespace Tv5725 {
 class Axis {
 public:
     Axis(uint16_t captureGranularity, uint16_t captureMargin,
-         float activeStart, float activeExtent, bool vertical);
+         float activeStart, float activeExtent, bool vertical,
+         uint16_t magnificationFloor, uint16_t scaleCeiling);
 
     // Which axis this is. The one place that knows: callers pass the axis and
     // the arithmetic reads what it needs off it, rather than each call taking a
@@ -58,6 +59,21 @@ public:
     // docs/scaler-geometry-model.md.
     uint16_t captureGranularity() const;
 
+    // How far this axis will magnify, as VDS_?SCALE, which divides 1024 -- so
+    // the FLOOR is the most magnification. Stated per axis because the evidence
+    // is: the corruption behind the horizontal value was measured on
+    // VDS_HSCALE, and VDS_VSCALE is a different register in a different stage
+    // and is untested at any magnification. A shared constant was tried and put
+    // the horizontal finding on both. docs/known-issues.md
+    uint16_t magnificationFloor() const;
+
+    // The least magnification, as VDS_?SCALE. The 10-bit field's top on both
+    // axes, so the part cannot minify on either -- but what minification is
+    // REACHABLE is an axis property, each having its own non-linear scaler
+    // ahead of the VDS: IF_HS_RATE_SEG0..7 horizontally, MADPT_VSCALE_RATE_SEG0..7
+    // vertically.
+    uint16_t scaleCeiling() const;
+
     // A move of `pixels` output pixels, in capture units: the nearest whole
     // number of granules to what was asked, which below half a granule is none
     // of them. A press is stated in output pixels and answered in them.
@@ -67,6 +83,7 @@ private:
     uint16_t captureGranularity_, captureMargin_;
     float activeStart_, activeExtent_;
     bool vertical_;
+    uint16_t magnificationFloor_, scaleCeiling_;
 };
 
 extern const Axis AxisHorizontal;

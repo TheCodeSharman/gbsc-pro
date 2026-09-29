@@ -1,15 +1,23 @@
 #include "Axis.h"
 
+#include "Scale.h"
+
 #include <math.h>
 
 namespace Tv5725 {
 
 Axis::Axis(uint16_t captureGranularity, uint16_t captureMargin,
-           float activeStart, float activeExtent, bool vertical)
+           float activeStart, float activeExtent, bool vertical,
+           uint16_t magnificationFloor, uint16_t scaleCeiling)
     : captureGranularity_(captureGranularity),
       captureMargin_(captureMargin),
       activeStart_(activeStart), activeExtent_(activeExtent),
-      vertical_(vertical) {}
+      vertical_(vertical), magnificationFloor_(magnificationFloor),
+      scaleCeiling_(scaleCeiling) {}
+
+uint16_t Axis::magnificationFloor() const { return magnificationFloor_; }
+
+uint16_t Axis::scaleCeiling() const { return scaleCeiling_; }
 
 bool Axis::vertical() const { return vertical_; }
 
@@ -37,8 +45,8 @@ int16_t Axis::stepUnits(int16_t pixels, float magnification) const
     return pixels < 0 ? (int16_t)-units : (int16_t)units;
 }
 
-const Axis AxisHorizontal(2, 1, 0.117f, 0.864f, false);
+const Axis AxisHorizontal(2, 1, 0.117f, 0.864f, false, 342, Scale::Max);
 
-const Axis AxisVertical(1, 2, 0.061f, 0.933f, true);
+const Axis AxisVertical(1, 2, 0.061f, 0.933f, true, 342, Scale::Max);
 
 }  // namespace Tv5725

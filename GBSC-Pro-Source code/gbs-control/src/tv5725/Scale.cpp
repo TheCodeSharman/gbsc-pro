@@ -3,7 +3,6 @@
 namespace Tv5725 {
 
 const uint16_t Scale::Unity;
-const uint16_t Scale::Min;
 const uint16_t Scale::Max;
 
 Scale::Scale() : reg_(Max) {}

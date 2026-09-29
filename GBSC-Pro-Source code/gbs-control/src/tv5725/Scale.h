@@ -10,24 +10,11 @@ class Scale {
 public:
     static const uint16_t Unity = 1024;
 
-    // The 10-bit field's top, and the only one of the two the part states. Below
-    // unity it cannot MINIFY at all: 1024/1023 is a magnification of 1.001.
+    // The 10-bit field's top, and the only bound the part states. Below unity
+    // it cannot MINIFY at all: 1024/1023 is a magnification of 1.001. How far
+    // an axis will actually go, in either direction, is the axis's -- see
+    // Axis::magnificationFloor() and Axis::scaleCeiling().
     static const uint16_t Max = 1023;
-
-    // How far this firmware will magnify. RD-5725-1.1 states NO minimum -- it
-    // gives only HSCALE = 1024 x in / out and the field is 10 bits -- so there
-    // is no hardware bound here to name, and this is a picture-quality choice.
-    //
-    // Below about VDS_HSCALE 334 the horizontal scaler corrupts the picture --
-    // bars of equal source width come out unequal and split into hairlines,
-    // which no interpolation does -- and no fix was found. The mechanism is not
-    // established: the write floor is a correlate, not a cause. 1024/3 is
-    // 341.33, so 342 is the largest magnification at or under 3.0.
-    //
-    // MEASURED ON VDS_HSCALE, AND BOTH AXES READ IT. Whether VDS_VSCALE
-    // corrupts, and at what value, is untested.
-    // ../../../docs/investigations/horizontal-scale-corruption.md
-    static const uint16_t Min = 342;
 
     Scale();
     explicit Scale(uint16_t reg);

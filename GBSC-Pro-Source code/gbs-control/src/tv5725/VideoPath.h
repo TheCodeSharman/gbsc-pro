@@ -249,7 +249,7 @@ public:
     bool reset();
 
     // True where the press MOVED the capture window. Neither zoom stop shows in
-    // VDS_?SCALE -- zoom-in lands either side of Scale::Min on the mode's own
+    // VDS_?SCALE -- zoom-in lands either side of the axis's floor on the mode's own
     // rounding and zoom-out stops at the end of the line, far above it -- so
     // this is the only thing that can report a limit, and it reports the pan's
     // as well.

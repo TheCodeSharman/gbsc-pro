@@ -160,8 +160,8 @@ TEST_CASE("nothing is inherited from the registers")
     OutputWindow s(798, 513, rasterOf(1445, 1126));
 
     SUBCASE("both scales are computed, not read") {
-        CHECK(((s.horizontal().scale() >= Scale::Min) && (s.horizontal().scale() <= Scale::Max)));
-        CHECK(((s.vertical().scale() >= Scale::Min) && (s.vertical().scale() <= Scale::Max)));
+        CHECK(((s.horizontal().scale() >= AxisHorizontal.magnificationFloor()) && (s.horizontal().scale() <= AxisHorizontal.scaleCeiling())));
+        CHECK(((s.vertical().scale() >= AxisVertical.magnificationFloor()) && (s.vertical().scale() <= AxisVertical.scaleCeiling())));
     }
 
     SUBCASE("both memory windows clear their floor") {
@@ -365,7 +365,7 @@ TEST_CASE("the picture is centred on the raster")
     const uint16_t Raster = 1445;
     const OutputWindow solved(200, 512, rasterOf(Raster, 1126));
     const OutputMapping &h = solved.horizontal();
-    REQUIRE(h.scale().reg() == Scale::Min);
+    REQUIRE(h.scale().reg() == AxisHorizontal.magnificationFloor());
     REQUIRE(h.produced() < room(AxisHorizontal, Raster));
 
     SUBCASE("the picture is centred on the raster, not pinned to a panel edge") {
@@ -403,7 +403,7 @@ TEST_CASE("the picture is made as big as the raster allows")
         // Not "as big as the room": the write offset costs perMagnification x
         // magnification. The observable is that nothing more could be claimed --
         // the memory window lands hard against its floor.
-        CHECK(((h.scale().reg() >= Scale::Min) && (h.scale().reg() <= Scale::Max)));
+        CHECK(((h.scale().reg() >= AxisHorizontal.magnificationFloor()) && (h.scale().reg() <= AxisHorizontal.scaleCeiling())));
         CHECK(h.memory().stop() >= BenchHorizontal.floor);
         CHECK(h.memory().stop() <= BenchHorizontal.floor + 4);
     }
@@ -435,7 +435,7 @@ TEST_CASE("the picture is made as big as the raster allows")
         // A capture too small to fill the raster is bounded by the axis's
         // scale floor. That is a limit, not a failure.
         const OutputWindow tiny(60, 513, rasterOf(Raster, 1126));
-        CHECK(tiny.horizontal().scale().reg() == Scale::Min);
+        CHECK(tiny.horizontal().scale().reg() == AxisHorizontal.magnificationFloor());
         CHECK(tiny.horizontal().produced() < room(AxisHorizontal, Raster));
     }
 
@@ -552,18 +552,18 @@ TEST_CASE("the scale floor is derived from the magnification, on both axes")
     // picture breaks up. Measured entering the floor at VDS_HSCALE 334 on two
     // sources, rasters 1920 and 1280. 1024/3 is 341.33, so 342 is the largest
     // magnification at or under 3.0. docs/known-issues.md
-    CHECK(Scale(Scale::Min).magnification() <= 3.0f);
-    CHECK_NEAR(Scale(Scale::Min).magnification(), 3.0, 0.01);
+    CHECK(Scale(AxisHorizontal.magnificationFloor()).magnification() <= 3.0f);
+    CHECK_NEAR(Scale(AxisHorizontal.magnificationFloor()).magnification(), 3.0, 0.01);
 
     SUBCASE("the floor clears the scale that enters the write floor") {
-        CHECK(Scale::Min > 334);
+        CHECK(AxisHorizontal.magnificationFloor() > 334);
     }
 
     SUBCASE("no capture, however small, is scaled past the floor") {
         for (uint16_t capture = 16; capture <= 1126; capture += 7) {
             const OutputWindow solved(capture, capture, rasterOf(1445, 1126));
-            REQUIRE(solved.horizontal().scale() >= Scale::Min);
-            REQUIRE(solved.vertical().scale() >= Scale::Min);
+            REQUIRE(solved.horizontal().scale() >= AxisHorizontal.magnificationFloor());
+            REQUIRE(solved.vertical().scale() >= AxisVertical.magnificationFloor());
         }
     }
 
@@ -573,6 +573,21 @@ TEST_CASE("the scale floor is derived from the magnification, on both axes")
         CHECK(OutputWindow::narrowestCapture(AxisHorizontal, rasterOf(1445, 1126)) == 435);
         CHECK(OutputWindow::narrowestCapture(AxisVertical, rasterOf(1445, 1126)) == 373);
     }
+}
+
+TEST_CASE("each axis carries its own magnification floor")
+{
+    // The floor is measured on VDS_HSCALE, and VDS_VSCALE is a different
+    // register in a different stage, so an axis states its own rather than
+    // reading a shared one. docs/known-issues.md
+    const Axis deepVertical(1, 2, 0.061f, 0.933f, true, 273, Scale::Max);
+    const OutputTiming raster = rasterOf(1445, 1126);
+    CHECK(OutputWindow::narrowestCapture(deepVertical, raster)
+          < OutputWindow::narrowestCapture(AxisVertical, raster));
+
+    // And one axis's floor does not reach the other.
+    CHECK(AxisVertical.magnificationFloor() == AxisHorizontal.magnificationFloor());
+    CHECK(deepVertical.magnificationFloor() == 273);
 }
 
 // --- one axis's four output registers -----------------------------------------
@@ -702,7 +717,7 @@ TEST_CASE("only the near end pays the write floor")
 
     SUBCASE("a capture too small to fill the raster is still bounded") {
         const OutputWindow tiny(60, 512, rasterOf(Raster, 1125));
-        CHECK(tiny.horizontal().scale().reg() == Scale::Min);
+        CHECK(tiny.horizontal().scale().reg() == AxisHorizontal.magnificationFloor());
         CHECK(tiny.horizontal().produced() < room(AxisHorizontal, Raster));
     }
 }
@@ -795,7 +810,7 @@ TEST_CASE("the picture starts no earlier than the back porch")
         // room and has somewhere to be centred.
         const OutputWindow solved(400, 512, rasterOf(Raster, 1126, 0, 0, ActiveStart, 0));
         const OutputMapping &h = solved.horizontal();
-        REQUIRE(h.scale().reg() == Scale::Min);
+        REQUIRE(h.scale().reg() == AxisHorizontal.magnificationFloor());
         CHECK(cornerOf(h, AxisHorizontal) >= (float)ActiveStart);
 
         // Symmetrically, so what is reserved near is reserved far.
