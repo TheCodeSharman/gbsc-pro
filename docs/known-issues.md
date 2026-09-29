@@ -379,12 +379,62 @@ output raster pixels, and neither is constant across the three -- while the
 reading itself is worth a couple of columns either way, because the frame is one
 source pixel wide and its captured edge smears into the flashing ring beside it.
 
-**A cleaner instrument is what this wants next.** The run start of a green-hue
-test cannot separate a constant of the OUTPUT chain, which would be the same
-raster pixels on all three since they emit the same 1080p raster, from one of the
-CAPTURE, which would be the same capture units. Differencing frames at two
-`VDS_DIS_HB_SP` values gives the column-to-raster-unit mapping the comparison
-needs; `docs/investigations/the-shown-window-is-latched-at-lock.md` is the shape.
+### The picture is short of the transmitted window on a LINE-DOUBLED source
+
+**Measured by walking the aperture until the emitted frame's last column changes
+state**, which asks only where the encoder stops carrying our line and so is free
+of the capture and of the scale. Automation frozen, one acquisition per mode:
+
+| mode | scan | raster | `activeStop` solved | window measured | |
+|---|---|---|---|---|---|
+| X320 Y256 C256 F50 | doubled | 1916 | 1830 | opens 156.6, closes 1844 | 14 short |
+| X640 Y200 C256 F60 | doubled | 1604 | 1558 | opens 156.6, closes 1583 | 25 short |
+| X800 Y600 C256 F60 | flat | 1592 | 1549 | closes 1547 | right |
+| X640 Y480 C256 F60 | flat | 1600 | -- | fills at the solved aperture | right |
+
+**It follows the SCAN MODE and not the field rate.** Both doubled sources are
+short and both flat ones are right, across 50 Hz and 60 Hz, so the 50 Hz raster
+is not the variable. What shows is our own blanking: at `X320 Y256 C256 F50` the
+last 14 of 1920 emitted columns are black, and opening `VDS_DIS_HB_ST` fills them
+-- with the fetch running past the write, not with picture, so the aperture is
+right and the PICTURE is what falls short.
+
+**No mechanism is known and the correlation is four modes.** The transmitted
+window is an output-side property and the line doubler is an input-side block,
+so the two should not meet; `OutputMode::solve()` computes the window from the
+raster and the field rate alone and sees no scan mode. Either the window really
+does differ, or the produced width is under-modelled on a doubled source and the
+revealed columns are picture after all -- which one it is turns on whether the
+strip the aperture reveals is the card's content continuing or memory the write
+never reached. A photograph at `X320 Y256 C256 F50` shows the card's white band
+continuing with scattered speckle, which reads as the fetch.
+
+**THE NEAR EDGE IS OUT TOO, AND BY THE SAME SIGN.** The window opens at our unit
+156.6 on both doubled modes where the solve puts the picture at 159..160, so the
+first three or four emitted columns carry our blanking. It is the same reading
+on two rasters 300 units apart, which is what says it is not a fraction of the
+line.
+
+### The sync polarity cannot separate two rasters sharing a key
+
+**Every group that collides on (frame, field rate, sync duty) is uniform in
+polarity**, so adding it to `SourceKey`'s match changes nothing: 41 rows across
+CEA, DMT and AKF50 resolve to 20 distinct keys with polarity in the key and 20
+without it. The seven 15.6 kHz PAL AKF50 modes are all `+/+`, the five 525-line
+ones all `-/-`.
+
+**Nor can the sync duty be sharpened enough.** 320x250 and 320x256 state the
+same 36 pixels of 512, as do 640x250 and 640x256 against 72 of 1024 -- identical
+in every quantity this chip can measure, differing only in active lines and in a
+pixel clock nothing here can see. `SyncDutyTolerance` could separate 768x288 at
+7.42% from 320x256 at 7.03% in principle, 0.39 points apart, but the instrument
+reads 0.43 points off DMT on the bench, so the two are inside its own error.
+
+What that costs is a crop on the modes the leading row does not describe:
+1056x256 draws from 18.6% of the line where 320x256's row opens at 21.5%, so
+about 3% of the line is lost at each end, and 768x288 loses 6%. Widening the
+Acorn row to the union of its group would cost the bench mode its flush framing
+instead, the union being 768x288's own row.
 
 ### The display window closes after the last written pixel, and the gap shows unwritten memory
 
