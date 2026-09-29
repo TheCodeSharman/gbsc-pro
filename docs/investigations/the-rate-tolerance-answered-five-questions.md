@@ -82,11 +82,17 @@ tolerance is refused until `HeldRateRejectionLimit` lets it out. The gap between
 wrong was one number standing for five questions, not the number.
 
 **One of them moved afterwards, and it is the one with a settled source to ask
-about.** `RateCorroborationPerThousand` is 5, not 50. The gross-error net could not
+about.** `RateCorroborationPerThousand` is 2, not 50. The gross-error net could not
 see a held rate 13.7 per mille wrong, and the corroborating reading is the only
 site that compares two readings of a source standing still — so the
 instrument's own spread is what bounds it, not a transient's band. Acceptance
 stays at 50 for the reason above.
+
+`SourceIdentityPerThousand` followed it down to 3, and the measurements that
+sized it are in `Tv5725::SourceKey`: a later sweep found the field rate repeats
+to the digit across 24 acquisitions on four modes, two inputs and both sync
+types. The static_assert that used to floor identity at acceptance now holds the
+ARM at or below identity instead, so the two are no longer one number.
 
 ## The re-check does not arm on a settled source
 
@@ -160,19 +166,25 @@ zoom floor at `raster / maxMagnification`, and the capture bound
 systematic on a 1920 px line is 200x the 0.05 px jitter floor the framing
 measurements work to.
 
-**The persisted framing line still carries whole hertz.** `FramingLine::write()`
-serialises `lrintf(key.rateHz())` and the parser reads an integer. A key read
-back sits inside `SourceIdentityPerThousand` of the live one, so lookups match, and
-the file's rate reaches no raster — `framedKey_` is built from the measurement
-on every solve. Tightening `SourceIdentityPerThousand` below about 1% would break
-that, and the file format would have to carry the fraction first.
+**The persisted framing line carries the fraction, and it had to before identity
+could tighten.** `FramingLine::write()` serialised `lrintf(key.rateHz())` and the
+parser read an integer; a key read back sat inside a 5% identity of the live one,
+so lookups matched. At 3 per thousand they do not: 800x600@60 runs DMT's 60.3168
+and a RISC PC emits 50.474 behind one 320x256@50, 5.3 and 9.5 per thousand from
+the nearest integer, and both records were written and then unreadable. The rate
+is written to hundredths now, in integer arithmetic because `%f` is not
+dependable on this target, and a record with no fraction is still read as whole
+hertz so a file written before this keeps every entry within tolerance of an
+integer.
 
 ## What is not measured
 
 **Long-term drift.** Every run here spans seconds to about a minute, on a unit
 that had been powered for hours. Whether a source's rate walks thermally over
-tens of minutes, or differs across a cold start, is unmeasured — which is why
-`SourceIdentityPerThousand` stays at 50 rather than following the instrument down.
+tens of minutes is unmeasured. A cold start is not: the FIRST acquisition after a
+boot reads about 0.45 per thousand low and holds there until something arms a
+re-measure, which is the only non-zero spread in the later 24-acquisition sweep
+and is under a pixel on the raster.
 
 **Only two sources, both RGBHV from one machine**, for the spreads above. The
 Wii on `ypbpr` has been through the re-check cadence and arms nothing, but its

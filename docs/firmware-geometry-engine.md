@@ -257,34 +257,32 @@ end of the last register group a preset was still the authority for.
 
 ### The rate comes from the KEY, so it repeats
 
-`solveRaster()` reads `SourceKey::rateHz()`, not the reading the pass took. The
-reading wanders on a source that is standing still: measured across four mode
-changes of one unchanged 800x600 source, it settles at 60.38 Hz after one and
-60.72 after the next, and the horizontal total moved 11 px with it -- two solves
-of one source landing on two framings.
+`solveRaster()` reads `SourceKey::rateHz()`, not the reading the pass took, so
+the raster is solved once per source identity. The key is quantised to
+`RateStepsPerHz` and is sticky, replaced only when the arriving key differs, so a
+later reading inside the tolerance keeps the rate the key was established with.
+`VideoPath::adoptSourceKey()` therefore runs BEFORE `solveRaster()`; run after,
+the raster was generated against the previous source's key.
 
-The key carries a whole number of hertz and is sticky, replaced only when the
-arriving key differs, so a later reading inside the tolerance keeps the rate the
-key was established with. `VideoPath::adoptSourceKey()` therefore runs BEFORE
-`solveRaster()`; run after, the raster was generated against the previous
-source's key.
+**Nearest step, not truncated.** Real modes are built to be "60 Hz" and land on
+and just above the integers, so a boundary at the integer would run through the
+middle of the cluster.
 
-**Nearest hertz, not truncated.** Real modes are built to be "60 Hz" and land on
-and just above the integers -- 13 of the 63 in the bench monitor definition sit
-exactly on one -- so a boundary at the integer runs through the middle of the
-cluster and any downward wander drops a whole hertz. At the half hertz it falls
-in the gaps: 3 of the 63 come within 0.15 Hz of a boundary (54.4833, 69.5398,
-71.4286) and none is a mode this bench runs.
+**The cost is up to half a step, and the rate steer pays it.**
+`FrameSync::matchRate()` steers the display clock so the output's field rate is
+the source's. It is UNGATED -- it runs whether or not `enableFrameTimeLock` is
+set, and the default is 0 -- so a raster in the right ballpark is steered exact;
+one that jumps between solves of the same source is not. The frame time lock
+proper, which closes on frame TIME, is the option and is off unless asked for.
 
-**The cost is up to half a hertz of accuracy, and the frame time lock pays it.**
-The bench RiscPC at a true 50.08 Hz now solves a 1920 raster where it solved
-1916. FrameSync closes on frame TIME continuously, so a raster in the right
-ballpark is steered exact; one that jumps between solves of the same source is
-not.
-
-**The identity tolerance stays wider than the rounding, and that is what it is
-for.** 60.38 and 60.72 round to different hertz and must still be one source, or
-the stored framing swaps under drift.
+**The identity tolerance is sized by the instrument, not by the rounding.**
+Measured across 24 acquisitions -- 320x256@50, 640x480@60 and 800x600@60 on
+`vga`, 576i on `ypbpr`, both sync types, each reached by a real mode change --
+the field rate repeats to the digit, and 800x600@60 lands on DMT's 60.3168 Hz.
+The one non-zero spread anywhere is the FIRST acquisition after a boot, which
+reads about 0.45 per thousand low and holds there until something arms a
+re-measure; on the raster that is under a pixel. `Tv5725::SourceKey` carries the
+constants and what each one has to separate.
 
 **The field rate has to be right, and 40..100 Hz was nowhere near tight
 enough.** A raster solved at the wrong rate is out by the ratio of the rates,
