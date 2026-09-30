@@ -62,8 +62,17 @@ def test_reports_the_vertical_capture_window():
 
 
 def test_reports_what_the_scaler_produces_vertically():
-    # 335 capture lines x 1024 / 307 = 1117.39
-    assert "335 capture lines -> 1117.39 lines" in rendered()
+    # 335 picture lines x 1024 / 307 = 1117.39
+    assert "335 picture lines -> 1117.39 lines" in rendered()
+
+
+def test_reports_the_interpolator_margin_when_the_picture_is_narrower_than_the_capture():
+    # The IF register pair spans the picture plus the interpolator's margin at
+    # each end; the scale is fitted to the picture, so the produced size follows
+    # it and the margin is named rather than counted as picture.
+    out = rendered({"PICTURE_H": 928, "PICTURE_V": 331})
+    assert "928 picture units -> 1247.08 px   (2 more captured, the interpolator's margin)" in out
+    assert "331 picture lines -> 1104.05 lines   (4 more captured, the interpolator's margin)" in out
 
 
 def test_reports_the_vertical_display_window():
@@ -88,4 +97,4 @@ def test_reports_where_the_picture_sits_against_the_encoder_window():
 
 
 def test_horizontal_reporting_still_works():
-    assert "930 capture units -> 1249.76 px" in rendered()
+    assert "930 picture units -> 1249.76 px" in rendered()
