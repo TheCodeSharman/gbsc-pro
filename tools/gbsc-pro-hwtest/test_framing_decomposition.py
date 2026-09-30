@@ -123,20 +123,20 @@ def test_the_picture_is_placed_from_the_write_model_and_the_scale():
     assert h["m"] == 2.0
     assert h["A0"] == 147 and h["A1"] == 1747
     assert h["W0"] == 40 + 55 + 25 * 2.0                 # VDS_HB_SP + 55 + 25m
-    assert h["P0"] == h["W0"] + (260 - 259) * 2.0       # one capture unit of margin, scaled
-    assert h["P1"] == h["P0"] + 800 * 2.0
+    assert h["P0"] == h["W0"] + 1 * 2.0                  # one capture unit of margin, scaled
+    assert h["P1"] == h["W0"] + (1061 - 259 - 1) * 2.0   # the pair less the far margin
 
 
 def test_the_vertical_picture_uses_the_vertical_write_model():
     v = fd.positions(REGS, GEOMETRY)["v"]
     assert v["T"] == 1125
     assert abs(v["W0"] - (30 + 0.2 + 0.8 * 2.0)) < 1e-9
-    assert abs(v["P0"] - (v["W0"] + (35 - 33) * 2.0)) < 1e-9
-    assert abs(v["P1"] - (v["P0"] + 480 * 2.0)) < 1e-9
+    assert abs(v["P0"] - (v["W0"] + 2 * 2.0)) < 1e-9             # two units of margin vertically
+    assert abs(v["P1"] - (v["W0"] + (517 - 33 - 2) * 2.0)) < 1e-9
 
 
 def test_a_capture_narrower_than_the_ask_is_flagged_as_clamped():
-    clamped = dict(REGS, IF_HB_ST2=1000)
+    clamped = dict(REGS, IF_HB_ST2=1000)                 # 741 units against 800 asked
     assert fd.positions(clamped, GEOMETRY)["h"]["clamped"]
     assert not fd.positions(REGS, GEOMETRY)["h"]["clamped"]
 
@@ -229,3 +229,34 @@ def test_the_pan_probe_gives_the_slope_from_a_known_move():
     # Eight capture units at 2x magnification are sixteen raster units, seen
     # as 22 columns: 1.375 columns per unit.
     assert abs(fd.slope_from_pan(shift_cols=22.0, pan_units=8, magnification=2.0) - 1.375) < 1e-9
+
+
+# --- what the first bench state taught the instrument -----------------------------
+
+def test_a_lone_green_edge_is_filed_by_which_half_of_the_frame_it_is_in():
+    clip = np.zeros((1, 20, 400, 3), np.uint8)
+    clip[0, :, 390, 1] = 255
+    near, far, _ = fd.card_columns(clip, axis=1, expected_span=200.0)
+    assert near is None and far == 390.0
+
+
+def test_the_picture_is_placed_from_the_registers_and_the_axis_margins():
+    # The capture register pair is the picture plus one margin unit each end
+    # horizontally and two vertically (Axis.cpp), so the picture needs no
+    # reading of the framing's ask -- whose origin is not the register's.
+    h = fd.positions(REGS, GEOMETRY)["h"]
+    assert h["P0"] == h["W0"] + fd.CAPTURE_MARGIN_H * h["m"]
+    assert h["P1"] == h["W0"] + ((1061 - 259) - fd.CAPTURE_MARGIN_H) * h["m"]
+    v = fd.positions(REGS, GEOMETRY)["v"]
+    assert abs(v["P0"] - (v["W0"] + fd.CAPTURE_MARGIN_V * v["m"])) < 1e-9
+    assert abs(v["P1"] - (v["W0"] + ((517 - 33) - fd.CAPTURE_MARGIN_V) * v["m"])) < 1e-9
+
+
+def test_a_window_edge_falls_back_to_the_black_count_where_the_strips_found_nothing():
+    walked = dict(h_near=dict(strip_zero=153.4, black_zero=152.7),
+                  h_far=dict(strip_zero=1549.9, black_zero=1550.0),
+                  v_near=dict(strip_zero=40.0, black_zero=40.6),
+                  v_far=dict(strip_zero=None, black_zero=1123.2))
+    window, instruments = fd.measured_window(walked)
+    assert window["E0"] == 153.4 and window["V1"] == 1123.2
+    assert instruments["V1"] == "black" and instruments["E0"] == "strip"

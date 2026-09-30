@@ -279,13 +279,6 @@ def walks(host, dev, regs, slope):
         v_far=walk_edge(host, dev, spec_map, "VDS_DIS_VB_ST", regs["VDS_DIS_VB_ST"], False, True, rows))
 
 
-def measured_window(walked):
-    """E0/E1/V0/V1 off the differenced strips, the instrument that does not
-    depend on where the picture sits."""
-    return dict(E0=walked["h_near"]["strip_zero"], E1=walked["h_far"]["strip_zero"],
-                V0=walked["v_near"]["strip_zero"], V1=walked["v_far"]["strip_zero"])
-
-
 def measure_state(ctx, mode, output):
     host, where, dev = ctx["host"], ctx["modeserv"], ctx["dev"]
     record = dict(at=datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
@@ -334,7 +327,9 @@ def measure_state(ctx, mode, output):
                 record["clips"]["zoom"] = save_png(ctx, mode, output, "zoom", zoomed[0])
                 record["walk"] = walks(host, dev, regs, (analysis["slope"]["h_pred"],
                                                          analysis["slope"]["v_pred"]))
-                analysis = analyse_default(output, regs, geometry, clip, measured_window(record["walk"]))
+                window, instruments = fd.measured_window(record["walk"])
+                analysis = analyse_default(output, regs, geometry, clip, window)
+                analysis["window"]["instruments"] = instruments
                 analysis["slope"].update(h_near=record["walk"]["h_near"]["strip_slope"],
                                          h_far=record["walk"]["h_far"]["strip_slope"],
                                          v_near=record["walk"]["v_near"]["strip_slope"],

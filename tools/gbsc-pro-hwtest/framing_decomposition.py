@@ -170,36 +170,36 @@ def units_to_columns(unit, e0, slope):
 
 
 def _axis_positions(total_reg, scale_reg, memory_stop, aperture, capture_stop,
-                    capture_start, origin, extent, write_start):
+                    capture_start, margin, extent_asked, write_start):
     magnification = SCALE_UNITY / scale_reg
     constant, per_magnification = write_start
     write = memory_stop + constant + per_magnification * magnification
-    margin = max(0, origin - capture_stop)
-    picture_start = write + margin * magnification
     span = capture_start - capture_stop
     return dict(T=total_reg + 1, m=magnification, A0=aperture[0], A1=aperture[1],
-                W0=write, P0=picture_start, P1=picture_start + extent * magnification,
-                capture_span=span, asked=extent, clamped=span < extent)
+                W0=write, P0=write + margin * magnification,
+                P1=write + (span - margin) * magnification,
+                capture_span=span, asked=extent_asked, clamped=span - 2 * margin < extent_asked)
 
 
 def positions(regs, geometry):
     """The register-only positions per axis: the raster total, the
     magnification, the aperture A, the write start W0 and the picture P.
 
-    P is the framing's ASK (`oh`/`eh`) placed by the write model; the applied
-    register span is carried beside it and `clamped` says when the two differ,
-    which is the reading trap docs/investigations/the-raster-bound-is-stored-as-
-    a-proportion.md names.
+    P is the register pair less the axis's capture margin at each end, placed
+    by the write model -- registers only, because /geometry's `oh`/`ov` are the
+    framing's ASK against the counter's own origin, which is not the register's.
+    The ask is carried beside it and `clamped` says when the chip got less than
+    was asked (docs/investigations/the-raster-bound-is-stored-as-a-proportion.md).
     """
     return dict(
         h=_axis_positions(regs["VDS_HSYNC_RST"], regs["VDS_HSCALE"], regs["VDS_HB_SP"],
                           (regs["VDS_DIS_HB_SP"], regs["VDS_DIS_HB_ST"]),
                           regs["IF_HB_SP2"], regs["IF_HB_ST2"],
-                          geometry["oh"], geometry["eh"], WRITE_START_H),
+                          CAPTURE_MARGIN_H, geometry["eh"], WRITE_START_H),
         v=_axis_positions(regs["VDS_VSYNC_RST"], regs["VDS_VSCALE"], regs["VDS_VB_SP"],
                           (regs["VDS_DIS_VB_SP"], regs["VDS_DIS_VB_ST"]),
                           regs["IF_VB_SP"], regs["IF_VB_ST"],
-                          geometry["ov"], geometry["ev"], WRITE_START_V))
+                          CAPTURE_MARGIN_V, geometry["ev"], WRITE_START_V))
 
 
 TERMS = ("dCapture", "dPlace", "dModelApplied", "dEncoder")
@@ -299,6 +299,8 @@ def card_columns(clip, axis, expected_span):
     edges, _runs, residual = full_margins.green_edges(clip, axis, expected_span)
     if edges is None:
         return None, None, None
+    if edges[1] is None and edges[0] >= clip.shape[1 + axis] / 2.0:
+        return None, edges[0], None
     return edges[0], edges[1], residual
 
 
@@ -306,3 +308,22 @@ def slope_from_pan(shift_cols, pan_units, magnification):
     """Dongle columns per raster unit, from a pan of `pan_units` capture units
     that moved the picture `shift_cols` columns."""
     return shift_cols / (pan_units * magnification)
+
+
+WALK_EDGES = (("E0", "h_near"), ("E1", "h_far"), ("V0", "v_near"), ("V1", "v_far"))
+
+
+def measured_window(walked):
+    """E0/E1/V0/V1 off the aperture walks: the differenced strips where they
+    found the blanking, the black count where they did not -- and which one
+    answered, per edge."""
+    window, instruments = {}, {}
+    for edge, walk in WALK_EDGES:
+        got = walked.get(walk) or {}
+        if got.get("strip_zero") is not None:
+            window[edge], instruments[edge] = got["strip_zero"], "strip"
+        elif got.get("black_zero") is not None:
+            window[edge], instruments[edge] = got["black_zero"], "black"
+        else:
+            window[edge], instruments[edge] = None, None
+    return window, instruments
