@@ -177,8 +177,36 @@ and 5:4 with `/geometry` agreeing at each step, and the emitted frame went from
 `Reset Settings` wipes the preferences and reboots.
 
 **Nothing calls the described menu from the remote**, so the chain above is still
-what runs. What remains is the two renderers, whose obstacle is the fixed `P`
-positions the television page paints at -- they do not reflow.
+what runs. What remains is the panel's renderer, and switching the remote over a
+subtree at a time.
+
+### The television renderer, and four things about the STV9426
+
+`TelevisionMenu` writes a page as three rows of 28 character cells. A row is
+written WHOLE, so it reflows -- the chain painted each label at a fixed `P`
+position, which is why removing an option's value left its label behind.
+
+Nothing on the board reports any of this, so each was measured off the emitted
+frame:
+
+| | |
+|---|---|
+| the font | ASCII from 0x21 up, but **0x20 is an accented letter** and the **hyphen is at 0x3e**. `Osd_Display()` is what says so, and it skips a space rather than writing one |
+| a cell | two writes, and the same value means different things at the two addresses: at the even one it is the colour, at the odd one a glyph |
+| **0x11** | both -- a filled block in the bar's colour, which is how `background_up()` paints a row |
+| **0xc0** | turns a cell off altogether, at either address. `OSD_Cut_0x01()` writes it to erase the overlay. As a glyph it does not leave the background showing -- it takes the whole cell out |
+
+So a row is painted as a bar and then written over, and a row the page does not
+fill is turned off rather than painted.
+
+**A press does not draw.** The overlay is on the ESP's I²C bus and a `/menu`
+press arrives from a network callback, so `press()` marks a redraw and `loop()`
+performs it -- the same reason register access is deferred. It draws only while
+the chain's menu is closed, or the two paint over each other.
+
+**Closing draws an EMPTY page rather than nothing.** A device that keeps what it
+was given has no other way to be told: measured before this, Exit left the bar
+and all three rows over the picture for ever.
 
 ## Info reports two things that are not what they look like
 
