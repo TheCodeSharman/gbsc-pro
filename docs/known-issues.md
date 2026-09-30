@@ -90,6 +90,57 @@ source takes the fallback and no unclipped picture has been measured on one.
 `CARD` is the instrument: it carries a one-pixel green border flush to all four
 edges, so clipped-or-not is a yes/no on one frame. `ANIM OFF` first.
 
+### An output resolution request can be lost, two ways
+
+`/uc?f g h j p s` sets `uopt->presetPreference` and then, in
+`handleType2Command()`, applies it through `changeOutputResolution()` only
+`if (!scalingRgbhv())`; when that predicate is true it calls
+`RgbhvOutput::chooseBypass()` instead and applies nothing, then saves the
+preference. `scalingRgbhv()` is `sourceIsRgbhv() && RgbhvOutput::isScaling()`,
+and `sourceIsRgbhv()` is "the selected input shares the VGA port", true for
+the whole of every bench session -- so on this bench the request is honoured
+or discarded by `RgbhvOutput::isScaling()` alone, a flag the engine's own
+comments describe as having several writers and reading pass-through on a
+unit that is scaling. `UpDisplay()` carries the same branch around
+`applyPresets()`.
+
+The branch is upstream's mechanism translated: there, a scaling RGBHV source
+(standard 14) was marked bypass (15) so the sync watcher would notice a change
+of standard and reload with the new preference. Nothing here consumes the
+flip that way: the three other readers of the flag shape the next preset
+load's sync-processor preparation and resets, and none re-applies the
+resolution. So the letter is saved and not applied until something else loads
+a preset, and the flag is left reading bypass on a unit that is scaling,
+which is the state the coast-window fault was traced to.
+
+Observed twice by the framing sweep at its 1080p-to-720p transition, the
+raster left at 1125 lines with `/preferencesv2.txt` byte 0 already `'3'`
+(720p): the console printed nothing for the request where an honoured one
+prints its new divider within half a second, and the next request landed. It
+does not reproduce from a settled unit -- a request that lands leaves the
+flag false and every later one lands too -- and a full re-detect (`/sc?~`)
+leaves it false as well, since the detection path chooses bypass on its way
+out. What leaves it true is the sync watcher's own mode-change handling,
+which chooses bypass and then loads presets, and both losses followed a
+source mode change.
+
+**The second way is below the handler.** Replayed after a source mode change
+with the console attached, the first request got no HTTP answer at all --
+status 0 on a ten-second timeout, nothing printed -- and the same request
+seventeen seconds later was answered and honoured in a fifth of a second; a
+re-detect gave the same once, on the second of two requests. The unit stops
+answering HTTP for some seconds after a mode change, from an immediate route
+that only stores a byte, and what holds it is not established: the vsync
+sampler is bounded at 250 ms.
+
+What would close it: `changeOutputResolution()` unconditionally -- it already
+holds the resolution across pass-through itself -- and the same for
+`UpDisplay()`, with a bench test that re-detects (`/sc?~`), waits for
+acquisition, sends the other of 1080p/720p and asserts `VDS_VSYNC_RST`
+carries it within 30 s. Until then `gbs_unit.choose_output()` refuses a
+raster that merely held still, re-sends a request that got no answer, and
+re-sends once more one that was answered and never applied.
+
 ### A mode change into a falling-back resolution installs one extra divider
 
 `VideoPath::dividerCeilingForOutput()` solves the raster for the mode currently
@@ -285,22 +336,46 @@ it is a state the bring-up passes through rather than one it can be left in.
 What is not established is which stage emits it, and whether a sink that is
 slower to re-lock than this bench's shows it for longer.
 
-### The transmitted window's start is latched, so the picture cannot reach both edges
+### The transmitted window's start is per source, and no constant places it
 
-**The window the chain carries is the right WIDTH and starts in the wrong
-place**, and the start is not something the engine can compute: the encoder
-latches it at link-up near wherever `VDS_DIS_HB_SP` was at that moment. Measured
-at 1080p across six rasters it lands 0.4 to 8.6 units before the aperture, and
-two acquisitions of one framing differ by six output pixels.
+**The window the chain carries is the right WIDTH and starts where the
+encoder puts it, which is not where `OutputMode::solve()` puts it and is not
+one constant off.** Measured with `framing_sweep.py` on eight sources into
+1080p and 720p, and two of them into 960p and 1024p, the link re-locked by a
+source `MODE` round trip before every judged clip: the width is `T x
+carriedPx / totalPx` to within a unit at 1080p and 1024p and four at 720p, and
+the start sits 13.0 to 24.3 units after the scaled sync and porch at 1080p and
+-12.7 to 37.8 at 720p, one number per (source, output) state. The two
+sources at one raster and one aperture -- 640x480@60 and 800x600@60 into
+1080p, both apertures at 160 -- put it at 153.3 and 157.7; the two at T 1920
+into 720p put it 45 units apart. The whole window moves, so black at the left
+and picture lost at the right come in one number per state: 9 to 10 columns
+for 640x480@60 at three outputs, 37 for 640x480@75 at 720p, 1 to 5 for
+800x600@60. `TransmittedWindowDelayPx` at 20 is right for none of them, and
+where the rate clamp binds -- 640x480 at 72.8 and 75 Hz falling back to 1024p
+-- the clamp places the window to within two units at both ends.
 
-Because the width is right, the two ends are one fault: a window latched N units
-early puts N units of black at the left and loses N units of picture off the
-right. Every margin the card measures across the DMT set reads `N | 0` -- all
-the slack at the left, none at the right.
+**It is not re-rolled between acquisitions.** Across mode-round-trip re-locks
+one state repeats to under half a unit: 800x600@60 at 1080p 157.7, 157.6 and
+157.4, at 720p 396.2, 395.9 and 395.8; 640x480@60 at 1080p 153.3, 153.7,
+153.7, 153.7 and 152.3, three of them identical to the column at every walk
+step. The six-pixel difference between acquisitions recorded earlier is not
+seen with this re-lock; a `PAD_SYNC_OUT_ENZ` toggle is the re-lock that lands
+elsewhere.
 
-**`OutputMode::TransmittedWindowDelayPx` is fitted to that scatter**, and no
-constant can correct it: charging the aperture moves the blanking the latch
-follows, so the window moves with it.
+**And it is not latched from `VDS_DIS_HB_SP`**, which the aperture at 160 on
+both of the 1080p sources above already says. Nor does any one of T, the
+display clock, the field rate, the line rate or the scan mode order the
+sixteen states. Sources at a standard's exact rate -- 60.00 Hz, and 72.81 and
+75.00 at 720p -- read 7 to 13 and -12.7; those at none -- 59.87, 60.32, 56.25
+and 50.16 Hz -- read 16.8 to 24.3; 320x256 at 50.08 reads 18.9 at 1080p and
+37.8 at 720p. What the encoder keys on is not established.
+`investigations/the-encoder-window-start-is-per-source.md` has every row.
+
+**No constant can correct it**: a delay of 13 leaves black at the left of
+every state placed later, 20 loses picture off the right of every state placed
+earlier, and covering the spread means an aperture wider than the window at
+both ends, losing picture off both edges by up to the spread on every state.
 
 The capture window is NOT the fault: measured inside one acquisition with both
 of the card's green columns in frame, the source's active video runs 298.9 ..
@@ -402,6 +477,22 @@ the doubled counterpart.
 **Readings at 75 Hz do not repeat at all**: 1125 lines at 75 Hz is not a
 standard mode, and `800x600@75` read +8, +29, +17 and +15 samples on four
 acquisitions.
+
+**The remainder reaches the default framing, and it costs the right edge.**
+Read through the encoder's window by `framing_sweep.py` at the default on the
+stock AKF50's 640x480@60 and 800x600@60, into 1080p, 720p, 960p and 1024p: the
+capture window sits where the row says to four figures, and the card's border
+puts the picture one to three source pixels later than that on every output.
+On 800x600@60, whose display is the DMT active area exactly, the left border
+is +0.7 to +3.0 raster units inside the picture's start and the right border
+is off the frame at three outputs of four; on 640x480@60 the right border
+reads +8.4, +8.9 and +14.0 units against the +13.1, +12.0 and +17.4 its own
+mode file predicts. Same sign and size as the table above by a second
+instrument. A source with no border loses its last pixels at the right at the
+engine's own framing, which is the requirement above not being met, and the
+correction the plan names for it is the row's own start rather than the
+origin constant.
+`investigations/the-encoder-window-start-is-per-source.md`.
 
 ### A CEA-861 HD source acquires, and its capture origin is the previous source's
 
