@@ -140,24 +140,37 @@ bool FramingLine::read(const char *&at, SourceKey &key, PanAndZoom &framing)
     return true;
 }
 
-int FramingLine::write(char *out, uint8_t size, const SourceKey &key,
-                       const PanAndZoom &framing)
+int FramingLine::writeKey(char *out, uint8_t size, const SourceKey &key)
 {
     if (size == 0)
         return -1;
 
     const unsigned long hundredths = (unsigned long)lrintf(key.rateHz() * 100.0f);
     const int written = snprintf(
-        out, size, "%u@%lu.%02lu/%ld%c%c = %ld %ld %ld %ld",
+        out, size, "%u@%lu.%02lu/%ld%c%c",
         (unsigned)key.lines(), hundredths / 100uL, hundredths % 100uL,
         tenThousandthsOf(key.syncWidth()),
-        symbolFor(key.hsyncPolarity()), symbolFor(key.vsyncPolarity()),
+        symbolFor(key.hsyncPolarity()), symbolFor(key.vsyncPolarity()));
+
+    return written > 0 && written < (int)size ? written : -1;
+}
+
+int FramingLine::write(char *out, uint8_t size, const SourceKey &key,
+                       const PanAndZoom &framing)
+{
+    const int named = writeKey(out, size, key);
+    if (named < 0)
+        return -1;
+
+    const int room = (int)size - named;
+    const int written = snprintf(
+        out + named, (size_t)room, " = %ld %ld %ld %ld",
         tenThousandthsOf(framing.originOn(AxisHorizontal)),
         tenThousandthsOf(framing.extentOn(AxisHorizontal)),
         tenThousandthsOf(framing.originOn(AxisVertical)),
         tenThousandthsOf(framing.extentOn(AxisVertical)));
 
-    return written > 0 && written < (int)size ? written : -1;
+    return written > 0 && written < room ? named + written : -1;
 }
 
 }  // namespace Tv5725

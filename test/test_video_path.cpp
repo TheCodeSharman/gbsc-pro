@@ -35,6 +35,7 @@ FakeTwoWire Wire;
 #include "FrameAt.h"
 #include "RegistersWritten.h"
 #include "DebugPinStub.h"
+#include "LoggedLines.h"
 
 static Tv5725::InputFormatter inputFormatter;
 
@@ -74,7 +75,6 @@ uint32_t debugPinPulseTicks()
                                          ((Wire.bank[1][0x1D] & 0x07) << 8));
     return ticksForHz(g_fieldRate);
 }
-void tv5725Log(const char *) {}
 
 // Neither a preset table's value nor the firmware's, so a read-back
 // distinguishes a fresh write from a leftover.
@@ -1090,6 +1090,55 @@ TEST_CASE("a source nobody has framed takes no place in the table")
     }
 
     CHECK(framings.count() == 0);
+}
+
+TEST_CASE("a source arriving with nothing stored says so under its key")
+{
+    // Without this the console cannot tell a recalled framing from a computed
+    // one, and every question about which source got which framing needs the
+    // file read back and the key worked out by hand.
+    g_logLines.clear();
+    seedBenchSource();
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+    VideoSourceAcquisition acquisition(sampling, engine);
+
+    engine.setOutputMode(benchMode());
+    engine.inputTimingsChanged(4);
+    REQUIRE(pollUntilSolved(acquisition));
+
+    CHECK(loggedContaining("source key: 311@50.08/"));
+    CHECK(loggedContaining("no framing stored"));
+}
+
+TEST_CASE("a source arriving with a framing stored says it was recalled")
+{
+    seedBenchSource();
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+    VideoSourceAcquisition acquisition(sampling, engine);
+
+    engine.setOutputMode(benchMode());
+    engine.inputTimingsChanged(4);
+    REQUIRE(pollUntilSolved(acquisition));
+    frameAt(engine, 100, 120, 40, -15);
+
+    seedSourceLines(524);
+    engine.setOutputMode(benchMode());
+    engine.inputTimingsChanged(4);
+    REQUIRE(pollUntilSolved(acquisition));
+
+    g_logLines.clear();
+    seedSourceLines(311);
+    engine.setOutputMode(benchMode());
+    engine.inputTimingsChanged(4);
+    REQUIRE(pollUntilSolved(acquisition));
+
+    CHECK(loggedContaining("framing recalled"));
 }
 
 TEST_CASE("a source nobody has framed gets the computed default")

@@ -321,6 +321,7 @@ private:
     SourceKey arrivingKey() const;
 
     void adoptSourceKey();
+    void announceSourceKey(const SourceKey &key, bool recalled);
 
     // Order: raster, clock, windows, rate steer LAST. Steering early corrects a
     // new clock against the old raster -- 31 Hz frame, black screen. A choice

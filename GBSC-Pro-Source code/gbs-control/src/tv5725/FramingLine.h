@@ -41,6 +41,10 @@ public:
     static int write(char *out, uint8_t size, const SourceKey &key,
                      const PanAndZoom &framing);
 
+    // The key alone, in the same grammar. The console names a source with it,
+    // so a key read there is the key searched for in the file.
+    static int writeKey(char *out, uint8_t size, const SourceKey &key);
+
     // Past spaces and tabs. Callers need it to find what follows a record.
     static const char *skipSpace(const char *at);
 

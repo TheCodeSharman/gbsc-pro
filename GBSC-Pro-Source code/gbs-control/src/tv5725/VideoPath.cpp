@@ -14,6 +14,7 @@
 #include "ColourSpace.h"
 #include "CaptureWindow.h"
 #include "Deinterlacer.h"
+#include "FramingLine.h"
 #include "HdBypass.h"
 #include "InputFormatter.h"
 #include "MemoryWindow.h"
@@ -610,9 +611,25 @@ void VideoPath::adoptSourceKey()
 
     // Leaving one source for another. Nothing is stored here: the table has
     // followed every press already, so what this source was tuned to is in it.
-    if (!framings_.find(arriving, &framing_))
+    const bool recalled = framings_.find(arriving, &framing_);
+    if (!recalled)
         framing_.reset();
     framedKey_ = arriving;
+    announceSourceKey(arriving, recalled);
+}
+
+// In the file's own grammar, so a key read on the console is the key searched
+// for in the file. A settling source identifies nothing and is left unsaid.
+void VideoPath::announceSourceKey(const SourceKey &key, bool recalled)
+{
+    char named[32];
+    if (!key.valid() || FramingLine::writeKey(named, sizeof(named), key) < 0)
+        return;
+
+    char line[72];
+    snprintf(line, sizeof(line), "source key: %s, %s", named,
+             recalled ? "framing recalled" : "no framing stored");
+    tv5725Log(line);
 }
 
 
