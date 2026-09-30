@@ -7,12 +7,19 @@
 // docs/osd-menu.md
 
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
-#include <doctest/doctest.h>
+#include "SolvedEngine.h"
+
+class Print {};
 
 #include <string>
 #include <vector>
 
+#include "../GBSC-Pro-Source code/gbs-control/options.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Controls.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/osd/Menu.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/osd/MenuCommand.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/osd/MenuContext.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/osd/MenuTree.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/osd/MenuCursor.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/osd/MenuItem.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/osd/MenuPage.h"
@@ -20,26 +27,38 @@
 
 using namespace Osd;
 
+// A solved engine and a set of preferences, which is what an item reads to say
+// what it is currently set to.
+struct Panel {
+    SolvedEngine solved;
+    Print console;
+    Tv5725::Controls controls;
+    userOptions options;
+    MenuContext context;
+
+    Panel() : controls(solved.engine, console), options(), context(controls, options) {}
+};
+
 // A tree with one submenu, which is the smallest shape that can tell descending
 // from moving.
 static const MenuItem Colour[] = {
-    MenuItem("Line filter", MenuItem::Choice, 'm', NULL, 0, NULL),
-    MenuItem("Peaking", MenuItem::Choice, 'p', NULL, 0, NULL),
+    MenuItem::choice("Line filter", 'm', NULL),
+    MenuItem::choice("Peaking", 'p', NULL),
 };
 
 static const MenuItem System[] = {
-    MenuItem("Frame lock", MenuItem::Choice, 'f', NULL, 0, NULL),
-    MenuItem("Auto gain", MenuItem::Choice, 'g', NULL, 0, NULL),
-    MenuItem("Deinterlace", MenuItem::Choice, 'd', NULL, 0, NULL),
-    MenuItem("Restart", MenuItem::Action, 'R', NULL, 0, NULL),
-    MenuItem("Info", MenuItem::Action, 'I', NULL, 0, NULL),
+    MenuItem::choice("Frame lock", 'f', NULL),
+    MenuItem::choice("Auto gain", 'g', NULL),
+    MenuItem::choice("Deinterlace", 'd', NULL),
+    MenuItem::action("Restart", 'R'),
+    MenuItem::action("Info", 'I'),
 };
 
 static const MenuItem Root[] = {
-    MenuItem("Input", MenuItem::Action, 'i', NULL, 0, NULL),
-    MenuItem("Colour", MenuItem::Submenu, 0, Colour, 2, NULL),
-    MenuItem("Reset", MenuItem::Action, 'r', NULL, 0, NULL),
-    MenuItem("System", MenuItem::Submenu, 0, System, 5, NULL),
+    MenuItem::action("Input", 'i'),
+    MenuItem::submenu("Colour", Colour, 2),
+    MenuItem::action("Reset", 'r'),
+    MenuItem::submenu("System", System, 5),
 };
 
 static const uint8_t RootCount = 4;
@@ -192,6 +211,7 @@ TEST_CASE("wrapping to the end brings the window with it")
 struct DrawnRow {
     uint8_t index;
     std::string label;
+    std::string value;
     bool selected;
 };
 
@@ -211,9 +231,9 @@ static void recordRow(uint8_t index, const char *label, const char *value,
     DrawnRow row;
     row.index = index;
     row.label = label;
+    row.value = value != NULL ? value : "";
     row.selected = selected;
     Drawn.push_back(row);
-    (void)value;
 }
 
 static void recordEnd() { ++Ended; }
@@ -222,10 +242,11 @@ static const MenuRenderer Recorder(recordBegin, recordRow, recordEnd);
 
 TEST_CASE("a renderer is told each row in view and which one is selected")
 {
+    Panel panel;
     MenuCursor cursor(System, 5);
     cursor.down();
 
-    Recorder.draw(cursor.page());
+    Recorder.draw(cursor.page(), panel.context);
 
     REQUIRE(Drawn.size() == MenuPage::Rows);
     CHECK(Drawn[0].label == "Frame lock");
@@ -237,13 +258,14 @@ TEST_CASE("a renderer is told each row in view and which one is selected")
 
 TEST_CASE("a row carries the position it occupies, not the position in the level")
 {
+    Panel panel;
     MenuCursor cursor(System, 5);
     cursor.down();
     cursor.down();
     cursor.down();
     REQUIRE(std::string(cursor.current().label()) == "Restart");
 
-    Recorder.draw(cursor.page());
+    Recorder.draw(cursor.page(), panel.context);
 
     REQUIRE(Drawn.size() == MenuPage::Rows);
     CHECK(Drawn[0].index == 0);
@@ -254,11 +276,12 @@ TEST_CASE("a row carries the position it occupies, not the position in the level
 
 TEST_CASE("a redraw is bracketed, so a device that buffers knows when to flush")
 {
+    Panel panel;
     MenuCursor cursor(Colour, 2);
     const int begun = Begun;
     const int ended = Ended;
 
-    Recorder.draw(cursor.page());
+    Recorder.draw(cursor.page(), panel.context);
 
     CHECK(Begun == begun + 1);
     CHECK(Ended == ended + 1);
@@ -274,30 +297,33 @@ TEST_CASE("a redraw is bracketed, so a device that buffers knows when to flush")
 
 TEST_CASE("Ok on a Choice yields its letter and stays where it is")
 {
-    Menu menu(Root, RootCount, Recorder);
+    Panel panel;
+    Menu menu(Root, RootCount, Recorder, panel.context);
     menu.open();
     menu.press(Menu::KeyDown);
     menu.press(Menu::KeyOk);
     REQUIRE(std::string(menu.cursor().current().label()) == "Line filter");
 
-    CHECK(menu.press(Menu::KeyOk) == 'm');
+    CHECK(menu.press(Menu::KeyOk).letter() == 'm');
     CHECK(std::string(menu.cursor().current().label()) == "Line filter");
     CHECK(menu.cursor().depth() == 2);
 }
 
 TEST_CASE("Ok on a Submenu descends and asks for nothing")
 {
-    Menu menu(Root, RootCount, Recorder);
+    Panel panel;
+    Menu menu(Root, RootCount, Recorder, panel.context);
     menu.open();
     menu.press(Menu::KeyDown);
 
-    CHECK(menu.press(Menu::KeyOk) == 0);
+    CHECK_FALSE(menu.press(Menu::KeyOk).asked());
     CHECK(menu.cursor().depth() == 2);
 }
 
 TEST_CASE("the Menu key opens from closed and leaves by the level it entered")
 {
-    Menu menu(Root, RootCount, Recorder);
+    Panel panel;
+    Menu menu(Root, RootCount, Recorder, panel.context);
     CHECK_FALSE(menu.isOpen());
 
     menu.press(Menu::KeyMenu);
@@ -317,7 +343,8 @@ TEST_CASE("the Menu key opens from closed and leaves by the level it entered")
 
 TEST_CASE("Exit leaves from any depth")
 {
-    Menu menu(Root, RootCount, Recorder);
+    Panel panel;
+    Menu menu(Root, RootCount, Recorder, panel.context);
     menu.open();
     menu.press(Menu::KeyDown);
     menu.press(Menu::KeyOk);
@@ -329,18 +356,20 @@ TEST_CASE("Exit leaves from any depth")
 
 TEST_CASE("a closed menu draws nothing and answers no key but Menu")
 {
-    Menu menu(Root, RootCount, Recorder);
+    Panel panel;
+    Menu menu(Root, RootCount, Recorder, panel.context);
     const int begun = Begun;
 
-    CHECK(menu.press(Menu::KeyOk) == 0);
-    CHECK(menu.press(Menu::KeyDown) == 0);
+    CHECK_FALSE(menu.press(Menu::KeyOk).asked());
+    CHECK_FALSE(menu.press(Menu::KeyDown).asked());
     CHECK(Begun == begun);
     CHECK_FALSE(menu.isOpen());
 }
 
 TEST_CASE("every press that moves the cursor redraws")
 {
-    Menu menu(Root, RootCount, Recorder);
+    Panel panel;
+    Menu menu(Root, RootCount, Recorder, panel.context);
     menu.open();
     const int begun = Begun;
 
@@ -351,7 +380,8 @@ TEST_CASE("every press that moves the cursor redraws")
 
 TEST_CASE("reopening starts at the top rather than where it was left")
 {
-    Menu menu(Root, RootCount, Recorder);
+    Panel panel;
+    Menu menu(Root, RootCount, Recorder, panel.context);
     menu.open();
     menu.press(Menu::KeyDown);
     menu.press(Menu::KeyOk);
@@ -360,4 +390,309 @@ TEST_CASE("reopening starts at the top rather than where it was left")
     menu.open();
     CHECK(menu.cursor().depth() == 1);
     CHECK(std::string(menu.cursor().current().label()) == "Input");
+}
+
+
+// --- Which command surface a letter belongs to
+//
+// The board has two: /uc? reaches handleType2Command() and /sc? the switch in
+// loop(). Four letters mean different things in each -- 'Z' toggles matched
+// presets on one and bumps VDS_Y_OFST on the other -- so a letter alone cannot
+// say what an Ok asked for.
+
+static const MenuItem Surfaces[] = {
+    MenuItem::choice("Line filter", 'm', NULL),
+    MenuItem::serialChoice("Peaking", 'f', NULL),
+};
+
+TEST_CASE("an Ok names the surface its letter belongs to")
+{
+    Panel panel;
+    Menu menu(Surfaces, 2, Recorder, panel.context);
+    menu.open();
+
+    const MenuCommand filter = menu.press(Menu::KeyOk);
+    CHECK(filter.letter() == 'm');
+    CHECK(filter.queue() == MenuCommand::UserCommand);
+
+    menu.press(Menu::KeyDown);
+    const MenuCommand peaking = menu.press(Menu::KeyOk);
+    CHECK(peaking.letter() == 'f');
+    CHECK(peaking.queue() == MenuCommand::SerialCommand);
+}
+
+TEST_CASE("a press that asks for nothing yields no letter")
+{
+    Panel panel;
+    Menu menu(Surfaces, 2, Recorder, panel.context);
+    menu.open();
+
+    CHECK_FALSE(menu.press(Menu::KeyDown).asked());
+}
+
+
+// ===== The described tree =====
+//
+// Above is the machinery over a tree of its own. Below is the tree the remote
+// actually walks: every option reachable, each saying what it is set to, and an
+// Ok yielding the letter the web and the serial console already send.
+
+// The tree is walked rather than indexed, because an item's position is not what
+// a case is about.
+static const MenuItem *find(const MenuItem *items, uint8_t count, const char *label)
+{
+    for (uint8_t i = 0; i < count; ++i) {
+        if (std::string(items[i].label()) == label)
+            return &items[i];
+        const MenuItem *found = find(items[i].children(), items[i].childCount(), label);
+        if (found != NULL)
+            return found;
+    }
+    return NULL;
+}
+
+static bool describes(const char *label)
+{
+    return find(MenuTree::root(), MenuTree::rootCount(), label) != NULL;
+}
+
+static const MenuItem &item(const char *label)
+{
+    const MenuItem *found = find(MenuTree::root(), MenuTree::rootCount(), label);
+    REQUIRE(found != NULL);
+    return *found;
+}
+
+TEST_CASE("an item says what its option is currently set to")
+{
+    Panel panel;
+
+    panel.options.wantVdsLineFilter = 1;
+    CHECK(std::string(item("Line filter").valueText(panel.context)) == "ON");
+
+    panel.options.wantVdsLineFilter = 0;
+    CHECK(std::string(item("Line filter").valueText(panel.context)) == "OFF");
+}
+
+
+// --- The root ring
+//
+// The chain's root was not a ring: Input had no Up and Reset Settings no Down,
+// so the two ends were dead. A level that joins is the described form's
+// navigation rather than a target written out per branch.
+//
+// Input, Screen Settings and the Sv-Av submenu are not here yet. Their items act
+// by calling a sketch function -- InputVGA_mode(), the HC32 frame, the pan and
+// zoom ramp -- rather than by asking for a letter, so describing them waits on
+// each action reaching one command surface. docs/osd-menu.md
+
+TEST_CASE("the root names every top-level page, in the order the remote walks them")
+{
+    const char *const expected[] = {
+        "Output Resolution", "Picture Settings", "System Settings",
+        "Reset Settings",
+    };
+
+    REQUIRE(MenuTree::rootCount() == sizeof(expected) / sizeof(expected[0]));
+    for (uint8_t i = 0; i < MenuTree::rootCount(); ++i)
+        CHECK(std::string(MenuTree::root()[i].label()) == expected[i]);
+}
+
+TEST_CASE("the root's ends join, which the chain's did not")
+{
+    MenuCursor cursor(MenuTree::root(), MenuTree::rootCount());
+    REQUIRE(std::string(cursor.current().label()) == "Output Resolution");
+
+    cursor.up();
+    CHECK(std::string(cursor.current().label()) == "Reset Settings");
+}
+
+
+// --- Output Resolution
+//
+// Six resolutions, each already a /uc? letter. Pass Through is deliberately not
+// a seventh: it is not a resolution -- OutputChoice cannot express it -- and the
+// option behind it is the upscaling preference under System Settings, so a
+// second label for one option is a divergence with no reason.
+
+TEST_CASE("each resolution asks for the letter the web and the console send")
+{
+    struct Row { const char *label; char letter; };
+    const Row expected[] = {
+        { "1920x1080", 's' }, { "1280x1024", 'p' }, { "1280x960", 'f' },
+        { "1280x720", 'g' },  { "768x576", 'j' },   { "720x480", 'h' },
+    };
+
+    const MenuItem &page = item("Output Resolution");
+    REQUIRE(page.childCount() == sizeof(expected) / sizeof(expected[0]));
+    for (uint8_t i = 0; i < page.childCount(); ++i) {
+        CHECK(std::string(page.children()[i].label()) == expected[i].label);
+        CHECK(page.children()[i].okCommand().letter() == expected[i].letter);
+        CHECK(page.children()[i].okCommand().queue() == MenuCommand::UserCommand);
+    }
+}
+
+
+// --- Picture Settings
+
+TEST_CASE("every picture option says what it is set to")
+{
+    Panel panel;
+
+    panel.options.enableAutoGain = 1;
+    CHECK(std::string(item("ADC gain").valueText(panel.context)) == "ON");
+
+    panel.options.wantScanlines = 0;
+    CHECK(std::string(item("Scanlines").valueText(panel.context)) == "OFF");
+
+    panel.options.wantPeaking = 1;
+    CHECK(std::string(item("Peaking").valueText(panel.context)) == "ON");
+
+    panel.options.wantStepResponse = 0;
+    CHECK(std::string(item("Step response").valueText(panel.context)) == "OFF");
+}
+
+TEST_CASE("an option whose letter is a serial command says so")
+{
+    // Peaking, step response and automatic gain are handled by the switch in
+    // loop() rather than by handleType2Command(), and their letters mean other
+    // things there.
+    CHECK(item("Peaking").okCommand().queue() == MenuCommand::SerialCommand);
+    CHECK(item("Step response").okCommand().queue() == MenuCommand::SerialCommand);
+    CHECK(item("ADC gain").okCommand().queue() == MenuCommand::SerialCommand);
+}
+
+TEST_CASE("Left and Right step an adjustable option")
+{
+    CHECK(item("ADC gain").nextCommand().letter() == 'n');
+    CHECK(item("ADC gain").previousCommand().letter() == 'o');
+    CHECK(item("ADC gain").nextCommand().queue() == MenuCommand::UserCommand);
+
+    CHECK(item("Scanlines").nextCommand().letter() == 'K');
+    CHECK(item("Scanlines").previousCommand().letter() == 'K');
+}
+
+
+// --- System Settings
+
+TEST_CASE("every system option says what it is set to")
+{
+    Panel panel;
+
+    panel.options.enableFrameTimeLock = 1;
+    CHECK(std::string(item("Frame Time Lock").valueText(panel.context)) == "ON");
+
+    panel.options.frameTimeLockMethod = 1;
+    CHECK(std::string(item("Lock Method").valueText(panel.context)) == "Vtotal only");
+    panel.options.frameTimeLockMethod = 0;
+    CHECK(std::string(item("Lock Method").valueText(panel.context)) == "Vtotal+VSST");
+
+    panel.options.enableCalibrationADC = 0;
+    CHECK(std::string(item("ADC calibration").valueText(panel.context)) == "OFF");
+
+    panel.options.deintMode = 1;
+    CHECK(std::string(item("Deinterlace").valueText(panel.context)) == "Bob");
+    panel.options.deintMode = 0;
+    CHECK(std::string(item("Deinterlace").valueText(panel.context)) == "Adaptive");
+}
+
+TEST_CASE("the clock generator reads the opposite way round to the option behind it")
+{
+    // The preference is disableExternalClockGenerator, and the row reports the
+    // generator.
+    Panel panel;
+
+    panel.options.disableExternalClockGenerator = 0;
+    CHECK(std::string(item("Clock generator").valueText(panel.context)) == "ON");
+
+    panel.options.disableExternalClockGenerator = 1;
+    CHECK(std::string(item("Clock generator").valueText(panel.context)) == "OFF");
+}
+
+TEST_CASE("the upscaling preference is on the menu, which the chain left unreachable")
+{
+    // Branch 96 drew it and its Ok was commented out, and nothing reached the
+    // branch: the only route was /uc?x.
+    Panel panel;
+
+    panel.options.preferScalingRgbhv = 1;
+    CHECK(std::string(item("Use upscaling").valueText(panel.context)) == "ON");
+    CHECK(item("Use upscaling").okCommand().letter() == 'x');
+}
+
+TEST_CASE("restarting is on the menu, which the chain also left unreachable")
+{
+    // Branch 110's only inbound key was 109's Down, and 109 is commented out.
+    CHECK(item("Restart").okCommand().letter() == 'a');
+}
+
+
+// --- The aspect ratio
+//
+// The item the extraction was for: one declaration rather than a sixth
+// hand-wired state. docs/aspect-ratio.md
+
+TEST_CASE("the aspect item names the shape the source is shown in")
+{
+    Panel panel;
+
+    // The bench raster's own shape, which the source defaults to.
+    REQUIRE(panel.solved.engine.aspect() == Tv5725::Aspect(Tv5725::Aspect::FourThree));
+    CHECK(std::string(item("Aspect").valueText(panel.context)) == "4:3");
+
+    REQUIRE(panel.solved.engine.setAspect(Tv5725::Aspect(Tv5725::Aspect::SixteenNine)));
+    CHECK(std::string(item("Aspect").valueText(panel.context)) == "16:9");
+
+    REQUIRE(panel.solved.engine.setAspect(Tv5725::Aspect(Tv5725::Aspect::Fill)));
+    CHECK(std::string(item("Aspect").valueText(panel.context)) == "Fill");
+
+    CHECK(item("Aspect").okCommand().letter() == 'G');
+}
+
+
+// --- The two options the doc records as dead
+
+TEST_CASE("a dead option is not described")
+{
+    // PalForce60 had its standard-byte swap deleted and matchPresetSource never
+    // had a consumer. Both survived in the chain because splicing a state out
+    // meant choosing what each inbound key should reach; here they are absent.
+    CHECK_FALSE(describes("Force 50 / 60Hz"));
+    CHECK_FALSE(describes("Matched presets"));
+}
+
+
+// --- What a row is currently set to
+//
+// The value cannot be known without the context, and every path that draws a row
+// needs one -- so it is passed at draw time rather than held by the tree.
+
+TEST_CASE("a row carries what its option is currently set to")
+{
+    Panel panel;
+    panel.options.wantVdsLineFilter = 1;
+    panel.options.wantPeaking = 0;
+
+    const MenuItem &picture = item("Picture Settings");
+    MenuCursor cursor(picture.children(), picture.childCount());
+    while (std::string(cursor.current().label()) != "Line filter")
+        cursor.down();
+
+    Recorder.draw(cursor.page(), panel.context);
+
+    REQUIRE(Drawn.size() == MenuPage::Rows);
+    CHECK(Drawn[cursor.page().selected()].label == "Line filter");
+    CHECK(Drawn[cursor.page().selected()].value == "ON");
+}
+
+TEST_CASE("a row with no value to show carries none")
+{
+    Panel panel;
+
+    MenuCursor cursor(MenuTree::root(), MenuTree::rootCount());
+    REQUIRE(std::string(cursor.current().label()) == "Output Resolution");
+
+    Recorder.draw(cursor.page(), panel.context);
+
+    CHECK(Drawn[0].value == "");
 }

@@ -7,9 +7,10 @@
 
 #include <stdint.h>
 
-#include "MenuPage.h"
-
 namespace Osd {
+
+class MenuContext;
+class MenuPage;
 
 class MenuRenderer {
 public:
@@ -19,9 +20,11 @@ public:
                            void (*row)(uint8_t index, const char *label,
                                        const char *value, bool selected),
                            void (*end)())
-        : begin_(begin), row_(row), end_(end) {}
+        : begin_(begin), row_(row), end_(end)
+    {
+    }
 
-    void draw(const MenuPage &page) const;
+    void draw(const MenuPage &page, const MenuContext &context) const;
 
 private:
     void (*begin_)();

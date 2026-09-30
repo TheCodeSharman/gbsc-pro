@@ -98,6 +98,9 @@ static unsigned long Tim_Resolution = 0, Tim_Resolution_Start = 0;
 #include "src/tv5725/RgbhvOutput.h"
 #include "src/tv5725/SourceMeasurement.h"
 #include "src/clock/ClockRamp.h"
+#include "src/osd/Menu.h"
+#include "src/osd/MenuContext.h"
+#include "src/osd/MenuTree.h"
 #include "src/clock/ClockGen.h"
 #include "src/input/HoldRamp.h"
 #include "src/input/IrReceiver.h"
@@ -978,6 +981,14 @@ static const char SlotFramingFilePath[] = "/slots.txt";
 static bool slotFramingIsSuspect = true;
 
 Tv5725::Controls geometryControls(geometry, SerialM);
+
+// The described menu, which reaches no device yet: OSD_selectOption() is still
+// what the remote drives, and /menu is what reads the page this one would draw.
+// docs/osd-menu.md
+static const Osd::MenuRenderer noMenuDevice(NULL, NULL, NULL);
+static Osd::MenuContext menuContext(geometryControls, uopts);
+static Osd::Menu describedMenu(Osd::MenuTree::root(), Osd::MenuTree::rootCount(),
+                               noMenuDevice, menuContext);
 
 // The acquisition path, which owns the tick loop() used to hand the engine
 // directly. It calls down for the scaler's share; the escalation, the input
@@ -6564,6 +6575,85 @@ void startWebserver()
     // hardware suite, so it goes with the rest of them at GBS_DEBUG=0. A build
     // without it answers 404 rather than reporting an empty framing.
 #if GBS_DEBUG
+    // Drive the described menu and read the page it would draw. The remote is
+    // the only other way in, so without this a menu change cannot be judged
+    // from a session at all. A press that asks for a letter queues it on the
+    // surface the item names, so the tree's letters are proven against the
+    // handlers that already serve /uc? and /sc?. docs/osd-menu.md
+    server.on("/menu", HTTP_GET, [](AsyncWebServerRequest *request) {
+        Osd::MenuCommand asked;
+        if (request->hasParam("key")) {
+            const String key = request->getParam("key")->value();
+            bool known = true;
+            Osd::Menu::Key which = Osd::Menu::KeyMenu;
+            if (key == "up")
+                which = Osd::Menu::KeyUp;
+            else if (key == "down")
+                which = Osd::Menu::KeyDown;
+            else if (key == "left")
+                which = Osd::Menu::KeyLeft;
+            else if (key == "right")
+                which = Osd::Menu::KeyRight;
+            else if (key == "ok")
+                which = Osd::Menu::KeyOk;
+            else if (key == "menu")
+                which = Osd::Menu::KeyMenu;
+            else if (key == "exit")
+                which = Osd::Menu::KeyExit;
+            else
+                known = false;
+
+            if (!known) {
+                request->send(400, "application/json",
+                              "{\"error\":\"key is up down left right ok menu exit\"}");
+                return;
+            }
+
+            asked = describedMenu.press(which);
+            if (asked.asked()) {
+                if (asked.queue() == Osd::MenuCommand::UserCommand)
+                    userCommand = asked.letter();
+                else
+                    serialCommand = asked.letter();
+            }
+        }
+
+        const Osd::MenuPage page = describedMenu.cursor().page();
+        String body = "{\"open\":";
+        body += describedMenu.isOpen() ? "true" : "false";
+        body += ",\"depth\":";
+        body += describedMenu.cursor().depth();
+        body += ",\"asked\":\"";
+        if (asked.asked())
+            body += asked.letter();
+        body += "\",\"queue\":\"";
+        body += asked.asked()
+                    ? (asked.queue() == Osd::MenuCommand::UserCommand ? "uc" : "sc")
+                    : "";
+        body += "\",\"rows\":[";
+        for (uint8_t row = 0; row < page.rows(); ++row) {
+            const Osd::MenuItem &item = page.itemAt(row);
+            const char *value = item.valueText(menuContext);
+            if (row)
+                body += ",";
+            body += "{\"label\":\"";
+            body += item.label();
+            body += "\",\"value\":";
+            if (value != NULL) {
+                body += "\"";
+                body += value;
+                body += "\"";
+            } else {
+                body += "null";
+            }
+            body += ",\"selected\":";
+            body += row == page.selected() ? "true" : "false";
+            body += "}";
+        }
+        body += "]}";
+        request->send(200, "application/json", body);
+    });
+
     server.on("/geometry", HTTP_GET, [](AsyncWebServerRequest *request) {
         char body[360];
         snprintf_P(body, sizeof(body),

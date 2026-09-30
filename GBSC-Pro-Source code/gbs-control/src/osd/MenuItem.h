@@ -9,32 +9,72 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "MenuCommand.h"
+
 namespace Osd {
 
 class MenuContext;
 
 class MenuItem {
 public:
-    // Submenu leads somewhere, Action does one thing, Choice does one thing and
-    // shows what it is currently set to.
-    enum Kind { Submenu, Action, Choice };
+    typedef const char *(*ValueText)(const MenuContext &);
 
-    // constexpr so a described tree is constant-initialised into flash. A
-    // running constructor would put every item in RAM, and this unit has about
-    // eighteen kilobytes of heap once WiFi and the servers have taken theirs.
-    constexpr MenuItem(const char *label, Kind kind, char command,
-                       const MenuItem *children, uint8_t childCount,
-                       const char *(*valueText)(const MenuContext &))
-        : label_(label), kind_(kind), command_(command), children_(children),
-          childCount_(childCount), valueText_(valueText) {}
+    // Built through these rather than through a constructor, so a described tree
+    // reads as a table of intent and each row says which of the four shapes it
+    // is. constexpr throughout: a running constructor would put every item in
+    // RAM, and this unit has about eighteen kilobytes of heap once WiFi and the
+    // servers have taken theirs.
+    static constexpr MenuItem submenu(const char *label,
+                                      const MenuItem *children, uint8_t count)
+    {
+        return MenuItem(label, MenuCommand(), MenuCommand(), MenuCommand(),
+                        children, count, NULL);
+    }
+
+    static constexpr MenuItem action(const char *label, char letter)
+    {
+        return MenuItem(label, MenuCommand::user(letter), MenuCommand(),
+                        MenuCommand(), NULL, 0, NULL);
+    }
+
+    static constexpr MenuItem serialAction(const char *label, char letter)
+    {
+        return MenuItem(label, MenuCommand::serial(letter), MenuCommand(),
+                        MenuCommand(), NULL, 0, NULL);
+    }
+
+    static constexpr MenuItem choice(const char *label, char letter,
+                                     ValueText value)
+    {
+        return MenuItem(label, MenuCommand::user(letter), MenuCommand(),
+                        MenuCommand(), NULL, 0, value);
+    }
+
+    static constexpr MenuItem serialChoice(const char *label, char letter,
+                                           ValueText value)
+    {
+        return MenuItem(label, MenuCommand::serial(letter), MenuCommand(),
+                        MenuCommand(), NULL, 0, value);
+    }
+
+    // Left and Right step the value. `ok` may be absent, and the three letters
+    // need not share a surface -- ADC gain steps through /uc? and toggles
+    // automatic gain through /sc?.
+    static constexpr MenuItem adjust(const char *label, MenuCommand ok,
+                                     MenuCommand next, MenuCommand previous,
+                                     ValueText value)
+    {
+        return MenuItem(label, ok, next, previous, NULL, 0, value);
+    }
 
     const char *label() const;
-    Kind kind() const;
 
-    // The letter an Ok queues as a user command, or 0. The menu never mutates
-    // an option itself: one action per option, reached from the remote, the web
-    // and the serial console alike.
-    char command() const;
+    // What Ok, Right and Left ask the sketch to do. The menu never acts itself:
+    // one action per option, reached from the remote, the web and the serial
+    // console alike.
+    const MenuCommand &okCommand() const;
+    const MenuCommand &nextCommand() const;
+    const MenuCommand &previousCommand() const;
 
     const MenuItem *children() const;
     uint8_t childCount() const;
@@ -43,12 +83,21 @@ public:
     const char *valueText(const MenuContext &context) const;
 
 private:
+    constexpr MenuItem(const char *label, MenuCommand ok, MenuCommand next,
+                       MenuCommand previous, const MenuItem *children,
+                       uint8_t childCount, ValueText valueText)
+        : label_(label), ok_(ok), next_(next), previous_(previous),
+          children_(children), childCount_(childCount), valueText_(valueText)
+    {
+    }
+
     const char *label_;
-    Kind kind_;
-    char command_;
+    MenuCommand ok_;
+    MenuCommand next_;
+    MenuCommand previous_;
     const MenuItem *children_;
     uint8_t childCount_;
-    const char *(*valueText_)(const MenuContext &);
+    ValueText valueText_;
 };
 
 }  // namespace Osd

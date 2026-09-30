@@ -68,6 +68,10 @@ TIMING_SRC = src/tv5725/SourceTiming.cpp src/tv5725/SourceKey.cpp
 # The engine no longer drives itself -- its stages are named calls the
 # acquisition path makes in order -- so a case that wants a solve links the
 # layer with it.
+OSD_SRC = src/osd/Menu.cpp src/osd/MenuCommand.cpp src/osd/MenuContext.cpp \
+	src/osd/MenuCursor.cpp src/osd/MenuItem.cpp src/osd/MenuPage.cpp \
+	src/osd/MenuRenderer.cpp src/osd/MenuTree.cpp
+
 GEOMETRY_RASTER_SRC = $$(ls src/tv5725/*.cpp | grep -vE '^src/tv5725/(Controls)\.cpp$$') \
 	$(CLOCK_SRC) src/videosource/VideoSourceAcquisition.cpp \
 	src/videosource/SyncRecovery.cpp src/videosource/VideoSourceSelection.cpp \
@@ -170,15 +174,17 @@ source-timing:
 
 ## menu: host unit tests for the described OSD menu
 #
-# The tree the remote walks. Pure -- no bus, no STV9426, no IR -- so every rule
-# about navigation is checked here rather than with a remote in hand.
+# The machinery and the tree it describes. No STV9426, no panel and no IR, so
+# every rule about navigation and every option's current value is checked here
+# rather than with a remote in hand.
 menu:
 	@mkdir -p "$(OUT)"
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_menu" \
-	  "$(HERE)/test_menu.cpp" src/osd/MenuCursor.cpp src/osd/MenuItem.cpp \
-	  src/osd/MenuRenderer.cpp src/osd/Menu.cpp \
-	  src/osd/MenuPage.cpp
+	  "$(HERE)/test_menu.cpp" $(OSD_SRC) \
+	  $$(ls src/tv5725/*.cpp) $(CLOCK_SRC) \
+	  src/videosource/VideoSourceAcquisition.cpp src/videosource/SyncRecovery.cpp \
+	  src/videosource/VideoSourceSelection.cpp src/videosource/SourceMaintenance.cpp
 	@"$(OUT)/test_menu"
 
 ## aspect: host unit tests for Tv5725::Aspect

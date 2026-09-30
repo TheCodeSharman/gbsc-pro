@@ -86,7 +86,7 @@ MenuPage MenuCursor::page() const
         const uint8_t at = (uint8_t)(level.first + row);
         if (at >= level.count)
             break;
-        page.add(level.items[at].label(), NULL);
+        page.add(level.items[at]);
     }
     page.select((uint8_t)(level.index - level.first));
     return page;

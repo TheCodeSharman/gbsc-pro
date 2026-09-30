@@ -2,9 +2,10 @@
 
 namespace Osd {
 
-Menu::Menu(const MenuItem *root, uint8_t count, const MenuRenderer &renderer)
-    : root_(root), count_(count), renderer_(renderer), cursor_(root, count),
-      open_(false)
+Menu::Menu(const MenuItem *root, uint8_t count, const MenuRenderer &renderer,
+           const MenuContext &context)
+    : root_(root), count_(count), renderer_(renderer), context_(context),
+      cursor_(root, count), open_(false)
 {
 }
 
@@ -21,14 +22,14 @@ void Menu::close() { open_ = false; }
 
 const MenuCursor &Menu::cursor() const { return cursor_; }
 
-void Menu::draw() const { renderer_.draw(cursor_.page()); }
+void Menu::draw() const { renderer_.draw(cursor_.page(), context_); }
 
-char Menu::press(Key key)
+MenuCommand Menu::press(Key key)
 {
     if (!open_) {
         if (key == KeyMenu)
             open();
-        return 0;
+        return MenuCommand();
     }
 
     switch (key) {
@@ -38,26 +39,30 @@ char Menu::press(Key key)
     case KeyDown:
         cursor_.down();
         break;
-    case KeyOk:
-        if (cursor_.current().kind() == MenuItem::Submenu) {
-            cursor_.descend();
-            break;
-        }
+    case KeyLeft:
         draw();
-        return cursor_.current().command();
+        return cursor_.current().previousCommand();
+    case KeyRight:
+        draw();
+        return cursor_.current().nextCommand();
+    case KeyOk:
+        if (cursor_.descend())
+            break;
+        draw();
+        return cursor_.current().okCommand();
     case KeyMenu:
         if (!cursor_.ascend()) {
             close();
-            return 0;
+            return MenuCommand();
         }
         break;
     case KeyExit:
         close();
-        return 0;
+        return MenuCommand();
     }
 
     draw();
-    return 0;
+    return MenuCommand();
 }
 
 }  // namespace Osd

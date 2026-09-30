@@ -4,9 +4,11 @@ namespace Osd {
 
 const char *MenuItem::label() const { return label_; }
 
-MenuItem::Kind MenuItem::kind() const { return kind_; }
+const MenuCommand &MenuItem::okCommand() const { return ok_; }
 
-char MenuItem::command() const { return command_; }
+const MenuCommand &MenuItem::nextCommand() const { return next_; }
+
+const MenuCommand &MenuItem::previousCommand() const { return previous_; }
 
 const MenuItem *MenuItem::children() const { return children_; }
 

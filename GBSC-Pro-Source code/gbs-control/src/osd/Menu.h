@@ -7,27 +7,31 @@
 
 #include <stdint.h>
 
+#include "MenuCommand.h"
 #include "MenuCursor.h"
 #include "MenuItem.h"
 #include "MenuRenderer.h"
 
 namespace Osd {
 
+class MenuContext;
+
 class Menu {
 public:
-    // The five keys the menu answers, from OSD_TV/remote.h. Volume is the
-    // overlay's own and never reaches here.
-    enum Key { KeyUp, KeyDown, KeyOk, KeyMenu, KeyExit };
+    // The keys the menu answers, from OSD_TV/remote.h. Volume is the overlay's
+    // own and never reaches here.
+    enum Key { KeyUp, KeyDown, KeyLeft, KeyRight, KeyOk, KeyMenu, KeyExit };
 
-    Menu(const MenuItem *root, uint8_t count, const MenuRenderer &renderer);
+    Menu(const MenuItem *root, uint8_t count, const MenuRenderer &renderer,
+         const MenuContext &context);
 
     bool isOpen() const;
 
     void open();
     void close();
 
-    // The letter to queue as a user command, or 0.
-    char press(Key key);
+    // What to ask the sketch for, which asked() nothing for a navigation key.
+    MenuCommand press(Key key);
 
     const MenuCursor &cursor() const;
 
@@ -37,6 +41,7 @@ private:
     const MenuItem *root_;
     uint8_t count_;
     const MenuRenderer &renderer_;
+    const MenuContext &context_;
     MenuCursor cursor_;
     bool open_;
 };

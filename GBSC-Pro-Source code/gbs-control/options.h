@@ -1,4 +1,5 @@
 #ifndef _USER_H_
+#define _USER_H_
 #include "src/tv5725/OutputMode.h"
 
 using Ascii8 = uint8_t;
