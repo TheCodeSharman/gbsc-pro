@@ -7,6 +7,7 @@ import sys
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import framing_decomposition as fd
 import framing_sweep as fs
 
 ENTRIES = [
@@ -101,3 +102,14 @@ def test_each_record_of_a_repeated_state_keeps_its_own_frame(tmp_path, monkeypat
     assert first != second
     assert first.endswith("X640-Y480-C256-F60-1080p-default.png")
     assert other.endswith("X640-Y480-C256-F60-1080p-zoom.png")
+
+
+def test_the_analysis_models_the_mode_the_registers_carry_not_the_one_asked():
+    regs = dict(REGS, VDS_VSYNC_RST=1065, VDS_HSYNC_RST=1391, STATUS_SYNC_PROC_VTOTAL=519)
+    geometry = dict(GEOMETRY, lineRateHz=37861)
+    clip = synthetic_clip(20, 1900, 0, 1079)
+    got = fs.analyse_default("1080p", regs, geometry, clip)
+    want = fd.predicted_window("1024p", 1392, fd.field_rate_of(regs, geometry))
+    assert got["carried"] == "1024p"
+    assert got["window"]["E0m"] == want["E0m"]
+    assert got["slope"]["h_pred"] == fd.slope_predicted("1024p", 1392)[0]

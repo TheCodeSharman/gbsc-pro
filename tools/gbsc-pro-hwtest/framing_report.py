@@ -47,8 +47,16 @@ def load(path):
         if "walk" in record:
             refit(record)
         if "positions" in record:
+            fd.remodel(record)
             record["residuals"], record["verdict"] = fd.rejudge(record)
     return records
+
+
+def shown_output(record):
+    """The output asked for, and the one the registers carry where the engine
+    fell back to another."""
+    carried = record.get("carried", record["output"])
+    return record["output"] if carried == record["output"] else f"{record['output']}>{carried}"
 
 
 def number(value, width=6, decimals=1):
@@ -74,7 +82,7 @@ def terms(edge):
     return " ".join(number(edge.get(term), 6, 1) for term in TERMS)
 
 
-HEADER = (f"{'mode':24} {'output':6} {'T':>5} {'Hz':>6}  {'slope pred/near/far':21}  "
+HEADER = (f"{'mode':24} {'output':11} {'T':>5} {'Hz':>6}  {'slope pred/near/far':21}  "
           f"{'black L R T B':>16}   {'L: dEnc dModel dPlace dCap':>28}   {'R: dEnc dModel dPlace dCap':>28}  "
           f"{'exp L R':>13}  verdict")
 
@@ -90,7 +98,7 @@ def format_row(record):
            else f"{'-':>13}")
     slopes = "/".join("-" if slope.get(k) is None else f"{slope[k]:.3f}"
                       for k in ("h_pred", "h_near", "h_far"))
-    return (f"{record['source']:24} {record['output']:6} {window['T']:5} {rate:6.2f}  {slopes:21}  "
+    return (f"{record['source']:24} {shown_output(record):11} {window['T']:5} {rate:6.2f}  {slopes:21}  "
             f"{black['left']:4}{black['right']:4}{black['top']:4}{black['bottom']:4}   "
             f"{terms(h['near']):>28}   {terms(h['far']):>28}  {exp:>13}  {record['verdict']}")
 
@@ -98,7 +106,7 @@ def format_row(record):
 def sync_porch_units(record):
     """The mode's sync + back porch as OutputMode::solve() converts them, so
     the fits ask about the delay after them rather than about the whole start."""
-    mode = fd.MODES[record["output"]]
+    mode = fd.MODES[record.get("carried", record["output"])]
     clock_hz = record["window"]["clock_hz"]
     scaled = lambda px: max(0, int(round(px * clock_hz / mode.standard_hz)))
     return max(1, scaled(mode.sync_px)) + scaled(mode.back_porch_px)
@@ -120,7 +128,7 @@ def window_fits(records):
         window = record.get("window")
         if not window or window.get("E0") is None or window.get("E1") is None:
             continue
-        by_output.setdefault(record["output"], []).append(record)
+        by_output.setdefault(record.get("carried", record["output"]), []).append(record)
     fits = {}
     for output, group in by_output.items():
         mode = fd.MODES[output]

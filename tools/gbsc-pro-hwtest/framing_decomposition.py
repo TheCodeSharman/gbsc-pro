@@ -73,6 +73,23 @@ def frame_lines(mode):
     return mode.active_lines + mode.v_front_porch + mode.vsync + mode.v_back_porch
 
 
+def carried_output(registers):
+    """The mode whose frame the registers carry, or None. The engine falls back
+    from the mode asked to one the encoder can transmit at the source's field
+    rate, and the registers are the only record of which."""
+    if registers.get("VDS_VSYNC_RST") is None:
+        return None
+    lines = registers["VDS_VSYNC_RST"] + 1
+    for name, mode in MODES.items():
+        if frame_lines(mode) == lines:
+            return name
+    return None
+
+
+def field_rate_of(registers, geometry):
+    return geometry["lineRateHz"] / (registers["STATUS_SYNC_PROC_VTOTAL"] + 1)
+
+
 def horizontal_total_for(hz, lines, field_rate):
     if hz == 0 or lines == 0 or field_rate <= 0.0:
         return 0
@@ -282,6 +299,28 @@ def judge(pos, window, slope, black):
                          black0=black["top"], black1=black["bottom"]),
                     slope["v_pred"], (ALLOWANCE_COLS[0], ALLOWANCE_COLS[0])))
     return residuals, verdict_of(residuals)
+
+
+def remodel(record):
+    """A record's model, slope and card positions re-derived for the mode its
+    registers carry, where that is not the mode it was modelled as."""
+    carried = carried_output(record["registers"])
+    if carried is None or carried == record.get("carried", record["output"]):
+        record.setdefault("carried", record["output"])
+        return
+    regs, geometry, window = record["registers"], record["geometry"], record["window"]
+    total = regs["VDS_HSYNC_RST"] + 1
+    window.update(predicted_window(carried, total, field_rate_of(regs, geometry)))
+    cols, rows = slope_predicted(carried, total)
+    record["slope"].update(h_pred=cols, v_pred=rows)
+    pos, card = record["positions"], record["card"]
+    e0 = window["E0"] if window.get("E0") is not None else window["E0m"]
+    v0 = window["V0"] if window.get("V0") is not None else window["V0m"]
+    pos["h"].update(C0=None if card["h"][0] is None else columns_to_units(card["h"][0], e0, cols),
+                    C1=None if card["h"][1] is None else columns_to_units(card["h"][1], e0, cols))
+    pos["v"].update(C0=None if card["v"][0] is None else columns_to_units(card["v"][0], v0, rows),
+                    C1=None if card["v"][1] is None else columns_to_units(card["v"][1], v0, rows))
+    record["carried"] = carried
 
 
 def rejudge(record):

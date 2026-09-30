@@ -128,22 +128,21 @@ def expected_for(entry, rows):
 
 # --- the analysis -----------------------------------------------------------------
 
-def field_rate_of(regs, geometry):
-    return geometry["lineRateHz"] / (regs["STATUS_SYNC_PROC_VTOTAL"] + 1)
-
-
 def analyse_default(output, regs, geometry, clip, window_measured=None):
     """Every position and residual one default-framing clip supports.
 
     `window_measured` carries E0/E1/V0/V1 from the walks where they ran; an
-    edge without a measurement is judged against the model's.
+    edge without a measurement is judged against the model's. The model is the
+    mode the registers carry, which is the one asked for unless the encoder
+    cannot transmit that at the source's rate and the engine fell back.
     """
+    carried = fd.carried_output(regs) or output
     pos = fd.positions(regs, geometry)
     total = pos["h"]["T"]
-    window = fd.predicted_window(output, total, field_rate_of(regs, geometry))
+    window = fd.predicted_window(carried, total, fd.field_rate_of(regs, geometry))
     window.update({k: None for k in ("E0", "E1", "V0", "V1")})
     window.update(window_measured or {})
-    cols, rows = fd.slope_predicted(output, total)
+    cols, rows = fd.slope_predicted(carried, total)
 
     grey = hdmi_capture.luma(clip[0])
     profiles = fd.edge_profiles(grey, PROFILE_DEPTH)
@@ -160,7 +159,7 @@ def analyse_default(output, regs, geometry, clip, window_measured=None):
 
     slope = dict(h_pred=cols, v_pred=rows)
     residuals, verdict = fd.judge(pos, window, slope, black)
-    return dict(window=window, slope=slope, positions=pos,
+    return dict(carried=carried, window=window, slope=slope, positions=pos,
                 card=dict(h=(h_near, h_far, h_off), v=(v_near, v_far, v_off)),
                 black_cols=black, profiles={k: [float(x) for x in v] for k, v in profiles.items()},
                 residuals=residuals, verdict=verdict)

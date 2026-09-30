@@ -104,3 +104,18 @@ def test_a_loaded_record_refits_its_walks_so_a_fit_of_a_constant_is_not_a_positi
     assert loaded["window"]["instruments"]["V1"] is None
     assert abs(loaded["window"]["E0"] - 157.7) < 0.5
     assert "dEncoder" not in loaded["residuals"]["v"]["far"]["verdict"]
+
+
+def test_a_loaded_record_is_modelled_as_the_mode_its_registers_carry(tmp_path):
+    r = record("X640 Y480 C256 F73", "1080p", 1392, 72.81, 162, 320.5, 1376, 1377.2)
+    r["registers"] = {"STATUS_SYNC_PROC_VTOTAL": 519, "VDS_VSYNC_RST": 1065, "VDS_HSYNC_RST": 1391,
+                      "VDS_HSCALE": 700, "VDS_HB_SP": 40, "VDS_DIS_HB_SP": 328, "VDS_DIS_HB_ST": 1383,
+                      "IF_HB_SP2": 259, "IF_HB_ST2": 1061, "VDS_VSCALE": 512, "VDS_VB_SP": 30,
+                      "VDS_DIS_VB_SP": 41, "VDS_DIS_VB_ST": 1065, "IF_VB_SP": 33, "IF_VB_ST": 517}
+    r["geometry"].update(lineRateHz=37861, eh=800, ev=480, oh=260, ov=35)
+    r["card"] = dict(h=(4.0, 1910.0, 0.0), v=(None, 1070.0, None))
+    path = tmp_path / "run.jsonl"
+    path.write_text(json.dumps(r) + "\n")
+    loaded = fr.load(str(path))[0]
+    assert loaded["carried"] == "1024p"
+    assert "1024p" in fr.format_row(loaded)

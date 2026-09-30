@@ -287,3 +287,35 @@ def test_a_window_edge_falls_back_to_the_black_count_where_the_strips_found_noth
     window, instruments = fd.measured_window(walked)
     assert window["E0"] == 153.4 and window["V1"] == 1123.2
     assert instruments["V1"] == "black" and instruments["E0"] == "strip"
+
+
+# --- the mode the registers carry ----------------------------------------------------
+
+def test_the_carried_output_is_read_off_the_frame_lines():
+    assert fd.carried_output({"VDS_VSYNC_RST": 1065}) == "1024p"
+    assert fd.carried_output({"VDS_VSYNC_RST": 1124}) == "1080p"
+    assert fd.carried_output({"VDS_VSYNC_RST": 999}) == "960p"
+    assert fd.carried_output({"VDS_VSYNC_RST": 700}) is None
+
+
+def test_a_record_modelled_as_the_mode_asked_is_remodelled_as_the_mode_carried():
+    # 640x480@73 asked for 1080p; the encoder cannot carry 1080p at 72.8 Hz and
+    # the engine solved 1024p: 1066 lines, a 1392-unit line at 108 MHz.
+    regs = dict(REGS, VDS_VSYNC_RST=1065, VDS_HSYNC_RST=1391, STATUS_SYNC_PROC_VTOTAL=519)
+    geometry = dict(GEOMETRY, lineRateHz=37861)
+    rate = fd.field_rate_of(regs, geometry)
+    record = dict(output="1080p", registers=regs, geometry=geometry,
+                  window=dict(fd.predicted_window("1080p", 1392, rate), E0=320.5, E1=1377.2, V0=None, V1=None),
+                  slope=dict(h_pred=2200 / 1392, v_pred=1.0),
+                  positions=fd.positions(regs, geometry),
+                  card=dict(h=(4.0, 1910.0, 0.0), v=(None, 1070.0, None)))
+    fd.remodel(record)
+    want = fd.predicted_window("1024p", 1392, rate)
+    assert record["carried"] == "1024p"
+    assert record["window"]["E0m"] == want["E0m"] and record["window"]["E1m"] == want["E1m"]
+    assert record["window"]["V0m"] == want["V0m"] and record["window"]["V1m"] == want["V1m"]
+    cols, rows = fd.slope_predicted("1024p", 1392)
+    assert record["slope"]["h_pred"] == cols and record["slope"]["v_pred"] == rows
+    assert abs(record["positions"]["h"]["C0"] - fd.columns_to_units(4.0, 320.5, cols)) < 1e-9
+    assert abs(record["positions"]["v"]["C1"] - fd.columns_to_units(1070.0, want["V0m"], rows)) < 1e-9
+    assert record["positions"]["v"]["C0"] is None
