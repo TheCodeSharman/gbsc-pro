@@ -1,4 +1,4 @@
-# The sink's own window position is per raster, in steps, and a transition with content at the edge lands short of it
+# The sink's own window position is per raster, in steps, and picture at the edge lands short of the aperture on some rasters
 
 The MS9288A has a position of its own for the start of the window it
 transmits, one per output raster, which it uses whenever the line carries
@@ -6,8 +6,8 @@ nothing but black at our aperture's edge when the sync pad returns. Measured
 across the stock AKF50 set into 1080p and 720p it is not a function of the
 raster total, the clock or the field rate that any term fits: within an output
 it steps with the field rate in bands, two sources sit off their raster's
-band, and a transition whose line has picture at the aperture's edge lands 5
-to 9 units before it, which a pad toggle on the settled state never does.
+band, and where that position is before our aperture a line with picture at
+the aperture's edge lands 6.6 to 10 units before the aperture, settled or not.
 
 Measured with `framing_sweep.py --tier S` (`--probes sink`): per state, the
 default framing acquired, the capture panned 24 IF units earlier so the
@@ -94,24 +94,26 @@ The output raster, clock and sync of each pair are alike to every instrument
 here, so what separates them is not established. A placement keyed on
 anything the engine solves from carries these as errors of 14 and 41 units.
 
-## A transition with picture at the aperture's edge lands short of it
+## Picture at the aperture's edge lands short of it where the own position is before the aperture
 
-Tier C placed every 1080p state through a source mode change, the pad
-returning 0.2 to 0.4 s after the solve, before the rate match and the
-sampling phase. Against the own position of the same raster:
+Tier C placed every 1080p state through a source mode change. Read against
+the aperture of the same state:
 
-| transition placed | states | at the aperture's edge when the pad returned |
+| placed | states | at the aperture's edge |
 |---|---|---|
-| on the own position, within 2.7 | 18 of 28 | the source's own black on 15; picture on 768x288, 1056x250 and 1056x256, whose window landed on the aperture |
-| 5 to 9 units BEFORE it | 10 of 28 | picture, on every one: 640x480 and 1280x480 at 60, 72.8 and 75 Hz, 320x480@73, 640x512@50, 800x600@56, 1600x600@56 |
+| on the own position | 15 of 28 | the source's own black |
+| on the aperture, within 2.3 | 8 of 28 | picture: 768x288, 1056x250 and 1056x256 on the 1916 raster, and the 72.8 and 75 Hz sources on the 1024p fallbacks -- every raster whose own position is AFTER the aperture |
+| on its own content, 4 units in | 640x512@50 | 5.5 units of border, then picture |
+| 6.6 to 10 units BEFORE the aperture | 640x480@60, 1280x480@60, 800x600@56, 1600x600@56 | picture, on the 1600 and 1706 rasters, whose own position is 1.5 units BEFORE the aperture |
 
-A pad toggle on the settled state with picture at the aperture's edge lands
-ON the aperture, 158.8 to 159.8 against an aperture at 160 on the 1916
-raster, never before it; a transition lands 5 to 9 units before the own
-position whether the aperture is at 160 or at 321, showing that much of our
-blanking down the left and cutting the same off the right. So the transition
-lock is taken from a line the engine is still working on, and the picture at
-the edge is what it keys on.
+A settled pad toggle with picture at the edge lands where the transition did:
+151.9 against 151.8 on 640x480@60 and 153.5 against 153.0 on 800x600@56,
+with black panned to the edge in the same run landing on the own position at
+158.3. So the short placement is the sink's own, keyed on the raster and on
+what the line carries, and not on when the pad returned; an earlier reading
+of this table that put it down to the transition compared picture-at-edge
+transitions against black-at-edge toggles.
+`a-transition-and-a-settled-toggle-place-the-window-alike.md`.
 
 ## What follows
 
@@ -122,15 +124,16 @@ the edge is what it keys on.
   A per-output constant cannot close those; a table per output and field-rate
   band can, and the two sources above are outside any table.
 - An aperture placed AT the own position frames a source with black at the
-  edge flush at both ends on the 1916 raster, which is the everyday case; a
-  source with picture at the edge still lands short at a transition until the
-  pad returns once the engine is quiet.
+  edge flush at both ends on the 1916 raster, which is the everyday case. A
+  source with picture at the edge on the 1600 and 1706 rasters lands 6.6 to
+  10 units short however the pad returns, and what the sink keys on there is
+  not established.
 - A capture that opens exactly on the picture puts picture at the aperture's
   edge on every source, and the sink's pull then lands the window on the
   aperture and the right-hand bar goes with it -- on a settled lock. That is
   the capture's row rather than the output side.
-- The ten early transitions are the measurement for a pad returned on quiet:
-  the same ten modes, placed through a mode change, before and after.
+- The four short states are the measurement for any change to the aperture's
+  placement: the same four, settled, through a pad toggle, before and after.
 
 `investigations/the-encoder-places-its-window-when-the-sync-pad-returns.md`
 is the rule this rests on; `investigations/the-encoder-window-start-is-per-source.md`

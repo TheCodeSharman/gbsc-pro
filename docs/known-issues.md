@@ -157,25 +157,6 @@ carries it within 30 s. Until then `gbs_unit.choose_output()` refuses a
 raster that merely held still, re-sends a request that got no answer, and
 re-sends once more one that was answered and never applied.
 
-### A mode change into a falling-back resolution installs one extra divider
-
-`VideoPath::dividerCeilingForOutput()` solves the raster for the mode currently
-held, and a mode above the encoder's ceiling is refused -- so the ceiling comes
-back 0, which `SamplingClock::recommendedDivider()` reads as no bound at all.
-The pass lands on `PLLAD_MD` 2046 before the fallback moves the mode, and the
-next pass lands on 1222.
-
-Measured on 800x600@60 -> 640x480@75. **It is harmless now** and costs a second
-ADC PLL latch per such mode change, but it is what put a solve on a 2047-unit
-line and so fired
-`investigations/the-raster-bound-is-stored-as-a-proportion.md`.
-
-The mode that will run is `OutputMode::transmittableFor(mode_, rate)`, which the
-ceiling could ask for. Whether it should is a question about who owns that
-choice -- `VideoSourceAcquisition::resolution_` holds it today, and asking the
-same predicate in a second place is the shape that has caused trouble here
-before.
-
 ### hdmi_capture.borders() overstates the picture on the bench RISC PC
 
 **An isolated dim blob at columns 1880..1899, peak luma 44.8 with dead black
@@ -336,12 +317,11 @@ on the scaling path, and a poke cannot test what is decided at acquisition.
 
 **The odds are unmeasured.** The pad toggle is cheap enough to repeat twenty
 times and count, which says whether a re-acquisition is a coin flip or biased
-per mode. `VideoPath` already sets `encoderMoved_` on any solve that moves the
-horizontal total, the vertical total or the field rate, and
-`VideoSourceAcquisition` holds the pad away for `EncoderRelookMs` -- so the
-engine re-rolls this on every such solve already, with nothing able to judge the
-outcome. A "re-roll until clean" recovery needs an on-board detector, and no
-measurement here is one.
+per mode. The engine takes the pad away on every source mode change and every
+output change and returns it once the setup has settled -- so it re-rolls
+this on every such change already, with nothing able to judge the outcome. A
+"re-roll until clean" recovery needs an on-board detector, and no measurement
+here is one.
 
 ### A black frame with one green line at the top, for several seconds while detecting
 
@@ -1648,64 +1628,7 @@ columns of black at the left. The report names the row that answered as
 taken a different row's active region on the second output. Not pursued.
 `sweeps/framing-20260930T101647Z.jsonl.gz`.
 
-### The sync pad returns on a fixed delay, so the sink can lock to a window a later solve moves
-
-**Measured on every mode change of a 28-mode sweep**: the acquired transition
-drives the pad back 0.18 to 0.42 s after it was taken away, before the release
-at 300 ms, before the frame time lock's first rate match moves the display
-clock and before the sampling phase is chosen, so the sink places its window
-from a line the engine is still solving -- which is what makes the placement
-differ between two arrivals at one state. A source `MODE` round trip never
-toggles the pad, so the sweep's re-lock re-acquired the capture and left the
-sink's window where the transition put it. One rate-only arm, 360x480 at
-60.15 Hz, held the pad away for 15.3 s: the release runs only on a detection
-pass and none ran for that long, a dark panel on a change of rate alone.
-`investigations/the-encoder-places-its-window-when-the-sync-pad-returns.md`.
-
-**What the early return costs is measured: 10 of the 28 stock modes into
-1080p land 5 to 9 units before the sink's own position at a transition, every
-one of them with picture at the aperture's edge when the pad returned, and a
-pad toggle on the same state settled lands on the own position or on the
-aperture.** The same ten modes, placed through a mode change before and after,
-are the acceptance for a pad returned on quiet.
-`investigations/the-sinks-own-window-position-is-per-raster.md`.
-
-The sink fixes its active window WHEN IT ACQUIRES and holds it until it acquires
-again, taking the origin from our blanking at that moment --
-`investigations/the-shown-window-is-latched-at-lock.md`. It latches on the
-BLANKING EDGE rather than on the first content: a black border panned into the
-display window survives a verified re-acquisition unmoved, where locking to the
-first non-blank sample would have jumped the window past it. The origin follows
-the DISPLAY window because `VDS_BLK_BF_EN` gates which samples reach the DAC --
-set, the final composite blank `(dis_hb|dis_vb)` forces the blank value over
-whatever the playback stage is fetching, so `VDS_DIS_HB_SP` is where valid data
-starts. **How the sink distinguishes that edge is open**: blanking and captured
-black are indistinguishable on the panel, both flat at 37.5, and a pedestal of a
-code or two would be crushed by the television. That is a scope question.
-
-**`serviceEncoderRelook()` returns the pad `EncoderRelookMs` after the move that
-took it away, whatever has happened since.** 300 ms is inside the window where
-the raster is still being solved and FrameSync is still steering, so the sink is
-handed a window to lock that a later solve then moves. Nothing corrects it
-afterwards: a later solve that moves the window without moving the raster arms
-no re-look at all, because `VideoPath` arms `encoderMoved_` on the horizontal
-total, the vertical total and the field rate and on nothing else.
-
-Measured at 640x480@75: the sink held 376 while the engine had solved 402, a
-26-unit bar down the left that no pad toggle at 402 would shift, because the
-window can be pulled earlier but not pushed later.
-
-**The fix is to return the pad on QUIET rather than on a delay** -- restart the
-wait whenever the timing moves again, so the pad comes back once and the sink
-locks once, on the settled window. What stops that being a small change is that
-it moves acquisition timing, and a longer hold is a longer dark panel on every
-mode change; it needs checking against a cold boot before it ships.
-
-**`EncoderRelookMs` is also the wrong SHAPE of constant** while `encoderMoved_`
-ignores the window: two solves that agree on the raster and differ on the
-blanking need a re-look and get none.
-
-### The output sync pad is raised only on a source-state transition, so it latches down
+### The output sync pad lowered outside the engine stays down until the next solve
 
 Measured on the bench after an OTA flash: no picture at all, with
 `PAD_SYNC_OUT_ENZ` **1 in 728 of 728 samples over 12 s** and every other
@@ -1716,23 +1639,16 @@ still solving. Writing the bit to 0 by hand restored the picture at once and it
 stayed 0 for 639 of 639 samples, so nothing was re-arming it: the hold was
 issued once and never released.
 
-`VideoPath::showOutput()` has exactly one caller, and it fires only when
-`sourceState_` CHANGES:
-
-    if (sourceState_ != was) { ...; videoPath_.showOutput(sourceState_ == SourceAcquired && ...); }
-
-So the only thing that raises the pad is a transition into `SourceAcquired`.
-Anything that lowers it without a following transition -- `Chip::outputDown()`,
-the bring-up's own static registers, or an encoder relook whose release pass
-does not run -- leaves HSOUT/VSOUT down with nothing left to raise them, and a
-register dump cannot tell that state from a healthy one.
-
-**Which of those lowered it here is not established.** The relook release lives
-in `VideoSourceAcquisition::poll()` past `if (!detectionPass) return solved;`,
-and `DetectionIntervalMs` is 20, so it should run within 300 ms; the freeze read
-false and a latched `hasPower_` would have printed `power good`. What is
-established is that the pad is a level nobody re-asserts, which is the defect
-whichever writer lowered it.
+The pad is raised by `VideoSourceAcquisition::presentWhenSettled()`, which
+asks on every detection pass whether the source is acquired with the output
+away, and by every solve made while the output is shown -- so a drop the
+engine made itself is always answered. What is not is a writer outside it,
+`Chip::outputDown()` or the bring-up's own static registers, lowering the pad
+while the engine still holds it as driven: `outputShown()` then reads true
+and nothing re-asserts it until the next solve or transition, and a register
+dump cannot tell that state from a healthy one. Which writer lowered it here
+is not established; the relook release that was the third candidate no longer
+exists.
 
 The one-line recovery, which needs no reflash and no bench trip:
 
@@ -2277,8 +2193,9 @@ What does move it, with every other byte on the part unchanged, is
 `PAD_SYNC_OUT_ENZ` -- once in nine toggles, so it is a demonstration that the
 choice is made downstream of the output pins rather than the trigger a round
 trip pulls. `investigations/the-picture-position-is-latched-not-re-rolled.md`
-carries the measurements and the open candidate, which is that
-`EncoderRelookMs` returns the pad 300 ms in, while FrameSync is still steering.
+carries the measurements. Its open candidate was that the pad returned 300 ms
+in, while FrameSync was still steering; the pad now returns after the rate
+match and the phase, and whether the landings still vary is not re-measured.
 
 Neither a `PAD_SYNC_OUT_ENZ` toggle nor a source mode round trip re-centres it.
 
@@ -3167,6 +3084,37 @@ whole PLL group has to move together.
 Acquisition also took about 40 s against the 15.2 s on record for this mode.
 
 ## Fixed, kept here until the next session has seen them
+
+### The sync pad came back before the mode was set up, and the sketch set it up a second time -- FIXED
+
+The pad was driven from the flip to the acquired state, 0.2 s after the
+solve and before the sketch's rate match, a second sampling pass and the
+sampling phase; and 500 ms later the sketch's rate-change check re-ran the
+whole preset path, arming a second measure, solve and rate match. Now the arm
+takes the aperture and the pad away before its first write, the setup runs
+once in order, and `VideoSourceAcquisition::presentWhenSettled()` gives both
+back a pass after the solve, once the pad has been away `MinimumSyncAwayMs`,
+the divider has latched and the phase has been searched. The sketch's
+re-entry is deleted. Measured on the console across five changes: away on
+the arm, one divider install, one duty, one rate match, the phase, driven;
+dark 3.7 to 4.1 s off the dongle where the sink takes its first attempt.
+
+**The early return was not what placed the sink's window short.** A settled
+toggle with picture at the edge lands where the transition did, to a tenth
+of a unit, on the two rasters that showed it.
+`investigations/a-transition-and-a-settled-toggle-place-the-window-alike.md`.
+
+### A mode change into a falling-back resolution installed one extra divider -- FIXED
+
+The output for the arriving rate was chosen after the divider had been
+installed against the previous mode's raster, and the re-install was then
+suppressed as the same rate: 1548 against the 1024p fallback on a 240x352@70
+-> 640x480@60 change, with the 1080p raster's 1444 landing only through the
+sketch's second pass. The rate is measured first now, the output chosen for
+it, and the divider installed once against that output's raster; the console
+shows 1444 straight away on that leg and the host pins it. The 800x600@60 ->
+640x480@75 leg the entry was measured on takes the same route and is not
+re-measured.
 
 ### 640x480@60 was captured too narrow and magnified to fill -- FIXED
 

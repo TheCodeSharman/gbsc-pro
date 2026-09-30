@@ -75,29 +75,30 @@ Tier B, on the same raster and aperture, was placed while a stored, cropped
 framing put picture at the aperture's edge; today the default framing puts
 captured black there and the same state reads 172.
 
-## What the transition lock sees
+## What the transition lock saw
 
-`VideoSourceAcquisition` takes the pad away when the raster moves and
-`serviceEncoderRelook()` returns it 300 ms later, but the acquired transition
-drives it back first: the console shows `sync pad: driven` 0.18 to 0.42 s
-after `sync pad: away` on every mode change of the sweep, before the frame
-time lock's first rate match moves the display clock and before the sampling
-phase is chosen. So the sink locks on a line the engine is still solving, and
-the per-source placements in Tier A, B and C are what that line carried at
-that instant. 640x480@60 read 153.0 at its transition and 158.2 to 158.8 at
-two later toggles with black at the edge; 1280x480@60 read 150.0 in Tier C
-and 158.3 in a later run, through different transitions.
+In this record the pad came back from the flip to the acquired state, 0.18
+to 0.42 s after `sync pad: away` on every mode change of the sweep, before
+the frame time lock's first rate match, a second sampling pass the sketch
+armed and the sampling phase. That order is gone -- the pad returns once the
+setup has settled -- and it was not what placed the window: a settled pad
+toggle with picture at the edge lands where the transition did, 151.9
+against 151.8 on 640x480@60 and 153.5 against 153.0 on 800x600@56. The 158.2
+to 158.8 the toggles read in this record were taken with black panned to the
+edge, which is the sink's own position and a different state.
+`a-transition-and-a-settled-toggle-place-the-window-alike.md`.
 
 One transition held the pad away for 15.3 s rather than 0.3: a rate-only arm
-on 360x480@60.15, after which the release, which runs only on a detection
-pass, found none for that long. The window then read 142.3, sixteen units
-before the raster's own position, and a 15 s pad drop by hand on the settled
-1916 raster did not reproduce a move of that kind. Open.
+on 360x480@60.15. The window then read 142.3, sixteen units before the
+raster's own position, and a 15 s pad drop by hand on the settled 1916 raster
+did not reproduce a move of that kind. The release that failed to run no
+longer exists; whether a rate-only arm still holds the output away that long
+is not re-measured. Open.
 
 ## What follows
 
-- The pad must return once the output is settled, not on a delay, so the sink
-  locks on the picture rather than on a solve in progress.
+- The pad returns once the output is settled. It did not move any placement
+  in this record; the sink's rule below is what does.
 - With the aperture placed AT the sink's own position for the raster, every
   source frames flush: content cannot be earlier than the aperture, so the
   sink's rule lands the window on the aperture whatever the source carries at

@@ -77,12 +77,25 @@ register read to re-derive what the engine had already computed. The order the
 reads have to happen in is what the handshake now spells out:
 
 ```
+inputTimingsChanged()                  the aperture and the sync pad away, ahead of the first write
 establishSyncType()                    the path the counting happens on
 prepareToMeasure(readSourceLines())    the count -> scan mode
 measureRate()                          the count and the rate, through what is in force
-installSampling()                      the clock that rate asks for
+setOutputMode(carried)                 the output the encoder can carry at that rate, which bounds the clock
+installSampling()                      the clock that rate asks for, once, against that output's raster
 measureDuty()                          the pulse, against that clock
+solveFromMeasurement()                 raster, clock, windows -- and the caller's rate match on the same pass
+presentWhenSettled()                   the aperture and the pad back, once: after MinimumSyncAwayMs, the latch and the phase
 ```
+
+The output is chosen BEFORE the divider because the divider is bounded by the
+capture that output's raster can show: chosen after, the divider is sized
+against the previous mode's raster and the re-install is suppressed as the
+same rate. Nothing but the last line presents the output -- a solve that
+completes while it is away, a deferred one included, leaves presenting to the
+pass that finds the setup settled -- and the presentation waits one pass past
+the solve so the caller's rate match lands before the encoder sees the line.
+`investigations/a-transition-and-a-settled-toggle-place-the-window-alike.md`.
 
 **`Tv5725::SourceReading` holds the sync DUTY, not the register.**
 `STATUS_SYNC_PROC_HLOW_LEN` counts ADC samples, so its value means nothing
