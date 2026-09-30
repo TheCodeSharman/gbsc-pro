@@ -26,8 +26,8 @@ public:
 
     // `sourceLines` is STATUS_SYNC_PROC_VTOTAL, which counts from zero and so
     // reads one short of the frame the standards state. `syncDuty` is the hsync
-    // low time as a fraction of the line, which is what separates two standards
-    // sharing a frame and a field rate.
+    // low time as a fraction of the line, which with the polarity pair is what
+    // separates two standards sharing a frame and a field rate.
     static SourceTiming matching(const SourceKey &measured);
 
     float fieldRateHz() const;
@@ -63,6 +63,7 @@ private:
         uint16_t totalLines, rateHz;
         uint16_t totalPixels, syncPixels, activeStartPixel, activePixels;
         uint16_t vsyncLines, activeStartLine, activeLines;
+        SourceKey::Polarity hsync, vsync;
     };
 
     // One array per authority, searched in that order: a source matching rows
@@ -78,8 +79,9 @@ private:
     static const uint16_t AcornCount;
 
     static const Raster *lookUp(const SourceKey &measured);
+    static const Raster *firstMatch(const SourceKey &measured, bool onPolarity);
     static const Raster *lookUpIn(const Raster *rasters, uint16_t count,
-                                  const SourceKey &measured);
+                                  const SourceKey &measured, bool onPolarity);
 
     uint16_t lineFor(uint16_t statedLine, uint16_t frameLines) const;
 

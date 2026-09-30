@@ -193,3 +193,44 @@ TEST_CASE("a standard's raster wins over a mode file describing the same one")
     REQUIRE(akf.published());
     CHECK_NEAR(akf.activeStart(AxisHorizontal), 144.0f / 800.0f, 0.0005f);
 }
+
+// VESA DMT 640x350@85 and 640x400@85 share one horizontal raster, one frame of
+// 445 lines and one field rate, and differ in the polarity pair alone: +H -V
+// against -H +V. The polarity is the whole of what tells them apart, and the
+// standard keyed them on it deliberately.
+TEST_CASE("two rasters differing only in polarity are told apart by it")
+{
+    const float duty = 64.0f / 832.0f;
+
+    SourceTiming lines350 = SourceTiming::matching(
+        SourceKey(444, 85.08f, duty, SourceKey::Positive, SourceKey::Negative));
+    SourceTiming lines400 = SourceTiming::matching(
+        SourceKey(444, 85.08f, duty, SourceKey::Negative, SourceKey::Positive));
+
+    REQUIRE(lines350.published());
+    REQUIRE(lines400.published());
+    CHECK_NEAR(lines350.activeExtent(AxisVertical), 350.0f / 445.0f, 0.0005f);
+    CHECK_NEAR(lines400.activeExtent(AxisVertical), 400.0f / 445.0f, 0.0005f);
+}
+
+TEST_CASE("an undetermined polarity still finds the first raster on the key")
+{
+    // Composite sync and sync on green state no polarity, and a source on
+    // either is still emitting a raster the standards state.
+    SourceTiming t = SourceTiming::matching(
+        SourceKey(444, 85.08f, 64.0f / 832.0f, SourceKey::Undetermined, SourceKey::Undetermined));
+
+    REQUIRE(t.published());
+    CHECK_NEAR(t.activeExtent(AxisVertical), 350.0f / 445.0f, 0.0005f);
+}
+
+TEST_CASE("a polarity no raster on the key carries still finds the first one")
+{
+    // A source that has the timing of a standard and inverts one pulse is
+    // still placed from that standard rather than from the envelope.
+    SourceTiming t = SourceTiming::matching(
+        SourceKey(444, 85.08f, 64.0f / 832.0f, SourceKey::Positive, SourceKey::Positive));
+
+    REQUIRE(t.published());
+    CHECK_NEAR(t.activeExtent(AxisVertical), 350.0f / 445.0f, 0.0005f);
+}
