@@ -8,11 +8,13 @@ namespace Osd {
 // ODR use and an in-class initialiser alone does not survive one.
 const uint8_t MenuPage::Rows;
 
-MenuPage::MenuPage() : rows_(0), selected_(0)
+MenuPage::MenuPage() : title_(NULL), rows_(0), selected_(0)
 {
     for (uint8_t i = 0; i < Rows; ++i)
         items_[i] = NULL;
 }
+
+void MenuPage::nameLevel(const char *title) { title_ = title; }
 
 void MenuPage::add(const MenuItem &item)
 {
@@ -23,6 +25,8 @@ void MenuPage::add(const MenuItem &item)
 }
 
 void MenuPage::select(uint8_t row) { selected_ = row; }
+
+const char *MenuPage::title() const { return title_; }
 
 uint8_t MenuPage::rows() const { return rows_; }
 

@@ -31,19 +31,27 @@ public:
     void close();
 
     // What to ask the sketch for, which asked() nothing for a navigation key.
+    // Nothing is drawn: the overlay is on the ESP's I2C bus and a press arrives
+    // from a network callback, so the drawing is left to whoever owns the bus.
     MenuCommand press(Key key);
+
+    bool needsRedraw() const;
+
+    // From loop(), which is the one place the bus is reached. Closing draws an
+    // empty page rather than nothing: a device that keeps what it was given
+    // would otherwise hold the last menu over the picture for ever.
+    void drawIfNeeded();
 
     const MenuCursor &cursor() const;
 
 private:
-    void draw() const;
-
     const MenuItem *root_;
     uint8_t count_;
     const MenuRenderer &renderer_;
     const MenuContext &context_;
     MenuCursor cursor_;
     bool open_;
+    bool redraw_;
 };
 
 }  // namespace Osd

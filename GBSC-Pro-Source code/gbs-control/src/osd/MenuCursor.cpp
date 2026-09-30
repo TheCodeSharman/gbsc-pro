@@ -82,6 +82,10 @@ MenuPage MenuCursor::page() const
 {
     const Level &level = levels_[depth_ - 1];
     MenuPage page;
+    if (depth_ > 1) {
+        const Level &parent = levels_[depth_ - 2];
+        page.nameLevel(parent.items[parent.index].label());
+    }
     for (uint8_t row = 0; row < MenuPage::Rows; ++row) {
         const uint8_t at = (uint8_t)(level.first + row);
         if (at >= level.count)

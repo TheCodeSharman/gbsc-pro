@@ -5,7 +5,7 @@ namespace Osd {
 Menu::Menu(const MenuItem *root, uint8_t count, const MenuRenderer &renderer,
            const MenuContext &context)
     : root_(root), count_(count), renderer_(renderer), context_(context),
-      cursor_(root, count), open_(false)
+      cursor_(root, count), open_(false), redraw_(false)
 {
 }
 
@@ -15,14 +15,26 @@ void Menu::open()
 {
     cursor_ = MenuCursor(root_, count_);
     open_ = true;
-    draw();
+    redraw_ = true;
 }
 
-void Menu::close() { open_ = false; }
+void Menu::close()
+{
+    open_ = false;
+    redraw_ = true;
+}
+
+bool Menu::needsRedraw() const { return redraw_; }
+
+void Menu::drawIfNeeded()
+{
+    if (!needsRedraw())
+        return;
+    redraw_ = false;
+    renderer_.draw(open_ ? cursor_.page() : MenuPage(), context_);
+}
 
 const MenuCursor &Menu::cursor() const { return cursor_; }
-
-void Menu::draw() const { renderer_.draw(cursor_.page(), context_); }
 
 MenuCommand Menu::press(Key key)
 {
@@ -40,15 +52,15 @@ MenuCommand Menu::press(Key key)
         cursor_.down();
         break;
     case KeyLeft:
-        draw();
+        redraw_ = true;
         return cursor_.current().previousCommand();
     case KeyRight:
-        draw();
+        redraw_ = true;
         return cursor_.current().nextCommand();
     case KeyOk:
         if (cursor_.descend())
             break;
-        draw();
+        redraw_ = true;
         return cursor_.current().okCommand();
     case KeyMenu:
         if (!cursor_.ascend()) {
@@ -61,7 +73,7 @@ MenuCommand Menu::press(Key key)
         return MenuCommand();
     }
 
-    draw();
+    redraw_ = true;
     return MenuCommand();
 }
 

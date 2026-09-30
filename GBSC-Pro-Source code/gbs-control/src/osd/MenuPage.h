@@ -22,8 +22,13 @@ public:
 
     MenuPage();
 
+    void nameLevel(const char *title);
     void add(const MenuItem &item);
     void select(uint8_t row);
+
+    // The item this level was descended from, or NULL at the root. A renderer
+    // composes its own breadcrumb from it.
+    const char *title() const;
 
     uint8_t rows() const;
     const MenuItem &itemAt(uint8_t row) const;
@@ -32,6 +37,7 @@ public:
     uint8_t selected() const;
 
 private:
+    const char *title_;
     const MenuItem *items_[Rows];
     uint8_t rows_;
     uint8_t selected_;

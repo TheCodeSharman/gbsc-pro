@@ -101,6 +101,7 @@ static unsigned long Tim_Resolution = 0, Tim_Resolution_Start = 0;
 #include "src/osd/Menu.h"
 #include "src/osd/MenuContext.h"
 #include "src/osd/MenuTree.h"
+#include "src/osd/TelevisionMenu.h"
 #include "src/clock/ClockGen.h"
 #include "src/input/HoldRamp.h"
 #include "src/input/IrReceiver.h"
@@ -982,13 +983,12 @@ static bool slotFramingIsSuspect = true;
 
 Tv5725::Controls geometryControls(geometry, SerialM);
 
-// The described menu, which reaches no device yet: OSD_selectOption() is still
-// what the remote drives, and /menu is what reads the page this one would draw.
-// docs/osd-menu.md
-static const Osd::MenuRenderer noMenuDevice(NULL, NULL, NULL);
+// The described menu. /menu drives it; OSD_selectOption() is still what the
+// remote drives, so the two share the overlay and the described one draws only
+// while the chain's menu is closed. docs/osd-menu.md
 static Osd::MenuContext menuContext(geometryControls, uopts);
 static Osd::Menu describedMenu(Osd::MenuTree::root(), Osd::MenuTree::rootCount(),
-                               noMenuDevice, menuContext);
+                               Osd::TelevisionMenu::renderer(), menuContext);
 
 // The acquisition path, which owns the tick loop() used to hand the engine
 // directly. It calls down for the scaler's share; the escalation, the input
@@ -3771,6 +3771,7 @@ void setup()
     irrecv.enableIRIn();
     OSD_clear();
     OSD();
+    Osd::TelevisionMenu::writeThrough(OSD_parameters);
     PT_MUTE(0x78);
     PT_2257(70); // audible
 
@@ -4385,6 +4386,12 @@ void loop()
     OSD_selectOption();
     uint32_t irAfterSelect = irrecv.decodes();
     OSD_IR();
+
+    // The overlay is on the ESP's I2C bus, so a /menu press only moves the
+    // cursor and the drawing happens here. Only while the chain's menu is
+    // closed, or the two would paint over each other.
+    if (oled_menuItem == 0)
+        describedMenu.drawIfNeeded();
     traceIrFrames(irAfterSelect - irBefore, irrecv.decodes() - irAfterSelect,
                   irMenuBefore);
 

@@ -20,6 +20,7 @@ class Print {};
 #include "../GBSC-Pro-Source code/gbs-control/src/osd/MenuCommand.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/osd/MenuContext.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/osd/MenuTree.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/osd/TelevisionMenu.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/osd/MenuCursor.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/osd/MenuItem.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/osd/MenuPage.h"
@@ -341,6 +342,25 @@ TEST_CASE("the Menu key opens from closed and leaves by the level it entered")
     CHECK_FALSE(menu.isOpen());
 }
 
+TEST_CASE("closing erases what was drawn")
+{
+    // The overlay keeps what was written to it, so a menu that stops drawing
+    // stays on the screen. Measured on the unit before this: Exit left the bar
+    // and all three rows over the picture.
+    Panel panel;
+    Menu menu(Root, RootCount, Recorder, panel.context);
+    menu.open();
+    menu.drawIfNeeded();
+    REQUIRE(Drawn.size() == MenuPage::Rows);
+
+    menu.press(Menu::KeyExit);
+    CHECK(menu.needsRedraw());
+
+    menu.drawIfNeeded();
+    CHECK(Drawn.empty());
+    CHECK_FALSE(menu.needsRedraw());
+}
+
 TEST_CASE("Exit leaves from any depth")
 {
     Panel panel;
@@ -362,20 +382,41 @@ TEST_CASE("a closed menu draws nothing and answers no key but Menu")
 
     CHECK_FALSE(menu.press(Menu::KeyOk).asked());
     CHECK_FALSE(menu.press(Menu::KeyDown).asked());
+    menu.drawIfNeeded();
     CHECK(Begun == begun);
     CHECK_FALSE(menu.isOpen());
 }
 
-TEST_CASE("every press that moves the cursor redraws")
+TEST_CASE("a press marks a redraw rather than drawing, so the bus stays in loop()")
 {
+    // The STV9426 is on the ESP's I2C bus, and a press arrives from a network
+    // callback. Register access is deferred to loop() for exactly this reason.
     Panel panel;
     Menu menu(Root, RootCount, Recorder, panel.context);
     menu.open();
     const int begun = Begun;
 
     menu.press(Menu::KeyDown);
+    CHECK(Begun == begun);
+    CHECK(menu.needsRedraw());
+
+    menu.drawIfNeeded();
     CHECK(Begun == begun + 1);
     CHECK(Drawn[1].selected);
+    CHECK_FALSE(menu.needsRedraw());
+}
+
+TEST_CASE("a press that moves nothing still marks a redraw, because a value may have moved")
+{
+    // An Ok on a Choice queues a letter that loop() acts on, so the row's value
+    // is stale until the next draw.
+    Panel panel;
+    Menu menu(Root, RootCount, Recorder, panel.context);
+    menu.open();
+    menu.drawIfNeeded();
+
+    menu.press(Menu::KeyOk);
+    CHECK(menu.needsRedraw());
 }
 
 TEST_CASE("reopening starts at the top rather than where it was left")
@@ -695,4 +736,193 @@ TEST_CASE("a row with no value to show carries none")
     Recorder.draw(cursor.page(), panel.context);
 
     CHECK(Drawn[0].value == "");
+}
+
+
+// --- Which level the page is on
+//
+// The overlay and the panel both draw a breadcrumb, and the chain wrote one per
+// branch: "Menu->Color", "Menu->System", "Menu->>>". The page names the item it
+// was descended from and the renderer composes the rest.
+
+TEST_CASE("a page names the item its level was descended from")
+{
+    MenuCursor cursor(MenuTree::root(), MenuTree::rootCount());
+    bool named = cursor.page().title() != NULL;
+    CHECK_FALSE(named);
+
+    cursor.down();
+    REQUIRE(std::string(cursor.current().label()) == "Picture Settings");
+    REQUIRE(cursor.descend());
+
+    CHECK(std::string(cursor.page().title()) == "Picture Settings");
+
+    cursor.ascend();
+    named = cursor.page().title() != NULL;
+    CHECK_FALSE(named);
+}
+
+
+// --- The menu on the television
+//
+// Three rows of 28 character cells. The chain painted each label at a fixed
+// column, so removing an option's ON/OFF field left its label behind and the
+// page unreflowed; a row written whole cannot do that.
+
+struct Cell {
+    char address;
+    char page;
+    char value;
+};
+
+static std::vector<Cell> Cells;
+
+static void recordCell(char address, char page, char value)
+{
+    Cell cell;
+    cell.address = address;
+    cell.page = page;
+    cell.value = value;
+    Cells.push_back(cell);
+}
+
+// The symbols of one row, read back off the recorded writes in address order,
+// with the overlay's blank rendered as a space.
+static std::string rowText(uint8_t row)
+{
+    static const char Pages[] = { 0x00, 0x02, 0x03 };
+    std::string text(TelevisionMenu::Columns, ' ');
+    for (size_t i = 0; i < Cells.size(); ++i) {
+        if (Cells[i].page != Pages[row] || (Cells[i].address & 1) == 0)
+            continue;
+        const uint8_t column = (uint8_t)((Cells[i].address - 1) / 2);
+        if (column < TelevisionMenu::Columns)
+            text[column] = Cells[i].value == TelevisionMenu::Background
+                                   || Cells[i].value == TelevisionMenu::Clear
+                               ? ' '
+                               : Cells[i].value;
+    }
+    while (!text.empty() && text[text.size() - 1] == ' ')
+        text.erase(text.size() - 1);
+    return text;
+}
+
+// Cells accumulate across draws, because the overlay keeps what was written to
+// it: a helper that started from blanks could not tell a row that was blanked
+// from one that was never written.
+static void drawOnTelevision(const MenuPage &page, const MenuContext &context)
+{
+    TelevisionMenu::writeThrough(recordCell);
+    TelevisionMenu::renderer().draw(page, context);
+}
+
+TEST_CASE("a row carries its label and what the option is set to, at the two ends")
+{
+    Panel panel;
+    panel.options.wantVdsLineFilter = 1;
+
+    const MenuItem &picture = item("Picture Settings");
+    MenuCursor cursor(picture.children(), picture.childCount());
+    while (std::string(cursor.current().label()) != "Line filter")
+        cursor.down();
+
+    Cells.clear();
+    drawOnTelevision(cursor.page(), panel.context);
+
+    CHECK(rowText(cursor.page().selected()) == "Line filter               ON");
+}
+
+TEST_CASE("a row is written whole, so a shorter label leaves no tail behind")
+{
+    Panel panel;
+
+    const MenuItem &system = item("System Settings");
+    MenuCursor cursor(system.children(), system.childCount());
+    REQUIRE(std::string(cursor.current().label()) == "Aspect");
+
+    Cells.clear();
+    drawOnTelevision(cursor.page(), panel.context);
+    REQUIRE(rowText(1) == "Use upscaling            OFF");
+
+    // A level whose second row is shorter, drawn over the same cells.
+    const MenuItem &picture = item("Picture Settings");
+    MenuCursor second(picture.children(), picture.childCount());
+    drawOnTelevision(second.page(), panel.context);
+
+    CHECK(rowText(1) == "Scanlines                OFF");
+}
+
+TEST_CASE("a space inside a label is the font's blank, not its 0x20")
+{
+    // 0x20 draws an accented letter. The overlay blanks a cell with 0x00, which
+    // OSD_symbols_1() is what says: it writes that value at every address.
+    Panel panel;
+
+    MenuCursor cursor(MenuTree::root(), MenuTree::rootCount());
+    Cells.clear();
+    drawOnTelevision(cursor.page(), panel.context);
+
+    for (size_t i = 0; i < Cells.size(); ++i)
+        if ((Cells[i].address & 1) != 0)
+            CHECK(Cells[i].value != 0x20);
+}
+
+TEST_CASE("a row the page does not fill is cleared rather than painted")
+{
+    // Painting it in the row colour leaves a bar of background across the
+    // picture where there is no menu.
+    Panel panel;
+
+    const MenuItem *pair = item("System Settings").children();
+    MenuCursor cursor(pair, 2);
+    Cells.clear();
+    drawOnTelevision(cursor.page(), panel.context);
+
+    bool cleared = true;
+    for (size_t i = 0; i < Cells.size(); ++i)
+        if (Cells[i].page == 0x03 && (Cells[i].address & 1) == 0
+            && Cells[i].value != TelevisionMenu::Clear)
+            cleared = false;
+    CHECK(cleared);
+}
+
+TEST_CASE("the selected row is the only one in the highlight colour")
+{
+    Panel panel;
+
+    MenuCursor cursor(MenuTree::root(), MenuTree::rootCount());
+    cursor.down();
+    Cells.clear();
+    drawOnTelevision(cursor.page(), panel.context);
+
+    // The colour of a row is the even address below each symbol.
+    uint8_t highlighted = 0;
+    static const char Pages[] = { 0x00, 0x02, 0x03 };
+    for (uint8_t row = 0; row < MenuPage::Rows; ++row) {
+        for (size_t i = 0; i < Cells.size(); ++i)
+            if (Cells[i].page == Pages[row] && (Cells[i].address & 1) == 0
+                && Cells[i].value == TelevisionMenu::Selected) {
+                ++highlighted;
+                break;
+            }
+    }
+    CHECK(highlighted == 1);
+}
+
+TEST_CASE("a page with fewer rows than the overlay blanks the rest")
+{
+    // The overlay keeps what was written to it, so a short level drawn over a
+    // full one leaves the third row painted unless the draw blanks it.
+    Panel panel;
+
+    Cells.clear();
+    const MenuItem &picture = item("Picture Settings");
+    MenuCursor full(picture.children(), picture.childCount());
+    drawOnTelevision(full.page(), panel.context);
+    REQUIRE(rowText(2) != "");
+
+    MenuCursor pair(picture.children(), 2);
+    drawOnTelevision(pair.page(), panel.context);
+
+    CHECK(rowText(2) == "");
 }
