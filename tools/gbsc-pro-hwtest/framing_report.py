@@ -14,6 +14,7 @@ against the mode's fraction of the line.
 """
 
 import argparse
+import gzip
 import json
 import sys
 
@@ -41,7 +42,8 @@ def refit(record):
 
 
 def load(path):
-    with open(path) as handle:
+    opener = gzip.open if str(path).endswith(".gz") else open
+    with opener(path, "rt") as handle:
         records = [json.loads(line) for line in handle if line.strip()]
     for record in records:
         if "walk" in record:

@@ -119,3 +119,12 @@ def test_a_loaded_record_is_modelled_as_the_mode_its_registers_carry(tmp_path):
     loaded = fr.load(str(path))[0]
     assert loaded["carried"] == "1024p"
     assert "1024p" in fr.format_row(loaded)
+
+
+def test_a_gzipped_run_loads_like_a_plain_one(tmp_path):
+    import gzip
+    r = record("X640 Y480 C256 F60", "1080p", 1600, 60.0, 160, 157.3, 1556, 1560.0)
+    path = tmp_path / "run.jsonl.gz"
+    with gzip.open(path, "wt") as handle:
+        handle.write(json.dumps(r) + "\n")
+    assert fr.load(str(path))[0]["source"] == "X640 Y480 C256 F60"
