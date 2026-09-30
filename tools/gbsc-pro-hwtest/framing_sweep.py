@@ -10,10 +10,11 @@ One JSONL record per (source mode, output) in --out, a PNG of each judged clip
 beside it, and framing_report.py turns a run into the table. Per state:
 
     MODE; acquire and settle; PATTERN CARD, ANIM OFF; reset the framing
-    (/sc?B -- a stored entry is forgotten, by design); freeze; MODE again, the
-    re-lock, since the shown position is latched at link acquisition; wait for
-    the dongle; registers in one pass, the clip, registers again -- a record
-    whose two reads differ is refused.
+    (/sc?B -- a stored entry is forgotten until the next boot); freeze; MODE
+    again, which re-acquires the capture with the registers as they stand and
+    leaves the sink's window where the mode change placed it, since the sync
+    pad is not toggled; wait for the dongle; registers in one pass, the clip,
+    registers again -- a record whose two reads differ is refused.
 
     pan   the capture panned PAN_UNITS: black that moves with it is captured
           source blanking, black that stays is the output's.
@@ -177,8 +178,10 @@ def judged_clip(dev):
 
 
 def relock(where, host, mode):
-    """The valid re-lock: the source leaves and returns with our registers as
-    they stand, and the engine settles again."""
+    """The source leaves and returns with our registers as they stand, and the
+    engine settles again. It re-acquires the capture; the sink's window is
+    placed only when the sync pad returns, which this never toggles.
+    docs/investigations/the-encoder-places-its-window-when-the-sync-pad-returns.md"""
     return gbs_unit.mode_round_trip(where, host, mode)
 
 
