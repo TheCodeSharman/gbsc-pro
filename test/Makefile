@@ -16,7 +16,7 @@ CXXFLAGS ?= -std=c++11 -O1 -Wall -Wextra
 # embarrassingly parallel: measured 3m26s serial against 34s here.
 MAKEFLAGS += -j$(shell nproc)
 
-.PHONY: all test video-signal test-bus test-bus-rate-measurement steady-run sync-on-green sampling-log axis source-key source-timing framing-table framing-text slot-table slot-text scale video-source-line capture-window output-window video-path source-measurement memory-window display-clock frame-sync frame-time-lock output-mode output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc video-route rgbhv-output write-trace clean help
+.PHONY: all test menu video-signal test-bus test-bus-rate-measurement steady-run sync-on-green sampling-log axis source-key source-timing framing-table framing-text slot-table slot-text scale video-source-line capture-window output-window video-path source-measurement memory-window display-clock frame-sync frame-time-lock output-mode output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc video-route rgbhv-output write-trace clean help
 .DEFAULT_GOAL := test
 
 ## help: list the targets
@@ -166,6 +166,18 @@ source-timing:
 	  src/tv5725/OutputMapping.cpp src/tv5725/RasterFit.cpp \
 	  src/tv5725/PictureOrigin.cpp src/tv5725/BlankingTiming.cpp
 	@"$(OUT)/test_source_timing"
+
+## menu: host unit tests for the described OSD menu
+#
+# The tree the remote walks. Pure -- no bus, no STV9426, no IR -- so every rule
+# about navigation is checked here rather than with a remote in hand.
+menu:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
+	  -o "$(OUT)/test_menu" \
+	  "$(HERE)/test_menu.cpp" src/osd/MenuCursor.cpp src/osd/MenuItem.cpp \
+	  src/osd/MenuPage.cpp
+	@"$(OUT)/test_menu"
 
 ## framing-table: host unit tests for Tv5725::FramingTable
 #
@@ -837,7 +849,7 @@ write-trace:
 	@"$(OUT)/test_write_trace"
 
 ## test: every host unit test
-test: video-signal test-bus test-bus-rate-measurement steady-run source-absence detection-entry sync-measurement colour-space framing-save-timer sync-on-green axis source-key source-timing framing-table framing-text slot-table slot-text scale sync-processor video-processor video-source-line capture-window output-window video-path source-measurement memory-window display-clock frame-sync frame-time-lock output-mode output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc sampling-log video-route rgbhv-output write-trace
+test: menu video-signal test-bus test-bus-rate-measurement steady-run source-absence detection-entry sync-measurement colour-space framing-save-timer sync-on-green axis source-key source-timing framing-table framing-text slot-table slot-text scale sync-processor video-processor video-source-line capture-window output-window video-path source-measurement memory-window display-clock frame-sync frame-time-lock output-mode output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc sampling-log video-route rgbhv-output write-trace
 all: test
 
 ## clean: remove the compiled test binaries
