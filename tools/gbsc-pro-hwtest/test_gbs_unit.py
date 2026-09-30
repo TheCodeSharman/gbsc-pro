@@ -93,3 +93,25 @@ def test_a_field_is_decoded_out_of_a_segment_dump_by_name():
 
 def test_a_byte_missing_from_the_dump_is_not_a_value():
     assert field_from_named({0x06: 0xAF}, "HPERIOD_IF") is None
+
+
+# --- choosing an output --------------------------------------------------------------
+
+def _unit(monkeypatch, vsync_rst, hsync_rst):
+    monkeypatch.setattr(gbs_unit, "get", lambda host, path, timeout=5: (200, ""))
+    monkeypatch.setattr(gbs_unit, "read_named",
+                        lambda host, name: {"VDS_VSYNC_RST": vsync_rst,
+                                            "VDS_HSYNC_RST": hsync_rst}[name])
+    monkeypatch.setattr(gbs_unit.time, "sleep", lambda s: None)
+
+
+def test_an_output_has_landed_when_the_frame_carries_its_lines_and_the_line_holds(monkeypatch):
+    _unit(monkeypatch, vsync_rst=749, hsync_rst=1799)
+    assert gbs_unit.choose_output("h", "720p", timeout=0.05) is True
+
+
+def test_a_raster_that_holds_still_on_the_previous_modes_lines_has_not_landed(monkeypatch):
+    # /uc answered 200 and the line total read the same a second apart -- on
+    # 1080p's 1125 lines, because the request for 720p was refused.
+    _unit(monkeypatch, vsync_rst=1124, hsync_rst=1599)
+    assert gbs_unit.choose_output("h", "720p", timeout=0.05) is False

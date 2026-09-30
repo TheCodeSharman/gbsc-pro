@@ -17,6 +17,12 @@ import framing_decomposition as fd
 
 # --- the raster: OutputMode::horizontalTotalFor() and clockDividerFor() -------
 
+def test_the_frame_lines_gbs_unit_waits_for_are_the_modes_own():
+    import gbs_unit
+    for output, mode in fd.MODES.items():
+        assert fd.frame_lines(mode) == gbs_unit.OUTPUT_FRAME_LINES[output]
+
+
 def test_the_line_total_is_the_clock_budget_floored_then_made_even():
     # 108 MHz over 1125 lines at 50 Hz is 1920 exactly; at 50.08 Hz 1916.9,
     # floored to 1916 and already even.
@@ -161,6 +167,27 @@ def test_the_largest_term_names_the_stage_that_owns_the_black():
     assert got["near"]["verdict"] == "flush"
     assert got["far"]["verdict"] == "dEncoder"
     assert abs(got["far"]["black_cols"] - 9.5 * 1.15) < 1e-9
+
+
+def test_a_border_off_the_frame_with_no_black_beside_it_is_a_clip():
+    pos = dict(A0=160.0, A1=1832.0, P0=160.5, P1=1831.5)
+    window = dict(E0=160.0, E1=1832.0, E0m=160, E1m=1832)
+    content = dict(C0=None, C1=1831.5, black0=0, black1=0)
+    got = fd.decompose(pos, window, content, slope=1.15, allowance=(1, 2))
+    assert got["near"]["verdict"] == "clipped" and got["near"]["clipped"]
+    assert got["far"]["verdict"] == "flush" and not got["far"]["clipped"]
+
+
+def test_black_beside_a_border_off_the_frame_is_still_attributed():
+    # The window opens 6.7 units before the aperture, 9 columns of black, and
+    # the source's outermost pixel is not on the frame: both at once, and the
+    # black is the encoder's whether or not the card's edge can be seen.
+    pos = dict(A0=160.0, A1=1832.0, P0=160.4, P1=1831.5)
+    window = dict(E0=153.3, E1=1832.0, E0m=160, E1m=1832)
+    content = dict(C0=None, C1=1831.5, black0=9, black1=0)
+    got = fd.decompose(pos, window, content, slope=1.375, allowance=(1, 2))
+    assert got["near"]["verdict"] == "dEncoder+clip"
+    assert abs(got["near"]["black_cols"] - 9) < 1e-9
 
 
 def test_a_missing_measurement_leaves_its_term_unattributed():

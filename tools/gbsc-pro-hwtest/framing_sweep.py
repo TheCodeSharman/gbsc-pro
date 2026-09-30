@@ -162,10 +162,12 @@ def analyse_default(output, regs, geometry, clip, window_measured=None):
     residuals = dict(
         h=fd.decompose(pos["h"], dict(E0=window["E0"], E1=window["E1"],
                                       E0m=window["E0m"], E1m=window["E1m"]),
-                       dict(C0=pos["h"]["C0"], C1=pos["h"]["C1"]), cols, ALLOWANCE_COLS),
+                       dict(C0=pos["h"]["C0"], C1=pos["h"]["C1"],
+                            black0=black["left"], black1=black["right"]), cols, ALLOWANCE_COLS),
         v=fd.decompose(pos["v"], dict(E0=window["V0"], E1=window["V1"],
                                       E0m=window["V0m"], E1m=window["V1m"]),
-                       dict(C0=pos["v"]["C0"], C1=pos["v"]["C1"]), rows,
+                       dict(C0=pos["v"]["C0"], C1=pos["v"]["C1"],
+                            black0=black["top"], black1=black["bottom"]), rows,
                        (ALLOWANCE_COLS[0], ALLOWANCE_COLS[0])))
     return dict(window=window, slope=dict(h_pred=cols, v_pred=rows), positions=pos,
                 card=dict(h=(h_near, h_far, h_off), v=(v_near, v_far, v_off)),

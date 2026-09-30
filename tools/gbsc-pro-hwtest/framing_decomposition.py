@@ -209,17 +209,29 @@ def _difference(a, b):
     return None if a is None or b is None else a - b
 
 
-def _edge(terms, black_units, slope, allowance):
+def _edge(terms, black_units, slope, allowance, clipped):
     known = {k: v for k, v in terms.items() if v is not None}
     if black_units is None:
         verdict = "unmeasured"
     elif abs(black_units) * slope <= allowance:
-        verdict = "flush"
+        verdict = "clipped" if clipped else "flush"
     else:
         verdict = max(known, key=lambda k: abs(known[k]))
+        if clipped:
+            verdict += "+clip"
     return dict(terms, black_units=black_units,
                 black_cols=None if black_units is None else black_units * slope,
-                verdict=verdict)
+                clipped=clipped, verdict=verdict)
+
+
+def _black_units(identity, counted_cols, slope):
+    """The black between the card's edge and the window's: the identity where
+    the border is on the frame, the frame's own count where it is not -- a
+    border off the frame is clipped, and the black beside it is still
+    somebody's."""
+    if identity is not None:
+        return identity
+    return None if counted_cols is None else counted_cols / slope
 
 
 def decompose(pos, window, content, slope, allowance):
@@ -227,6 +239,9 @@ def decompose(pos, window, content, slope, allowance):
 
     `window` carries the measured E0/E1 and the modelled E0m/E1m; a missing
     measurement leaves dEncoder None and the edge is judged against the model.
+    `content` carries the card's edges C0/C1, None where a border is off the
+    frame, and may carry black0/black1, the columns counted black at each edge
+    of the frame, which is what the black is when the border cannot be seen.
     `allowance` is (near, far) in dongle columns -- the far edge carries the
     parity workaround's one column. Positive terms are black, negative clip.
     """
@@ -240,8 +255,11 @@ def decompose(pos, window, content, slope, allowance):
                dPlace=pos["A1"] - pos["P1"],
                dModelApplied=window["E1m"] - pos["A1"],
                dEncoder=_difference(window.get("E1"), window["E1m"]))
-    return dict(near=_edge(near, _difference(content.get("C0"), e0), slope, allowance[0]),
-                far=_edge(far, _difference(e1, content.get("C1")), slope, allowance[1]))
+    c0, c1 = content.get("C0"), content.get("C1")
+    near_black = _black_units(_difference(c0, e0), content.get("black0"), slope)
+    far_black = _black_units(_difference(e1, c1), content.get("black1"), slope)
+    return dict(near=_edge(near, near_black, slope, allowance[0], c0 is None),
+                far=_edge(far, far_black, slope, allowance[1], c1 is None))
 
 
 # --- reading the frame ------------------------------------------------------------

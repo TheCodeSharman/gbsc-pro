@@ -178,6 +178,9 @@ def walk(host, dev, regs, field, first, step, points, near, do_relock, expected)
 # A point off the line by more than this is the strip having no content to
 # change -- the card's black bands do it -- rather than the window moving.
 OUTLIER_PX = 4.0
+# A real walk moves the edge about a column per unit; a reading that never moves
+# fits a line with no zero in it.
+MIN_SLOPE_PX_PER_UNIT = 0.25
 
 
 def crossing(seen):
@@ -194,6 +197,8 @@ def crossing(seen):
         keep = off < off.max()
         x, y = x[keep], y[keep]
     residual = float(np.abs(y - (slope * x + intercept)).max())
+    if abs(slope) < MIN_SLOPE_PX_PER_UNIT:
+        return None, None, x.size, residual
     return -intercept / slope, abs(slope), x.size, residual
 
 

@@ -606,18 +606,29 @@ def field_from(registers, register, offset, width):
 OUTPUT_COMMANDS = {"1080p": "s", "1024p": "p", "960p": "f", "720p": "g",
                    "480p": "h", "576p": "j"}
 
+# Each standard's frame total, which VDS_VSYNC_RST + 1 reads once the mode has
+# landed. framing_decomposition derives the same numbers from OutputMode's table
+# and its tests hold the two together.
+OUTPUT_FRAME_LINES = {"1080p": 1125, "1024p": 1066, "960p": 1000, "720p": 750,
+                      "480p": 525, "576p": 625}
+
 
 def choose_output(host, output, timeout=30.0):
-    """Ask for an output resolution and wait for the raster to hold still.
+    """Ask for an output resolution and wait for ITS raster to hold still.
 
     The route is queued for loop() and the re-solve takes seconds, while the
-    capture settles before the output has moved at all -- so the raster itself,
-    VDS_HSYNC_RST reading the same value a second apart, is what says it landed.
+    capture settles before the output has moved at all. A line total that
+    merely holds still is the previous mode's when the request was refused,
+    so what says it landed is the frame carrying the mode's own lines and
+    VDS_HSYNC_RST reading the same value a second apart.
     """
     if get(host, f"/uc?{OUTPUT_COMMANDS[output]}")[0] != 200:
         return False
+    lines = OUTPUT_FRAME_LINES[output] - 1
 
     def held():
+        if read_named(host, "VDS_VSYNC_RST") != lines:
+            return None
         first = read_named(host, "VDS_HSYNC_RST")
         time.sleep(1.0)
         return first if first and first == read_named(host, "VDS_HSYNC_RST") else None
