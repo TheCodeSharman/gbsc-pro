@@ -1548,6 +1548,15 @@ one the same way; the rules below are each a wasted session.
   inert one.
   `docs/investigations/the-encoder-places-its-window-when-the-sync-pad-returns.md`,
   `docs/investigations/full-screen-framing-on-the-vesa-modes.md`.
+- **THE SINK'S OWN POSITION IS PER RASTER AND NO TERM PLACES IT.** Measured
+  across the stock AKF50 set into 1080p and 720p with `framing_sweep.py --tier
+  S` and read with `framing_report.py --sink`: within an output it steps with
+  the field rate in bands, two sources sit off their band, and a transition
+  with PICTURE at the aperture's edge lands 5 to 9 units before it where a
+  pad toggle on the settled state does not. So a frame judged after a mode
+  change carries a placement a settled toggle would not give, and a model in
+  T, the clock or the rate cannot close the 50 Hz 1080p rasters.
+  `docs/investigations/the-sinks-own-window-position-is-per-raster.md`.
 - **An open window past the end of the picture is not corruption.** It shows
   whatever the playback stage fetches, which looks like a fault and is only
   absence of data. Establish that there IS picture under the window before
