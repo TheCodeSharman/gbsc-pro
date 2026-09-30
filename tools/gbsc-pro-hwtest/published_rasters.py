@@ -37,7 +37,7 @@ PROPORTION_TOLERANCE = 40
 
 TABLE = re.compile(r"SourceTiming::(Cea|Dmt|Acorn)\[\] = \{(.*?)\};", re.S)
 ROW = re.compile(r"\{\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+),"
-                 r"\s*(\d+),\s*(\d+),\s*([PN]),\s*([PN])\s*\},?\s*//\s*(\S+)")
+                 r"\s*(\d+),\s*(\d+),\s*([PN]),\s*([PN]),\s*(\w+)\s*\},?\s*//\s*(\S+)")
 
 
 def rows(path=SOURCE_TIMING):
@@ -48,10 +48,10 @@ def rows(path=SOURCE_TIMING):
         for m in ROW.finditer(body):
             frame, rate, total, sync, start, active, vsync, vstart, vactive = (
                 int(v) for v in m.groups()[:9])
-            found.append(dict(authority=authority, name=m.group(12), frame=frame, rate=rate,
+            found.append(dict(authority=authority, name=m.group(13), frame=frame, rate=rate,
                               total=total, sync=sync, start=start, active=active,
                               vsync=vsync, vstart=vstart, vactive=vactive,
-                              hpol=m.group(10), vpol=m.group(11),
+                              hpol=m.group(10), vpol=m.group(11), shape=m.group(12),
                               h_start=start / total, h_extent=active / total,
                               v_start=vstart / frame, v_extent=vactive / frame))
     return found
