@@ -1192,12 +1192,16 @@ twelve tables while they existed, which is what `BringUp` was built from.
   At the 1436 raster that left 307 units of travel; when `Geometry::solveRaster()`
   made the raster 1916 on 2026-08-13 it left **73**, at which point the
   horizontal scale clamps before the picture reaches full screen.
-  **`Scale::Min` is 342, both axes, which is 2.994x** — the largest
-  magnification at or under 3.0x — so the floor follows the raster
-  (`room x Min / Unity`, about 640 at 1916) and no longer collapses each time
-  the output widens. It is a PICTURE-QUALITY bound and not a derivation: past
-  3.0x the scaler starts picking wrong samples, which is what `d882dff75` put it
-  there for, and `docs/known-issues.md` carries the sweep.
+  **THE FLOOR IS PER AXIS, `Axis::magnificationFloor()`: 342 horizontally,
+  which is 2.994x, and 205 vertically, which is 5.0x** — so the floor follows
+  the raster (`room x floor / Unity`, about 640 at 1916) and no longer
+  collapses each time the output widens. Both are PICTURE-QUALITY bounds and
+  not derivations, and they differ because the evidence does: past 3.0x the
+  horizontal scaler starts picking wrong samples, which is what `d882dff75`
+  put the horizontal one there for and `docs/known-issues.md` carries the
+  sweep, while nothing measured bounds `VDS_VSCALE`, a different register in a
+  different stage. A shared floor put the horizontal finding on both and
+  letterboxed every source too short to reach 3.0x.
 
   **RD-5725-1.1 states no minimum for `VDS_HSCALE`**: it gives
   only `HSCALE = 1024 x in / out` and the field is 10 bits, so there is no
@@ -1341,8 +1345,8 @@ twelve tables while they existed, which is what `BringUp` was built from.
   **But its original justification is GONE, and nobody has re-tested the
   alternative.** It read: at 129.6 MHz the raster is 2298, the zoom floor lands
   exactly on the default framing, and horizontal zoom-in has no travel. That was
-  true at `scaleMin` 500. With the floor following the raster over `Scale::Min`
-  it is about `768` against an 890 default — **travel, rather than none** — so
+  true at `scaleMin` 500. With the floor following the raster over the axis's
+  floor it is about `768` against an 890 default — **travel, rather than none** — so
   the usability argument for 108 over 129.6 no longer holds on its own terms. 129.6 MHz would buy a
   third more horizontal resolution and is already measured as working and sharp.
   Raising `EngineCeilingHz` is now a live bench experiment
