@@ -128,3 +128,26 @@ def test_a_gzipped_run_loads_like_a_plain_one(tmp_path):
     with gzip.open(path, "wt") as handle:
         handle.write(json.dumps(r) + "\n")
     assert fr.load(str(path))[0]["source"] == "X640 Y480 C256 F60"
+
+
+def test_the_acquisition_view_names_the_raster_each_state_came_from():
+    # The same state twice in one run, reached first from another raster and
+    # then from itself: the view keeps the run order and says what each lock
+    # followed, since a placement that follows the transition rather than
+    # the state only shows that way.
+    records = [record("a", "1080p", 1600, 60.0, 160, 153.5, 1556, 1550.0),
+               record("b", "1080p", 1916, 50.08, 160, 171.5, 1832, 1843.8),
+               record("b", "1080p", 1916, 50.08, 160, 171.1, 1832, 1843.8)]
+    rows = fr.acquisitions(records)
+    assert [row["from_T"] for row in rows] == [None, 1600, 1916]
+    assert abs(rows[1]["delay"] - (171.5 - 140)) < 1e-9
+    assert abs(rows[1]["width_off"] - ((1843.8 - 171.5) - 1916 * 1920 / 2200)) < 1e-9
+
+
+def test_the_acquisition_view_does_not_claim_a_raster_across_a_skipped_state():
+    records = [record("a", "1080p", 1600, 60.0, 160, 153.5, 1556, 1550.0),
+               dict(source="b", output="1080p", skipped="source refused the mode"),
+               record("c", "1080p", 1916, 50.08, 160, 171.5, 1832, 1843.8)]
+    rows = fr.acquisitions(records)
+    assert [row["source"] for row in rows] == ["a", "c"]
+    assert rows[1]["from_T"] is None

@@ -3,6 +3,7 @@
 
     python3 tools/gbsc-pro-hwtest/framing_report.py tools/gbsc-pro-hwtest/sweeps/framing-<UTC>.jsonl
     ... --markdown          for a docs investigation
+    ... --acquisitions      every acquisition in run order, with the raster it came from
 
 One row per state: the raster, the slope predicted and measured, the black at
 each edge, the four terms at each end of the line, the expected capture
@@ -147,6 +148,46 @@ def window_fits(records):
     return fits
 
 
+def acquisitions(records):
+    """One row per acquisition in run order, with the raster the previous
+    measured state ran: a placement that follows the transition into a raster
+    rather than the state shows only this way. A skipped state breaks the
+    chain, since what raster the unit was left on is not recorded."""
+    rows, previous = [], None
+    for record in records:
+        if "skipped" in record:
+            previous = None
+            continue
+        window = record["window"]
+        e0, e1 = window.get("E0"), window.get("E1")
+        mode = fd.MODES[record.get("carried", record["output"])]
+        fraction = window["T"] * mode.carried_px / mode.total_px
+        rows.append(dict(source=record["source"], output=shown_output(record), T=window["T"],
+                         from_T=previous, E0m=window["E0m"], E0=e0,
+                         delay=None if e0 is None else e0 - sync_porch_units(record),
+                         E1m=window["E1m"], E1=e1,
+                         width_off=None if e0 is None or e1 is None else (e1 - e0) - fraction,
+                         black=record["black_cols"],
+                         instruments=(window.get("instruments") or {})))
+        previous = window["T"]
+    return rows
+
+
+ACQUISITION_HEADER = (f"{'source':24} {'output':11} {'T':>5} {'from T':>6} {'E0m':>5} {'E0':>7} "
+                      f"{'delay':>6} {'E1m':>5} {'E1':>8} {'width-frac':>10} {'black L R T B':>14}  instruments")
+
+
+def format_acquisition(row):
+    black = row["black"]
+    instruments = row["instruments"]
+    return (f"{row['source']:24} {row['output']:11} {row['T']:5} "
+            f"{'-' if row['from_T'] is None else row['from_T']:>6} {row['E0m']:5} "
+            f"{number(row['E0'], 7, 1):>7} {number(row['delay'], 6, 1):>6} {row['E1m']:5} "
+            f"{number(row['E1'], 8, 1):>8} {number(row['width_off'], 10, 1):>10} "
+            f"{black['left']:4}{black['right']:4}{black['top']:4}{black['bottom']:4}  "
+            f"{instruments.get('E0')}/{instruments.get('E1')}")
+
+
 def describe_fit(name, got):
     if got is None:
         return f"    {name:18} too few distinct points"
@@ -159,8 +200,15 @@ def main():
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("path")
     parser.add_argument("--markdown", action="store_true")
+    parser.add_argument("--acquisitions", action="store_true")
     args = parser.parse_args()
     records = load(args.path)
+
+    if args.acquisitions:
+        print(ACQUISITION_HEADER)
+        for row in acquisitions(records):
+            print(format_acquisition(row))
+        return 0
 
     if args.markdown:
         print("| mode | output | T | Hz | black L/R/T/B | L: dEnc dModel dPlace dCap | "
