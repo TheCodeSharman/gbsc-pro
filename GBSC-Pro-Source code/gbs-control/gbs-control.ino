@@ -684,17 +684,6 @@ static bool getHexParam(AsyncWebServerRequest *request, const char *name, long l
 static void submitRegisterJob(AsyncWebServerRequest *request, const RegisterQueue::Job &job);
 static void serviceRegisterQueue();
 #endif
-void UpDisplay(void);
-
-void UpDisplay(void)
-{
-    if (scalingRgbhv()) {
-        Tv5725::RgbhvOutput::chooseBypass();
-    } else {
-        applyPresets();
-    }
-}
-
 void Mode_Option(void);
 void Mode_Option(void)
 {
@@ -5649,11 +5638,7 @@ void handleType2Command(char argument)
                 uopt->presetPreference = Output1080P; // 1920x1080
             // if (argument == 'L')
 
-            if (scalingRgbhv()) {
-                Tv5725::RgbhvOutput::chooseBypass();
-            } else {
-                changeOutputResolution();
-            }
+            changeOutputResolution();
             saveUserPrefs();
         } break;
         case 'i':
@@ -9543,7 +9528,7 @@ void OSD_selectOption()
                         uopt->PalForce60 = 0;
                     }
                     saveUserPrefs();
-                    UpDisplay();
+                    applyPresets();
                     break;
                 // case IRKeyLeft:
                 //   userCommand = '0';
@@ -9849,7 +9834,7 @@ void OSD_selectOption()
                         uopt->deintMode = 0;
                         saveUserPrefs();
                     }
-                    UpDisplay();
+                    applyPresets();
                     break;
                 // case IRKeyRight:
                 //   userCommand = 'q';
@@ -11313,7 +11298,7 @@ void OSD_selectOption()
                         RGB_Com = 0;
                     Send_Compatibility(RGB_Com);
                     if (GBS::ADC_INPUT_SEL::read())
-                        UpDisplay();
+                        applyPresets();
                     break;
                 // case IRKeyRight:
                 //   RGB_Com = !RGB_Com;
