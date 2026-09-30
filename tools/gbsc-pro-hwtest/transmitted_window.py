@@ -47,10 +47,6 @@ import gbs_unit
 import hdmi_capture
 import setfield
 
-# The preference letters `/uc` takes, and the frame height each one names.
-OUTPUTS = {"960p": "f", "720p": "g", "480p": "h", "576p": "j",
-           "1024p": "p", "1080p": "s"}
-
 # A column counts as changed when its mean luma moved this far against the
 # reference. Above the capture's own noise, which repeats to a tenth of a level.
 MOVED = 6.0
@@ -207,7 +203,7 @@ def measure(host, dev, output, step, points, do_relock):
     # one in force: a unit left frozen carries the previous source's raster and
     # every register reads self-consistent.
     gbs_unit.get(host, "/freeze?on=0")
-    if not settled(host):
+    if not gbs_unit.acquired_and_settled(host):
         return None
     filled = fill(host, dev)
     # The capture the scale is fitted to, read in the same breath as the scale:
@@ -241,22 +237,6 @@ def measure(host, dev, output, step, points, do_relock):
                 start=start, stop=stop, nearSlope=nearSlope, farSlope=farSlope,
                 nearUsed=nearUsed, farUsed=farUsed, near=near, far=far,
                 worst=max(nearOff, farOff))
-
-
-def settled(host, limit_s=60.0, holds=3):
-    started, last, held = time.monotonic(), None, 0
-    while time.monotonic() - started < limit_s:
-        got = gbs_unit.get_json(host, "/geometry")[1]
-        if got and got.get("state") == "acquired":
-            now = (got.get("ch"), got.get("eh"), got.get("lineRateHz"))
-            held = held + 1 if now == last else 0
-            last = now
-            if held >= holds:
-                return True
-        else:
-            held, last = 0, None
-        time.sleep(1.0)
-    return False
 
 
 def report(found, verbose):
@@ -304,7 +284,7 @@ def main():
     args = parser.parse_args()
 
     wanted = [name.strip() for name in args.outputs.split(",") if name.strip()]
-    unknown = [name for name in wanted if name not in OUTPUTS]
+    unknown = [name for name in wanted if name not in gbs_unit.OUTPUT_COMMANDS]
     if unknown:
         sys.exit(f"unknown output mode(s): {', '.join(unknown)}")
 
@@ -327,9 +307,9 @@ def main():
 
 def sweep(args, dev, wanted):
     for name in wanted:
-        gbs_unit.get(args.host, "/uc?" + OUTPUTS[name])
+        gbs_unit.get(args.host, "/uc?" + gbs_unit.OUTPUT_COMMANDS[name])
         time.sleep(3.0)
-        if not settled(args.host):
+        if not gbs_unit.acquired_and_settled(args.host):
             print(f"  {name:7} SKIP  never acquired, or never stopped re-solving")
             continue
         found = measure(args.host, dev, name, args.step, args.points,

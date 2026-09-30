@@ -145,33 +145,11 @@ def judge(clip, axis, allowance):
     return shown, margins, None
 
 
-def settled(host, limit_s=60.0, holds=3):
-    """Wait for the engine to acquire the mode and stop re-solving.
-
-    A mode change does not clear `state` the instant the source leaves, so
-    acquisition alone is not evidence the NEW mode is what was solved: this
-    waits for the reported capture to hold still as well.
-    """
-    started, last, held = time.monotonic(), None, 0
-    while time.monotonic() - started < limit_s:
-        got = gbs_unit.get_json(host, "/geometry")[1]
-        if got and got.get("state") == "acquired":
-            now = (got.get("ch"), got.get("cv"), got.get("lineRateHz"))
-            held = held + 1 if now == last else 0
-            last = now
-            if held >= holds:
-                return True
-        else:
-            held, last = 0, None
-        time.sleep(1.0)
-    return False
-
-
 def sweep_mode(host, dev, source, mode, allowance, keep_framing):
     reply = gbs_unit.mode_serv(source, f"MODE {mode}")
     if not reply or not reply.startswith("OK"):
         return None, f"source refused the mode: {reply!r}"
-    if not settled(host):
+    if not gbs_unit.acquired_and_settled(host):
         return None, "never acquired, or never stopped re-solving"
     # AFTER the mode change, which repaints the source's default pattern.
     gbs_unit.mode_serv(source, "PATTERN CARD")
@@ -208,15 +186,7 @@ def main():
     if args.modes:
         modes = [m.strip() for m in args.modes.split(",") if m.strip()]
     else:
-        listing = gbs_unit.mode_serv(source, "MODES", timeout=15) or ""
-        seen, modes = set(), []
-        for line in listing.splitlines():
-            parts = line.split()
-            if len(parts) == 4 and parts[2] == "C256":
-                key = (parts[0], parts[1], parts[3])
-                if key not in seen:
-                    seen.add(key)
-                    modes.append(" ".join(parts))
+        modes = gbs_unit.list_modes(source)
     if not modes:
         sys.exit("no modes to sweep -- is ModeServ answering?")
 

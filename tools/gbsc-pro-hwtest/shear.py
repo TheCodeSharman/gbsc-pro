@@ -14,7 +14,7 @@ import os
 import time
 
 import setfield
-from gbs_unit import get_json, read_fields
+from gbs_unit import read_fields
 
 START_CONST = 55.0
 START_PER_MAG = 25.0
@@ -254,11 +254,6 @@ class Session:
         skipped = len(self.marks) - len(judged)
         return (f"{self.rule.name} called {hits} of {len(judged)} right"
                 + (f", {skipped} marks it does not govern" if skipped else ""))
-
-
-def freeze(host, on):
-    status, payload = get_json(host, f"/freeze?on={1 if on else 0}")
-    return status == 200 and isinstance(payload, dict) and payload.get("frozen") is on
 
 
 def write_field(host, name, value):

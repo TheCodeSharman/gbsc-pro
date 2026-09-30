@@ -39,7 +39,6 @@ import full_margins
 import gbs_unit
 import hdmi_capture
 import setfield
-import shear
 
 # How far before the expected crossing the creep starts. A transition that
 # happens between two frames nobody saw is not a measurement, so the value is
@@ -65,7 +64,6 @@ STEP_FRAMES = 4
 STEP_WARMUP = 10
 
 # The output resolutions /uc takes, for the invariance check.
-OUTPUTS = {"1080p": "s", "960p": "f", "720p": "g", "1024p": "p"}
 
 FIELDS = ["PLLAD_MD", "IF_HSYNC_RST", "IF_HB_SP2", "IF_HB_ST2",
           "IF_VB_SP", "IF_VB_ST", "VDS_HSCALE", "VDS_VSCALE",
@@ -262,25 +260,6 @@ def near_run(clip, axis):
     return centroid(runs[0]), centroid(runs[-1])
 
 
-def choose_output(host, command):
-    """Ask for an output resolution and wait for the raster to hold still.
-
-    The route is queued for loop() and the re-solve takes seconds, while
-    card_edges.settled() watches the CAPTURE and so answers before the output
-    has moved at all. Waiting on the raster itself is what says it landed.
-    """
-    if gbs_unit.get(host, f"/uc?{command}")[0] != 200:
-        return False
-
-    def held():
-        first = gbs_unit.read_named(host, "VDS_HSYNC_RST")
-        time.sleep(1.0)
-        return first if first and first == gbs_unit.read_named(
-            host, "VDS_HSYNC_RST") else None
-
-    return gbs_unit.wait_for(held, timeout=30.0) is not None
-
-
 def measure(host, dev, mode, h, v, clock, label):
     field = gbs_unit.read_fields(host, FIELDS)
     doubling = max(1, int(round(field["PLLAD_MD"] / float(field["IF_HSYNC_RST"]))))
@@ -426,8 +405,8 @@ def main():
         h, v, clock = found
         print(f"{mode}", flush=True)
         for output in [o.strip() for o in args.outputs.split(",") if o.strip()] or [None]:
-            shear.freeze(args.host, False)
-            if output and not choose_output(args.host, OUTPUTS[output]):
+            gbs_unit.freeze(args.host, False)
+            if output and not gbs_unit.choose_output(args.host, output):
                 print(f"  {output}: the output raster never settled")
                 continue
             reply = gbs_unit.mode_serv(args.modeserv, f"MODE {mode}")
@@ -446,7 +425,7 @@ def main():
                 print("  the framing would not open")
                 continue
             time.sleep(2.0)
-            if not shear.freeze(args.host, True):
+            if not gbs_unit.freeze(args.host, True):
                 print("  the freeze would not take")
                 continue
             for _ in range(args.osr):
@@ -466,7 +445,7 @@ def main():
                     measure(args.host, dev, mode, h, v, clock, label)
             finally:
                 set_field(args.host, specs["IF_HBIN_SP"], held)
-                shear.freeze(args.host, False)
+                gbs_unit.freeze(args.host, False)
         print(flush=True)
 
 

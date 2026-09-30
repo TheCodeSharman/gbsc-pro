@@ -599,6 +599,65 @@ def field_from(registers, register, offset, width):
     return (raw >> offset) & ((1 << width) - 1)
 
 
+# --- the output and the solve ------------------------------------------------
+
+# The /uc letter that selects each output resolution. Queued for loop(), and it
+# writes flash.
+OUTPUT_COMMANDS = {"1080p": "s", "1024p": "p", "960p": "f", "720p": "g",
+                   "480p": "h", "576p": "j"}
+
+
+def choose_output(host, output, timeout=30.0):
+    """Ask for an output resolution and wait for the raster to hold still.
+
+    The route is queued for loop() and the re-solve takes seconds, while the
+    capture settles before the output has moved at all -- so the raster itself,
+    VDS_HSYNC_RST reading the same value a second apart, is what says it landed.
+    """
+    if get(host, f"/uc?{OUTPUT_COMMANDS[output]}")[0] != 200:
+        return False
+
+    def held():
+        first = read_named(host, "VDS_HSYNC_RST")
+        time.sleep(1.0)
+        return first if first and first == read_named(host, "VDS_HSYNC_RST") else None
+
+    return wait_for(held, timeout=timeout) is not None
+
+
+def freeze(host, on):
+    """Hold or release the engine's automation, and say whether it took."""
+    status, payload = get_json(host, f"/freeze?on={1 if on else 0}")
+    return status == 200 and isinstance(payload, dict) and payload.get("frozen") is on
+
+
+def autosave(host, on):
+    """Whether a pad press writes the framing table to flash."""
+    return get(host, f"/framing/autosave?on={1 if on else 0}", timeout=8)[0] == 200
+
+
+def acquired_and_settled(host, limit_s=60.0, holds=3):
+    """Wait for the engine to acquire the source and stop re-solving it.
+
+    A mode change does not clear `state` the instant the source leaves, so
+    acquisition alone is not evidence the NEW mode is what was solved: the
+    reported capture has to hold still as well.
+    """
+    started, last, held = time.monotonic(), None, 0
+    while time.monotonic() - started < limit_s:
+        got = get_json(host, "/geometry")[1]
+        if got and got.get("state") == "acquired":
+            now = tuple(got.get(k) for k in ("ch", "cv", "eh", "lineRateHz"))
+            held = held + 1 if now == last else 0
+            last = now
+            if held >= holds:
+                return True
+        else:
+            held, last = 0, None
+        time.sleep(1.0)
+    return False
+
+
 # --- the source ------------------------------------------------------------
 
 MODESERV_PORT = 6502
@@ -627,6 +686,44 @@ def mode_serv(where, command, timeout=10):
                 break
             chunks.append(block)
     return b"".join(chunks).decode(errors="replace").strip()
+
+
+def modeserv_ok(reply):
+    return bool(reply) and reply.startswith("OK")
+
+
+def parse_modes(listing):
+    """The 256-colour modes a MODES listing offers, each once, in its order."""
+    seen, modes = set(), []
+    for line in (listing or "").splitlines():
+        parts = line.split()
+        if len(parts) == 4 and parts[2] == "C256":
+            key = (parts[0], parts[1], parts[3])
+            if key not in seen:
+                seen.add(key)
+                modes.append(" ".join(parts))
+    return modes
+
+
+def list_modes(where):
+    return parse_modes(mode_serv(where, "MODES", timeout=15))
+
+
+def show_card(where):
+    """PATTERN CARD with its animation off, so one frame is evidence. After any
+    MODE, which repaints the default card."""
+    return (modeserv_ok(mode_serv(where, "PATTERN CARD"))
+            and modeserv_ok(mode_serv(where, "ANIM OFF")))
+
+
+def mode_round_trip(where, host, mode):
+    """Re-issue the mode the source is already in, so the link re-acquires with
+    the registers as they stand, and wait for the engine to settle again. The
+    valid re-lock before a judged frame; a PAD_SYNC_OUT_ENZ toggle lands the
+    picture elsewhere."""
+    if not modeserv_ok(mode_serv(where, f"MODE {mode}")):
+        return False
+    return acquired_and_settled(host) and show_card(where)
 
 
 # --- console output ---------------------------------------------------------
