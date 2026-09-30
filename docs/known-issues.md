@@ -10,6 +10,29 @@ regardless of which step is in flight.
 
 ## Reaches the picture
 
+### A declared shape is unreachable where the capture is wider than the narrowed room
+
+`VDS_?SCALE` cannot minify, so the produced picture is never narrower than the
+capture. Where a declared aspect asks for a room narrower than that, the axis
+fills instead and the shape is refused -- reported on the console and as
+`"shaped":false` in `/geometry`, because no register distinguishes a refusal from
+having been given no shape at all.
+
+Measured: 800x600@60 into 1080p. The 60 Hz raster is 1592 units, its room 1389,
+and 4:3 asks for 1042 against a capture of 1090. The bench's 50 Hz sources are
+unaffected and shape exactly.
+
+**Raising the display clock does not lift it**, and that is measured: at
+129.6 MHz the raster widens to 1910 but `VideoPath::dividerCeilingForOutput()`
+raises `PLLAD_MD` from 1438 to 1744 with it, so the capture grows in the same
+proportion and the ratio of capture to room does not move. The picture filled at
+both clocks.
+
+What would lift it is the input formatter's scaling-down block, which sits ahead
+of the VDS, is already in circuit and is idle --
+`investigations/the-input-formatter-can-scale-down.md` has what the bench
+established and what building on it requires. `aspect-ratio.md`.
+
 ### A fast source's output mode is bounded by the encoder, and the width bound is unsettled
 
 **The floor has landed and the binding quantity is derivable**, so what is open

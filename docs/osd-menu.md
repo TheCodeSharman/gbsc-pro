@@ -73,6 +73,29 @@ and both still occupy an OLED state and a TV OSD row for that reason.
 Extracting the menus into a described structure is what makes such a removal
 mechanical. Until then, budget a remote for any menu change.
 
+## The described form, so far
+
+`src/osd/` holds the machinery, host-tested and reaching no device yet:
+
+| class | holds |
+|---|---|
+| `MenuItem` | one node: label, kind, the `/uc?` letter an Ok sends, children, a value-text function |
+| `MenuPage` | one screen as text: the rows in view and which is selected |
+| `MenuCursor` | where the remote is -- Up, Down, Ok, Menu as generic traversal, plus the three-row window |
+| `MenuRenderer` | the three calls a device supplies: begin, row, end |
+| `Menu` | a key in, a redraw and at most one command letter out |
+
+The bracketing in `MenuRenderer` is the panel's: it buffers a frame and flushes
+it, where the overlay writes characters as they arrive and ends with nothing to
+do. A host test substitutes a recording renderer and reads what the menu SAYS
+without either device.
+
+**Nothing calls any of it**, so the chain below is still what runs. What is not
+started: the context a value-text function reads, the described tree itself, and
+the two renderers. The two obstacles that remain are the fixed `P` positions the
+television page paints at, which do not reflow, and the tree having to land in
+flash rather than RAM -- which is why `MenuItem`'s constructor is `constexpr`.
+
 ## Info reports two things that are not what they look like
 
 **`Err` is an unhandled class, not a fault.** The resolution line classifies the

@@ -76,6 +76,17 @@ link re-acquires, and the capture is back at its previous value on the next.
 So the television and the capture run together: one is watched while the other
 is measured, and neither needs the cable moved.
 
+**WHICH MEANS THE TELEVISION CORROBORATES NOTHING ABOUT THE BOARD.** It hangs
+off the loop-out, so it is downstream of the dongle's INPUT: a bad cable into the
+dongle, or an unseated connector there, blacks out both views at once. Two dead
+views read as the board sending nothing, and are one fault in the one link both
+share. Rule that link out before the board -- but after the scaler
+configuration, because a connector that has been seated stays seated and
+reaching for it first is how a real fault gets a session spent on the cable.
+
+A second sink on a separate output would corroborate; this one is a second
+*view* of a single input.
+
 ## What it retires
 
 - **The photo-column mapping**, which does not survive an output mode change and
