@@ -194,30 +194,23 @@ public:
     // Solve every register from the measurement the caller has just taken.
     PollOutcome solveFromMeasurement();
 
-    // Whether the last solve moved the timing the encoder is locked to. Cleared
-    // by reading it, so one solve is answered once.
+    // Hide the picture, or show it again. Hidden behind the display aperture,
+    // which the encoder never sees, from the moment the source stops being
+    // acquired; shown by the acquisition layer once a transition has settled.
     //
-    // The encoder samples the analog output and does not always notice the
-    // timing under it moved: it carries on transmitting the mode it locked to
-    // before, and the panel shows black with every scaler register correct.
-    // Taking the output sync away is what makes it look again -- and it is the
-    // only thing on this board that does, which is also why it is spent
-    // nowhere else. ../../../../docs/investigations/encoder-stale-timing.md
-    bool encoderTimingMoved();
-
-    // Take the output sync away so the encoder re-acquires, and give it back.
-    // The caller owns how long it stays away, because this class holds no clock.
-    void holdOutputSync(bool away);
-
-    // Hide the picture, or show it again. Blanked from the moment the source
-    // stops being acquired until a solve has replaced the geometry.
-    //
-    // **IT MUST NOT REACH THE ENCODER.** The output sync pad is what the HDMI
-    // encoder locks to, and taking it away costs a full sink re-acquisition --
-    // seconds of dark panel, quantised, and none of it the engine's. The
-    // display aperture blanks the picture where only the VDS can see it.
-    // docs/investigations/the-transition-is-mostly-the-encoder.md
+    // A TRANSITION TAKES THE SYNC PAD AS WELL. The pad is what the HDMI encoder
+    // locks to, and it places its window from what the line carries when the
+    // pad returns -- so a mode change or an output change takes the pad away
+    // before the first register the setup moves, and it comes back once, after
+    // the last. docs/investigations/the-transition-is-mostly-the-encoder.md
     void showOutput(bool show);
+
+    // Whether the output is on: the aperture open and the sync pad driven.
+    bool outputShown() const;
+
+    // Whether a transition has the sync pad away, which is what the acquisition
+    // layer times its hold before presenting from.
+    bool syncOutAway() const;
 
     // Whether a mode change is still working through: told the source moved and
     // not yet finished solving for it. What the sync output blanks against.
@@ -518,13 +511,17 @@ private:
     bool syncOut_, syncOutEver_;
     void driveSyncOut(bool on);
 
+    // The aperture closed and the sync pad away, ahead of a setup's first write.
+    void takeOutputAway();
+
     // The timing the encoder is locked to, as the last solve left it: both
     // raster totals and the field rate they were solved for. The rate is
     // rounded because it is measured and dithers by tenths, and a tenth of a
-    // hertz is not a timing the encoder can tell apart.
+    // hertz is not a timing the encoder can tell apart. A solve that moves it
+    // takes the output away before it writes the raster.
     uint16_t encoderLinePx_, encoderFrameLines_;
     uint16_t encoderFieldRateHz_;
-    bool encoderKnown_, encoderMoved_;
+    bool encoderKnown_;
 
     // The aperture as the showing_ state has it: what the last solve chose, or
     // an aperture that admits nothing.

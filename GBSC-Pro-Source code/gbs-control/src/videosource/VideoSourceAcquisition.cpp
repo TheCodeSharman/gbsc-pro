@@ -23,7 +23,7 @@ VideoSourceAcquisition::VideoSourceAcquisition(Tv5725::SourceMeasurement &sampli
                                    Tv5725::VideoPath &videoPath)
     : sampling_(sampling), videoPath_(videoPath), maintenanceAllowed_(false),
       channelSyncServicedEver_(false), channelSyncServicedMs_(0),
-      encoderLooking_(false), encoderLookMs_(0),
+      syncAwaySeen_(false), syncAwayMs_(0), phaseSearched_(false),
       mayRun_(0), passThroughSwitch_(0), passThroughAllowed_(false), resolution_(0),
       detectedMs_(0),
       detectedEver_(false), solvedLines_(0), solvedLineRateHz_(0),
@@ -379,10 +379,12 @@ bool VideoSourceAcquisition::sourceMoved()
     // AND IT IS WHERE THE OUTPUT BLANK BELONGS, half a second ahead of any arm:
     // the arms below have runs to sit through first, and until one fires the
     // panel is showing the previous mode's geometry applied to a source that
-    // has left.
+    // has left. Presenting is not decided here: acquired is the first step of
+    // a setup rather than the last, and presentWhenSettled() waits for the rest.
     if (sourceState_ != was) {
         logSourceState(sourceState_, lines, lineSamples, Tv5725::Adc::dividerInForce());
-        videoPath_.showOutput(sourceState_ == SourceAcquired && !videoPath_.changing());
+        if (sourceState_ != SourceAcquired)
+            videoPath_.showOutput(false);
     }
 
     // A count no source runs is the wrong sync path's signature -- 97..137 on a
@@ -610,17 +612,14 @@ bool VideoSourceAcquisition::poll(uint32_t nowMs)
                 (uint16_t)((recoveryPosition_ + 1) % SyncRecovery::CycleLength);
     }
 
-    // Ungated: a sync pad left away is a dark panel, and whether maintenance is
+    // Ungated: an output left away is a dark panel, and whether maintenance is
     // wanted says nothing about that. Asked every pass rather than after a
-    // source solve, because an OUTPUT change moves the raster too and no source
-    // solve follows one -- the source has not moved.
-    if (!encoderLooking_ && videoPath_.encoderTimingMoved()) {
-        tv5725Log("encoder relook: hold");
-        videoPath_.holdOutputSync(true);
-        encoderLooking_ = true;
-        encoderLookMs_ = nowMs;
-    }
-    serviceEncoderRelook(nowMs);
+    // source solve, because an OUTPUT change takes the output away too and no
+    // source solve follows one -- the source has not moved. Not on the pass
+    // that solved: the caller matches the output rate to the source on that
+    // pass, after this returns, and the rate belongs before the picture.
+    if (!solved)
+        presentWhenSettled(nowMs);
 
     if (maintenanceAllowed_)
         keepSourceComing(nowMs);
@@ -628,13 +627,52 @@ bool VideoSourceAcquisition::poll(uint32_t nowMs)
     return solved;
 }
 
-void VideoSourceAcquisition::serviceEncoderRelook(uint32_t nowMs)
+void VideoSourceAcquisition::presentWhenSettled(uint32_t nowMs)
 {
-    if (!encoderLooking_ || (uint32_t)(nowMs - encoderLookMs_) < EncoderRelookMs)
+    // Timed from the pass that first sees the pad away, whichever route took
+    // it: a source event through this layer, or an output change through the
+    // engine directly.
+    if (videoPath_.syncOutAway()) {
+        if (!syncAwaySeen_) {
+            syncAwaySeen_ = true;
+            syncAwayMs_ = nowMs;
+            phaseSearched_ = false;
+        }
+    } else {
+        syncAwaySeen_ = false;
+    }
+
+    if (videoPath_.outputShown() || sourceState_ != SourceAcquired
+        || videoPath_.changing())
         return;
-    encoderLooking_ = false;
-    tv5725Log("encoder relook: release");
-    videoPath_.holdOutputSync(false);
+
+    if (syncAwaySeen_) {
+        if ((uint32_t)(nowMs - syncAwayMs_) < MinimumSyncAwayMs)
+            return;
+        if (!Tv5725::Adc::dividerLatched(Tv5725::SyncProcessor::lineSamples()))
+            return;
+        // Once per transition, whatever the search finds: the maintenance
+        // cadence tries again on a picture that is showing, and a transition
+        // has re-latched the clock the last phase was found against.
+        if (!phaseSearched_) {
+            phaseSearched_ = true;
+            acquireSamplingPhase();
+        }
+    }
+
+    videoPath_.showOutput(true);
+    syncAwaySeen_ = false;
+}
+
+void VideoSourceAcquisition::moveOutputForMeasuredRate()
+{
+    if (outputIsPassedThrough())
+        return;
+    const Tv5725::OutputMode *moveTo = resolutionToMoveTo();
+    if (moveTo == 0)
+        return;
+    videoPath_.setOutputMode(moveTo);
+    videoPath_.prepareToMeasure(sampling_.sourceLines());
 }
 
 void VideoSourceAcquisition::keepSourceComing(uint32_t nowMs)
@@ -737,12 +775,24 @@ bool VideoSourceAcquisition::runPass(uint32_t nowMs, bool &detectionPass)
     videoPath_.establishSyncType((uint8_t)VideoSourceSelection::selected());
     videoPath_.prepareToMeasure(sampling_.readSourceLines());
 
+    // The rate, then the output that rate can be carried at, then the clock
+    // that output bounds, then the duty against that clock. The idle pass is
+    // the only other writer of the state and the solve never reaches it, so
+    // without the absent verdict here the answer holds whatever that pass last
+    // concluded -- present -- for as long as the source cannot be read.
     bool settling = false;
-    if (!measureSource(settling)) {
-        // The idle pass is the only other writer of this and the solve never
-        // reaches it, so without this the answer holds whatever that pass last
-        // concluded -- present -- for as long as the source cannot be read.
-        // That is precisely when a reader needs to know it cannot.
+    if (!reading(sampling_.measureRate(), settling)) {
+        if (!settling)
+            sourceState_ = SourceAbsent;
+        return false;
+    }
+
+    moveOutputForMeasuredRate();
+
+    if (!videoPath_.installSampling(Tv5725::VideoPath::SamplingFollowsMeasurement))
+        return false;
+
+    if (!reading(sampling_.measureDuty(), settling)) {
         if (!settling)
             sourceState_ = SourceAbsent;
         return false;
@@ -769,12 +819,6 @@ bool VideoSourceAcquisition::runPass(uint32_t nowMs, bool &detectionPass)
         videoPath_.setOutputMode(carriedResolution());
         return false;
     }
-
-    // And which resolution the encoder can carry, for the same reason. The mode
-    // change is in flight, so this only holds it; solveFromMeasurement() solves.
-    const Tv5725::OutputMode *moveTo = resolutionToMoveTo();
-    if (moveTo != 0)
-        videoPath_.setOutputMode(moveTo);
 
     if (videoPath_.solveFromMeasurement() != Tv5725::VideoPath::PollSolved)
         return false;

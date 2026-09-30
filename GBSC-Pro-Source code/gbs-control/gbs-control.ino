@@ -718,23 +718,6 @@ void Mode_Option(void)
     }
 }
 
-boolean CheckInputFrequency(void);
-boolean CheckInputFrequency()
-{
-    unsigned char freq = 0;
-    static unsigned char freq_last;
-    freq = Tv5725::TestBusRateMeasurement::outputFrameRateHz();
-    if ((abs(freq_last - freq) < 9) || (freq_last == 0)) {
-        freq_last = freq;
-        return 0;
-    }
-
-    Serial.print("freq");
-    Serial.printf("%d\n", freq);
-    freq_last = freq;
-    return 1;
-}
-
 void OSD_DISPLAY(const int T, const char C);
 void OSD_DISPLAY(const int T, const char C)
 {
@@ -4560,27 +4543,6 @@ void loop()
 
     if (rto->syncWatcherEnabled == true && rto->sourceDisconnected == true && Tv5725::Chip::hasPower()) {
         runSourceRecovery(lastTimeSourceCheck);
-    } else if ((rto->syncWatcherEnabled == true && rto->sourceDisconnected == false && Tv5725::Chip::hasPower())) {
-        if ((millis() - lastTimeSourceCheck) >= 500) {
-            if (CheckInputFrequency()) {
-                // The rate the VDS is playing out moved, so the output is
-                // re-solved for it. Either bypass plays the source's own timing
-                // and has nothing here to re-decide.
-                //
-                // **THIS IS NOT WHERE PASS-THROUGH IS CHOSEN.** A toggle stood
-                // here -- scaling RGBHV was switched to pass-through and
-                // everything else re-solved -- which changed the held output
-                // preference without entering pass-through at all, on a unit
-                // that carried on scaling. RgbhvOutput::isScaling() then read
-                // false for the life of the boot, and the loop stopped placing
-                // the coast window, so the frame time lock never armed.
-                if (geometry.scalerCarriesVideo()) {
-                    applyPresets();
-                }
-            }
-
-            lastTimeSourceCheck = millis();
-        }
     }
 
     // A run this long with nothing measured is worth one I2C probe to tell a

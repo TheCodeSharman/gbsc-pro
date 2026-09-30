@@ -350,7 +350,9 @@ static void checkBenchGeometry()
     // apiece over s1_24/s1_25 and s1_26/s1_27. s1_02, s3_24 and s2_17 are the
     // 422/444 conversion delays, which follow the scan mode the engine measures.
     // s0_49 is the output sync pad, taken away when the change was detected and
-    // given back by the solve that ends it. s5_41/42 and s5_43/44 are the clamp
+    // given back once the acquisition layer finds the setup settled; s5_18 and
+    // s5_19 are the sampling phases it searches before that. s5_41/42 and
+    // s5_43/44 are the clamp
     // window, which is a fraction of the line and so follows the divider.
     // s5_55 is SP_HS_INV_REG, which normalises the source's hsync polarity so
     // the duty the capture window is placed from is the pulse on every source.
@@ -360,7 +362,7 @@ static void checkBenchGeometry()
     // OUT_SYNC_CNTRL and s0_44 the DAC power, asserted whenever the output is
     // shown because the power path takes both down and neither has an owner
     // that would put them back.
-    CHECK(registersWritten() == 82);
+    CHECK(registersWritten() == 84);
     CHECK(Wire.touched[0][0x49]);   // PAD_SYNC_OUT_ENZ
 
     // Three of those are the measurement rather than the geometry: timing the
@@ -395,6 +397,21 @@ static bool pollUntilSolved(VideoSourceAcquisition &acquisition)
                   + SourceMeasurement::LatchSettlePasses); ++i)
         if (pollOnce(acquisition))
             return true;
+    return false;
+}
+
+// The output is presented by the acquisition layer once the setup has settled
+// -- the pad's minimum time away, the latch and the phase search -- so a case
+// about the picture as shown polls on past the solve.
+static bool pollUntilPresented(VideoSourceAcquisition &acquisition)
+{
+    for (uint8_t i = 0; i < 60; ++i) {
+        if (Chip::PAD_SYNC_OUT_ENZ::read() == 0
+            && VideoProcessor::VDS_DIS_VB_ST::read()
+                   > VideoProcessor::VDS_DIS_VB_SP::read() + 1)
+            return true;
+        pollOnce(acquisition);
+    }
     return false;
 }
 
@@ -517,13 +534,13 @@ TEST_CASE("the scan the source is measured through describes one line")
           == (doubled ? dividerInForce() / 2 : dividerInForce()));
 }
 
-TEST_CASE("a transition blanks the picture and leaves the output sync running")
+TEST_CASE("a presence blank closes the aperture and leaves the output sync running")
 {
     // The sync pad is what the HDMI encoder locks to, so taking it away costs a
     // full sink re-acquisition -- measured at 3.3 s to 5.6 s of dark panel after
     // the pad comes back, against 0.1 s for a blank the link never sees. A source
-    // mode change leaves the raster and the display clock where they are, so
-    // there is nothing for the encoder to re-acquire.
+    // that flickers absent for a pass has not changed mode, so its blank is the
+    // aperture alone. A transition takes the pad as well: the case below.
     // docs/investigations/the-transition-is-mostly-the-encoder.md
     seedBenchSource();
     DisplayClock clock;
@@ -535,12 +552,51 @@ TEST_CASE("a transition blanks the picture and leaves the output sync running")
     engine.setOutputMode(benchMode());
     engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(acquisition));
+    REQUIRE(pollUntilPresented(acquisition));
 
     engine.showOutput(false);
 
     CHECK(Chip::PAD_SYNC_OUT_ENZ::read() == 0);
     CHECK(VideoProcessor::VDS_DIS_VB_ST::read()
           == VideoProcessor::VDS_DIS_VB_SP::read() + 1);
+}
+
+TEST_CASE("a transition takes the output sync away before its first setup write")
+{
+    // The encoder places its window from what the line carries when the pad
+    // returns, so the pad goes before anything the setup moves and comes back
+    // after the last of it. Only the aperture closing may precede the drop.
+    seedBenchSource();
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+    VideoSourceAcquisition acquisition(sampling, engine);
+
+    engine.setOutputMode(benchMode());
+    engine.inputTimingsChanged(4);
+    REQUIRE(pollUntilSolved(acquisition));
+    REQUIRE(pollUntilPresented(acquisition));
+
+    Wire.trace.clear();
+    engine.inputTimingsChanged(4);
+
+    size_t drop = Wire.trace.size();
+    for (size_t i = 0; i < Wire.trace.size(); ++i) {
+        const FakeTwoWire::Traced &w = Wire.trace[i];
+        if (w.segment == 0 && w.reg == 0x49 && (w.value & 0x04) != 0) {
+            drop = i;
+            break;
+        }
+    }
+    REQUIRE(drop < Wire.trace.size());
+    for (size_t i = 0; i < drop; ++i) {
+        const FakeTwoWire::Traced &w = Wire.trace[i];
+        CHECK(w.segment == 3);
+        CHECK(w.reg >= 0x10);   // VDS_DIS_HB_SP .. VDS_DIS_VB_ST
+        CHECK(w.reg <= 0x15);
+    }
+    CHECK(Chip::PAD_SYNC_OUT_ENZ::read() == 1);
 }
 
 TEST_CASE("a pad taken down outside the engine is driven again when the output is shown")
@@ -570,14 +626,12 @@ TEST_CASE("a pad taken down outside the engine is driven again when the output i
     CHECK(Chip::PAD_SYNC_OUT_ENZ::read() == 0);
 }
 
-TEST_CASE("a solve that completes with no change outstanding puts the picture back")
+TEST_CASE("a solve completed while blanked is presented by the acquisition's next pass")
 {
-    // THE BLANK LIFTS WHEN THE GEOMETRY IS READY, WHICHEVER SOLVE FINISHED IT.
     // A solve runs through the blank state, so one that completes while the
-    // picture is hidden writes an aperture that admits nothing -- and if
-    // nothing shows the output afterwards the panel stays black with the source
-    // acquired, the divider latched and every other register correct. Measured
-    // on the bench, twice, on a 320x256@50 -> 640x512@50 leg.
+    // picture is hidden writes an aperture that admits nothing. The solve does
+    // not lift the blank itself: the acquisition layer does, once nothing is
+    // outstanding -- and at once where the pad was never taken away.
     seedBenchSource();
     DisplayClock clock;
     SourceMeasurement sampling(inputFormatter);
@@ -594,7 +648,10 @@ TEST_CASE("a solve that completes with no change outstanding puts the picture ba
             == VideoProcessor::VDS_DIS_VB_SP::read() + 1);
 
     REQUIRE(engine.reset());
+    CHECK(VideoProcessor::VDS_DIS_VB_ST::read()
+          == VideoProcessor::VDS_DIS_VB_SP::read() + 1);
 
+    pollOnce(acquisition);
     CHECK(VideoProcessor::VDS_DIS_VB_ST::read()
           > VideoProcessor::VDS_DIS_VB_SP::read() + 1);
 }
@@ -611,6 +668,7 @@ TEST_CASE("a settled source is solved on the first poll that can measure it")
     engine.setOutputMode(benchMode());
     engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(acquisition));
+    REQUIRE(pollUntilPresented(acquisition));
 
     checkBenchGeometry();
 
@@ -672,6 +730,7 @@ TEST_CASE("a source still settling gets no geometry solved against it")
     SUBCASE("and it is solved by the poll after the source settles") {
         g_fieldRate = 50.08f;
         REQUIRE(pollUntilSolved(acquisition));
+        REQUIRE(pollUntilPresented(acquisition));
         checkBenchGeometry();
     }
 }
@@ -831,6 +890,7 @@ TEST_CASE("a reset puts the framing back without re-deriving the rest")
     engine.setOutputMode(benchMode());
     engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(acquisition));
+    REQUIRE(pollUntilPresented(acquisition));
 
     REQUIRE(engine.zoom(400, 120));
     // The framing is a proportion now and carries no unit to compare, so the
@@ -1220,6 +1280,7 @@ TEST_CASE("a framed picture holds every window against the framing")
     engine.setOutputMode(benchMode());
     engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(acquisition));
+    REQUIRE(pollUntilPresented(acquisition));
 
     // What the solve placed before anything was framed. Held rather than
     // written down, because the placement follows the source and a constant

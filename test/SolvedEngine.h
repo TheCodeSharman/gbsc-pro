@@ -97,6 +97,22 @@ static bool pollUntilSolved(VideoSourceAcquisition &acquisition)
     return false;
 }
 
+// The output is presented by the acquisition layer once the setup has settled
+// -- the pad's minimum time away, the latch and the phase search -- so a case
+// about the picture as shown polls on past the solve.
+static bool pollUntilPresented(VideoSourceAcquisition &acquisition)
+{
+    for (uint8_t i = 0; i < 60; ++i) {
+        const bool padDriven = Wire.field(0, 0x49, 2, 1) == 0;          // PAD_SYNC_OUT_ENZ
+        const bool apertureOpen =
+            Wire.field(3, 0x13, 0, 11) > Wire.field(3, 0x14, 4, 11) + 1; // VDS_DIS_VB_ST > SP + 1
+        if (padDriven && apertureOpen)
+            return true;
+        pollOnce(acquisition);
+    }
+    return false;
+}
+
 // resolveFromSource() installs the reference sampling clock and then measures,
 // and nothing read through a clock that has just been latched is the source's
 // -- LatchSettlePasses have to be spent first. The engine reaches the solve
@@ -161,6 +177,7 @@ struct SolvedEngine {
         engine.setOutputMode(choice);
         engine.inputTimingsChanged(4);
         REQUIRE(pollUntilSolved(acquisition));
+        REQUIRE(pollUntilPresented(acquisition));
     }
 
     ~SolvedEngine() { g_fieldRate = 50.08f; }

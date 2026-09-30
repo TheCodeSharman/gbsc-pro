@@ -47,7 +47,7 @@ VideoPath::VideoPath(DisplayClock &displayClock, SourceMeasurement &sampling,
       showing_(false),
       syncOut_(false), syncOutEver_(false),
       encoderLinePx_(0), encoderFrameLines_(0), encoderFieldRateHz_(0),
-      encoderKnown_(false), encoderMoved_(false) {}
+      encoderKnown_(false) {}
 
 const PanAndZoom &VideoPath::framing() const { return framing_; }
 
@@ -85,19 +85,22 @@ void VideoPath::showOutput(bool show)
         return;
     }
 
+    // The aperture before the pad: what the line carries when sync returns is
+    // what the encoder places its window from.
+    writeDisplayAperture();
     if (show)
         driveSyncOut(true);
-    writeDisplayAperture();
 }
 
-bool VideoPath::encoderTimingMoved()
+bool VideoPath::outputShown() const { return showing_ && syncOut_; }
+
+bool VideoPath::syncOutAway() const { return syncOutEver_ && !syncOut_; }
+
+void VideoPath::takeOutputAway()
 {
-    const bool moved = encoderMoved_;
-    encoderMoved_ = false;
-    return moved;
+    showOutput(false);
+    driveSyncOut(false);
 }
-
-void VideoPath::holdOutputSync(bool away) { driveSyncOut(!away); }
 
 // Only the DROP is suppressed. It costs the sink a full re-acquisition, while
 // driving a pad already driven costs one write -- and s0_49 has a second writer
@@ -219,13 +222,11 @@ bool VideoPath::solveWindows()
     write(solved, capture);
     solvePending_ = false;
 
-    // The geometry is ready, so the blank has nothing left to hide. Every solve
-    // writes its aperture through the blank state, which means one that
-    // completes while the picture is hidden writes an aperture admitting
-    // nothing -- and a mode change is the only change with a completion step of
-    // its own to lift it. Without this a deferred solve leaves the panel black
-    // with the source acquired and every other register correct.
-    if (!modePending_)
+    // Re-asserted only where the output is already on: its enables have a
+    // second writer in the power path. A solve that completes while the output
+    // is away leaves presenting to the acquisition layer, which waits for the
+    // rest of the setup to settle first.
+    if (!modePending_ && showing_)
         showOutput(true);
     return true;
 }
@@ -266,6 +267,23 @@ bool VideoPath::solveRaster()
         return false;
     }
 
+    // What the encoder now has to lock to. Both totals and the rate, because the
+    // output frame time follows the source: one raster at two field rates is two
+    // pixel clocks and two HDMI modes. A raster it is not locked to is written
+    // with the output away, so it re-acquires on the new one and not on a line
+    // still being set up. The FIRST solve is not a move: the bring-up has the
+    // sync pad away already.
+    const uint16_t fieldRateHz = (uint16_t)(sampling_.fieldRateHz() + 0.5f);
+    if (encoderKnown_
+        && (raster.horizontalTotal != encoderLinePx_
+            || raster.verticalTotal != encoderFrameLines_
+            || fieldRateHz != encoderFieldRateHz_))
+        takeOutputAway();
+    encoderLinePx_ = raster.horizontalTotal;
+    encoderFrameLines_ = raster.verticalTotal;
+    encoderFieldRateHz_ = fieldRateHz;
+    encoderKnown_ = true;
+
     // Totals before sync positions, per
     // docs/investigations/preset-abandonment-audit.md. Both hold total-1.
     GBS::VDS_HSYNC_RST::write(raster.horizontalTotal - 1);
@@ -297,22 +315,6 @@ bool VideoPath::solveRaster()
     // bring-up running on the way past.
     Chip::routeToScaler();
 
-    // What the encoder now has to lock to. Both totals and the rate, because the
-    // output frame time follows the source: one raster at two field rates is two
-    // pixel clocks and two HDMI modes.
-    const uint16_t fieldRateHz = (uint16_t)(sampling_.fieldRateHz() + 0.5f);
-    // The FIRST solve is not a move: the bring-up has the sync pad away already,
-    // so the encoder has no timing to be stale on and a re-look buys nothing.
-    if (encoderKnown_
-        && (raster.horizontalTotal != encoderLinePx_
-            || raster.verticalTotal != encoderFrameLines_
-            || fieldRateHz != encoderFieldRateHz_))
-        encoderMoved_ = true;
-    encoderLinePx_ = raster.horizontalTotal;
-    encoderFrameLines_ = raster.verticalTotal;
-    encoderFieldRateHz_ = fieldRateHz;
-    encoderKnown_ = true;
-
     return true;
 }
 
@@ -340,7 +342,7 @@ void VideoPath::inputTimingsChanged()
 
 void VideoPath::inputTimingsChanged(uint8_t oversample)
 {
-    showOutput(false);
+    takeOutputAway();
 
     modePending_ = true;
     modeOversample_ = oversample;
@@ -394,6 +396,11 @@ bool VideoPath::setOutputMode(const OutputMode *mode)
 
     if (modePending_)
         return false;
+
+    // Away before the first register an output change moves, and back once the
+    // acquisition layer finds the setup settled.
+    if (mode != previous)
+        takeOutputAway();
 
     const bool wasDoubled = lineDoubled_;
     solveLineDoubling(sampling_.sourceLines());
@@ -510,7 +517,6 @@ VideoPath::PollOutcome VideoPath::solveFromMeasurement()
         // solveRaster() never defers: both its refusals are final, so a retry
         // would pay for a field rate measurement to reach the same answer.
         modePending_ = false;
-        showOutput(true);
         return PollIdle;
     }
 
@@ -520,7 +526,6 @@ VideoPath::PollOutcome VideoPath::solveFromMeasurement()
     solveWindows();
 
     modePending_ = false;
-    showOutput(true);
     return PollSolved;
 }
 

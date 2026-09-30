@@ -186,6 +186,13 @@ public:
     // these, so loop()'s own rate must not reach them.
     static const uint32_t DetectionIntervalMs = 20;
 
+    // The least a transition keeps the output sync away. Long enough for the
+    // encoder to see the sync go, short enough to stay inside the sink's first
+    // re-acquisition attempt: the panel's dark period quantises at about
+    // 3.7 s, so a blank that runs past one costs a whole second attempt.
+    // docs/investigations/the-transition-is-mostly-the-encoder.md
+    static const uint32_t MinimumSyncAwayMs = 300;
+
     // Where the acquired run stops counting. Every threshold keyed on it is
     // well below this, and a run that saturates says the same thing as one that
     // keeps going: the source has been good for a long time.
@@ -256,6 +263,11 @@ private:
     // Where the output has to move to, or 0 where it is already there. Answered
     // per measurement, because the rate moves while the choice stands still.
     const Tv5725::OutputMode *resolutionToMoveTo() const;
+
+    // Put the output on the resolution the rate just measured can be carried at,
+    // ahead of the divider: the divider is bounded by the capture that output's
+    // raster can show, and the scan mode by its height.
+    void moveOutputForMeasuredRate();
 
     bool selectionMoved();
     bool detectionDue(uint32_t nowMs);
@@ -337,19 +349,16 @@ private:
     bool channelSyncServicedEver_;
     uint32_t channelSyncServicedMs_;
 
-    // How long the output sync stays away when a solve has moved the timing the
-    // encoder is locked to. Long enough for it to see the sync go, short enough
-    // to stay inside the sink's first re-acquisition attempt: the panel's dark
-    // period quantises at about 3.7 s, so a blank that runs past one costs a
-    // whole second attempt. docs/investigations/the-transition-is-mostly-the-encoder.md
-    static const uint32_t EncoderRelookMs = 300;
+    // Present the output once a transition has settled: the source acquired
+    // with nothing outstanding, the sync pad away for at least
+    // MinimumSyncAwayMs, the divider latched and the sampling phase searched.
+    // A blank that never took the pad -- the source flickering absent for a
+    // pass -- is lifted as soon as the source is back.
+    void presentWhenSettled(uint32_t nowMs);
 
-    bool encoderLooking_;
-    uint32_t encoderLookMs_;
-
-    // Take the sync away when a solve moved the encoder's timing, and give it
-    // back once it has been away long enough.
-    void serviceEncoderRelook(uint32_t nowMs);
+    bool syncAwaySeen_;
+    uint32_t syncAwayMs_;
+    bool phaseSearched_;
 
     bool (*mayRun_)();
     void (*passThroughSwitch_)();

@@ -2228,6 +2228,155 @@ TEST_CASE("an output resolution change makes the encoder look again")
     CHECK(Chip::PAD_SYNC_OUT_ENZ::read() == 0);
 }
 
+// --- the transition presents once, after the whole setup -------------------
+//
+// A mode change blanks on the pass that arms it, measures until every fact has
+// settled, sets the mode up once, and presents once the divider has latched and
+// the sampling phase has been searched. Nothing the setup writes lands after the
+// sync pad returns, so the sink locks to the line the source will keep.
+
+static bool syncPadAway() { return Chip::PAD_SYNC_OUT_ENZ::read() == 1; }
+
+// Where in the trace the pad was last driven, or -1 for never.
+static long lastPadDrive()
+{
+    long at = -1;
+    for (size_t i = 0; i < Wire.trace.size(); ++i) {
+        const FakeTwoWire::Traced &w = Wire.trace[i];
+        if (w.segment == 0 && w.reg == 0x49 && (w.value & 0x04) == 0)
+            at = (long)i;
+    }
+    return at;
+}
+
+// Writes to what a setup moves -- the divider, the sampling phases, the raster
+// and the aperture -- after the pad was last driven.
+static unsigned setupWritesAfterPadDriven()
+{
+    const long from = lastPadDrive();
+    unsigned n = 0;
+    for (size_t i = from < 0 ? 0 : (size_t)from + 1; i < Wire.trace.size(); ++i) {
+        const FakeTwoWire::Traced &w = Wire.trace[i];
+        const bool divider = w.segment == 5 && (w.reg == 0x12 || w.reg == 0x13);   // PLLAD_MD
+        const bool phase = w.segment == 5 && (w.reg == 0x18 || w.reg == 0x19);     // PA_ADC_S, PA_SP_S
+        const bool raster = w.segment == 3 && (w.reg == 0x01 || w.reg == 0x02);    // VDS_HSYNC_RST
+        const bool aperture = w.segment == 3 && w.reg >= 0x10 && w.reg <= 0x12;    // VDS_DIS_HB_*
+        if (divider || phase || raster || aperture)
+            ++n;
+    }
+    return n;
+}
+
+// How many times a divider was installed: writes of its low byte to PLLAD_MD.
+static unsigned dividerWrites(uint16_t divider)
+{
+    unsigned n = 0;
+    for (size_t i = 0; i < Wire.trace.size(); ++i)
+        if (Wire.trace[i].segment == 5 && Wire.trace[i].reg == 0x12
+            && Wire.trace[i].value == (divider & 0xFF))
+            ++n;
+    return n;
+}
+
+// Passes until the output is on, bounded well past the latch and the hold.
+static uint16_t pollUntilPresented(Acquiring &unit)
+{
+    uint16_t passes = 0;
+    while (outputBlanked() && passes < 80) {
+        unit.poll();
+        ++passes;
+    }
+    return passes;
+}
+
+TEST_CASE("a mode change takes the sync pad away when it is armed, not when it is solved")
+{
+    seedBenchSource();
+    seedLineSamples(BenchDivider);
+    Acquiring unit;
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+    pollUntilPresented(unit);
+    REQUIRE_FALSE(syncPadAway());
+
+    // A new source: the arm is the first thing that knows the picture is stale.
+    seedPassThroughSource();
+    bool armed = false;
+    for (uint8_t i = 0; i < 8 * SourceMeasurement::SteadySamples && !armed; ++i) {
+        REQUIRE_FALSE(unit.poll());
+        armed = unit.path.changingMode();
+    }
+    REQUIRE(armed);
+    CHECK(syncPadAway());
+}
+
+TEST_CASE("the output is presented once the divider has latched and the phase is searched")
+{
+    seedBenchSource();
+    seedLineSamples(BenchDivider);
+    Adc::forgetPhase();
+    Acquiring unit;
+    unit.acquisition.useWatchdogFeed(countWatchdogFeed);
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+
+    // The solve is not the presentation.
+    CHECK(syncPadAway());
+    CHECK(outputBlanked());
+
+    REQUIRE(pollUntilPresented(unit) < 80);
+    CHECK_FALSE(syncPadAway());
+    CHECK(Adc::phaseFound());
+    CHECK(setupWritesAfterPadDriven() == 0);
+}
+
+TEST_CASE("the output is not presented on the pass that solved")
+{
+    // The caller matches the output rate to the source when poll() reports a
+    // solve, after it returns, and the rate belongs before the encoder sees
+    // the line -- so even with the hold long elapsed, the picture waits a pass.
+    seedBenchSource();
+    seedLineSamples(BenchDivider);
+    Adc::forgetPhase();
+    Acquiring unit;
+    unit.acquisition.useWatchdogFeed(countWatchdogFeed);
+    unit.start();
+    unit.poll();
+    unit.nowMs += 2 * VideoSourceAcquisition::MinimumSyncAwayMs;
+    REQUIRE(unit.pollUntilSolved());
+    CHECK(outputBlanked());
+
+    unit.poll();
+    CHECK_FALSE(outputBlanked());
+}
+
+TEST_CASE("the divider is chosen against the output the arriving rate will run")
+{
+    // A 75 Hz source falls back to 1024p. The 60 Hz source that follows returns
+    // to 1080p, and its divider has to be the 1080p raster's, installed once --
+    // not the fallback raster's, kept because the rate had not moved.
+    seedBenchSource();
+    seedSourceLines(630);
+    seedField(0, 0x19, 0, 12, 129);    // STATUS_SYNC_PROC_HLOW_LEN
+    seedField(0, 0x16, 0, 1, 0);       // STATUS_SYNC_PROC_HSPOL, negative-going
+    g_fieldRate = 84.68f;
+    Acquiring unit;
+    unit.start(&Mode1080p);
+    REQUIRE(unit.pollUntilSolved(8));
+    REQUIRE(unit.path.outputMode()->frameLines() == Mode1024p.frameLines());
+
+    seedPassThroughSource();
+    Wire.trace.clear();
+    bool solved = false;
+    for (uint8_t i = 0; i < 8 * SourceMeasurement::SteadySamples && !solved; ++i)
+        solved = unit.poll();
+    REQUIRE(solved);
+
+    CHECK(unit.path.outputMode()->frameLines() == Mode1080p.frameLines());
+    CHECK(Adc::PLLAD_MD::read() == RasterDivider);
+    CHECK(dividerWrites(RasterDivider) == 1);
+}
+
 TEST_CASE("a mode change does not freeze the capture")
 {
     // The blank covers the whole change, so there is nothing on the panel for a

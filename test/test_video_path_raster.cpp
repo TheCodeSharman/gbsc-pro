@@ -98,6 +98,20 @@ static bool pollUntilSolved(VideoSourceAcquisition &acquisition)
     return false;
 }
 
+// The aperture is written open only once the acquisition layer presents the
+// output, after the setup has settled, so a case about the window as shown
+// polls on past the solve.
+static bool pollUntilPresented(VideoSourceAcquisition &acquisition)
+{
+    for (uint8_t i = 0; i < 60; ++i) {
+        if (Wire.field(0, 0x49, 2, 1) == 0                                  // PAD_SYNC_OUT_ENZ
+            && Wire.field(3, 0x13, 0, 11) > Wire.field(3, 0x14, 4, 11) + 1) // VDS_DIS_VB_ST > SP + 1
+            return true;
+        pollOnce(acquisition);
+    }
+    return false;
+}
+
 struct SettledEngine {
     DisplayClock clock;
     InputFormatter inputFormatter;
@@ -613,6 +627,7 @@ TEST_CASE("the picture fills the active region, the porch carrying the write ori
     settled.engine.setOutputMode(&Mode1080p);
     settled.engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(settled.acquisition));
+    REQUIRE(pollUntilPresented(settled.acquisition));
 
     const OutputTiming raster = Mode1080p.solve(g_fieldRate, OutputMode::EngineCeilingHz);
     const long total = Wire.field(3, 0x01, 0, 12) + 1;     // VDS_HSYNC_RST
