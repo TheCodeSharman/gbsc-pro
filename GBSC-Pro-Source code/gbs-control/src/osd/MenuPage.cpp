@@ -2,8 +2,8 @@
 
 namespace Osd {
 
-// Defined as well as declared: doctest's CHECK binds each operand to a const
-// reference, which is an ODR use. CODING_STYLE.md.
+// Defined as well as declared, because binding it to a const reference is an
+// ODR use and an in-class initialiser alone does not survive one.
 const uint8_t MenuPage::Rows;
 
 MenuPage::MenuPage() : rows_(0), selected_(0)

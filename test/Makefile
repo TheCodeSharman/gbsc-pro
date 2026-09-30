@@ -176,6 +176,7 @@ menu:
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_menu" \
 	  "$(HERE)/test_menu.cpp" src/osd/MenuCursor.cpp src/osd/MenuItem.cpp \
+	  src/osd/MenuRenderer.cpp src/osd/Menu.cpp \
 	  src/osd/MenuPage.cpp
 	@"$(OUT)/test_menu"
 
