@@ -613,7 +613,7 @@ OUTPUT_FRAME_LINES = {"1080p": 1125, "1024p": 1066, "960p": 1000, "720p": 750,
                       "480p": 525, "576p": 625}
 
 
-def choose_output(host, output, timeout=30.0):
+def choose_output(host, output, timeout=30.0, attempts=2):
     """Ask for an output resolution and wait for ITS raster to hold still.
 
     The route is queued for loop() and the re-solve takes seconds, while the
@@ -621,9 +621,13 @@ def choose_output(host, output, timeout=30.0):
     merely holds still is the previous mode's when the request was refused,
     so what says it landed is the frame carrying the mode's own lines and
     VDS_HSYNC_RST reading the same value a second apart.
+
+    The letter is sent again where the unit did not answer -- it stops
+    answering HTTP for some seconds after a mode change, and a request with
+    no answer never reached the handler -- and once more where it answered
+    and the raster never came, since the handler can discard a letter and
+    honour the next. docs/known-issues.md
     """
-    if get(host, f"/uc?{OUTPUT_COMMANDS[output]}")[0] != 200:
-        return False
     lines = OUTPUT_FRAME_LINES[output] - 1
 
     def held():
@@ -633,7 +637,16 @@ def choose_output(host, output, timeout=30.0):
         time.sleep(1.0)
         return first if first and first == read_named(host, "VDS_HSYNC_RST") else None
 
-    return wait_for(held, timeout=timeout) is not None
+    for _ in range(attempts):
+        status = get(host, f"/uc?{OUTPUT_COMMANDS[output]}")[0]
+        if status == 0:
+            time.sleep(2.0)
+            status = get(host, f"/uc?{OUTPUT_COMMANDS[output]}")[0]
+        if status != 200:
+            return False
+        if wait_for(held, timeout=timeout / attempts) is not None:
+            return True
+    return False
 
 
 def freeze(host, on):

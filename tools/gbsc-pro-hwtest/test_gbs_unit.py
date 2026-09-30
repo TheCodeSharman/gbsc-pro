@@ -115,3 +115,32 @@ def test_a_raster_that_holds_still_on_the_previous_modes_lines_has_not_landed(mo
     # 1080p's 1125 lines, because the request for 720p was refused.
     _unit(monkeypatch, vsync_rst=1124, hsync_rst=1599)
     assert gbs_unit.choose_output("h", "720p", timeout=0.05) is False
+
+
+def test_a_request_the_unit_did_not_answer_is_sent_again(monkeypatch):
+    # The unit stops answering HTTP for some seconds after a mode change; a
+    # request that got no answer never reached the handler and is not a refusal.
+    answers = iter([(0, "timed out"), (200, "")])
+    sent = []
+    def fake_get(host, path, timeout=5):
+        sent.append(path)
+        return next(answers)
+    monkeypatch.setattr(gbs_unit, "get", fake_get)
+    monkeypatch.setattr(gbs_unit, "read_named",
+                        lambda host, name: {"VDS_VSYNC_RST": 749, "VDS_HSYNC_RST": 1799}[name])
+    monkeypatch.setattr(gbs_unit.time, "sleep", lambda s: None)
+    assert gbs_unit.choose_output("h", "720p", timeout=0.05) is True
+    assert sent == ["/uc?g", "/uc?g"]
+
+
+def test_a_request_answered_but_never_applied_is_sent_once_more_before_giving_up(monkeypatch):
+    # The handler can discard a letter it answered 200 to; a second letter
+    # lands, so one re-send is worth the wait before the output is called refused.
+    sent = []
+    monkeypatch.setattr(gbs_unit, "get", lambda host, path, timeout=5: (sent.append(path), (200, ""))[1])
+    monkeypatch.setattr(gbs_unit, "read_named",
+                        lambda host, name: {"VDS_VSYNC_RST": 749 if len(sent) >= 2 else 1124,
+                                            "VDS_HSYNC_RST": 1799}[name])
+    monkeypatch.setattr(gbs_unit.time, "sleep", lambda s: None)
+    assert gbs_unit.choose_output("h", "720p", timeout=0.2) is True
+    assert sent == ["/uc?g", "/uc?g"]
