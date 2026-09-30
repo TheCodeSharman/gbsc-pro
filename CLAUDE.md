@@ -500,11 +500,17 @@ distinguish these:
    to 1, pause, set it back to 0: dropping HSOUT/VSOUT makes the encoder
    re-acquire, and the picture comes back at once with no power cycle. Entering
    RGBHV bypass does the same the long way round. **The firmware already does
-   this on every solve that MOVES the output timing**: `VideoPath` sets
-   `encoderMoved_` when a solve changes the horizontal total, the vertical total
-   or the field rate, and `VideoSourceAcquisition` then holds the pad away for
-   `EncoderRelookMs`. A mode change that solves the same raster and rate drops
-   nothing. `docs/investigations/encoder-stale-timing.md`.
+   this on every source mode change and every output change**: the arm takes
+   the aperture and the pad away before the first register the setup moves,
+   and `VideoSourceAcquisition::presentWhenSettled()` gives both back once,
+   after the divider has latched, the caller's rate match has landed and the
+   sampling phase has been searched, and never inside `MinimumSyncAwayMs` of
+   the drop. Nothing else presents the output: a solve that completes while it
+   is away leaves presenting to that pass. So `sync pad: away` on the console
+   is the arm and `sync pad: driven` is the end of the setup, and a divider,
+   rate match or phase line AFTER the driven line is a sequencing fault.
+   `docs/investigations/encoder-stale-timing.md`,
+   `docs/investigations/a-transition-and-a-settled-toggle-place-the-window-alike.md`.
 
    A power cycle — mains *and* USB, since USB backfeeds the rails — remains the
    fallback for a state the toggle does not clear.
