@@ -132,10 +132,11 @@ So the lever on transition time is **which domain the blank is in**, and the
 ## What the engine does now
 
 `Tv5725::VideoPath::showOutput()` closes the display aperture, which only the
-VDS can see. The sync pad is spent on one thing: making the encoder look again
-when a solve has moved the timing it is locked to -- both raster totals and the
-field rate, because the output frame time follows the source and one raster at
-two field rates is two HDMI modes. `EncoderRelookMs` holds it away for 300 ms,
+VDS can see. The sync pad goes on every source mode change and every output
+change, so the encoder looks again at a line that has settled -- both raster
+totals and the field rate matter to it, because the output frame time follows
+the source and one raster at two field rates is two HDMI modes. It is away
+from the arm until the setup has settled, at least `MinimumSyncAwayMs` and
 inside the sink's first retry.
 
 The aperture is collapsed to one active line rather than to none: a start at the

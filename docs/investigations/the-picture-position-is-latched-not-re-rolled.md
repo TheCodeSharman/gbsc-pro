@@ -253,9 +253,9 @@ seventeen trials, so it is not by itself the trigger a source mode round trip
 pulls.
 
 What a round trip does that a bare drop does not is change the output timing —
-the 50 Hz leg is a different pixel clock on the same raster, so `encoderMoved_`
-is set and `VideoSourceAcquisition` holds the pad away for `EncoderRelookMs`
-= 300 ms on each leg. The encoder therefore re-derives against a timing that has
+the 50 Hz leg is a different pixel clock on the same raster, so the sync pad
+was taken away on each leg -- for 300 ms, as the engine then held it. The
+encoder therefore re-derives against a timing that has
 genuinely moved, rather than being asked to re-acquire the timing it already
 holds. `encoder-stale-timing.md` records the same asymmetry from the other side:
 a stuck encoder needed a 2.5 s drop and 0.4 s did nothing.
@@ -636,8 +636,8 @@ porch is not the variable and the difference is the field rate or the raster.
 
 ## The clock is not still settling either
 
-The obvious form of a race — the pad returning at `EncoderRelookMs` = 300 ms
-while FrameSync is still steering, so the encoder acquires against a line time
+The obvious form of a race — the pad returning 300 ms after the drop, as the
+engine then did, while FrameSync is still steering, so the encoder acquires against a line time
 that is still moving — is **refuted**. `/framesync` polled every 0.5 s through
 the whole transition reports **one distinct value across 30 seconds**, first
 sample onwards.

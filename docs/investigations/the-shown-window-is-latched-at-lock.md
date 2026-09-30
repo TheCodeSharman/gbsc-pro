@@ -177,9 +177,9 @@ places it the same way every time.
 
 **And each pair is two INDEPENDENT acquisitions, which is the stronger claim.**
 The two runs are separate sessions with their own `MODE` commands, and the
-raster moved between the modes in both -- 1600, 1596, 1600 -- so
-`VideoPath::solveRaster()` set `encoderMoved_` and the sync pad was held away
-each time. The sink therefore re-acquired between every reading, and the window
+raster moved between the modes in both -- 1600, 1596, 1600 -- so the sync
+pad was taken away each time. The sink therefore re-acquired between every
+reading, and the window
 still landed within a sample of where it had been.
 
 **So the scaling path is not susceptible to a re-lock, and bypass is.** That is

@@ -1984,9 +1984,8 @@ capture read mean luma **0.00**; a `PAD_SYNC_OUT_ENZ` 0 -> 1 -> 0 toggle by hand
 brought it back to **156.61** within 9 s, with no power cycle and no register
 otherwise touched.
 
-**What has no automatic exit is the trigger.** `VideoPath` arms `encoderMoved_`
-only when a SOLVE moves the horizontal total, the vertical total or the field
-rate, so the re-look fires on a mode change and on nothing else. A unit left
+**What has no automatic exit is the trigger.** The sync pad is taken away on
+a source mode change and on an output change and on nothing else. A unit left
 settled, or a sink that dropped the link and re-acquired while the board's
 timing never moved, arms nothing -- and the state is indistinguishable from a
 healthy one in any register dump, because every register IS healthy.
