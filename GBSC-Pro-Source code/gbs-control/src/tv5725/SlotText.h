@@ -3,10 +3,11 @@
 
 // The slot table as lines of text, one record a line:
 //
-//   3 311@50 = 364 8525 740 8553
+//   3 311@50 = 364 8525 740 8553 13333
 //
-// The slot, then the record FramingLine owns -- the source and the four
-// proportions in ten-thousandths of the capturable region.
+// The slot, then the record FramingLine owns -- the source, the four
+// proportions in ten-thousandths of the capturable region, and the shape the
+// picture is shown in.
 //
 // Reading and writing the file belongs to the caller. This turns one line into
 // a record and one record into a line, which is what makes the format testable

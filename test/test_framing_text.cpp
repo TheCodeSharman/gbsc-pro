@@ -11,10 +11,12 @@
 #include <math.h>
 #include <string.h>
 
+#include "CheckNear.h"
 #include "fake/Wire.h"
 
 FakeTwoWire Wire;
 
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Aspect.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/FramingText.h"
 
 #include "DebugPinStub.h"
@@ -220,4 +222,73 @@ TEST_CASE("the vertical sync polarity survives the round trip")
 
     CHECK(read.find(positive, 0));
     CHECK_FALSE(read.find(negative, 0));
+}
+
+
+// --- the shape, as a fifth number
+//
+// Appended rather than inserted, and optional on read, because every record
+// already on a unit was written without it. A record that stated one and lost
+// it would come back filling, which is a tuning silently discarded.
+// docs/aspect-ratio.md
+
+TEST_CASE("a shape survives being written out and read back")
+{
+    FramingTable written;
+    const PanAndZoom framing(0.0364f, 0.8525f, 0.0740f, 0.8553f);
+    REQUIRE(written.remember(Bench, framing, Aspect(Aspect::FourThree)));
+
+    char line[64];
+    rendered(written, 0, line);
+    CHECK(strstr(line, "13333") != (const char *)NULL);
+
+    FramingTable read;
+    FramingText(read).readLine(line);
+
+    PanAndZoom back;
+    Aspect shape;
+    REQUIRE(read.find(Bench, &back, &shape));
+    CHECK(shape == Aspect(Aspect::FourThree));
+    CHECK_NEAR(back.originOn(AxisHorizontal), framing.originOn(AxisHorizontal), 0.0001f);
+}
+
+TEST_CASE("a record written before the shape existed still reads, framing intact")
+{
+    // Every /framing.txt and /slots.txt on a unit is of this form. Rejecting one
+    // would discard the user's whole table on the first boot after the upgrade.
+    FramingTable read;
+    FramingText(read).readLine("311@50.08/1213-- = 364 8525 740 8553");
+
+    PanAndZoom back;
+    Aspect shape(Aspect::SixteenNine);
+    REQUIRE(read.find(Bench, &back, &shape));
+    CHECK_NEAR(back.extentOn(AxisHorizontal), 0.8525f, 0.0002f);
+    CHECK(shape.fills());
+}
+
+TEST_CASE("a malformed shape is a malformed record rather than an absent shape")
+{
+    // Absent and unreadable are different: the first is an older file and the
+    // second is a corrupt line, which the format skips like any other.
+    FramingTable read;
+    FramingText(read).readLine("311@50.08/1213-- = 364 8525 740 8553 =");
+
+    PanAndZoom back;
+    CHECK_FALSE(read.find(Bench, &back));
+}
+
+TEST_CASE("filling is written out, so a shape turned off is not read back as absent")
+{
+    FramingTable written;
+    REQUIRE(written.remember(Bench, PanAndZoom(0.0364f, 0.8525f, 0.0740f, 0.8553f),
+                             Aspect(Aspect::Fill)));
+
+    char line[64];
+    rendered(written, 0, line);
+
+    FramingTable read;
+    FramingText(read).readLine(line);
+    Aspect shape(Aspect::FourThree);
+    REQUIRE(read.find(Bench, (PanAndZoom *)NULL, &shape));
+    CHECK(shape.fills());
 }

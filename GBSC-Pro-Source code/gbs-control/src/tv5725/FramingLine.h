@@ -3,12 +3,15 @@
 
 // One stored framing as text, and back:
 //
-//   311@50/1213++ = 364 8525 740 8553
+//   311@50/1213++ = 364 8525 740 8553 13333
 //
 // The line count, the field-rate bucket, the hsync width as a fraction of the
 // line and the two sync polarities -- horizontal then vertical, `?` where the
 // arrangement states none -- name the source; the four numbers are the
-// origin and extent of each axis in ten-thousandths of the capturable region.
+// origin and extent of each axis in ten-thousandths of the capturable region,
+// and the fifth is the shape it is shown in, in the same ten-thousandths. The
+// fifth is OPTIONAL on read: every file already on a unit was written without
+// it, and a record rejected for lacking it is a whole tuning discarded.
 // Integers because the ESP's printf has no %f, and ten-thousandths because one
 // input unit is at least eight of them on any line this chip captures -- so the
 // window a framing describes survives the round trip exactly even though the
@@ -20,6 +23,7 @@
 
 #include <stdint.h>
 
+#include "Aspect.h"
 #include "PanAndZoom.h"
 #include "SourceKey.h"
 
@@ -33,13 +37,14 @@ public:
     // Reads one record, leaving `at` past it. False on anything malformed or on
     // a key no source runs, which is what a line written while the source was
     // settling holds.
-    static bool read(const char *&at, SourceKey &key, PanAndZoom &framing);
+    static bool read(const char *&at, SourceKey &key, PanAndZoom &framing,
+                     Aspect &shape);
 
     // The characters written, or a negative number when it would not fit -- a
     // truncated record reads back as a skipped one, which is a lost tuning
     // reported as nothing at all.
     static int write(char *out, uint8_t size, const SourceKey &key,
-                     const PanAndZoom &framing);
+                     const PanAndZoom &framing, Aspect shape = Aspect());
 
     // The key alone, in the same grammar. The console names a source with it,
     // so a key read there is the key searched for in the file.

@@ -3,11 +3,11 @@
 
 // The framing table as lines of text, one source a line:
 //
-//   311@50 = 364 8525 740 8553
+//   311@50 = 364 8525 740 8553 13333
 //
 // The line count and the field-rate bucket name the source; the four numbers
 // are the origin and extent of each axis in ten-thousandths of the capturable
-// region. Integers because the ESP's printf has no %f, and ten-thousandths
+// region, and the fifth is the shape the picture is shown in. Integers because the ESP's printf has no %f, and ten-thousandths
 // because one input unit is at least eight of them on any line this chip
 // captures -- so the window a framing describes survives the round trip exactly
 // even though the float does not.

@@ -8,8 +8,10 @@
 // somebody else's job, because the arithmetic is testable on the host and the
 // filesystem is not. docs/framing-presets.md
 
+#include <stddef.h>
 #include <stdint.h>
 
+#include "Aspect.h"
 #include "PanAndZoom.h"
 #include "SourceKey.h"
 
@@ -24,14 +26,16 @@ public:
 
     FramingTable();
 
-    // The framing stored against this source, if there is one. `into` may be
-    // null when only the presence matters.
-    bool find(const SourceKey &key, PanAndZoom *into) const;
+    // The framing stored against this source, if there is one. Either pointer
+    // may be null when only the other, or only the presence, matters.
+    bool find(const SourceKey &key, PanAndZoom *into,
+              Aspect *shape = NULL) const;
 
     // Replaces an entry for the same source rather than adding one, so
     // re-tuning does not fill the table with its own history. False when the
     // key identifies nothing, or when the table is full and this is new.
-    bool remember(const SourceKey &key, const PanAndZoom &framing);
+    bool remember(const SourceKey &key, const PanAndZoom &framing,
+                  Aspect shape = Aspect());
 
     bool forget(const SourceKey &key);
 
@@ -46,6 +50,7 @@ public:
     // For whoever writes the file out.
     const SourceKey &keyAt(uint16_t index) const;
     const PanAndZoom &framingAt(uint16_t index) const;
+    Aspect aspectAt(uint16_t index) const;
 
     void clear();
 
@@ -56,6 +61,7 @@ private:
 
     SourceKey keys_[Entries];
     PanAndZoom framings_[Entries];
+    Aspect aspects_[Entries];
     uint16_t count_;
     uint16_t revision_;
 };

@@ -20,18 +20,21 @@ int16_t SlotTable::indexOf(uint8_t slot, const SourceKey &key) const
     return -1;
 }
 
-bool SlotTable::find(uint8_t slot, const SourceKey &key, PanAndZoom *into) const
+bool SlotTable::find(uint8_t slot, const SourceKey &key, PanAndZoom *into,
+                     Aspect *shape) const
 {
     const int16_t at = indexOf(slot, key);
     if (at < 0)
         return false;
     if (into)
         *into = framings_[at];
+    if (shape)
+        *shape = aspects_[at];
     return true;
 }
 
 bool SlotTable::remember(uint8_t slot, const SourceKey &key,
-                         const PanAndZoom &framing)
+                         const PanAndZoom &framing, Aspect shape)
 {
     if (!key.valid())
         return false;
@@ -39,6 +42,7 @@ bool SlotTable::remember(uint8_t slot, const SourceKey &key,
     const int16_t at = indexOf(slot, key);
     if (at >= 0) {
         framings_[at] = framing;
+        aspects_[at] = shape;
         return true;
     }
     if (count_ >= Records)
@@ -47,6 +51,7 @@ bool SlotTable::remember(uint8_t slot, const SourceKey &key,
     slots_[count_] = slot;
     keys_[count_] = key;
     framings_[count_] = framing;
+    aspects_[count_] = shape;
     ++count_;
     return true;
 }
@@ -58,6 +63,7 @@ void SlotTable::removeAt(uint16_t index)
     slots_[index] = slots_[count_ - 1];
     keys_[index] = keys_[count_ - 1];
     framings_[index] = framings_[count_ - 1];
+    aspects_[index] = aspects_[count_ - 1];
     --count_;
 }
 
@@ -85,6 +91,8 @@ const PanAndZoom &SlotTable::framingAt(uint16_t index) const
 {
     return framings_[index];
 }
+
+Aspect SlotTable::aspectAt(uint16_t index) const { return aspects_[index]; }
 
 void SlotTable::clear() { count_ = 0; }
 

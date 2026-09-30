@@ -20,8 +20,9 @@ void SlotText::readLine(const char *line)
 
     SourceKey key;
     PanAndZoom framing;
-    if (FramingLine::read(at, key, framing))
-        table_.remember((uint8_t)slot, key, framing);
+    Aspect shape;
+    if (FramingLine::read(at, key, framing, shape))
+        table_.remember((uint8_t)slot, key, framing, shape);
 }
 
 bool SlotText::writeLine(uint16_t index, char *out, uint8_t size) const
@@ -35,7 +36,8 @@ bool SlotText::writeLine(uint16_t index, char *out, uint8_t size) const
         return false;
 
     return FramingLine::write(out + written, (uint8_t)(size - written),
-                              table_.keyAt(index), table_.framingAt(index)) > 0;
+                              table_.keyAt(index), table_.framingAt(index),
+                              table_.aspectAt(index)) > 0;
 }
 
 }  // namespace Tv5725

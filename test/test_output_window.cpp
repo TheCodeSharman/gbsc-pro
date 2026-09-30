@@ -23,6 +23,7 @@
 // The bus the register-touching sources link against.
 FakeTwoWire Wire;
 
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Aspect.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Axis.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/OutputMapping.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/OutputWindow.h"
@@ -31,12 +32,14 @@ FakeTwoWire Wire;
 using namespace Tv5725;
 
 // The raster a case cares about. OutputMode::solve() fills the rest of an
-// OutputTiming; nothing OutputWindow reads is outside these six.
+// OutputTiming; nothing OutputWindow reads is outside these seven.
 static Tv5725::OutputTiming rasterOf(uint16_t linePx, uint16_t frameLines,
                                      uint16_t activeStopH = 0, uint16_t activeStopV = 0,
-                                     uint16_t activeStartH = 0, uint16_t activeStartV = 0)
+                                     uint16_t activeStartH = 0, uint16_t activeStartV = 0,
+                                     uint16_t shape = Tv5725::Aspect::SixteenNine)
 {
     Tv5725::OutputTiming raster;
+    raster.displayAspect = Tv5725::Aspect(shape);
     raster.horizontalTotal = linePx;
     raster.verticalTotal = frameLines;
     raster.activeStop = activeStopH;
@@ -358,7 +361,7 @@ TEST_CASE("every measured reading is reproduced")
 
 // --- placing the picture ------------------------------------------------------
 
-TEST_CASE("the picture is centred on the raster")
+TEST_CASE("the picture is centred in the room the encoder carries")
 {
     // A capture too small to fill the raster: the scale pins at its floor and
     // the picture that is left has to be placed rather than stretched.
@@ -368,10 +371,17 @@ TEST_CASE("the picture is centred on the raster")
     REQUIRE(h.scale().reg() == AxisHorizontal.magnificationFloor());
     REQUIRE(h.produced() < room(AxisHorizontal, Raster));
 
-    SUBCASE("the picture is centred on the raster, not pinned to a panel edge") {
+    SUBCASE("the picture is centred in the room, not pinned to a panel edge") {
         // PANEL_VISIBLE_LEFT is 90 on the bench TV.
-        CHECK_NEAR(cornerOf(h, AxisHorizontal), (Raster - h.produced()) / 2.0f, 1.0);
-        CHECK_NEAR(Raster - writeEndOf(h, AxisHorizontal),
+        //
+        // Between activeStart and the far bound rather than across the raster
+        // total: what is before the back porch is blanking the encoder does not
+        // carry, so counting it as one half of the picture's surroundings puts
+        // the two bars out by half a porch. Invisible while the picture fills,
+        // and the whole of the difference once a shape leaves bars.
+        const float far = (float)farBound(Raster, 0);
+        CHECK_NEAR(cornerOf(h, AxisHorizontal), (far - h.produced()) / 2.0f, 1.0);
+        CHECK_NEAR(far - writeEndOf(h, AxisHorizontal),
                    cornerOf(h, AxisHorizontal), 1.0);
     }
 
@@ -825,9 +835,12 @@ TEST_CASE("the picture starts no earlier than the back porch")
         REQUIRE(h.scale().reg() == AxisHorizontal.magnificationFloor());
         CHECK(cornerOf(h, AxisHorizontal) >= (float)ActiveStart);
 
-        // Symmetrically, so what is reserved near is reserved far.
-        CHECK_NEAR(Raster - writeEndOf(h, AxisHorizontal),
-                   cornerOf(h, AxisHorizontal), 1.5);
+        // Symmetrically INSIDE the room: the porch is blanking the encoder
+        // never carries, so the far end owes no matching reserve and the two
+        // bars are counted from activeStart and from the far bound.
+        const float far = (float)farBound(Raster, 0);
+        CHECK_NEAR(far - writeEndOf(h, AxisHorizontal),
+                   cornerOf(h, AxisHorizontal) - (float)ActiveStart, 1.5);
     }
 
     SUBCASE("and one too big to centre starts AT the back porch") {
@@ -1285,3 +1298,131 @@ int main(int argc, char **argv)
     return doctest::Context(argc, argv).run();
 }
 
+
+
+// --- the shape the picture is shown in ---------------------------------------
+//
+// The engine fills the raster it is given, so a 4:3 source on a 16:9 output is
+// stretched. A declared shape narrows the ROOM on one axis; everything else
+// follows, because the fit, the placement and the aperture all derive from it.
+// The framing is untouched -- this is an output transform, and the picture is
+// scaled down into the narrowed room rather than cropped to it.
+// docs/aspect-ratio.md
+
+// The bench 1080p raster: 1916 px across 1126 lines, active 140..1812 and
+// 40..1100.
+static Tv5725::OutputTiming bench1080p(uint16_t shape = Tv5725::Aspect::SixteenNine)
+{
+    return rasterOf(1916, 1126, 1812, 1100, 140, 40, shape);
+}
+
+TEST_CASE("a 4:3 shape on a widescreen raster narrows the picture and not the height")
+{
+    const uint16_t Capture = 900, Lines = 512;
+    const OutputWindow filled(Capture, Lines, bench1080p());
+    const OutputWindow square(Capture, Lines, bench1080p(), OutputWindow::NominalMargin,
+                              OutputWindow::NominalMargin, Aspect(Aspect::FourThree));
+
+    // Three quarters of the width, the height untouched: 1440 of 1920 emitted
+    // columns once the encoder resamples the line.
+    CHECK_NEAR(square.horizontal().produced(),
+               filled.horizontal().produced() * 13333.0f / 17778.0f, 2.0f);
+    CHECK_NEAR(square.vertical().produced(), filled.vertical().produced(), 0.51f);
+}
+
+TEST_CASE("the bars are equal, and the aperture closes on the picture")
+{
+    const OutputWindow square(900, 512, bench1080p(), OutputWindow::NominalMargin,
+                              OutputWindow::NominalMargin, Aspect(Aspect::FourThree));
+    const BlankingTiming &display = square.horizontal().display();
+
+    // Bars measured against the ACTIVE window, which is what the encoder
+    // carries -- centring on the raster total instead leaves the two unequal by
+    // half the back porch.
+    const long left = (long)display.stop() - 140;
+    const long right = 1812 - (long)display.start();
+    CHECK(left > 100);
+    CHECK(labs(left - right) <= 2);
+
+    // Nothing is blanked beyond the bars: the aperture spans the picture.
+    CHECK_NEAR((float)(display.start() - display.stop()),
+               square.horizontal().produced(), 2.0f);
+}
+
+TEST_CASE("a shape the part cannot minify into falls back to filling")
+{
+    // VDS_?SCALE cannot minify: below Scale::Max the picture is always larger
+    // than the capture. A capture wider than the narrowed room therefore cannot
+    // be shown at that shape, and cropping to it is what the requirement
+    // forbids -- so the axis fills instead.
+    const uint16_t Wide = 1400;
+    const OutputWindow filled(Wide, 512, bench1080p());
+    const OutputWindow square(Wide, 512, bench1080p(), OutputWindow::NominalMargin,
+                              OutputWindow::NominalMargin, Aspect(Aspect::FourThree));
+
+    CHECK(square.horizontal().produced() == filled.horizontal().produced());
+    CHECK(square.horizontal().scale() == filled.horizontal().scale());
+}
+
+TEST_CASE("a wide shape on a 4:3 raster loses height rather than width")
+{
+    const OutputWindow filled(900, 512, bench1080p(Aspect::FourThree));
+    const OutputWindow wide(900, 512, bench1080p(Aspect::FourThree),
+                            OutputWindow::NominalMargin, OutputWindow::NominalMargin,
+                            Aspect(Aspect::SixteenNine));
+
+    CHECK(wide.vertical().produced() < filled.vertical().produced());
+    CHECK_NEAR(wide.horizontal().produced(), filled.horizontal().produced(), 2.0f);
+}
+
+TEST_CASE("stating no shape leaves every register where it was")
+{
+    const OutputWindow filled(900, 512, bench1080p());
+    const OutputWindow stated(900, 512, bench1080p(), OutputWindow::NominalMargin,
+                              OutputWindow::NominalMargin, Aspect(Aspect::Fill));
+
+    for (const Axis *axis : {&AxisHorizontal, &AxisVertical}) {
+        const OutputMapping &a = on(filled, *axis);
+        const OutputMapping &b = on(stated, *axis);
+        CHECK(a.scale() == b.scale());
+        CHECK(a.display().stop() == b.display().stop());
+        CHECK(a.display().start() == b.display().start());
+        CHECK(a.memory().stop() == b.memory().stop());
+        CHECK(a.memory().start() == b.memory().start());
+    }
+}
+
+TEST_CASE("the zoom stop follows the shape, so a shaped picture still reaches its bars")
+{
+    // narrowestCapture is where letterboxing starts -- the smallest capture the
+    // axis can still magnify to fill its room. A narrowed room is reached by a
+    // smaller capture, so the stop moves with it. widestCapture does NOT:
+    // narrowToRaster crops the capture by it, and cropping is what the shape
+    // must never cause.
+    const OutputTiming raster = bench1080p();
+
+    const uint16_t filling = OutputWindow::narrowestCapture(AxisHorizontal, raster);
+    const uint16_t shaped = OutputWindow::narrowestCapture(AxisHorizontal, raster,
+                                                           Aspect(Aspect::FourThree));
+    CHECK(shaped < filling);
+    CHECK(OutputWindow::widestCapture(AxisHorizontal, raster)
+          == OutputWindow::widestCapture(AxisHorizontal, raster));
+}
+
+TEST_CASE("a window says whether it could show the shape it was given")
+{
+    // The refusal is not visible in any register: the axis fills, which is what
+    // it does when no shape was asked for at all. Without this the aspect
+    // control appears dead on exactly the sources it cannot serve.
+    const OutputWindow shaped(900, 512, bench1080p(), OutputWindow::NominalMargin,
+                              OutputWindow::NominalMargin, Aspect(Aspect::FourThree));
+    CHECK(shaped.shapeHonoured());
+
+    const OutputWindow refused(1400, 512, bench1080p(), OutputWindow::NominalMargin,
+                               OutputWindow::NominalMargin, Aspect(Aspect::FourThree));
+    CHECK_FALSE(refused.shapeHonoured());
+
+    // Filling is not a refusal: nothing was asked for.
+    const OutputWindow filling(1400, 512, bench1080p());
+    CHECK(filling.shapeHonoured());
+}

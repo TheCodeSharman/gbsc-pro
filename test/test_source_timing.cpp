@@ -11,6 +11,7 @@
 
 FakeTwoWire Wire;
 
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Aspect.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Axis.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SourceTiming.h"
 
@@ -233,4 +234,70 @@ TEST_CASE("a polarity no raster on the key carries still finds the first one")
 
     REQUIRE(t.published());
     CHECK_NEAR(t.activeExtent(AxisVertical), 350.0f / 445.0f, 0.0005f);
+}
+
+
+// --- The shape the picture is to be shown in
+//
+// Nothing on this chip can measure it: the source's pixel clock is unknowable,
+// so 320x256 and 640x256 are one key and neither states a shape. What the
+// published raster gives instead is the convention the mode was written for,
+// which is a better default than filling whatever raster the output happens to
+// have. docs/aspect-ratio.md
+
+TEST_CASE("a published raster states the shape it is to be shown in")
+{
+    // 800x600@60, the bench Acorn desktop mode: square pixels, 4:3 on the
+    // monitor the mode file was written for.
+    SourceTiming dmt = SourceTiming::matching(
+        SourceKey(627, 60.317f, 128.0f / 1056.0f, SourceKey::Positive, SourceKey::Positive));
+
+    REQUIRE(dmt.published());
+    CHECK(dmt.aspect() == Aspect(Aspect::FourThree));
+}
+
+TEST_CASE("the one 5:4 raster says so rather than inheriting its neighbours")
+{
+    // 1280x1024@60 is the only mode in any of the three tables that is not 4:3.
+    SourceTiming dmt = SourceTiming::matching(
+        SourceKey(1065, 60.0f, 112.0f / 1688.0f, SourceKey::Positive, SourceKey::Positive));
+
+    REQUIRE(dmt.published());
+    CHECK(dmt.aspect() == Aspect(Aspect::FiveFour));
+}
+
+TEST_CASE("the broadcast rasters are 4:3 although their pixels are not square")
+{
+    // 720x480p and 720x576p are 3:2 and 5:4 counted in pixels, and both are
+    // shown as 4:3. The stated shape is the DISPLAY's, which is why it cannot
+    // be derived from the active counts the table already carries.
+    SourceTiming ntsc = SourceTiming::matching(
+        SourceKey(524, 59.94f, 62.0f / 858.0f, SourceKey::Negative, SourceKey::Negative));
+    SourceTiming pal = SourceTiming::matching(
+        SourceKey(624, 50.0f, 64.0f / 864.0f, SourceKey::Negative, SourceKey::Negative));
+
+    REQUIRE(ntsc.published());
+    REQUIRE(pal.published());
+    CHECK(ntsc.aspect() == Aspect(Aspect::FourThree));
+    CHECK(pal.aspect() == Aspect(Aspect::FourThree));
+}
+
+TEST_CASE("an Acorn mode takes the shape of the monitor its mode file describes")
+{
+    SourceTiming acorn = SourceTiming::matching(
+        SourceKey(311, 50.08f, 36.0f / 512.0f, SourceKey::Positive, SourceKey::Positive));
+
+    REQUIRE(acorn.published());
+    CHECK(acorn.aspect() == Aspect(Aspect::FourThree));
+}
+
+TEST_CASE("a source matching no raster is shown as 4:3 rather than filled")
+{
+    // The fallback is a shape and not Fill, because an unrecognised source is
+    // far more often a 4:3 computer mode than a widescreen one, and filling is
+    // the answer the user can always ask for.
+    SourceTiming unknown(50.08f);
+
+    REQUIRE_FALSE(unknown.published());
+    CHECK(unknown.aspect() == Aspect(Aspect::FourThree));
 }

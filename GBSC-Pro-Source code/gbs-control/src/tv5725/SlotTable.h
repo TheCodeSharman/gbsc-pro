@@ -9,8 +9,10 @@
 // Pure: it holds records and answers lookups. Reading and writing the file is
 // somebody else's job. docs/framing-presets.md
 
+#include <stddef.h>
 #include <stdint.h>
 
+#include "Aspect.h"
 #include "PanAndZoom.h"
 #include "SourceKey.h"
 
@@ -25,14 +27,16 @@ public:
 
     SlotTable();
 
-    // The framing this slot holds for this source. `into` may be null when only
-    // the presence matters.
-    bool find(uint8_t slot, const SourceKey &key, PanAndZoom *into) const;
+    // The framing this slot holds for this source. Either pointer may be null
+    // when only the other, or only the presence, matters.
+    bool find(uint8_t slot, const SourceKey &key, PanAndZoom *into,
+              Aspect *shape = NULL) const;
 
     // Replaces the record for the same slot and source rather than adding one.
     // False when the key identifies nothing, or when the table is full and this
     // is new.
-    bool remember(uint8_t slot, const SourceKey &key, const PanAndZoom &framing);
+    bool remember(uint8_t slot, const SourceKey &key, const PanAndZoom &framing,
+                  Aspect shape = Aspect());
 
     // Every record this slot holds, whatever source. False when it held none.
     bool forget(uint8_t slot);
@@ -43,6 +47,7 @@ public:
     uint8_t slotAt(uint16_t index) const;
     const SourceKey &keyAt(uint16_t index) const;
     const PanAndZoom &framingAt(uint16_t index) const;
+    Aspect aspectAt(uint16_t index) const;
 
     void clear();
 
@@ -53,6 +58,7 @@ private:
     uint8_t slots_[Records];
     SourceKey keys_[Records];
     PanAndZoom framings_[Records];
+    Aspect aspects_[Records];
     uint16_t count_;
 };
 

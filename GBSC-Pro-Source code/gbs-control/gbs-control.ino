@@ -5461,6 +5461,32 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
 #if defined(ESP8266)
 #include "webui_html.h"
 
+// Fill, 4:3, 16:9, 5:4 and round. A preset cycle rather than a number, because
+// the remote has one button for it and the four are what any source here wants;
+// the shape is stored against the source, so the cycle starts from whatever that
+// source was left at. docs/aspect-ratio.md
+static void cycleAspect()
+{
+    static const uint16_t Cycle[] = {
+        Tv5725::Aspect::Fill, Tv5725::Aspect::FourThree,
+        Tv5725::Aspect::SixteenNine, Tv5725::Aspect::FiveFour,
+    };
+    const uint8_t count = sizeof(Cycle) / sizeof(Cycle[0]);
+
+    uint8_t at = 0;
+    for (uint8_t i = 0; i < count; ++i)
+        if (geometry.aspect() == Tv5725::Aspect(Cycle[i]))
+            at = (uint8_t)(i + 1);
+
+    const Tv5725::Aspect wanted(Cycle[at % count]);
+    const bool moved = geometry.setAspect(wanted);
+
+    char line[48];
+    snprintf_P(line, sizeof(line), PSTR("aspect: %u%s"),
+               (unsigned)wanted.tenThousandths(), moved ? "" : " (refused)");
+    debugPrintf("%s\n", line);
+}
+
 void handleType2Command(char argument)
 {
     switch (argument) {
@@ -5673,6 +5699,9 @@ void handleType2Command(char argument)
                     ; // SerialMprintln(F("Feedback clock"));
                 }
             }
+            break;
+        case 'G':
+            cycleAspect();
             break;
         case 'm':; // SerialMprint(F("Line Filter: "));
             uopt->wantVdsLineFilter = !uopt->wantVdsLineFilter;
@@ -6542,6 +6571,7 @@ void startWebserver()
                  "\"ch\":%u,\"cv\":%u,\"fh\":%u,\"fv\":%u,"
                  "\"poh\":%d,\"peh\":%d,\"pov\":%d,\"pev\":%d,"
                  "\"lineRateHz\":%lu,\"lowLineRate\":%s,"
+                 "\"aspect\":%u,\"shaped\":%s,"
                  "\"present\":%s,\"state\":\"%s\"}"),
             geometry.originUnitsOn(Tv5725::AxisHorizontal),
             geometry.extentUnitsOn(Tv5725::AxisHorizontal),
@@ -6562,6 +6592,12 @@ void startWebserver()
             (int)lrintf(geometry.framing().extentOn(Tv5725::AxisVertical) * 10000.0f),
             (unsigned long)inputAcquisition.sourceLineRateHz(),
             inputAcquisition.sourceLowLineRate() ? "true" : "false",
+            // The shape the picture is shown in, in the same ten-thousandths
+            // the framing file carries. 0 is filling.
+            (unsigned)geometry.aspect().tenThousandths(),
+            // False where an axis had to fill because the part cannot minify
+            // into the shape. No register distinguishes that from no shape.
+            geometry.shapeHonoured() ? "true" : "false",
             // The engine's own answer to "is a source there": a steadiness run
             // over the line count paired with one reading of what the sync
             // processor counts against the divider, not a live reading of
@@ -7189,8 +7225,8 @@ void saveFramingTable()
 
     f.print(F("# framing, one source a line: "
               "<lines>@<fieldRateHz>/<syncWidth><hPol><vPol> = "
-              "originH extentH originV extentV\n"
-              "# in ten-thousandths of the capturable region\n"));
+              "originH extentH originV extentV shape\n"
+              "# in ten-thousandths of the capturable region; shape 0 fills\n"));
 
     Tv5725::FramingText text(sourceFramings);
     char line[80];
@@ -7250,8 +7286,8 @@ void saveSlotFramings()
 
     f.print(F("# slot framings: "
               "<slot> <lines>@<fieldRateHz>/<syncWidth><hPol><vPol> = "
-              "originH extentH originV extentV\n"
-              "# in ten-thousandths of the capturable region\n"));
+              "originH extentH originV extentV shape\n"
+              "# in ten-thousandths of the capturable region; shape 0 fills\n"));
 
     Tv5725::SlotText text(slotFramings);
     char line[80];

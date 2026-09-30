@@ -14,8 +14,9 @@ void FramingText::readLine(const char *line)
     const char *at = FramingLine::skipSpace(line);
     SourceKey key;
     PanAndZoom framing;
-    if (FramingLine::read(at, key, framing))
-        table_.remember(key, framing);
+    Aspect shape;
+    if (FramingLine::read(at, key, framing, shape))
+        table_.remember(key, framing, shape);
 }
 
 bool FramingText::writeLine(uint16_t index, char *out, uint8_t size) const
@@ -23,7 +24,8 @@ bool FramingText::writeLine(uint16_t index, char *out, uint8_t size) const
     if (index >= table_.count())
         return false;
     return FramingLine::write(out, size, table_.keyAt(index),
-                              table_.framingAt(index)) > 0;
+                              table_.framingAt(index),
+                              table_.aspectAt(index)) > 0;
 }
 
 }  // namespace Tv5725

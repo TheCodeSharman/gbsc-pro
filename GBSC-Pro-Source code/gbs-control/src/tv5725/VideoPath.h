@@ -15,6 +15,7 @@
 #include "OutputMode.h"
 #include "OutputTiming.h"
 #include "PanAndZoom.h"
+#include "Aspect.h"
 #include "OutputWindow.h"
 #include "FramingTable.h"
 #include "SourceKey.h"
@@ -47,6 +48,26 @@ public:
               FramingTable &framings, InputFormatter &inputFormatter);
 
     const PanAndZoom &framing() const;
+
+    // The shape the picture is shown in. Defaulted from the raster the source
+    // matched, replaced by whatever the user last chose for that source, and
+    // stored beside the framing. An OUTPUT transform: setting it moves no part
+    // of the framing, so a border flush to the screen stays flush to the shape.
+    // docs/aspect-ratio.md
+    Aspect aspect() const;
+
+    // False where nothing moved, on the same terms as a framing press: the
+    // shape asked for is the one already in force, or the solve refused.
+    bool setAspect(Aspect shape);
+
+    // Whether the last solve could show the shape it was given. False means an
+    // axis filled instead, which no register distinguishes from having been
+    // given no shape at all.
+    bool shapeHonoured() const;
+
+    // Where the last solve put the picture, for a caller that wants to report
+    // it rather than read a register back.
+    const OutputWindow &image() const;
 
     // The source the framing held is against. Invalid until one has been
     // measured, so a caller storing a framing against it has to ask first.
@@ -451,6 +472,7 @@ private:
     DisplayClock &displayClock_;
     InputFormatter &inputFormatter_;
     PanAndZoom framing_;
+    Aspect aspect_;
     // The capturable region the last solve ran against, per axis: the
     // denominator a press converts its units into a proportion with.
     uint16_t usableHorizontal_, usableVertical_;

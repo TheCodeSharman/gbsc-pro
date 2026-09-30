@@ -26,12 +26,14 @@ uint16_t OutputWindow::activeStopOn(const Axis &axis, const OutputTiming &raster
     return axis.vertical() ? raster.activeLinesStop : raster.activeStop;
 }
 
-uint16_t OutputWindow::narrowestCapture(const Axis &axis, const OutputTiming &raster)
+uint16_t OutputWindow::narrowestCapture(const Axis &axis, const OutputTiming &raster,
+                                        Aspect wanted)
 {
     if (totalOn(axis, raster) == 0)
         return 0;
     return minimumCapture(axis, totalOn(axis, raster), activeStartOn(axis, raster),
-                          activeStopOn(axis, raster));
+                          activeStopOn(axis, raster),
+                          wanted.roomFraction(axis, raster.displayAspect));
 }
 
 uint16_t OutputWindow::widestCapture(const Axis &axis, const OutputTiming &raster)
@@ -42,24 +44,48 @@ uint16_t OutputWindow::widestCapture(const Axis &axis, const OutputTiming &raste
                           activeStopOn(axis, raster));
 }
 
-OutputWindow::OutputWindow() {}
+OutputWindow::OutputWindow() : shapeHonoured_(true) {}
 
 OutputWindow::OutputWindow(uint16_t horizontalPicture, uint16_t verticalPicture,
                            const OutputTiming &raster,
-                           uint16_t horizontalMargin, uint16_t verticalMargin)
+                           uint16_t horizontalMargin, uint16_t verticalMargin,
+                           Aspect wanted)
 {
+    const float horizontalRoom = roomFractionFor(AxisHorizontal, horizontalPicture,
+                                                 raster, wanted);
+    const float verticalRoom = roomFractionFor(AxisVertical, verticalPicture,
+                                               raster, wanted);
+    shapeHonoured_ =
+        horizontalRoom <= wanted.roomFraction(AxisHorizontal, raster.displayAspect)
+        && verticalRoom <= wanted.roomFraction(AxisVertical, raster.displayAspect);
+
     horizontal_ = solve(AxisHorizontal, horizontalPicture,
                         fitToRaster(AxisHorizontal, horizontalPicture,
                                     raster.horizontalTotal, raster.activeStart,
-                                    raster.activeStop, horizontalMargin).scale(),
+                                    raster.activeStop, horizontalMargin,
+                                    horizontalRoom).scale(),
                         raster.horizontalTotal, raster.activeStart, raster.activeStop,
                         horizontalMargin);
     vertical_ = solve(AxisVertical, verticalPicture,
                       fitToRaster(AxisVertical, verticalPicture,
                                   raster.verticalTotal, raster.activeLinesStart,
-                                  raster.activeLinesStop, verticalMargin).scale(),
+                                  raster.activeLinesStop, verticalMargin,
+                                  verticalRoom).scale(),
                       raster.verticalTotal, raster.activeLinesStart,
                       raster.activeLinesStop, verticalMargin);
+}
+
+float OutputWindow::roomFractionFor(const Axis &axis, uint16_t capture,
+                                    const OutputTiming &raster, Aspect wanted)
+{
+    const float fraction = wanted.roomFraction(axis, raster.displayAspect);
+    if (fraction >= 1.0f)
+        return 1.0f;
+
+    const uint16_t total = totalOn(axis, raster);
+    const float narrowed = maxDisplayWindow(axis, total, activeStartOn(axis, raster),
+                                            activeStopOn(axis, raster)) * fraction;
+    return narrowed <= (float)capture ? 1.0f : fraction;
 }
 
 const OutputMapping &OutputWindow::horizontal() const { return horizontal_; }
@@ -71,8 +97,11 @@ bool OutputWindow::usable() const
     return horizontal_.usable() && vertical_.usable();
 }
 
+bool OutputWindow::shapeHonoured() const { return shapeHonoured_; }
+
 uint16_t OutputWindow::minimumCapture(const Axis &axis, uint16_t rasterTotal,
-                                      uint16_t activeStart, uint16_t activeStop)
+                                      uint16_t activeStart, uint16_t activeStop,
+                                      float roomFraction)
 {
     // produced = capture x Unity / scale, and the scale bottoms out at
     // this axis's floor, so the capture that reaches it is room x floor / Unity
@@ -83,7 +112,8 @@ uint16_t OutputWindow::minimumCapture(const Axis &axis, uint16_t rasterTotal,
     // produced = room x capture / (capture + startPerMag + captureMargin) -- so
     // the capture reaching the floor is that much larger. maximumCapture
     // charges it at the other end for the same reason.
-    const float room = maxDisplayWindow(axis, rasterTotal, activeStart, activeStop);
+    const float room = maxDisplayWindow(axis, rasterTotal, activeStart, activeStop)
+                     * roomFraction;
     if (room <= 0.0f)
         return 0;
     const float charged = writeFloorBinds(axis, activeStart)
@@ -160,9 +190,11 @@ float OutputWindow::maxDisplayWindow(const Axis &axis, uint16_t rasterTotal,
 
 RasterFit OutputWindow::fitToRaster(const Axis &axis, uint16_t capture,
                                     uint16_t rasterTotal, uint16_t activeStart,
-                                    uint16_t activeStop, uint16_t margin)
+                                    uint16_t activeStop, uint16_t margin,
+                                    float roomFraction)
 {
-    float room = maxDisplayWindow(axis, rasterTotal, activeStart, activeStop);
+    float room = maxDisplayWindow(axis, rasterTotal, activeStart, activeStop)
+               * roomFraction;
     if (capture == 0 || room <= 0.0f)
         return RasterFit(Scale(axis.scaleCeiling()), 0.0f);
 
@@ -218,10 +250,12 @@ RasterFit OutputWindow::fitToRaster(const Axis &axis, uint16_t capture,
 
 PictureOrigin OutputWindow::placePicture(const Axis &axis, float produced,
                                          uint16_t rasterTotal, float magnification,
-                                         uint16_t activeStart, uint16_t margin)
+                                         uint16_t activeStart, uint16_t margin,
+                                         uint16_t activeStop)
 {
     float offset = pictureOffset(axis, magnification, margin);
-    int32_t corner = lrintf((rasterTotal - produced) / 2.0f);
+    const float far = (float)farBound(rasterTotal, activeStop);
+    int32_t corner = lrintf((float)activeStart + (far - (float)activeStart - produced) / 2.0f);
     int32_t windowStop = lrintf(corner - offset);
     if (windowStop < (int32_t)writeStart(axis).floor) {
         windowStop = writeStart(axis).floor;
@@ -253,7 +287,8 @@ OutputMapping OutputWindow::solve(const Axis &axis, uint16_t capture, Scale scal
         return solved;
 
     PictureOrigin placed = placePicture(axis, solved.produced_, rasterTotal,
-                                    scale.magnification(), activeStart, margin);
+                                    scale.magnification(), activeStart, margin,
+                                    activeStop);
     // The front porch, or the raster's edge where no porch is known. ST registers
     // wrap rather than clamp, and a wrapped VDS_VB_ST rolls the frame.
     int32_t lastUsable = (int32_t)farBound(rasterTotal, activeStop);

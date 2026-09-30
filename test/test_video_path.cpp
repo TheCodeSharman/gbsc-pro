@@ -19,6 +19,7 @@
 FakeTwoWire Wire;
 
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Adc.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Aspect.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Chip.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/FrameBuffer.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/videosource/VideoSourceAcquisition.h"
@@ -201,6 +202,15 @@ static uint16_t lineCounterInForce() { return (uint16_t)Wire.field(1, 0x0E, 0, 1
 static uint16_t retimeStopInForce() { return (uint16_t)Wire.field(5, 0x4B, 0, 12); }
 
 // --- what a whole solve puts on the chip -------------------------------------
+
+// THE OUTPUT SIDE HERE WAS MEASURED FILLING THE RASTER, so a caller puts the
+// engine on Aspect::Fill first. The bench source's published raster is a 4:3
+// one and a shaped solve narrows the picture into three quarters of the line,
+// which is the feature working rather than these numbers being wrong.
+static void fillTheRaster(VideoPath &engine)
+{
+    engine.setAspect(Aspect(Aspect::Fill));
+}
 
 static void checkBenchGeometry()
 {
@@ -670,6 +680,7 @@ TEST_CASE("a settled source is solved on the first poll that can measure it")
     REQUIRE(pollUntilSolved(acquisition));
     REQUIRE(pollUntilPresented(acquisition));
 
+    fillTheRaster(engine);
     checkBenchGeometry();
 
     SUBCASE("and nothing is outstanding afterwards") {
@@ -731,6 +742,7 @@ TEST_CASE("a source still settling gets no geometry solved against it")
         g_fieldRate = 50.08f;
         REQUIRE(pollUntilSolved(acquisition));
         REQUIRE(pollUntilPresented(acquisition));
+        fillTheRaster(engine);
         checkBenchGeometry();
     }
 }
@@ -915,6 +927,7 @@ TEST_CASE("a reset puts the framing back without re-deriving the rest")
     // And leaves everything the framing does not own exactly as it was. The
     // divider, the raster and the clock are still the ones the mode change
     // solved, not a second answer to the same question.
+    fillTheRaster(engine);
     checkBenchGeometry();
 }
 
@@ -1330,6 +1343,7 @@ TEST_CASE("a framed picture holds every window against the framing")
     engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(acquisition));
     REQUIRE(pollUntilPresented(acquisition));
+    fillTheRaster(engine);
 
     // What the solve placed before anything was framed. Held rather than
     // written down, because the placement follows the source and a constant
@@ -1429,6 +1443,9 @@ TEST_CASE("a progressive source's vertical capture fits the counter it is on")
     engine.setOutputMode(&Mode1024p);
     engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(acquisition));
+    // Filling, because this is about the counter rather than the shape: a 4:3
+    // source on this 5:4 mode gives up a sixteenth of its height to the bars.
+    fillTheRaster(engine);
 
     // The window stays inside the 500 lines the counter reaches, and the scale
     // is sized for the capture that arrives. Doubling the frame put the stop at
@@ -2286,4 +2303,94 @@ TEST_CASE("a rate that moves without changing the source leaves the divider alon
 
     CHECK(engine.installSampling(VideoPath::SamplingFollowsMeasurement));
     CHECK(Adc::dividerInForce() == chosen);
+}
+
+
+// --- the shape a source is shown in -------------------------------------------
+//
+// An output transform, so the framing does not move. What the user tuned is
+// which part of the source is captured; what the shape decides is how much of
+// the raster that capture is scaled into. docs/aspect-ratio.md
+
+TEST_CASE("a source arrives at the shape its published raster states")
+{
+    // The bench 320x256@50 matches the Acorn 15.6 kHz row, whose monitor
+    // definition is a 4:3 one.
+    seedBenchSource();
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+    VideoSourceAcquisition acquisition(sampling, engine);
+
+    engine.setOutputMode(benchMode());
+    engine.inputTimingsChanged(4);
+    REQUIRE(pollUntilSolved(acquisition));
+
+    CHECK(engine.aspect() == Aspect(Aspect::FourThree));
+}
+
+TEST_CASE("changing the shape leaves the framing exactly where it was")
+{
+    seedBenchSource();
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+    VideoSourceAcquisition acquisition(sampling, engine);
+
+    engine.setOutputMode(benchMode());
+    engine.inputTimingsChanged(4);
+    REQUIRE(pollUntilSolved(acquisition));
+
+    REQUIRE(engine.zoom(64, 0));
+    const PanAndZoom before = engine.framing();
+
+    REQUIRE(engine.setAspect(Aspect(Aspect::SixteenNine)));
+
+    CHECK(engine.framing().originOn(AxisHorizontal) == before.originOn(AxisHorizontal));
+    CHECK(engine.framing().extentOn(AxisHorizontal) == before.extentOn(AxisHorizontal));
+    CHECK(engine.framing().originOn(AxisVertical) == before.originOn(AxisVertical));
+    CHECK(engine.framing().extentOn(AxisVertical) == before.extentOn(AxisVertical));
+}
+
+TEST_CASE("a shape narrower than the raster leaves the picture short of it")
+{
+    seedBenchSource();
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+    VideoSourceAcquisition acquisition(sampling, engine);
+
+    engine.setOutputMode(benchMode());
+    engine.inputTimingsChanged(4);
+    REQUIRE(pollUntilSolved(acquisition));
+
+    REQUIRE(engine.setAspect(Aspect(Aspect::Fill)));
+    const float filled = engine.image().horizontal().produced();
+
+    REQUIRE(engine.setAspect(Aspect(Aspect::FourThree)));
+    CHECK(engine.image().horizontal().produced() < filled);
+}
+
+TEST_CASE("a source returns to the shape it was left at")
+{
+    seedBenchSource();
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+    VideoSourceAcquisition acquisition(sampling, engine);
+
+    engine.setOutputMode(benchMode());
+    engine.inputTimingsChanged(4);
+    REQUIRE(pollUntilSolved(acquisition));
+    const SourceKey bench = engine.framedKey();
+
+    REQUIRE(engine.setAspect(Aspect(Aspect::SixteenNine)));
+
+    Aspect stored;
+    REQUIRE(framings.find(bench, (PanAndZoom *)NULL, &stored));
+    CHECK(stored == Aspect(Aspect::SixteenNine));
 }

@@ -611,9 +611,14 @@ void VideoPath::adoptSourceKey()
 
     // Leaving one source for another. Nothing is stored here: the table has
     // followed every press already, so what this source was tuned to is in it.
-    const bool recalled = framings_.find(arriving, &framing_);
-    if (!recalled)
+    // The shape falls back to the raster's rather than to filling: an
+    // unrecognised source is far more often a 4:3 computer mode than a
+    // widescreen one, and filling is what the user can always ask for.
+    const bool recalled = framings_.find(arriving, &framing_, &aspect_);
+    if (!recalled) {
         framing_.reset();
+        aspect_ = SourceTiming::matching(arriving).aspect();
+    }
     framedKey_ = arriving;
     announceSourceKey(arriving, recalled);
 }
@@ -626,9 +631,10 @@ void VideoPath::announceSourceKey(const SourceKey &key, bool recalled)
     if (!key.valid() || FramingLine::writeKey(named, sizeof(named), key) < 0)
         return;
 
-    char line[72];
-    snprintf(line, sizeof(line), "source key: %s, %s", named,
-             recalled ? "framing recalled" : "no framing stored");
+    char line[96];
+    snprintf(line, sizeof(line), "source key: %s, %s, shape %u", named,
+             recalled ? "framing recalled" : "no framing stored",
+             (unsigned)aspect_.tenThousandths());
     tv5725Log(line);
 }
 
@@ -902,7 +908,11 @@ bool VideoPath::pan(int16_t dxPixels, int16_t dyPixels)
 
 uint16_t VideoPath::narrowestCaptureOn(const Axis &axis) const
 {
-    return OutputWindow::narrowestCapture(axis, raster_);
+    // WITH the shape: the zoom stop is where letterboxing starts, and a
+    // narrowed room is reached by a smaller capture. widestCaptureOn is
+    // deliberately without it -- narrowToRaster CROPS the capture by that
+    // bound, and the shape must never cost picture.
+    return OutputWindow::narrowestCapture(axis, raster_, aspect_);
 }
 
 uint16_t VideoPath::widestCaptureOn(const Axis &axis) const
@@ -1057,7 +1067,7 @@ OutputWindow VideoPath::imageFor(const CaptureWindow &capture) const
     return OutputWindow(capture.pictureOn(AxisHorizontal).width(),
                         capture.pictureOn(AxisVertical).width(), raster_,
                         marginTaken(capture, AxisHorizontal),
-                        marginTaken(capture, AxisVertical));
+                        marginTaken(capture, AxisVertical), aspect_);
 }
 
 void VideoPath::write(const OutputWindow &solved, const CaptureWindow &capture)
@@ -1156,7 +1166,52 @@ bool VideoPath::step(const PanAndZoom &wanted)
     // turned off where it is used would otherwise lose every tuning. Only the
     // flash write is debounced. One that moved nothing stores nothing, which is
     // also what keeps sixteen places from filling with computed defaults.
-    framings_.remember(framedKey_, framing_);
+    framings_.remember(framedKey_, framing_, aspect_);
+
+    // A refusal is invisible otherwise: the axis fills, which is exactly what it
+    // does when no shape was asked for, so the control reads as dead on the one
+    // kind of source it cannot serve. The part cannot minify, so a capture wider
+    // than the narrowed room has no way to reach the shape without cropping.
+    char line[64];
+    snprintf(line, sizeof(line), "aspect: %u%s",
+             (unsigned)aspect_.tenThousandths(),
+             shapeHonoured() ? "" : " refused, the part cannot minify");
+    tv5725Log(line);
+    return true;
+}
+
+Aspect VideoPath::aspect() const { return aspect_; }
+
+bool VideoPath::shapeHonoured() const { return output_.shapeHonoured(); }
+
+const OutputWindow &VideoPath::image() const { return output_; }
+
+// Not through step(), which decides a press moved nothing by comparing the
+// INPUT FORMATTER's windows -- and a shape moves none of them. What it moves is
+// the scale and the two output blanking pairs.
+bool VideoPath::setAspect(Aspect shape)
+{
+    if (fullFraming_ || shape == aspect_)
+        return false;
+
+    const Aspect before = aspect_;
+    aspect_ = shape;
+    if (!solveWindows()) {
+        aspect_ = before;
+        return false;
+    }
+
+    framings_.remember(framedKey_, framing_, aspect_);
+
+    // A refusal is invisible otherwise: the axis fills, which is exactly what it
+    // does when no shape was asked for, so the control reads as dead on the one
+    // kind of source it cannot serve. The part cannot minify, so a capture wider
+    // than the narrowed room reaches the shape only by cropping.
+    char line[64];
+    snprintf(line, sizeof(line), "aspect: %u%s",
+             (unsigned)aspect_.tenThousandths(),
+             shapeHonoured() ? "" : " refused, the part cannot minify");
+    tv5725Log(line);
     return true;
 }
 

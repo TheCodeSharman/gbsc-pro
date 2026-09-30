@@ -16,6 +16,8 @@
 
 #include <stdint.h>
 
+#include "Aspect.h"
+
 namespace Tv5725 {
 
 class OutputTiming {
@@ -39,6 +41,10 @@ public:
     uint16_t activeStop, activeLinesStop;
 
     float fieldRate;
+
+    // The shape this raster puts on the screen, from the standard rather than
+    // from the pixel counts: 720x480 is 3:2 counted in pixels and 4:3 shown.
+    Aspect displayAspect;
 
     // False when anything upstream was unmeasurable. **CHECK THIS BEFORE
     // WRITING.** A raster written from a measurement that did not happen is how

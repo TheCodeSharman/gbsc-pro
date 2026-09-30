@@ -95,7 +95,8 @@ bool FramingLine::empty(const char *line)
     return *at == '\0' || *at == '#';
 }
 
-bool FramingLine::read(const char *&at, SourceKey &key, PanAndZoom &framing)
+bool FramingLine::read(const char *&at, SourceKey &key, PanAndZoom &framing,
+                       Aspect &shape)
 {
     long lines = 0, width = 0;
     float rate = 0.0f;
@@ -134,9 +135,21 @@ bool FramingLine::read(const char *&at, SourceKey &key, PanAndZoom &framing)
     if (!read.valid())
         return false;
 
+    // Absent and unreadable are not the same: a record from before the shape
+    // existed ends after the fourth number, and one whose fifth field is
+    // rubbish is malformed like any other line.
+    long shown = Aspect::Fill;
+    const char *afterFraming = skipSpace(at);
+    if (*afterFraming != '\0' && *afterFraming != '#' && *afterFraming != '\n'
+        && *afterFraming != '\r') {
+        if (!number(at, shown) || shown < 0 || shown > 0xFFFF)
+            return false;
+    }
+
     key = read;
     framing = PanAndZoom(proportionOf(value[0]), proportionOf(value[1]),
                          proportionOf(value[2]), proportionOf(value[3]));
+    shape = Aspect((uint16_t)shown);
     return true;
 }
 
@@ -156,7 +169,7 @@ int FramingLine::writeKey(char *out, uint8_t size, const SourceKey &key)
 }
 
 int FramingLine::write(char *out, uint8_t size, const SourceKey &key,
-                       const PanAndZoom &framing)
+                       const PanAndZoom &framing, Aspect shape)
 {
     const int named = writeKey(out, size, key);
     if (named < 0)
@@ -164,11 +177,12 @@ int FramingLine::write(char *out, uint8_t size, const SourceKey &key,
 
     const int room = (int)size - named;
     const int written = snprintf(
-        out + named, (size_t)room, " = %ld %ld %ld %ld",
+        out + named, (size_t)room, " = %ld %ld %ld %ld %u",
         tenThousandthsOf(framing.originOn(AxisHorizontal)),
         tenThousandthsOf(framing.extentOn(AxisHorizontal)),
         tenThousandthsOf(framing.originOn(AxisVertical)),
-        tenThousandthsOf(framing.extentOn(AxisVertical)));
+        tenThousandthsOf(framing.extentOn(AxisVertical)),
+        (unsigned)shape.tenThousandths());
 
     return written > 0 && written < room ? named + written : -1;
 }

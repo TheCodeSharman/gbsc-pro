@@ -12,6 +12,7 @@
 
 #include <stdint.h>
 
+#include "Aspect.h"
 #include "SourceKey.h"
 
 namespace Tv5725 {
@@ -41,6 +42,12 @@ public:
     float activeStart(const Axis &axis) const;
     float activeExtent(const Axis &axis) const;
 
+    // The shape the picture is to be shown in. Stated per row rather than
+    // derived from the active counts, because 720x480p is 3:2 counted in pixels
+    // and 4:3 on the screen. A source matching no raster is shown as 4:3, which
+    // is what an unrecognised computer mode almost always is.
+    Aspect aspect() const;
+
     // How far the horizontal sync pulse runs, as a fraction of the whole line.
     // The one part of a published raster a source matching it cannot have spent
     // differently: the match is ON the sync width. Meaningless unless
@@ -64,6 +71,7 @@ private:
         uint16_t totalPixels, syncPixels, activeStartPixel, activePixels;
         uint16_t vsyncLines, activeStartLine, activeLines;
         SourceKey::Polarity hsync, vsync;
+        uint16_t aspect;
     };
 
     // One array per authority, searched in that order: a source matching rows

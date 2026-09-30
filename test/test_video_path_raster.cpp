@@ -23,6 +23,7 @@ FakeTwoWire Wire;
 #include "../GBSC-Pro-Source code/gbs-control/src/videosource/VideoSourceAcquisition.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Chip.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/VideoPath.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Aspect.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/OutputMode.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Scale.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/InputFormatter.h"
@@ -628,6 +629,9 @@ TEST_CASE("the picture fills the active region, the porch carrying the write ori
     settled.engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(settled.acquisition));
     REQUIRE(pollUntilPresented(settled.acquisition));
+    // FILLING: the source's published raster is a 4:3 one, and a shaped solve
+    // leaves the bars this case is asserting the absence of.
+    settled.engine.setAspect(Aspect(Aspect::Fill));
 
     const OutputTiming raster = Mode1080p.solve(g_fieldRate, OutputMode::EngineCeilingHz);
     const long total = Wire.field(3, 0x01, 0, 12) + 1;     // VDS_HSYNC_RST

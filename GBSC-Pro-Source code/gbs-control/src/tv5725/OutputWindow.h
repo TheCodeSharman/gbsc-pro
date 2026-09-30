@@ -20,6 +20,7 @@
 
 #include <stdint.h>
 
+#include "Aspect.h"
 #include "Axis.h"
 #include "OutputMapping.h"
 #include "OutputTiming.h"
@@ -46,10 +47,17 @@ public:
     // not there places the picture after the write starts and closes the
     // aperture after it ends.
     // ../../../docs/investigations/the-capture-margin-is-clamped-away-at-full-framing.md
+    // `wanted` is the shape the picture is to be SHOWN in, which narrows the
+    // room on one axis and moves nothing else: the capture, the framing and the
+    // divider are the source's and stay as they are, and the picture is scaled
+    // DOWN into what is left rather than cropped to it. The bars are what the
+    // display aperture blanks once it closes on the narrowed picture.
+    // docs/aspect-ratio.md
     OutputWindow(uint16_t horizontalPicture, uint16_t verticalPicture,
                  const OutputTiming &raster,
                  uint16_t horizontalMargin = NominalMargin,
-                 uint16_t verticalMargin = NominalMargin);
+                 uint16_t verticalMargin = NominalMargin,
+                 Aspect wanted = Aspect());
 
     // Stands for "the axis's own captureMargin()", so a caller with no reason to
     // say otherwise does not have to name it.
@@ -62,6 +70,11 @@ public:
 
     bool usable() const;
 
+    // False where a shape was asked for and an axis had to fill instead. It is
+    // invisible in the registers -- a refused axis looks exactly like one that
+    // was never given a shape -- so it is reported rather than inferred.
+    bool shapeHonoured() const;
+
     // The smallest capture that can still fill the room this raster offers, at
     // this axis's full magnification -- where letterboxing STARTS. Below it the
     // crop cannot be compensated, so the picture shrinks on screen and the
@@ -69,7 +82,8 @@ public:
     // because the picture never fills the total: the porch it is placed behind
     // is a tenth of the line here, and charging it stops the zoom that far
     // short of the magnification the axis allows.
-    static uint16_t narrowestCapture(const Axis &axis, const OutputTiming &raster);
+    static uint16_t narrowestCapture(const Axis &axis, const OutputTiming &raster,
+                                     Aspect wanted = Aspect());
 
     // The largest capture this raster can SHOW. VDS_?SCALE divides 1024 and
     // tops out at Scale::Max, so the least magnification the part can express
@@ -103,7 +117,8 @@ private:
     static RasterFit fitToRaster(const Axis &axis, uint16_t capture,
                                  uint16_t rasterTotal, uint16_t activeStart = 0,
                                  uint16_t activeStop = 0,
-                                 uint16_t margin = NominalMargin);
+                                 uint16_t margin = NominalMargin,
+                                 float roomFraction = 1.0f);
 
     // This axis's four output registers, from a capture in whatever units the
     // input formatter counted it in. The display window IS the picture at both
@@ -115,6 +130,13 @@ private:
                               uint16_t activeStop = 0,
                               uint16_t margin = NominalMargin);
 
+    // How far the room may narrow for `wanted` without asking the part to
+    // minify, which it cannot do. A capture wider than the narrowed room would
+    // have to be CROPPED to reach the shape, and cropping is what the shape must
+    // never cause, so the axis fills instead.
+    static float roomFractionFor(const Axis &axis, uint16_t capture,
+                                 const OutputTiming &raster, Aspect wanted);
+
 
     // The biggest picture this raster can hold, bounded at the NEAR end by the
     // write floor and at the FAR end by the front porch.
@@ -122,7 +144,8 @@ private:
                                   uint16_t activeStart = 0, uint16_t activeStop = 0);
 
     static uint16_t minimumCapture(const Axis &axis, uint16_t rasterTotal,
-                                   uint16_t activeStart = 0, uint16_t activeStop = 0);
+                                   uint16_t activeStart = 0, uint16_t activeStop = 0,
+                                   float roomFraction = 1.0f);
 
 
 
@@ -157,10 +180,15 @@ private:
 
     // Centre the picture on the raster. A picture too big to centre starts at
     // the write floor and overscans off the far end.
+    // Centre the picture in the ROOM -- activeStart to the far bound -- rather
+    // than on the raster total. The two agree wherever the picture fills, which
+    // is why the difference only appears once a shape leaves bars: centring on
+    // the total puts them out by half the back porch.
     static PictureOrigin placePicture(const Axis &axis, float produced,
                                       uint16_t rasterTotal, float magnification,
                                       uint16_t activeStart = 0,
-                                      uint16_t margin = NominalMargin);
+                                      uint16_t margin = NominalMargin,
+                                      uint16_t activeStop = 0);
 
     static float placementFloor(const Axis &axis, float offset,
                                 uint16_t activeStart);
@@ -170,6 +198,7 @@ private:
     static uint16_t activeStopOn(const Axis &axis, const OutputTiming &raster);
 
     OutputMapping horizontal_, vertical_;
+    bool shapeHonoured_;
 };
 
 }  // namespace Tv5725

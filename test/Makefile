@@ -16,7 +16,7 @@ CXXFLAGS ?= -std=c++11 -O1 -Wall -Wextra
 # embarrassingly parallel: measured 3m26s serial against 34s here.
 MAKEFLAGS += -j$(shell nproc)
 
-.PHONY: all test menu video-signal test-bus test-bus-rate-measurement steady-run sync-on-green sampling-log axis source-key source-timing framing-table framing-text slot-table slot-text scale video-source-line capture-window output-window video-path source-measurement memory-window display-clock frame-sync frame-time-lock output-mode output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc video-route rgbhv-output write-trace clean help
+.PHONY: all test menu aspect video-signal test-bus test-bus-rate-measurement steady-run sync-on-green sampling-log axis source-key source-timing framing-table framing-text slot-table slot-text scale video-source-line capture-window output-window video-path source-measurement memory-window display-clock frame-sync frame-time-lock output-mode output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc video-route rgbhv-output write-trace clean help
 .DEFAULT_GOAL := test
 
 ## help: list the targets
@@ -56,7 +56,8 @@ SAMPLING_SRC = src/tv5725/SourceMeasurement.cpp src/tv5725/HsyncPulse.cpp \
 
 # Axis and the value types it solves into. HdBypass asks it where video starts
 # on a source whose raster is unknown, so anything linking HdBypass links these.
-AXIS_SRC = src/tv5725/Axis.cpp src/tv5725/Scale.cpp src/tv5725/RasterFit.cpp \
+AXIS_SRC = src/tv5725/Axis.cpp src/tv5725/Scale.cpp src/tv5725/Aspect.cpp \
+           src/tv5725/RasterFit.cpp \
            src/tv5725/PictureOrigin.cpp src/tv5725/OutputMapping.cpp \
            src/tv5725/BlankingTiming.cpp
 
@@ -162,7 +163,7 @@ source-timing:
 	  -o "$(OUT)/test_source_timing" \
 	  "$(HERE)/test_source_timing.cpp" src/tv5725/SourceTiming.cpp \
 	  src/tv5725/SourceKey.cpp $(SAMPLING_SRC) \
- src/tv5725/Axis.cpp src/tv5725/Scale.cpp \
+ src/tv5725/Axis.cpp src/tv5725/Scale.cpp src/tv5725/Aspect.cpp \
 	  src/tv5725/OutputMapping.cpp src/tv5725/RasterFit.cpp \
 	  src/tv5725/PictureOrigin.cpp src/tv5725/BlankingTiming.cpp
 	@"$(OUT)/test_source_timing"
@@ -180,6 +181,18 @@ menu:
 	  src/osd/MenuPage.cpp
 	@"$(OUT)/test_menu"
 
+## aspect: host unit tests for Tv5725::Aspect
+#
+# The shape a picture is shown in. Every black bar the board emits comes out of
+# roomFraction(), and nothing else states it.
+aspect:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
+	  -o "$(OUT)/test_aspect" \
+	  "$(HERE)/test_aspect.cpp" src/tv5725/Aspect.cpp src/tv5725/Axis.cpp \
+	  src/tv5725/Scale.cpp
+	@"$(OUT)/test_aspect"
+
 ## framing-table: host unit tests for Tv5725::FramingTable
 #
 # The framing a user tuned, kept against the source it was tuned for. Pure, so
@@ -191,7 +204,7 @@ framing-table:
 	  -o "$(OUT)/test_framing_table" \
 	  "$(HERE)/test_framing_table.cpp" src/tv5725/FramingTable.cpp \
 	  src/tv5725/SourceKey.cpp $(SAMPLING_SRC) \
- src/tv5725/PanAndZoom.cpp src/tv5725/Axis.cpp \
+ src/tv5725/PanAndZoom.cpp src/tv5725/Aspect.cpp src/tv5725/Axis.cpp \
 	  src/tv5725/Scale.cpp src/tv5725/BlankingTiming.cpp \
 	  src/tv5725/OutputMapping.cpp src/tv5725/RasterFit.cpp \
 	  src/tv5725/PictureOrigin.cpp
@@ -208,7 +221,7 @@ slot-table:
 	  -o "$(OUT)/test_slot_table" \
 	  "$(HERE)/test_slot_table.cpp" src/tv5725/SlotTable.cpp \
 	  src/tv5725/SourceKey.cpp $(SAMPLING_SRC) \
- src/tv5725/PanAndZoom.cpp src/tv5725/Axis.cpp \
+ src/tv5725/PanAndZoom.cpp src/tv5725/Aspect.cpp src/tv5725/Axis.cpp \
 	  src/tv5725/Scale.cpp src/tv5725/BlankingTiming.cpp \
 	  src/tv5725/OutputMapping.cpp src/tv5725/RasterFit.cpp \
 	  src/tv5725/PictureOrigin.cpp
@@ -227,6 +240,7 @@ framing-text:
 	  src/tv5725/FramingTable.cpp src/tv5725/SourceKey.cpp \
 	  $(SAMPLING_SRC) \
 	  src/tv5725/PanAndZoom.cpp src/tv5725/Axis.cpp src/tv5725/Scale.cpp \
+	  src/tv5725/Aspect.cpp \
 	  src/tv5725/BlankingTiming.cpp src/tv5725/OutputMapping.cpp \
 	  src/tv5725/RasterFit.cpp src/tv5725/PictureOrigin.cpp
 	@"$(OUT)/test_framing_text"
@@ -242,7 +256,7 @@ slot-text:
 	  "$(HERE)/test_slot_text.cpp" src/tv5725/SlotText.cpp \
 	  src/tv5725/SlotTable.cpp src/tv5725/FramingLine.cpp \
 	  src/tv5725/SourceKey.cpp $(SAMPLING_SRC) \
- src/tv5725/PanAndZoom.cpp src/tv5725/Axis.cpp \
+ src/tv5725/PanAndZoom.cpp src/tv5725/Aspect.cpp src/tv5725/Axis.cpp \
 	  src/tv5725/Scale.cpp src/tv5725/BlankingTiming.cpp \
 	  src/tv5725/OutputMapping.cpp src/tv5725/RasterFit.cpp \
 	  src/tv5725/PictureOrigin.cpp
@@ -299,7 +313,7 @@ source-measurement:
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_source_measurement" \
 	  "$(HERE)/test_source_measurement.cpp" $(SAMPLING_SRC) \
- src/tv5725/Axis.cpp src/tv5725/Scale.cpp \
+ src/tv5725/Axis.cpp src/tv5725/Scale.cpp src/tv5725/Aspect.cpp \
 	  src/tv5725/OutputMapping.cpp src/tv5725/RasterFit.cpp \
 	  src/tv5725/PictureOrigin.cpp src/tv5725/BlankingTiming.cpp \
 	  src/tv5725/OutputWindow.cpp src/tv5725/OutputTiming.cpp
@@ -366,8 +380,8 @@ output-mode:
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_output_mode" \
 	  "$(HERE)/test_output_mode.cpp" src/tv5725/OutputMode.cpp \
-	  src/tv5725/OutputTiming.cpp src/tv5725/DisplayClock.cpp \
-	  $(CLOCK_SRC)
+	  src/tv5725/OutputTiming.cpp src/tv5725/Aspect.cpp src/tv5725/DisplayClock.cpp \
+	  src/tv5725/Axis.cpp src/tv5725/Scale.cpp $(CLOCK_SRC)
 	@"$(OUT)/test_output_mode"
 
 ## output-choice: host unit tests for Tv5725::OutputChoice
@@ -379,7 +393,8 @@ output-choice:
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_output_choice" \
 	  "$(HERE)/test_output_choice.cpp" src/tv5725/OutputChoice.cpp \
-	  src/tv5725/OutputMode.cpp src/tv5725/OutputTiming.cpp \
+	  src/tv5725/OutputMode.cpp src/tv5725/OutputTiming.cpp src/tv5725/Aspect.cpp \
+	  src/tv5725/Axis.cpp src/tv5725/Scale.cpp \
 	  src/tv5725/DisplayClock.cpp $(CLOCK_SRC)
 	@"$(OUT)/test_output_choice"
 
@@ -570,7 +585,8 @@ input-formatter:
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_input_formatter" \
 	  "$(HERE)/test_input_formatter.cpp" src/tv5725/InputFormatter.cpp \
-	  src/tv5725/Axis.cpp src/tv5725/Scale.cpp src/tv5725/OutputMapping.cpp \
+	  src/tv5725/Axis.cpp src/tv5725/Scale.cpp src/tv5725/Aspect.cpp \
+	  src/tv5725/OutputMapping.cpp \
 	  src/tv5725/RasterFit.cpp src/tv5725/PictureOrigin.cpp \
 	  src/tv5725/BlankingTiming.cpp src/tv5725/VideoSourceLine.cpp \
 	  src/tv5725/HsyncPulse.cpp src/tv5725/OutputWindow.cpp \
@@ -850,7 +866,7 @@ write-trace:
 	@"$(OUT)/test_write_trace"
 
 ## test: every host unit test
-test: menu video-signal test-bus test-bus-rate-measurement steady-run source-absence detection-entry sync-measurement colour-space framing-save-timer sync-on-green axis source-key source-timing framing-table framing-text slot-table slot-text scale sync-processor video-processor video-source-line capture-window output-window video-path source-measurement memory-window display-clock frame-sync frame-time-lock output-mode output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc sampling-log video-route rgbhv-output write-trace
+test: menu aspect video-signal test-bus test-bus-rate-measurement steady-run source-absence detection-entry sync-measurement colour-space framing-save-timer sync-on-green axis source-key source-timing framing-table framing-text slot-table slot-text scale sync-processor video-processor video-source-line capture-window output-window video-path source-measurement memory-window display-clock frame-sync frame-time-lock output-mode output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc sampling-log video-route rgbhv-output write-trace
 all: test
 
 ## clean: remove the compiled test binaries

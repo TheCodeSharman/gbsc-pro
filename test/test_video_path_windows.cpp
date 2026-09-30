@@ -19,6 +19,8 @@
 #include "MeasuredSource.h"
 #include "SolvedEngine.h"
 
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Aspect.h"
+
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/OutputWindow.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SamplingClock.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/MemoryWindow.h"
@@ -952,6 +954,11 @@ TEST_CASE("a source on the sync separator is captured earlier in the line")
 TEST_CASE("the framing realised at a zoom stop is the same whichever bound binds")
 {
     SolvedEngine solved(311, 50.08f, 181, &Mode1080p);
+    // Filling, so the stops are the raster's: a shape narrows the room, and the
+    // zoom-in stop follows it down because the picture still has to reach the
+    // bars. That the stop MOVES is checked in test_output_window.cpp; what this
+    // pins is that the two clamps agree.
+    solved.engine.setAspect(Aspect(Aspect::Fill));
 
     SUBCASE("zoomed out to where the raster stops") {
         for (int press = 0; press < 40; ++press) {
