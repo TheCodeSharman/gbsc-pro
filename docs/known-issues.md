@@ -354,6 +354,24 @@ slower to re-lock than this bench's shows it for longer.
 
 ### The transmitted window's start is per source, and no constant places it
 
+**MEASURED PER RASTER ACROSS THE AKF50 SET, AND NO TERM PLACES IT.** The sink's
+own position -- where it opens the window with the source's black at the
+aperture's edge -- is one number per output raster, repeatable to a unit, and
+within an output it steps with the field rate in bands rather than following
+T, the clock or the time after the pulse: at 1080p 157 to 159 from 56.25 to
+60.32 Hz and 171.5 at 50 Hz, at 1024p 318 to 328 for 75 and 72.8 Hz and 331
+to 333 for 70 Hz, at 720p 393 to 398 at 108 MHz and 302 to 307 at 81 MHz. The
+model's twenty units after the porch is within three of it everywhere except
+the 50 Hz 1080p rasters (11.5 early) and the 75 and 72.8 Hz 1024p fallbacks
+(7 early). Two sources sit off their raster's band with nothing an instrument
+here can see to separate them: 360x480@60 at 60.15 Hz is 14 to 16 units early
+at both outputs, and 320x256@50 into 720p is 41 units late against 640x512@50
+on the same clock two units of T away. And a transition whose line has PICTURE
+at the aperture's edge lands 5 to 9 units before the own position, on 10 of
+the 28 stock modes, where a pad toggle on the settled state never does.
+`framing_sweep.py --tier S` measures it and `framing_report.py --sink` reports
+it. `investigations/the-sinks-own-window-position-is-per-raster.md`.
+
 **SUPERSEDED IN PART: the start is placed per return of the sync pad, not per
 state.** The sink chooses it when `PAD_SYNC_OUT_ENZ` is driven again: the first
 non-black content at the aperture's edge where that is earlier than the sink's
@@ -1620,6 +1638,16 @@ right because the painted area starts after the line does and ends before it
 does; the right border falls off the end. Do not read it as the scaler placing
 the picture wrongly.
 
+### 384x288@70 into 720p is shown small, black on all four sides
+
+One state, one run: the default framing of 384x288@70 into 720p puts the card
+at about two thirds of the frame with black on every side, where 240x352@70
+on the same raster fills it and 384x288@70 into 1080p fills it with 11
+columns of black at the left. The report names the row that answered as
+240x352@70 at 720p and 384x288@70 at 1080p, so the capture appears to have
+taken a different row's active region on the second output. Not pursued.
+`sweeps/framing-20260930T101647Z.jsonl.gz`.
+
 ### The sync pad returns on a fixed delay, so the sink can lock to a window a later solve moves
 
 **Measured on every mode change of a 28-mode sweep**: the acquired transition
@@ -1633,6 +1661,14 @@ sink's window where the transition put it. One rate-only arm, 360x480 at
 60.15 Hz, held the pad away for 15.3 s: the release runs only on a detection
 pass and none ran for that long, a dark panel on a change of rate alone.
 `investigations/the-encoder-places-its-window-when-the-sync-pad-returns.md`.
+
+**What the early return costs is measured: 10 of the 28 stock modes into
+1080p land 5 to 9 units before the sink's own position at a transition, every
+one of them with picture at the aperture's edge when the pad returned, and a
+pad toggle on the same state settled lands on the own position or on the
+aperture.** The same ten modes, placed through a mode change before and after,
+are the acceptance for a pad returned on quiet.
+`investigations/the-sinks-own-window-position-is-per-raster.md`.
 
 The sink fixes its active window WHEN IT ACQUIRES and holds it until it acquires
 again, taking the origin from our blanking at that moment --
