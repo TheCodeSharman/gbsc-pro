@@ -26,7 +26,11 @@ TERMS = ("dEncoder", "dModelApplied", "dPlace", "dCapture")
 
 def load(path):
     with open(path) as handle:
-        return [json.loads(line) for line in handle if line.strip()]
+        records = [json.loads(line) for line in handle if line.strip()]
+    for record in records:
+        if "positions" in record:
+            record["residuals"], record["verdict"] = fd.rejudge(record)
+    return records
 
 
 def number(value, width=6, decimals=1):

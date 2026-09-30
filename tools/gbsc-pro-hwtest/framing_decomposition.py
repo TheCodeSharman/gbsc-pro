@@ -204,6 +204,10 @@ def positions(regs, geometry):
 
 TERMS = ("dCapture", "dPlace", "dModelApplied", "dEncoder")
 
+# Black an edge may carry and still be flush, in dongle columns: (near, far).
+# The far edge carries the memory-window parity workaround's one column.
+ALLOWANCE_COLS = (1, 2)
+
 
 def _difference(a, b):
     return None if a is None or b is None else a - b
@@ -260,6 +264,40 @@ def decompose(pos, window, content, slope, allowance):
     far_black = _black_units(_difference(e1, c1), content.get("black1"), slope)
     return dict(near=_edge(near, near_black, slope, allowance[0], c0 is None),
                 far=_edge(far, far_black, slope, allowance[1], c1 is None))
+
+
+def judge(pos, window, slope, black):
+    """The four terms at every edge and the verdict, from what a state measured:
+    the positions, the window (measured and modelled), the slope per axis and
+    the black counted at each edge of the frame."""
+    residuals = dict(
+        h=decompose(pos["h"], dict(E0=window["E0"], E1=window["E1"],
+                                   E0m=window["E0m"], E1m=window["E1m"]),
+                    dict(C0=pos["h"]["C0"], C1=pos["h"]["C1"],
+                         black0=black["left"], black1=black["right"]),
+                    slope["h_pred"], ALLOWANCE_COLS),
+        v=decompose(pos["v"], dict(E0=window["V0"], E1=window["V1"],
+                                   E0m=window["V0m"], E1m=window["V1m"]),
+                    dict(C0=pos["v"]["C0"], C1=pos["v"]["C1"],
+                         black0=black["top"], black1=black["bottom"]),
+                    slope["v_pred"], (ALLOWANCE_COLS[0], ALLOWANCE_COLS[0])))
+    return residuals, verdict_of(residuals)
+
+
+def rejudge(record):
+    """A recorded state judged again by the decomposition as it stands, off
+    the raw fields the record keeps, so a run is not stuck with the verdicts
+    it was written under."""
+    return judge(record["positions"], record["window"], record["slope"], record["black_cols"])
+
+
+def verdict_of(residuals):
+    edges = (("L", residuals["h"]["near"]), ("R", residuals["h"]["far"]),
+             ("T", residuals["v"]["near"]), ("B", residuals["v"]["far"]))
+    if all(edge["verdict"] == "flush" for _, edge in edges):
+        return "ok"
+    return " ".join(f"{name}:{edge['verdict']}" for name, edge in edges
+                    if edge["verdict"] != "flush")
 
 
 # --- reading the frame ------------------------------------------------------------

@@ -78,7 +78,6 @@ PAN_UNITS = 8
 ZOOM_EXTENT, ZOOM_ORIGIN = 0.30, 0.35
 WALK_STEP, WALK_POINTS, WALK_WARMUP, WALK_FRAMES = 20, 12, 10, 3
 # card_edges.FLUSH at a near edge, plus PARITY at the far one.
-ALLOWANCE_COLS = (1, 2)
 PROFILE_DEPTH = 96
 
 
@@ -159,29 +158,12 @@ def analyse_default(output, regs, geometry, clip, window_measured=None):
     pos["v"].update(C0=None if v_near is None else fd.columns_to_units(v_near, v0, rows),
                     C1=None if v_far is None else fd.columns_to_units(v_far, v0, rows))
 
-    residuals = dict(
-        h=fd.decompose(pos["h"], dict(E0=window["E0"], E1=window["E1"],
-                                      E0m=window["E0m"], E1m=window["E1m"]),
-                       dict(C0=pos["h"]["C0"], C1=pos["h"]["C1"],
-                            black0=black["left"], black1=black["right"]), cols, ALLOWANCE_COLS),
-        v=fd.decompose(pos["v"], dict(E0=window["V0"], E1=window["V1"],
-                                      E0m=window["V0m"], E1m=window["V1m"]),
-                       dict(C0=pos["v"]["C0"], C1=pos["v"]["C1"],
-                            black0=black["top"], black1=black["bottom"]), rows,
-                       (ALLOWANCE_COLS[0], ALLOWANCE_COLS[0])))
-    return dict(window=window, slope=dict(h_pred=cols, v_pred=rows), positions=pos,
+    slope = dict(h_pred=cols, v_pred=rows)
+    residuals, verdict = fd.judge(pos, window, slope, black)
+    return dict(window=window, slope=slope, positions=pos,
                 card=dict(h=(h_near, h_far, h_off), v=(v_near, v_far, v_off)),
                 black_cols=black, profiles={k: [float(x) for x in v] for k, v in profiles.items()},
-                residuals=residuals)
-
-
-def verdict_of(residuals):
-    edges = (("L", residuals["h"]["near"]), ("R", residuals["h"]["far"]),
-             ("T", residuals["v"]["near"]), ("B", residuals["v"]["far"]))
-    if all(edge["verdict"] == "flush" for _, edge in edges):
-        return "ok"
-    return " ".join(f"{name}:{edge['verdict']}" for name, edge in edges
-                    if edge["verdict"] != "flush")
+                residuals=residuals, verdict=verdict)
 
 
 # --- the bench --------------------------------------------------------------------
@@ -337,7 +319,6 @@ def measure_state(ctx, mode, output):
                                          v_near=record["walk"]["v_near"]["strip_slope"],
                                          v_far=record["walk"]["v_far"]["strip_slope"])
         record.update(analysis)
-        record["verdict"] = verdict_of(analysis["residuals"])
     finally:
         gbs_unit.freeze(host, False)
         gbs_unit.reset_framing(host)

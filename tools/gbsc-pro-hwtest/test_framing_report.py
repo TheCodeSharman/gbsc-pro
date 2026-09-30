@@ -1,5 +1,6 @@
 """framing_report's table and fits, against synthetic records. No hardware."""
 
+import json
 import os
 import sys
 
@@ -64,3 +65,18 @@ def test_the_window_fit_separates_a_duration_from_a_fraction():
 def test_a_run_with_no_measured_window_reports_nothing_to_fit():
     records = [record("a", "1080p", 1600, 60.0, 160, None, 1556, None)]
     assert fr.window_fits(records) == {}
+
+
+def test_a_loaded_record_is_judged_by_the_current_decomposition(tmp_path):
+    # Written under a decomposition that filed a border off the frame as
+    # unmeasured. The raw record carries 9 black columns beside that border and
+    # a window opening 6.7 units early, which is the encoder's black.
+    r = record("X640 Y480 C256 F60", "1080p", 1600, 60.0, 160, 153.3, 1556, 1549.9,
+               verdict="L:unmeasured")
+    r["positions"]["h"]["C0"] = None
+    r["black_cols"]["left"] = 9
+    path = tmp_path / "run.jsonl"
+    path.write_text(json.dumps(r) + "\n")
+    loaded = fr.load(str(path))[0]
+    assert loaded["verdict"].startswith("L:dEncoder+clip")
+    assert loaded["residuals"]["h"]["near"]["clipped"]
