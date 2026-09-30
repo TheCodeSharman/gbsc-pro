@@ -176,9 +176,20 @@ and 5:4 with `/geometry` agreeing at each step, and the emitted frame went from
 **Two items act at once and without confirmation**: `Restart` resets the ESP and
 `Reset Settings` wipes the preferences and reboots.
 
-**Nothing calls the described menu from the remote**, so the chain above is still
-what runs. What remains is the panel's renderer, and switching the remote over a
-subtree at a time.
+`ir=1` routes the remote's seven menu keys to the described menu instead of
+`OSD_selectOption()`, which is how a subtree is judged on the remote before its
+branches are deleted. Off by default and not persisted; `/menu` reports which is
+driving as `remote`. Volume, Mute and Info are the chain's and are not reached
+while it is on.
+
+```sh
+curl 'http://<ip>/menu?ir=1'         # the remote drives the described menu
+curl 'http://<ip>/menu?ir=0'         # back to the chain
+```
+
+**The chain is still what the remote drives by default**, and nothing has been
+deleted from it. What remains is the panel's renderer, and switching the remote
+over a subtree at a time with `/menu?ir=1`.
 
 ### The television renderer, and four things about the STV9426
 
