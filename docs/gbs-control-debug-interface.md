@@ -27,6 +27,13 @@ Useful ones:
 | `/sc?,` | `printVideoTimings()` — live display timings to the web console (needs `GBS_DEBUG=1`) |
 | `/uc?1` | **reset to defaults and reboot — wipes the config** |
 | `/uc?f` `/uc?g` `/uc?p` `/uc?s` | scaling presets: 1280×960, 1280×720, 1280×1024, 1920×1080 |
+| `/uc?G` | cycle the shape the picture is shown in — Fill, 4:3, 16:9, 5:4 |
+
+`GET /menu?key=up|down|left|right|ok|menu|exit` drives the described menu and
+answers the page it would draw, so a menu change needs no remote. Behind
+`GBS_DEBUG`. A press queues its letter on the surface the item names, and the
+page returned WITH the press still shows the old value because `loop()` has not
+run it yet. `osd-menu.md`.
 
 ### Registers
 

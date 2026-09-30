@@ -64,37 +64,121 @@ The television side is worse: a row is a run of `OSD_c2`/`OSD_c3` character
 writes at fixed `P` positions, so removing an option's ON/OFF field leaves its
 label painted and the page unreflowed.
 
-**This is what blocks removing a user option**, rather than the option's own
-plumbing. `PalForce60` and `matchPresetSource` are both dead -- the first had its
-standard-byte swap deleted and the second never had a consumer at all, only a
-preferences byte, a websocket status bit, an IR toggle and two menu displays --
-and both still occupy an OLED state and a TV OSD row for that reason.
+**This is what blocks removing a user option** from the chain, rather than the
+option's own plumbing. `PalForce60` and `matchPresetSource` are both dead -- the
+first had its standard-byte swap deleted and the second never had a consumer at
+all, only a preferences byte, a websocket status bit, an IR toggle and two menu
+displays -- and both still occupy an OLED state and a TV OSD row for that reason.
+Neither is in the described tree, where leaving an item out is leaving a line
+out.
 
-Extracting the menus into a described structure is what makes such a removal
-mechanical. Until then, budget a remote for any menu change.
+**The same mechanism loses items as readily as it keeps them, and five are
+lost.** An item whose neighbours were never pointed at it is unreachable however
+live its option is, and nothing says so. Walking Up, Down and Ok from the root
+ring reaches every branch except these:
 
-## The described form, so far
+| branch | item | the only route left |
+|---|---|---|
+| 96 | Use upscaling (`preferScalingRgbhv`) | `/uc?x` |
+| 110 | Restart | `/uc?a` |
+| `OSD_Resolution_pass` | Pass Through | its Ok is commented out too |
+| 91 | Y gain | its Left and Right are commented out too |
+| 92 | Color | `/uc?V` and `/uc?R` |
 
-`src/osd/` holds the machinery, host-tested and reaching no device yet:
+Each has a live Up target and no inbound Down, which is what makes it invisible:
+the branch draws, decodes and looks entirely healthy. A described level is a ring
+by construction, so that class of loss cannot happen.
+
+## The described form
+
+`src/osd/` holds the machinery and the tree it describes:
 
 | class | holds |
 |---|---|
-| `MenuItem` | one node: label, kind, the `/uc?` letter an Ok sends, children, a value-text function |
-| `MenuPage` | one screen as text: the rows in view and which is selected |
+| `MenuItem` | one node: label, what Ok / Left / Right ask for, children, a value-text function |
+| `MenuCommand` | one action: a letter and which command surface it belongs to |
+| `MenuContext` | what a value-text reads -- the preferences and the engine |
+| `MenuTree` | the menu as data, one declaration per option |
+| `MenuPage` | one screen: the items in view and which is selected |
 | `MenuCursor` | where the remote is -- Up, Down, Ok, Menu as generic traversal, plus the three-row window |
 | `MenuRenderer` | the three calls a device supplies: begin, row, end |
-| `Menu` | a key in, a redraw and at most one command letter out |
+| `Menu` | a key in, a redraw and at most one command out |
 
-The bracketing in `MenuRenderer` is the panel's: it buffers a frame and flushes
-it, where the overlay writes characters as they arrive and ends with nothing to
-do. A host test substitutes a recording renderer and reads what the menu SAYS
-without either device.
+**An action is a letter AND a surface, because the board has two.** `/uc?`
+reaches `handleType2Command()` and `/sc?` the switch in `loop()`, and four of the
+letters the menu sends mean different things in each -- `Z` toggles matched
+presets on one and bumps `VDS_Y_OFST` on the other. So a letter alone does not
+say what an Ok asked for, and Left and Right carry one each: `ADC gain` steps
+through `/uc?` and toggles automatic gain through `/sc?`.
 
-**Nothing calls any of it**, so the chain below is still what runs. What is not
-started: the context a value-text function reads, the described tree itself, and
-the two renderers. The two obstacles that remain are the fixed `P` positions the
-television page paints at, which do not reflow, and the tree having to land in
-flash rather than RAM -- which is why `MenuItem`'s constructor is `constexpr`.
+**A page carries its items rather than their text**, because a row's current
+value is only knowable from a context and neither the cursor nor the page has
+one. The renderer resolves it at draw time. The bracketing in `MenuRenderer` is
+the panel's: it buffers a frame and flushes it, where the overlay writes
+characters as they arrive and ends with nothing to do. A host test substitutes a
+recording renderer and reads what the menu SAYS without either device.
+
+**The tree costs 1292 bytes of globals, and `constexpr` does not fix that.**
+Const data on this part lands in RAM rather than in flash, so a `constexpr`
+constructor buys constant initialisation and not placement; reaching flash would
+mean `PROGMEM` and a `pgm_read` at every access. Free heap at boot went 12784 to
+11128, which is above the 8000 the console's broadcast gate needs.
+
+### What is described, and what is not
+
+Described: the root ring, Output Resolution, Picture Settings, System Settings
+and Reset Settings.
+
+**Not described, because their items act by calling a sketch function rather
+than by asking for a letter** -- each waits on its action reaching one command
+surface:
+
+| subtree | what its items call |
+|---|---|
+| Input | `InputVGA_mode()` and its siblings |
+| Sv-Av InPutSet | the HC32 frame, and `SetReg` on the ADV7391 |
+| Move / Scale | `geometryControls` with the hold ramp |
+| R / G / B, Y gain | `R_VAL` and friends, then `Color_Conversion()` |
+| Sharpness | `VDS_PK_LB_GAIN` read back to decide what to draw, with no held field |
+
+`Pass Through` is deliberately absent rather than pending: it is not a
+resolution, `Tv5725::OutputChoice` says so in as many words, and the option
+behind it is the upscaling preference under System Settings. A second label for
+one option is a divergence with no reason.
+
+### `/menu` drives it, so a menu change needs no remote
+
+Behind `GBS_DEBUG`. `key` is `up`, `down`, `left`, `right`, `ok`, `menu` or
+`exit`, and the reply is the page the menu would draw.
+
+```sh
+curl 'http://<ip>/menu'              # the page, pressing nothing
+curl 'http://<ip>/menu?key=down'
+curl 'http://<ip>/menu?key=ok'
+```
+
+```json
+{"open":true,"depth":2,"asked":"G","queue":"uc",
+ "rows":[{"label":"Aspect","value":"Fill","selected":true},
+         {"label":"Use upscaling","value":"ON","selected":false},
+         {"label":"Deinterlace","value":"Adaptive","selected":false}]}
+```
+
+**The page returned WITH a press still shows the old value**, because the letter
+is queued for `loop()` and has not run yet. Read again to see the effect.
+
+A press queues its letter on the surface the item names, so this proves the tree
+against the handlers that already serve `/uc?` and `/sc?` rather than against a
+copy of them. Measured on the unit: four Oks on `Aspect` walked Fill, 4:3, 16:9
+and 5:4 with `/geometry` agreeing at each step, and the emitted frame went from
+1899x1078 filling to 1424x1078 with bars of 242 and 254.
+
+**Two items act at once and without confirmation**: `Restart` resets the ESP and
+`Reset Settings` wipes the preferences and reboots.
+
+**Nothing calls the described menu from the remote**, so the chain above is still
+what runs. What remains is the two renderers, whose obstacle is the fixed `P`
+positions the television page paints at -- they do not reflow.
 
 ## Info reports two things that are not what they look like
 
