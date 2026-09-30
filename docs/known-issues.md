@@ -53,6 +53,43 @@ sources untouched -- the RISC PC at 50.475 Hz and the Wii's 480p at 59.8 Hz. The
 monitor definition's 70 Hz and faster DMT modes now run 1024p, and at 70 Hz that
 is a WIDER raster than 1080p gave, 1447 against 1371.
 
+### Not every mode is unclipped at its default, and a stored framing hides which
+
+**The requirement is that EVERY mode comes up unclipped at its default framing.**
+What is measured is narrower than that: the DMT modes land on their published
+active region after
+`investigations/the-raster-bound-is-stored-as-a-proportion.md`, and that is one
+mechanism of one class of mode.
+
+Two things still clip, and neither is the default placement:
+
+**A STORED FRAMING OVERRIDES THE DEFAULT AND SURVIVES REBOOTS AND REFLASHES.**
+`/framing.txt` loads into `FramingTable` at boot and an entry keyed on the source
+wins for the life of that source. The bench RISC PC at 320x256@50 runs
+`311@50.00/686++ = 2625 6249 1250 8205` and is visibly cropped, where the DMT
+modes checked beside it have no entry and show the default.
+
+**A stored entry and a wrong default are indistinguishable from the picture**,
+which is what blocks the requirement rather than any one mode. Only
+`VideoPath::step()` writes the table and only when a press moved a window, so an
+entry is a real tuning, or pad presses from a `--source` pytest run, or a
+solve-narrowed framing that a later press stored -- that last being the bug
+above, so **an entry written before it may carry it**. `/sc?B` forgets the entry
+for the source in force and is destructive of a real tuning.
+
+What would settle it: a way to see the default with the stored entry set aside,
+or a rule that a stored entry may not crop below what the published raster
+states.
+
+**AND THE 15 kHz ACORN MODES' DEFAULT IS UNVERIFIED.** `CaptureWindow::place()`
+takes the mode's active region only where `SourceTiming` publishes one and falls
+back to `Axis::activeStart`/`activeExtent` -- 0.117/0.864 horizontal -- where it
+does not. Every mode verified was a DMT mode on the published path. The everyday
+source takes the fallback and no unclipped picture has been measured on one.
+
+`CARD` is the instrument: it carries a one-pixel green border flush to all four
+edges, so clipped-or-not is a yes/no on one frame. `ANIM OFF` first.
+
 ### A mode change into a falling-back resolution installs one extra divider
 
 `VideoPath::dividerCeilingForOutput()` solves the raster for the mode currently
