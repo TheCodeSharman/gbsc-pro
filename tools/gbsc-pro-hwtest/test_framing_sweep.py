@@ -74,3 +74,30 @@ def test_black_at_an_edge_is_counted_and_attributed():
     got = fs.analyse_default("1080p", REGS, GEOMETRY, clip)
     assert got["black_cols"]["left"] == 20
     assert got["residuals"]["h"]["near"]["verdict"] != "flush"
+
+
+# --- what refuses a record, and what names its frame ----------------------------------
+
+def test_a_status_counter_dithering_between_the_two_reads_does_not_refuse_the_record():
+    # The sync processor's counters read a unit either way on a healthy unit;
+    # they are measurements beside the clip, not the state the clip was taken in.
+    before = {"VDS_HSCALE": 848, "STATUS_SYNC_PROC_HTOTAL": 1444, "STATUS_SYNC_PROC_HLOW_LEN": 168}
+    after = dict(before, STATUS_SYNC_PROC_HTOTAL=1445, STATUS_SYNC_PROC_HLOW_LEN=169)
+    assert fs.moved_fields(before, after) == []
+
+
+def test_a_solved_register_moving_between_the_two_reads_is_named():
+    before = {"VDS_HSCALE": 848, "VDS_DIS_HB_SP": 160, "STATUS_SYNC_PROC_HTOTAL": 1444}
+    after = dict(before, VDS_HSCALE=850, VDS_DIS_HB_SP=162)
+    assert fs.moved_fields(before, after) == ["VDS_HSCALE", "VDS_DIS_HB_SP"]
+
+
+def test_each_record_of_a_repeated_state_keeps_its_own_frame(tmp_path, monkeypatch):
+    monkeypatch.setattr(fs.hdmi_capture, "write_png", lambda path, frame: None)
+    ctx = dict(png_dir=str(tmp_path))
+    first = fs.save_png(ctx, "X640 Y480 C256 F60", "1080p", "default", None)
+    second = fs.save_png(ctx, "X640 Y480 C256 F60", "1080p", "default", None)
+    other = fs.save_png(ctx, "X640 Y480 C256 F60", "1080p", "zoom", None)
+    assert first != second
+    assert first.endswith("X640-Y480-C256-F60-1080p-default.png")
+    assert other.endswith("X640-Y480-C256-F60-1080p-zoom.png")

@@ -290,8 +290,9 @@ def measure_state(ctx, mode, output):
         geometry = gbs_unit.get_json(host, "/geometry")[1]
         clip = judged_clip(dev)
         regs_after = gbs_unit.read_fields(host, FIELDS)
-        if regs != regs_after:
-            return refused("registers moved during the clip")
+        moved = moved_fields(regs, regs_after)
+        if moved:
+            return refused(f"registers moved during the clip: {', '.join(moved)}")
         record.update(registers=regs, geometry=geometry,
                       tier_answered=(published_rasters.tier_answered(ctx["rows"], geometry) or {}).get("name"))
         reference = hdmi_capture.luma(clip[0]).mean(axis=0)
@@ -325,9 +326,22 @@ def measure_state(ctx, mode, output):
     return record
 
 
+def moved_fields(before, after):
+    """The solved registers that read differently either side of the clip.
+    The sync processor's status counters are left out: they read a unit either
+    way on a healthy unit, and they measure the source rather than state the
+    clip was taken in."""
+    return [name for name in before
+            if not name.startswith("STATUS_") and before[name] != after.get(name)]
+
+
 def save_png(ctx, mode, output, which, frame):
     slug = re.sub(r"[^A-Za-z0-9]+", "-", mode).strip("-")
-    path = os.path.join(ctx["png_dir"], f"{slug}-{output}-{which}.png")
+    stem = f"{slug}-{output}-{which}"
+    taken = ctx.setdefault("frames_taken", {})
+    taken[stem] = taken.get(stem, 0) + 1
+    name = stem if taken[stem] == 1 else f"{stem}-{taken[stem]}"
+    path = os.path.join(ctx["png_dir"], f"{name}.png")
     hdmi_capture.write_png(path, frame)
     return os.path.relpath(path, HERE)
 
