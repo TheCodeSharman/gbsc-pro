@@ -69,6 +69,12 @@ wins for the life of that source. The bench RISC PC at 320x256@50 runs
 `311@50.00/686++ = 2625 6249 1250 8205` and is visibly cropped, where the DMT
 modes checked beside it have no entry and show the default.
 
+**`/sc?B` forgets the entry in RAM only.** Measured after an OTA flash: the
+320x256@50 entry the framing sweep had forgotten was back in force at boot, and
+`/framing.txt` still listed it, so a sweep's forgetting lasts until the next
+reset and a real tuning survives it. What the file holds is what the next boot
+runs, whatever `/sc?B` did.
+
 **A stored entry and a wrong default are indistinguishable from the picture**,
 which is what blocks the requirement rather than any one mode. Only
 `VideoPath::step()` writes the table and only when a press moved a window, so an
@@ -90,7 +96,17 @@ source takes the fallback and no unclipped picture has been measured on one.
 `CARD` is the instrument: it carries a one-pixel green border flush to all four
 edges, so clipped-or-not is a yes/no on one frame. `ANIM OFF` first.
 
-### An output resolution request can be lost, two ways
+### An output resolution request can be lost, two ways -- the first FIXED
+
+**The handler's branch is gone.** A resolution letter now calls
+`changeOutputResolution()` whatever `scalingRgbhv()` reads, and the IR
+handlers that re-applied the presets through the same branch call
+`applyPresets()` directly. `test_output_request.py` is the reproduction: a
+source mode change, then one request. On the previous build the request
+answered 200, the console printed nothing for it, and the raster stayed on
+1125 lines for the 30 s the test waits; on this one the raster carries the
+mode's lines within nine seconds. The IR path has no acceptance test, being
+reachable only from the remote. The second way, below, stands.
 
 `/uc?f g h j p s` sets `uopt->presetPreference` and then, in
 `handleType2Command()`, applies it through `changeOutputResolution()` only
@@ -337,6 +353,20 @@ What is not established is which stage emits it, and whether a sink that is
 slower to re-lock than this bench's shows it for longer.
 
 ### The transmitted window's start is per source, and no constant places it
+
+**SUPERSEDED IN PART: the start is placed per return of the sync pad, not per
+state.** The sink chooses it when `PAD_SYNC_OUT_ENZ` is driven again: the first
+non-black content at the aperture's edge where that is earlier than the sink's
+own position for the raster, else that position, and it remembers nothing
+between returns. A source `MODE` round trip never toggles the pad and never
+moves it; a pad toggle by hand re-places it every time. The same state read
+158.9 in Tier B and 172 in Tier C with every register identical, the first
+placed while a stored cropped framing put picture at the aperture's edge. With
+black at the edge the position is per raster -- 158.0 to 158.8 on three sources
+at 1600 x 1125 @ 60 Hz, 171.0 to 172.2 at 1916 x 1125 @ 50 Hz -- so an aperture
+placed AT it frames every source flush, since content cannot be earlier than
+the aperture. `investigations/the-encoder-places-its-window-when-the-sync-pad-returns.md`.
+The readings below stand as what each mode change placed.
 
 **The window the chain carries is the right WIDTH and starts where the
 encoder puts it, which is not where `OutputMode::solve()` puts it and is not
@@ -1591,6 +1621,18 @@ does; the right border falls off the end. Do not read it as the scaler placing
 the picture wrongly.
 
 ### The sync pad returns on a fixed delay, so the sink can lock to a window a later solve moves
+
+**Measured on every mode change of a 28-mode sweep**: the acquired transition
+drives the pad back 0.18 to 0.42 s after it was taken away, before the release
+at 300 ms, before the frame time lock's first rate match moves the display
+clock and before the sampling phase is chosen, so the sink places its window
+from a line the engine is still solving -- which is what makes the placement
+differ between two arrivals at one state. A source `MODE` round trip never
+toggles the pad, so the sweep's re-lock re-acquired the capture and left the
+sink's window where the transition put it. One rate-only arm, 360x480 at
+60.15 Hz, held the pad away for 15.3 s: the release runs only on a detection
+pass and none ran for that long, a dark panel on a change of rate alone.
+`investigations/the-encoder-places-its-window-when-the-sync-pad-returns.md`.
 
 The sink fixes its active window WHEN IT ACQUIRES and holds it until it acquires
 again, taking the origin from our blanking at that moment --

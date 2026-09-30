@@ -1,5 +1,16 @@
 # The encoder's window is placed per source, and the capture lands two pixels early
 
+**The placement is per return of the sync pad, not per state, and the rows
+below carry the window each mode change placed.** The same state reads 158.9
+in Tier B and 172 in Tier C with every register identical: the sink chooses the
+window's start when `PAD_SYNC_OUT_ENZ` is driven again, from the first non-black
+content at the aperture's edge if that is earlier than its own position for the
+raster, and a source `MODE` round trip does not toggle the pad and does not move
+it. [the-encoder-places-its-window-when-the-sync-pad-returns.md](the-encoder-places-its-window-when-the-sync-pad-returns.md).
+What stands here unchanged is the width, the capture side and the black counts;
+what a "per (source, output) state" repeat measured was the same transition
+taken the same way.
+
 Every black column at an edge of the emitted frame has one of four owners, and
 `tools/gbsc-pro-hwtest/framing_sweep.py` reads all four on one frame: the
 encoder's window E (measured by walking our own blanking into it), the model of
@@ -244,4 +255,68 @@ orders the sixteen; each repeats to under half a unit.
 and `framing_report.py` renders any of them. `docs/known-issues.md` carries
 what is open.
 
+## Tier C: the 28 AKF50 modes into 1080p, full probes
 
+Every mode the stock monitor definition offers, in the order `MODES` lists
+them, one mode change each, the same instrument. Full probes rather than the
+plan's `none`, because without the walks the card's columns are converted
+through the model's window, and Tier B had measured that model wrong by up to
+seven units, which would have landed inside the `dCapture` column this tier
+exists to read.
+
+| mode | output | T | Hz | black L/R/T/B | L: dEnc dModel dPlace dCap | R: dEnc dModel dPlace dCap | expected L/R | verdict |
+|---|---|---|---|---|---|---|---|---|
+| X240 Y352 C256 F70 | 1080p>1024p | 1448 | 70.00 | 20/0/1/3 |   +0.2   +0.0   +0.0  +14.1 |   -0.1   +1.0   -0.7      - | +0.0/+0.0 | L:dCapture R:clipped T:dEncoder B:dCapture |
+| X320 Y250 C256 F50 | 1080p | 1916 | 50.08 | 7/15/15/10 |  -11.7   +0.0   +0.2  +21.7 |  +11.9   +1.0   -2.7      - | +0.0/+0.0 | L:dCapture R:dEncoder+clip T:dCapture B:dCapture |
+| X320 Y256 C256 F50 | 1080p | 1916 | 50.08 | 7/15/2/0 |  -11.1   +0.0   +0.2  +21.2 |  +11.8   +1.0   -2.7      - | +0.0/+0.0 | L:dCapture R:dEncoder+clip T:dCapture |
+| X320 Y480 C256 F75 | 1080p>1024p | 1350 | 75.00 | 0/18/1/1 |   -5.8   -1.0   +0.5   +7.7 |   +9.1   +2.0   -1.4      - | +0.0/+0.0 | L:dCapture R:dEncoder+clip T:dEncoder B:dCapture |
+| X320 Y480 C256 F73 | 1080p>1024p | 1392 | 72.81 | 0/5/1/1 |   +1.3   +0.0   +0.2      - |   +1.1   +1.0   -1.7   +7.2 | +13.2/+13.2 | L:clipped R:dCapture T:dEncoder B:dCapture |
+| X320 Y480 C256 F60 | 1080p | 1600 | 60.00 | 18/0/0/0 |   +1.7   +0.0   +0.4  +13.8 |   +0.3   +1.0   -1.3      - | +17.4/+17.4 | L:dCapture R:clipped B:dCapture |
+| X360 Y480 C256 F60 | 1080p | 1600 | 60.00 | 96/96/0/0 |  +17.7   +0.0   +0.4  +83.9 |  -18.1   +1.0   -1.3 +134.3 | -99.2/+116.0 | L:dCapture R:dCapture B:dCapture |
+| X384 Y288 C256 F70 | 1080p>1024p | 1446 | 70.08 | 11/0/1/4 |   +2.3   -1.0   +0.7   +6.7 |   -0.9   +2.0   -1.1      - | +0.0/+0.0 | L:dCapture R:clipped T:dCapture B:dEncoder |
+| X480 Y352 C256 F70 | 1080p>1024p | 1446 | 70.08 | 1/0/1/3 |   +2.4   -1.0   +0.7      - |   -0.9   +2.0   -1.1      - | +136.9/-136.9 | L:clipped R:clipped T:clipped B:dModelApplied+clip |
+| X640 Y200 C256 F60 | 1080p | 1604 | 59.87 | 13/0/2/0 |   +2.8   -1.0   +0.6   +9.7 |   -1.6   +2.0   -1.0      - | +0.0/+0.0 | L:dCapture R:clipped T:dCapture B:dCapture |
+| X640 Y250 C256 F50 | 1080p | 1916 | 50.08 | 5/15/15/10 |  -10.9   +0.0   +0.2  +17.7 |  +11.1   +1.0   -2.7      - | -5.2/-5.2 | L:dCapture R:dEncoder+clip T:dCapture B:dCapture |
+| X640 Y256 C256 F50 | 1080p | 1916 | 50.08 | 5/15/2/0 |  -10.9   +0.0   +0.2  +17.6 |  +12.8   +1.0   -2.7      - | -5.2/-5.2 | L:dCapture R:dEncoder+clip T:dCapture |
+| X640 Y352 C256 F60 | 1080p | 1598 | 60.10 | 0/0/2/0 |   -0.8   +0.0   +0.4      - |   +1.8   +0.0   -0.2      - | +24.2/-7.9 | L:clipped R:clipped T:dCapture B:clipped |
+| X640 Y480 C256 F75 | 1080p>1024p | 1350 | 75.00 | 0/34/1/1 |   +1.1   -1.0   +0.5      - |   +0.6   +2.0   -1.4  +20.0 | +22.4/+22.4 | L:clipped R:dCapture T:dEncoder B:dCapture |
+| X640 Y480 C256 F73 | 1080p>1024p | 1392 | 72.81 | 0/8/1/1 |   +0.7   +0.0   +0.2      - |   +0.8   +1.0   -1.7   +7.5 | +9.9/+9.9 | L:clipped R:dCapture T:dEncoder B:dEncoder |
+| X640 Y480 C256 F60 | 1080p | 1600 | 60.00 | 10/0/0/2 |   +7.7   +0.0   +0.4      - |   -6.9   +1.0   -1.3   +9.7 | +13.1/+13.1 | L:dEncoder+clip R:dCapture T:clipped B:dCapture |
+| X640 Y512 C256 F50 | 1080p | 1914 | 50.16 | 0/6/0/0 |   -4.3   +0.0   +0.4   +5.5 |   +5.1   +1.0   -1.3      - | +0.0/+0.0 | L:dCapture R:dEncoder+clip B:dEncoder |
+| X768 Y288 C256 F50 | 1080p | 1916 | 50.08 | 1/0/19/0 |   +0.9   +0.0   +0.2      - |   -1.0   +1.0   -2.7      - | +162.1/-172.6 | L:clipped R:clipped T:dPlace+clip B:clipped |
+| X800 Y600 C256 F60 | 1080p | 1592 | 60.32 | 3/3/0/0 |   +0.1   +0.0   +0.1   +3.2 |   +0.0   +2.0   -1.4      - | +0.0/+0.0 | L:dCapture R:dModelApplied+clip B:dCapture |
+| X800 Y600 C256 F56 | 1080p | 1706 | 56.25 | 8/10/0/0 |   +6.6   +0.0   +0.2      - |   -5.6   +0.0   -1.1  +17.2 | +18.6/+18.6 | L:dEncoder+clip R:dCapture B:dCapture |
+| X896 Y352 C256 F60 | 1080p | 1602 | 59.94 | 15/0/2/0 |   +1.5   -1.0   +0.5  +11.7 |   -0.6   +1.0   -0.6      - | +0.0/+0.0 | L:dCapture R:clipped T:dCapture B:clipped |
+| X1056 Y250 C256 F50 | 1080p | 1916 | 50.08 | 0/1/15/10 |   +0.0   +0.0   +0.2      - |   -0.1   +1.0   -2.7      - | +76.7/-90.7 | L:clipped R:clipped T:dCapture B:dEncoder |
+| X1056 Y256 C256 F50 | 1080p | 1916 | 50.08 | 0/1/2/0 |   +0.0   +0.0   +0.2      - |   +0.8   +1.0   -2.7      - | +76.7/-90.7 | L:clipped R:clipped T:dCapture B:dCapture |
+| X1280 Y480 C256 F75 | 1080p>1024p | 1350 | 75.00 | 9/33/1/1 |   +2.3   -1.0   +0.5      - |   -0.7   +2.0   -1.4  +20.5 | +20.8/+20.8 | L:dEncoder+clip R:dCapture T:dEncoder B:dEncoder |
+| X1280 Y480 C256 F73 | 1080p>1024p | 1392 | 72.81 | 0/10/1/1 |   +0.7   +0.0   +0.2      - |   +1.1   +1.0   -1.7   +8.2 | +8.2/+8.2 | L:clipped R:dCapture T:dCapture B:dCapture |
+| X1280 Y480 C256 F60 | 1080p | 1600 | 60.00 | 13/0/0/2 |  +10.0   +0.0   +0.4      - |   -9.4   +1.0   -1.3  +11.3 | +13.1/+13.1 | L:dEncoder+clip R:dCapture T:clipped B:dCapture |
+| X1600 Y600 C256 F60 | 1080p | 1592 | 60.32 | 3/0/0/0 |   +2.6   +0.0   +0.1      - |   -1.9   +2.0   -1.4      - | +0.0/+0.0 | L:dEncoder+clip R:clipped B:dCapture |
+| X1600 Y600 C256 F56 | 1080p | 1706 | 56.25 | 9/14/0/0 |   +6.6   +0.0   +0.2      - |   -5.3   +0.0   -1.1  +19.6 | +18.6/+18.6 | L:dEncoder+clip R:dCapture B:dCapture |
+
+Units and columns as above; `expected L/R` is the mode file's own prediction
+from `published_rasters.py`, in raster units.
+
+- **The width holds on all 28**: `T x carriedPx / totalPx` to within 1.4 units
+  at 1080p and one to three units wide at 1024p.
+- **Modes sharing an output raster land together when the same thing is at
+  the aperture's edge.** The seven 312-line modes run T 1916: the four with
+  captured black at the edge read 170.9 to 171.7, the three whose picture
+  fills the aperture, 768x288 and the 1056-wide pair, read 159.1 to 160.0.
+  The nine at 449 lines and 70 Hz fall back to 1024p and read 331.6 to 333.8.
+- **The mode file's layout predictions are read back where a border is on the
+  frame.** 640x480@75 reads +20.0 at the right against +22.4 expected; 1280x480
+  @75 +20.5 against +20.8; 800x600@56 +17.2 against +18.6; the 72.8 Hz trio
+  +7.2, +7.5 and +8.2 against +13.2, +9.9 and +8.2; 320x480@60 +13.8 against
+  +17.4. The two-pixel remainder is what separates them.
+- **The different-layout class is as predicted**: 360x480@60 shows 96 black
+  columns each side, its picture 84 and 134 units inside the window against the
+  -99 and +116 the file predicts for the 640x480 row that answers it; 768x288,
+  the 1056-wide pair and 480x352@70 are clipped on both sides, the row's
+  picture area being narrower than theirs.
+- **Vertically** the 250-line modes show the 15 and 10 rows the file predicts
+  for the 256-line row that answers them; 768x288 loses 19 rows at the top.
+- **What the record cannot say** is the sink's own position for each raster,
+  since a transition places the window from a solve in progress; that needs
+  the pad toggle the page above describes.
