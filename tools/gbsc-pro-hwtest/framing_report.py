@@ -168,14 +168,14 @@ def main():
         print("|---|---|---|---|---|---|---|---|---|")
         for record in records:
             if "skipped" in record:
-                print(f"| {record['source']} | {record['output']} | | | | | | | SKIP {record['skipped']} |")
+                print(f"| {record['source']} | {shown_output(record)} | | | | | | | SKIP {record['skipped']} |")
                 continue
             black = record["black_cols"]
             h = record["residuals"]["h"]
             rate = record["geometry"]["lineRateHz"] / (record["registers"]["STATUS_SYNC_PROC_VTOTAL"] + 1)
             expected = expected_units(record)
             exp = f"{expected['left']:+.1f}/{expected['right']:+.1f}" if expected else "-"
-            print(f"| {record['source']} | {record['output']} | {record['window']['T']} | {rate:.2f} | "
+            print(f"| {record['source']} | {shown_output(record)} | {record['window']['T']} | {rate:.2f} | "
                   f"{black['left']}/{black['right']}/{black['top']}/{black['bottom']} | "
                   f"{terms(h['near'])} | {terms(h['far'])} | {exp} | {record['verdict']} |")
     else:
