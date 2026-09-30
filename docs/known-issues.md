@@ -699,13 +699,16 @@ goes the wrong way**, 2640 giving 72.7% where the measurement wants more than
 `investigations/the-picture-falls-short-of-the-transmitted-window.md` carries the
 whole of it, including what a second output resolution would say.
 
-### The sync polarity cannot separate two rasters sharing a key
+### The sync polarity separates no two AKF50 rasters sharing a key
 
-**Every group that collides on (frame, field rate, sync duty) is uniform in
-polarity**, so adding it to `SourceKey`'s match changes nothing: 41 rows across
-CEA, DMT and AKF50 resolve to 20 distinct keys with polarity in the key and 20
-without it. The seven 15.6 kHz PAL AKF50 modes are all `+/+`, the five 525-line
-ones all `-/-`.
+`SourceTiming::lookUp()` reads the polarity pair -- the earliest row matching
+frame, rate, sync width AND polarity, falling back to the earliest matching the
+first three -- and on the AKF50 set that changes nothing. **Every group that
+collides on (frame, field rate, sync duty) is uniform in polarity**: the AKF50
+rows resolve to the same keys with polarity as without. The seven 15.6 kHz PAL
+modes are all `+/+`, the five 525-line ones all `-/-`. What the pair does
+separate is a mode file that states different polarities for two layouts on one
+key, and DMT's own 640x350@85 (+H -V) / 640x400@85 (-H +V).
 
 **A MONITOR DEFINITION'S `sync_pol` IS A BITFIELD OVER AN ACTIVE-HIGH DEFAULT**,
 bit 0 inverting hsync and bit 1 inverting vsync. Documented in two places and

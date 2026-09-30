@@ -240,13 +240,18 @@ of the array order rather than a stated rule.
 The 525-line 60 Hz pair above is the case that would collide, and today it does
 not, because the sync width separates them well inside `SyncDutyTolerance`.
 
-**The polarities are in the key and not yet in the table.**
-`SourceTiming::lookUp()` takes the whole key and matches a row on the count, the
-rate and the sync width, so a source is told from a row by three of the five
-terms it is identified by. The standards publish the polarity pair, and matching
-on it would let two rows sharing all three be told apart -- which is the
-discrimination the vertical blanking split needs and the part cannot supply
-directly.
+**The polarities are in the key and in the table, and the lookup reads them
+in two passes.** Every row states its polarity pair -- CEA and DMT from the
+standard, the AKF50 rows from the monitor definition's `sync_pol`.
+`SourceTiming::lookUp()` first takes the earliest row, in authority order, that
+matches the count, the rate, the sync width AND the polarity pair; only where
+none does -- the key states no polarity, on composite sync, or no row carries
+the pair -- does it fall back to the earliest row matching the first three. So a
+source that matched before still matches, and two rows sharing all three terms
+are told apart: DMT 640x350@85 (+H -V) and 640x400@85 (-H +V) are the pair the
+standard keyed on polarity, and they are the two rows this separates today. On
+the AKF50 set it separates nothing, because every colliding family there shares
+one `sync_pol` (`known-issues.md`, the polarity entry).
 
 ## What this does not explain
 
