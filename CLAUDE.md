@@ -152,19 +152,33 @@ it, "the feature is missing" and "the feature is there and broken" are
 indistinguishable from this end, and a session has been spent inventing probes
 to guess between them.
 
-**The machine runs `RetroScaler-Acorn.mdf`, not a stock definition** -- 80 modes,
-15.6 kHz to 1080p, so `MODES` lists 1280x720 and 1920x1080. Only 17 modes carry a
-name and the rest are nameless, which is why the desktop's monitor icon lists
-nothing; a nameless mode is still reachable by `MODE`. `docs/bench-sources.md`.
+**WHICH MONITOR DEFINITION IS LOADED IS WHAT `MODES` SAYS, AND NOTHING ELSE
+SAYS IT.** 28 modes at C256, none above 37.9 kHz, is the stock AKF50; 80 modes
+reaching 1280x720 and 1920x1080 is `RetroScaler-Acorn.mdf`. ModeServ has no
+command to switch, so a change of file is a bench trip, and
+`framing_sweep.py --mdf` refuses a file `MODES` does not match, so a measurement
+is never scored against timings the machine is not running. A nameless mode is
+still reachable by `MODE`. `docs/bench-sources.md`.
 
-**IT CARRIES THE VESA DMT SET, EXACTLY AS THE STANDARD STATES IT, AND THAT IS
-THE ACCEPTANCE SET.** Acorn's own entries are not conformant even where they
-carry a VESA resolution and rate -- the sync widths and porches differ, and
-where one collides with a DMT entry on resolution and field rate the Acorn one
-gives way, because `MODE` picks by X/Y/F alone and the conformant timing is what
-the engine's published-raster arithmetic is entitled to assume. A source running
-one of these has a raster the engine can derive a capture window from, which is
-what makes a framing testable rather than merely plausible.
+**THE STOCK AKF50 IS THE ACCEPTANCE SET FOR DEFAULT FRAMING, because it is what
+a stock RISC PC emits.** Its VESA-rate entries keep VESA's line total and
+(nearly) its sync width but start the display a few pixels earlier and fill the
+difference with black border -- 640x480@60 at 138 of 800 against DMT's 144,
+800x600@56 at 190 against 200, 640x480@75 at 170 against 184. A border is black
+active video, indistinguishable from porch on the wire, so the chip forms the
+same key and places the picture where DMT puts it, 6 / 10 / 14 px off. Moving
+pixels between porch and border on its own moves nothing: the display starts at
+sync + porch + border whatever the split, and the card's frame marks the
+display, not the border. `published_rasters.py <file>` gives the expected offset
+per mode, and a measured offset equal to it is by design.
+
+**`RetroScaler-Acorn.mdf` CARRIES THE VESA DMT SET, EXACTLY AS THE STANDARD
+STATES IT**, and where an Acorn entry collides with a DMT one on resolution and
+field rate the Acorn one gives way, because `MODE` picks by X/Y/F alone. A
+source running a DMT entry has the raster the engine's published-raster
+arithmetic assumes, which is what makes a framing testable rather than merely
+plausible -- and is why a measurement taken under that file does not carry the
+offsets above.
 
 `MODE` replies with the mode read back from the hardware, never with the
 request, so a monitor definition that cannot do what was asked does not look
