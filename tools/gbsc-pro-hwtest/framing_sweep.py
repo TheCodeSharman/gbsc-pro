@@ -22,6 +22,11 @@ beside it, and framing_report.py turns a run into the table. Per state:
           register walked INTO the picture with automation frozen; the
           differenced strip and the black count are both recorded per step
           and each is fitted for where the encoder's window really is.
+    sink  the capture panned earlier so the source's own blanking is at the
+          aperture's edge, the sync pad taken away and returned -- the one
+          re-lock that places the sink's window afresh -- and the horizontal
+          aperture walked into the picture: where the sink puts its window
+          for the RASTER, with nothing at the edge to pull it earlier.
 
 --mdf is the monitor definition the source is running, checked against MODES;
 each mode's EXPECTED placement -- the SourceTiming row its key lands on,
@@ -56,7 +61,7 @@ import transmitted_window
 HERE = os.path.dirname(os.path.abspath(__file__))
 MODESERV = "192.168.88.10"
 OUTPUTS = tuple(gbs_unit.OUTPUT_COMMANDS)
-PROBE_LEVELS = ("none", "pan", "full")
+PROBE_LEVELS = ("none", "pan", "full", "sink")
 
 TIERS = {
     "A": dict(modes=["X640 Y480 C256 F60", "X800 Y600 C256 F60"],
@@ -65,7 +70,8 @@ TIERS = {
                      "X800 Y600 C256 F56", "X800 Y600 C256 F60",
                      "X320 Y256 C256 F50", "X640 Y512 C256 F50", "X640 Y200 C256 F60"],
               outputs=["1080p", "720p"], probes="full"),
-    "C": dict(modes=None, outputs=["1080p"], probes="none"),
+    "C": dict(modes=None, outputs=["1080p"], probes="full"),
+    "S": dict(modes=None, outputs=["1080p", "720p"], probes="sink"),
 }
 
 FIELDS = full_margins.FIELDS + ["VDS_HB_SP", "VDS_HB_ST", "VDS_VB_SP", "VDS_VB_ST",
@@ -80,6 +86,13 @@ ZOOM_EXTENT, ZOOM_ORIGIN = 0.30, 0.35
 WALK_STEP, WALK_POINTS, WALK_WARMUP, WALK_FRAMES = 20, 12, 10, 3
 # card_edges.FLUSH at a near edge, plus PARITY at the far one.
 PROFILE_DEPTH = 96
+# The sink probe: the capture earlier by this much, so the source's own back
+# porch or border is what the aperture's edge carries, and how long the sync
+# pad is away. Any length re-places the window; this one is the length the
+# investigation measured with.
+SINK_PAN_UNITS = -24
+SINK_DROP_S = 1.5
+SYNC_PAD = "PAD_SYNC_OUT_ENZ"
 
 
 # --- the mode file ---------------------------------------------------------------
@@ -164,6 +177,24 @@ def analyse_default(output, regs, geometry, clip, window_measured=None):
                 card=dict(h=(h_near, h_far, h_off), v=(v_near, v_far, v_off)),
                 black_cols=black, profiles={k: [float(x) for x in v] for k, v in profiles.items()},
                 residuals=residuals, verdict=verdict)
+
+
+def analyse_sink(output, regs, geometry, clip, walk):
+    """The sink's window off the two horizontal walks, beside the raster it
+    was placed on and the black at the frame's left edge -- which is what says
+    the content was not what placed it."""
+    carried = fd.carried_output(regs) or output
+    total = regs["VDS_HSYNC_RST"] + 1
+    window = fd.predicted_window(carried, total, fd.field_rate_of(regs, geometry))
+    measured, instruments = fd.measured_window(walk)
+    window.update(carried=carried, A0=regs["VDS_DIS_HB_SP"], A1=regs["VDS_DIS_HB_ST"],
+                  E0=measured["E0"], E1=measured["E1"],
+                  instruments=dict(E0=instruments["E0"], E1=instruments["E1"]))
+    # The median over the clip: the sink re-acquires for seconds after a pad
+    # toggle and a frame either side of that is not the settled picture.
+    counts = sorted(fd.black_extent(fd.edge_profiles(hdmi_capture.luma(frame), PROFILE_DEPTH)["left"])
+                    for frame in clip)
+    return dict(window=window, black_left=counts[len(counts) // 2])
 
 
 # --- the bench --------------------------------------------------------------------
@@ -265,6 +296,45 @@ def walks(host, dev, regs, slope):
         v_far=walk_edge(host, dev, spec_map, "VDS_DIS_VB_ST", regs["VDS_DIS_VB_ST"], False, True, rows))
 
 
+def pad_toggle(host, spec_map, drop_s=SINK_DROP_S):
+    """Take the output sync pad away and return it. The sink places its window
+    afresh at every return, from what the line carries at that moment."""
+    setfield.apply(host, SYNC_PAD, spec_map[SYNC_PAD], 1, False)
+    try:
+        time.sleep(drop_s)
+    finally:
+        setfield.apply(host, SYNC_PAD, spec_map[SYNC_PAD], 0, False)
+
+
+def sink_probe(ctx, mode, output, geometry):
+    """Where the sink puts its window for the raster. Black at the aperture's
+    edge first, so nothing pulls the window earlier; then the pad toggled and
+    the horizontal window walked, frozen throughout."""
+    host, dev = ctx["host"], ctx["dev"]
+    spec_map = setfield.load_map()
+    gbs_unit.freeze(host, False)
+    landed = gbs_unit.framing_by(host, "oh", SINK_PAN_UNITS)
+    gbs_unit.freeze(host, True)
+    if not landed:
+        return dict(skipped="the pan never landed")
+    regs = gbs_unit.read_fields(host, FIELDS)
+    pad_toggle(host, spec_map)
+    clip = judged_clip(dev)
+    moved = moved_fields(regs, gbs_unit.read_fields(host, FIELDS))
+    if moved:
+        return dict(skipped=f"registers moved during the clip: {', '.join(moved)}")
+    cols, _rows = fd.slope_predicted(fd.carried_output(regs) or output, regs["VDS_HSYNC_RST"] + 1)
+    walk = transmitted_window.read_at_slope(dict(
+        h_near=walk_edge(host, dev, spec_map, "VDS_DIS_HB_SP", regs["VDS_DIS_HB_SP"], True, False, cols),
+        h_far=walk_edge(host, dev, spec_map, "VDS_DIS_HB_ST", regs["VDS_DIS_HB_ST"], False, False, cols)),
+        cols)
+    return dict(pan=dict(asked=SINK_PAN_UNITS, moved_units=landed["oh"] - geometry["oh"],
+                         framing=gbs_unit.framing_of(landed)),
+                drop_s=SINK_DROP_S, registers=regs, walk=walk,
+                clip=save_png(ctx, mode, output, "sink", clip[0]),
+                **analyse_sink(output, regs, landed, clip, walk))
+
+
 def measure_state(ctx, mode, output):
     host, where, dev = ctx["host"], ctx["modeserv"], ctx["dev"]
     record = dict(at=datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
@@ -321,6 +391,8 @@ def measure_state(ctx, mode, output):
                                          h_far=record["walk"]["h_far"]["strip_slope"],
                                          v_near=record["walk"]["v_near"]["strip_slope"],
                                          v_far=record["walk"]["v_far"]["strip_slope"])
+        if ctx["probes"] == "sink":
+            record["sink"] = sink_probe(ctx, mode, output, geometry)
         record.update(analysis)
     finally:
         gbs_unit.freeze(host, False)
@@ -358,6 +430,19 @@ def jsonable(value):
     raise TypeError(type(value).__name__)
 
 
+def unit_or_dash(value):
+    return "-" if value is None else f"{value:.1f}"
+
+
+def sink_summary(sink):
+    if not sink:
+        return ""
+    if "skipped" in sink:
+        return f"  sink SKIP {sink['skipped']}"
+    return (f"  sink E0 {unit_or_dash(sink['window']['E0'])} E1 {unit_or_dash(sink['window']['E1'])}"
+            f" black L{sink['black_left']:3} pan {sink['pan']['moved_units']:+d}")
+
+
 def summary_line(record):
     if "skipped" in record:
         return f"  {record['source']:24} {record['output']:6} SKIP  {record['skipped']}"
@@ -367,7 +452,8 @@ def summary_line(record):
             f"  black L{black['left']:3} R{black['right']:3} T{black['top']:3} B{black['bottom']:3}"
             f"  answered {record.get('tier_answered')}"
             f"  {record['verdict']}"
-            f"   near {h['near']['verdict']}/{v['near']['verdict']} far {h['far']['verdict']}/{v['far']['verdict']}")
+            f"   near {h['near']['verdict']}/{v['near']['verdict']} far {h['far']['verdict']}/{v['far']['verdict']}"
+            + sink_summary(record.get("sink")))
 
 
 def main():

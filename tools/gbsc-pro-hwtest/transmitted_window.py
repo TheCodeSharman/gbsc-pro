@@ -183,6 +183,58 @@ OUTLIER_PX = 4.0
 MIN_SLOPE_PX_PER_UNIT = 0.25
 
 
+# Columns the count has to climb above its first reading before a step is
+# read as the blanking's own reach. Below that the blanking is moving through
+# black the source put at the edge, and the count is the content's column.
+PAST_FLAT_COLS = 4
+# An edge is the steps' agreement: this many of them within AGREE_UNITS of the
+# median, or the walk did not reach the content and there is no edge.
+AGREE_STEPS = 3
+AGREE_UNITS = 2.0
+
+
+def crossing_past_flat(seen, slope, near=True, flat=None, past_flat=True):
+    """The window's edge off a walk, at the slope the raster predicts.
+
+    Each step says on its own where the edge is -- register less count over
+    slope, plus from the far side -- and the median of them is what a step
+    landing in one of the card's own black bands cannot move. With the
+    source's own black at the edge a count says nothing until the blanking
+    has passed the content, so the steps within PAST_FLAT_COLS of the first
+    reading (or of `flat`) are left out; a strip is only ever found in
+    content, so a strip walk passes `past_flat=False`.
+    Returns (edge, slope, steps agreeing, spread of the steps' answers), and
+    no edge unless AGREE_STEPS of them agree."""
+    if not seen or not slope:
+        return None, None, 0, 0.0
+    if past_flat:
+        level = seen[0][1] if flat is None else flat
+        seen = [(value, at) for value, at in seen if at > level + PAST_FLAT_COLS]
+    if len(seen) < AGREE_STEPS:
+        return None, None, len(seen), 0.0
+    edges = sorted((value - at / slope) if near else (value + at / slope) for value, at in seen)
+    middle = len(edges) // 2
+    edge = edges[middle] if len(edges) % 2 else (edges[middle - 1] + edges[middle]) / 2
+    agreeing = [e for e in edges if abs(e - edge) <= AGREE_UNITS]
+    if len(agreeing) < AGREE_STEPS:
+        return None, None, 0, float(edges[-1] - edges[0])
+    return float(edge), slope, len(agreeing), float(edges[-1] - edges[0])
+
+
+def read_at_slope(walks, slope):
+    """Every walk's two instruments read at the raster's slope: the strips as
+    found, the black counts from where they climb. For walks taken with the
+    source's own black at the edge, where the strip is blind and the count's
+    flat start is not the edge."""
+    for name, walk in walks.items():
+        near = name.endswith("near")
+        walk["strip_zero"], walk["strip_slope"] = crossing_past_flat(
+            walk.get("strips") or [], slope, near=near, past_flat=False)[:2]
+        walk["black_zero"], walk["black_slope"] = crossing_past_flat(
+            walk.get("blacks") or [], slope, near=near)[:2]
+    return walks
+
+
 def crossing(seen):
     """Where the blanking reaches the frame's edge, and emitted px per unit."""
     if len(seen) < 3:

@@ -151,3 +151,91 @@ def test_the_acquisition_view_does_not_claim_a_raster_across_a_skipped_state():
     rows = fr.acquisitions(records)
     assert [row["source"] for row in rows] == ["a", "c"]
     assert rows[1]["from_T"] is None
+
+
+# --- the sink view --------------------------------------------------------------------
+
+def sink_record(source, output, total, rate, e0, e1, black_left=30, moved=-24):
+    """A state whose sink probe ran: the capture panned into the source's
+    blanking, the pad toggled, the horizontal window walked."""
+    stop = 160 + total * 1920 // 2200
+    r = record(source, output, total, rate, 160, None, stop, None)
+    r["sink"] = dict(pan=dict(asked=-24, moved_units=moved), black_left=black_left,
+                     window=dict(T=total, carried=output, A0=160, A1=stop, E0m=160, E1m=stop,
+                                 E0=e0, E1=e1, clock_hz=total * 1125 * rate,
+                                 instruments=dict(E0="strip", E1="strip")))
+    return r
+
+
+def test_the_sink_view_reads_each_window_against_the_modes_sync_and_porch():
+    rows = fr.sink_rows([sink_record("a", "1080p", 1916, 50.08, 171.6, 1844.5)])
+    assert rows[0]["T"] == 1916
+    assert abs(rows[0]["delay"] - (171.6 - 140)) < 1e-9
+    assert abs(rows[0]["width_off"] - ((1844.5 - 171.6) - 1916 * 1920 / 2200)) < 1e-9
+    assert rows[0]["own_position"]
+
+
+def test_a_sink_row_with_no_black_at_the_edge_is_not_the_sinks_own_position():
+    # The sink pulls the window to content that is earlier than its own
+    # position, so a frame with the picture at column 0 measured the content.
+    rows = fr.sink_rows([sink_record("a", "1080p", 1916, 50.08, 158.9, 1830.0, black_left=0)])
+    assert not rows[0]["own_position"]
+
+
+def test_the_sink_fits_run_on_the_sink_windows_and_the_rows_group_by_raster():
+    records = [sink_record("a", "1080p", 1600, 60.0, 158.4, 1554.0),
+               sink_record("b", "1080p", 1600, 60.0, 158.0, 1554.2),
+               sink_record("c", "1080p", 1916, 50.08, 171.6, 1844.5)]
+    assert fr.sink_fits(records)["1080p"]["points"] == 3
+    groups = fr.raster_groups(fr.sink_rows(records))
+    assert [g["n"] for g in groups] == [2, 1]
+    assert abs(groups[0]["mean"] - 158.2) < 1e-9
+    assert abs(groups[0]["spread"] - 0.4) < 1e-9
+
+
+def test_a_loaded_sink_record_reads_its_window_off_its_walks_again(tmp_path):
+    r = sink_record("a", "1080p", 1916, 50.08, 999.0, 1844.5)
+    r["sink"]["walk"] = dict(
+        h_near=dict(strips=[[180, 10], [200, 33], [220, 56], [240, 79]], blacks=[],
+                    strip_zero=999.0, black_zero=None),
+        h_far=dict(strips=[[1811, 38], [1791, 61], [1771, 84], [1751, 107]], blacks=[],
+                   strip_zero=1844.5, black_zero=None))
+    path = tmp_path / "run.jsonl"
+    path.write_text(json.dumps(r) + "\n")
+    loaded = fr.load(str(path))[0]
+    assert abs(loaded["sink"]["window"]["E0"] - 171.3) < 0.5
+    assert abs(loaded["sink"]["window"]["E1"] - 1844.0) < 0.5
+
+
+def test_several_runs_load_as_one_in_the_order_given(tmp_path):
+    first, second = tmp_path / "a.jsonl", tmp_path / "b.jsonl"
+    first.write_text(json.dumps(record("a", "1080p", 1600, 60.0, 160, 157.3, 1556, 1560.0)) + "\n")
+    second.write_text(json.dumps(record("b", "1080p", 1916, 50.08, 160, 171.6, 1832, 1843.8)) + "\n")
+    assert [r["source"] for r in fr.load_runs([str(first), str(second)])] == ["a", "b"]
+
+
+def test_a_loaded_sink_record_fits_its_black_count_past_the_flat_start(tmp_path):
+    # Black at the edge is what the probe needs and what blinds the strip, so
+    # the count is the instrument there -- and it says nothing until the
+    # blanking has passed the content.
+    r = sink_record("a", "1080p", 1916, 50.08, 88.9, 1844.7)
+    r["sink"]["walk"] = dict(
+        h_near=dict(strips=[], blacks=[[180, 75], [200, 75], [220, 75], [240, 78], [260, 101],
+                                       [280, 124], [300, 147], [320, 170]],
+                    strip_zero=None, black_zero=88.9),
+        h_far=dict(strips=[[1811, 39], [1791, 61], [1771, 84], [1751, 108]], blacks=[],
+                   strip_zero=1844.7, black_zero=None))
+    path = tmp_path / "run.jsonl"
+    path.write_text(json.dumps(r) + "\n")
+    loaded = fr.load(str(path))[0]
+    assert abs(loaded["sink"]["window"]["E0"] - 172.2) < 0.5
+    assert loaded["sink"]["window"]["instruments"]["E0"] == "black"
+
+
+def test_a_sink_row_carries_the_window_in_the_sinks_own_pixels():
+    # The sink resamples our line into its standard's total, so a start that
+    # is one count of ITS pixels reads as E0 x total / T: 171.6 units of a
+    # 1916-unit line are 197.1 of 1080p's 2200.
+    row = fr.sink_rows([sink_record("a", "1080p", 1916, 50.08, 171.6, 1844.5)])[0]
+    assert abs(row["E0_sink_px"] - 171.6 * 2200 / 1916) < 1e-9
+    assert abs(row["delay_sink_px"] - (171.6 - 140) * 2200 / 1916) < 1e-9

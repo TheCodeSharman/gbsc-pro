@@ -113,3 +113,50 @@ def test_the_analysis_models_the_mode_the_registers_carry_not_the_one_asked():
     assert got["carried"] == "1024p"
     assert got["window"]["E0m"] == want["E0m"]
     assert got["slope"]["h_pred"] == fd.slope_predicted("1024p", 1392)[0]
+
+
+# --- the sink probe --------------------------------------------------------------------
+
+REGS_1916 = dict(REGS, VDS_HSYNC_RST=1915, VDS_DIS_HB_SP=160, VDS_DIS_HB_ST=1831,
+                 STATUS_SYNC_PROC_VTOTAL=311)
+GEOMETRY_50 = dict(GEOMETRY, lineRateHz=15625)
+
+
+def test_the_sink_probe_reads_the_window_off_its_walks_and_counts_the_black_at_the_edge():
+    # The pad returned with the source's own black at the aperture's edge, so
+    # the window starts where the sink puts it for the raster: the near walk's
+    # strip found it and the far walk's black count did. The black between the
+    # window's start and the content is what says the content did not place it.
+    clip = synthetic_clip(30, 1900, 0, 1079)
+    clip[:, :, :30, :] = 0
+    walk = dict(h_near=dict(strip_zero=171.6, black_zero=170.2),
+                h_far=dict(strip_zero=None, black_zero=1844.5))
+    got = fs.analyse_sink("1080p", REGS_1916, GEOMETRY_50, clip, walk)
+    window = got["window"]
+    assert window["T"] == 1916 and window["carried"] == "1080p"
+    assert (window["A0"], window["A1"]) == (160, 1831)
+    assert window["E0"] == 171.6 and window["instruments"]["E0"] == "strip"
+    assert window["E1"] == 1844.5 and window["instruments"]["E1"] == "black"
+    assert window["E0m"] == fd.predicted_window("1080p", 1916, 15625 / 312)["E0m"]
+    assert got["black_left"] == 30
+
+
+def test_the_sink_tier_reads_both_output_rasters_at_the_sink_level():
+    # One output cannot separate the raster from the rate, since at one frame
+    # height the two are one variable; a second output at the same rates can.
+    assert "sink" in fs.PROBE_LEVELS
+    assert fs.TIERS["S"]["probes"] == "sink"
+    assert len(fs.TIERS["S"]["outputs"]) >= 2
+
+
+def test_the_black_at_the_edge_is_the_median_over_the_clip_not_one_frame():
+    # After a pad toggle the sink is still re-acquiring for seconds and the
+    # dongle's frames either side of that are not the settled picture: one
+    # frame of eight read the edge lit where the other seven, and the walk
+    # that followed, read 30 columns of black.
+    clip = synthetic_clip(30, 1900, 0, 1079)
+    clip = np.repeat(clip[:1], 8, axis=0).copy()
+    clip[:, :, :30, :] = 0
+    clip[3, :, :30, 1] = 200
+    walk = dict(h_near=dict(strip_zero=171.6, black_zero=None), h_far=dict(strip_zero=1844.5, black_zero=None))
+    assert fs.analyse_sink("1080p", REGS_1916, GEOMETRY_50, clip, walk)["black_left"] == 30
