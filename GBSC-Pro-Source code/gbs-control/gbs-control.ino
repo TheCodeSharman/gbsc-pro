@@ -990,6 +990,66 @@ static Osd::MenuContext menuContext(geometryControls, uopts);
 static Osd::Menu describedMenu(Osd::MenuTree::root(), Osd::MenuTree::rootCount(),
                                Osd::TelevisionMenu::renderer(), menuContext);
 
+// Whether the remote reaches the described menu instead of the chain. Off, so
+// the remote behaves as it did; /menu?ir=1 is how a subtree gets judged on the
+// remote before its branches are deleted. Not persisted -- it is a migration
+// switch, not a preference.
+static bool describedMenuDrivesRemote = false;
+
+// One action per option: the menu asks for a letter and the letter goes to the
+// handler that already serves /uc? and /sc?.
+static void queueMenuCommand(const Osd::MenuCommand &asked)
+{
+    if (!asked.asked())
+        return;
+    if (asked.queue() == Osd::MenuCommand::UserCommand)
+        userCommand = asked.letter();
+    else
+        serialCommand = asked.letter();
+}
+
+// Only the seven keys the menu answers. Volume, Mute and Info are the chain's
+// and are not reached while this is what drives the remote.
+static void pressDescribedMenuFromRemote()
+{
+    if (!irrecv.decode(&results))
+        return;
+
+    bool known = true;
+    Osd::Menu::Key key = Osd::Menu::KeyMenu;
+    switch (results.value) {
+    case IRKeyUp:
+        key = Osd::Menu::KeyUp;
+        break;
+    case IRKeyDown:
+        key = Osd::Menu::KeyDown;
+        break;
+    case IRKeyLeft:
+        key = Osd::Menu::KeyLeft;
+        break;
+    case IRKeyRight:
+        key = Osd::Menu::KeyRight;
+        break;
+    case IRKeyOk:
+        key = Osd::Menu::KeyOk;
+        break;
+    case IRKeyMenu:
+        key = Osd::Menu::KeyMenu;
+        break;
+    case IRKeyExit:
+        key = Osd::Menu::KeyExit;
+        break;
+    default:
+        known = false;
+        break;
+    }
+
+    if (known)
+        queueMenuCommand(describedMenu.press(key));
+    irrecv.resume();
+}
+
+
 // The acquisition path, which owns the tick loop() used to hand the engine
 // directly. It calls down for the scaler's share; the escalation, the input
 // policy and the no-signal report move into it. docs/video-source-acquisition.md
@@ -4383,7 +4443,10 @@ void loop()
     // site goes through IrReceiver, so this needs no edit at any of them.
     int irMenuBefore = oled_menuItem;
     uint32_t irBefore = irrecv.decodes();
-    OSD_selectOption();
+    if (describedMenuDrivesRemote)
+        pressDescribedMenuFromRemote();
+    else
+        OSD_selectOption();
     uint32_t irAfterSelect = irrecv.decodes();
     OSD_IR();
 
@@ -6617,13 +6680,11 @@ void startWebserver()
             }
 
             asked = describedMenu.press(which);
-            if (asked.asked()) {
-                if (asked.queue() == Osd::MenuCommand::UserCommand)
-                    userCommand = asked.letter();
-                else
-                    serialCommand = asked.letter();
-            }
+            queueMenuCommand(asked);
         }
+
+        if (request->hasParam("ir"))
+            describedMenuDrivesRemote = request->getParam("ir")->value().toInt() != 0;
 
         const Osd::MenuPage page = describedMenu.cursor().page();
         String body = "{\"open\":";
@@ -6637,7 +6698,9 @@ void startWebserver()
         body += asked.asked()
                     ? (asked.queue() == Osd::MenuCommand::UserCommand ? "uc" : "sc")
                     : "";
-        body += "\",\"rows\":[";
+        body += "\",\"remote\":";
+        body += describedMenuDrivesRemote ? "true" : "false";
+        body += ",\"rows\":[";
         for (uint8_t row = 0; row < page.rows(); ++row) {
             const Osd::MenuItem &item = page.itemAt(row);
             const char *value = item.valueText(menuContext);
