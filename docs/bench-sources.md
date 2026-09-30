@@ -123,18 +123,42 @@ concept of a video standard does not survive here.
 
 ### The line rate the bench reaches is the MONITOR DEFINITION's, not the machine's
 
-**The machine now runs `RetroScaler-Acorn.mdf`, not a stock file** -- 80 modes,
-15.6 kHz to 1080p, Acorn's own timings verbatim plus a CEA-861 block and the
-VESA DMT set, built by `RiscPc/tools/video-source/make_acorn_mdf.py`.
+**Which file is loaded is what `MODES` says, and nothing else says it.** Two
+are in use. The stock AKF50 lists 28 modes at C256, none above 37.9 kHz, and is
+what a stock RISC PC emits. `RetroScaler-Acorn.mdf`, built by
+`RiscPc/tools/video-source/make_acorn_mdf.py`, lists 80, 15.6 kHz to 1080p --
+Acorn's own timings verbatim plus a CEA-861 block and the VESA DMT set -- so
+under it `MODES` lists 1280x720 and 1920x1080, and the ceiling below is what
+the stock file reaches. ModeServ has no command to switch between them, so a
+change of file is a bench trip, and `framing_sweep.py --mdf` refuses a file
+`MODES` does not match, so a measurement is never scored against timings the
+machine is not running.
 
-The DMT entries are the standard's own sync, back porch and front porch with no
-border, so a source running one of them publishes the raster the engine derives
-its capture window from. Acorn's own entries do not: they differ in sync width
-and porch split, and where the two describe the same resolution and field rate
-the Acorn entry is dropped, since `MODE` selects by X/Y/F and cannot tell them
-apart. `MODES` lists 1280x720 and
-1920x1080, so the ceiling below is history for this bench and is kept because it
-is what a stock file reaches.
+**The stock AKF50 is the acceptance set for default framing.** Its VESA-rate
+entries keep VESA's line total and (nearly) its sync width but start the display
+a few pixels earlier and fill the difference with black border:
+
+| mode | AKF50 `h_timings` | display starts at | DMT starts at | offset |
+|---|---|---|---|---|
+| 640x480@60 | `94,22,22,640,22,0` | 138 of 800 | 144 | 6 px |
+| 800x600@56 | `72,84,34,800,34,0` | 190 of 1024 | 200 | 10 px |
+| 640x480@75 | `64,76,30,640,30,0` | 170 of 840 | 184 | 14 px |
+
+A border is black active video, indistinguishable from porch on the wire, so
+the chip forms the same key as the DMT timing and the lookup places the picture
+where DMT puts it, that many pixels off. Moving pixels between porch and border
+on its own moves nothing: the display starts at sync + porch + border whatever
+the split, and the card's frame marks the display, not the border.
+`tools/gbsc-pro-hwtest/published_rasters.py <file>` computes the expected
+offset for every mode a file states, and a measured offset equal to it is by
+design; `framing_sweep.py` judges each mode against that rather than against
+zero.
+
+The DMT entries in `RetroScaler-Acorn.mdf` are the standard's own sync, back
+porch and front porch with no border, so a source running one of them publishes
+the raster the engine derives its capture window from. Acorn's own entries do
+not, and where the two describe the same resolution and field rate that file
+drops the Acorn entry, since `MODE` selects by X/Y/F and cannot tell them apart.
 
 Two things about that file are worth knowing before reading a measurement taken
 on it.
@@ -147,10 +171,11 @@ the retime stop cannot express, and `HsyncPulse::PulseFloorPerThousand` refused 
 of them until it came down to 1.0%. `docs/known-issues.md` has what they still
 cannot do.
 
-**Thirteen modes carry a `mode_name:` and the rest do not.** That field is what
-puts a mode on the Display Manager menu -- AKF50's own version history says so
--- and a nameless mode is still reachable by `MODE` and by ModeServ. So the
-desktop's monitor icon listing nothing is not a fault.
+**Most of its modes carry no `mode_name:`, where the stock AKF50 names every
+one of its own.** That field is what puts a mode on the Display Manager menu --
+AKF50's own version history says so -- and a nameless mode is still reachable
+by `MODE` and by ModeServ. So the desktop's monitor icon listing nothing is not
+a fault.
 
 **AKF50 wins any dedup tie.** Seven 15.6 kHz PAL modes are defined by both AKF11
 and AKF50 with the same line rate, the same 312 lines and the same 50.08 Hz
