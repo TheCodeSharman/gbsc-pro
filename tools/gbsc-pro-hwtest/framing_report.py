@@ -24,10 +24,28 @@ import framing_decomposition as fd
 TERMS = ("dEncoder", "dModelApplied", "dPlace", "dCapture")
 
 
+def refit(record):
+    """The walks fitted again from the points they kept, and the window read
+    off them again, so a run is judged by the fit as it stands rather than by
+    the one it was written under."""
+    import transmitted_window
+    for walk in record["walk"].values():
+        for kind in ("strip", "black"):
+            points = walk.get(f"{kind}s") or []
+            zero, slope = (transmitted_window.crossing(points)[:2] if len(points) >= 3
+                           else (None, None))
+            walk[f"{kind}_zero"], walk[f"{kind}_slope"] = zero, slope
+    window, instruments = fd.measured_window(record["walk"])
+    record["window"].update(window)
+    record["window"]["instruments"] = instruments
+
+
 def load(path):
     with open(path) as handle:
         records = [json.loads(line) for line in handle if line.strip()]
     for record in records:
+        if "walk" in record:
+            refit(record)
         if "positions" in record:
             record["residuals"], record["verdict"] = fd.rejudge(record)
     return records

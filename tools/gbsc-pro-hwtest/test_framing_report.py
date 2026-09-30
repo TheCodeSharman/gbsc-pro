@@ -80,3 +80,27 @@ def test_a_loaded_record_is_judged_by_the_current_decomposition(tmp_path):
     loaded = fr.load(str(path))[0]
     assert loaded["verdict"].startswith("L:dEncoder+clip")
     assert loaded["residuals"]["h"]["near"]["clipped"]
+
+
+def test_a_loaded_record_refits_its_walks_so_a_fit_of_a_constant_is_not_a_position(tmp_path):
+    # Written before the fit refused a slope of nothing: the bottom walk counted
+    # 278 black rows at every step and the stored fit put the window at -3e18.
+    r = record("X800 Y600 C256 F60", "1080p", 1592, 60.32, 160, 157.7, 1549, 1546.7,
+               verdict="B:dEncoder")
+    r["window"]["V1"] = -2.8777071770543037e+18
+    r["walk"] = dict(
+        h_near=dict(strips=[[180, 31], [200, 59], [220, 86], [240, 114]], blacks=[[180, 31], [200, 64], [220, 87], [240, 122]],
+                    strip_zero=157.7, black_zero=156.5),
+        h_far=dict(strips=[[1527, 28], [1507, 55], [1487, 83], [1467, 111]], blacks=[[1527, 35], [1507, 57], [1487, 83], [1467, 114]],
+                   strip_zero=1546.7, black_zero=1550.2),
+        v_near=dict(strips=[[61, 20], [81, 40], [101, 60], [121, 80]], blacks=[[61, 20], [81, 40], [101, 60], [121, 80]],
+                    strip_zero=39.9, black_zero=41.0),
+        v_far=dict(strips=[], blacks=[[1101, 278], [1081, 278], [1061, 278], [1041, 278]],
+                   strip_zero=None, black_zero=-2.8777071770543037e+18))
+    path = tmp_path / "run.jsonl"
+    path.write_text(json.dumps(r) + "\n")
+    loaded = fr.load(str(path))[0]
+    assert loaded["window"]["V1"] is None
+    assert loaded["window"]["instruments"]["V1"] is None
+    assert abs(loaded["window"]["E0"] - 157.7) < 0.5
+    assert "dEncoder" not in loaded["residuals"]["v"]["far"]["verdict"]
