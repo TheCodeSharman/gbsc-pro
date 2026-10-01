@@ -25,6 +25,7 @@ class Print {};
 #include "../GBSC-Pro-Source code/gbs-control/src/osd/MenuItem.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/osd/MenuPage.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/osd/MenuRenderer.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/videosource/VideoSourceSelection.h"
 
 using namespace Osd;
 
@@ -553,7 +554,7 @@ TEST_CASE("an item says what its option is currently set to")
 TEST_CASE("the root names every top-level page, in the order the remote walks them")
 {
     const char *const expected[] = {
-        "Output Resolution", "Picture Settings", "System Settings",
+        "Input", "Output Resolution", "System Settings", "Picture Settings",
         "Reset Settings",
     };
 
@@ -565,10 +566,52 @@ TEST_CASE("the root names every top-level page, in the order the remote walks th
 TEST_CASE("the root's ends join, which the chain's did not")
 {
     MenuCursor cursor(MenuTree::root(), MenuTree::rootCount());
-    REQUIRE(std::string(cursor.current().label()) == "Output Resolution");
+    REQUIRE(std::string(cursor.current().label()) == "Input");
 
     cursor.up();
     CHECK(std::string(cursor.current().label()) == "Reset Settings");
+}
+
+
+// --- Input
+//
+// Selecting a source is not a letter on either command surface: it is
+// pendingInputSelection, which /input?src= queues and loop() acts on, and it
+// reaches the HC32's analog switches as well as ADC_INPUT_SEL. So the menu asks
+// for it by naming the source.
+
+TEST_CASE("each input asks for the selection rather than for a letter")
+{
+    struct Row { const char *label; VideoSourceSelection::Id source; };
+    const Row expected[] = {
+        { "RGBs", VideoSourceSelection::Rgbs },
+        { "RGsB", VideoSourceSelection::RgsB },
+        { "VGA", VideoSourceSelection::Vga },
+        { "YPBPR", VideoSourceSelection::Ypbpr },
+        { "SV", VideoSourceSelection::SVideo },
+        { "AV", VideoSourceSelection::Composite },
+    };
+
+    const MenuItem &page = item("Input");
+    REQUIRE(page.childCount() == sizeof(expected) / sizeof(expected[0]));
+    for (uint8_t i = 0; i < page.childCount(); ++i) {
+        CHECK(std::string(page.children()[i].label()) == expected[i].label);
+        CHECK(page.children()[i].okCommand().queue()
+              == MenuCommand::InputSelection);
+        CHECK(page.children()[i].okCommand().source() == expected[i].source);
+    }
+}
+
+TEST_CASE("an input selection is something asked for, as a letter is")
+{
+    Panel panel;
+    const MenuItem &page = item("Input");
+    Menu menu(page.children(), page.childCount(), Recorder, panel.context);
+    menu.open();
+
+    const MenuCommand asked = menu.press(Menu::KeyOk);
+    CHECK(asked.asked());
+    CHECK(asked.source() == VideoSourceSelection::Rgbs);
 }
 
 
@@ -754,7 +797,7 @@ TEST_CASE("a row with no value to show carries none")
     Panel panel;
 
     MenuCursor cursor(MenuTree::root(), MenuTree::rootCount());
-    REQUIRE(std::string(cursor.current().label()) == "Output Resolution");
+    REQUIRE(std::string(cursor.current().label()) == "Input");
 
     Recorder.draw(cursor.page(), panel.context);
 
@@ -775,10 +818,11 @@ TEST_CASE("a page names the item its level was descended from")
     CHECK_FALSE(named);
 
     cursor.down();
-    REQUIRE(std::string(cursor.current().label()) == "Picture Settings");
+    cursor.down();
+    REQUIRE(std::string(cursor.current().label()) == "System Settings");
     REQUIRE(cursor.descend());
 
-    CHECK(std::string(cursor.page().title()) == "Picture Settings");
+    CHECK(std::string(cursor.page().title()) == "System Settings");
 
     cursor.ascend();
     named = cursor.page().title() != NULL;
@@ -904,8 +948,8 @@ TEST_CASE("the selected row carries a cursor at the first column, the label besi
     Cells.clear();
     drawOnTelevision(cursor.page(), panel.context);
 
-    CHECK(rowText(0).substr(0, 18) == ">Output Resolution");
-    CHECK(rowText(1).substr(0, 17) == " Picture Settings");
+    CHECK(rowText(0).substr(0, 6) == ">Input");
+    CHECK(rowText(1).substr(0, 18) == " Output Resolution");
 }
 
 TEST_CASE("the selected row marks an item that leads somewhere, just after its label")
@@ -915,13 +959,13 @@ TEST_CASE("the selected row marks an item that leads somewhere, just after its l
     Panel panel;
 
     MenuCursor cursor(MenuTree::root(), MenuTree::rootCount());
-    REQUIRE(std::string(cursor.current().label()) == "Output Resolution");
+    REQUIRE(std::string(cursor.current().label()) == "Input");
 
     Cells.clear();
     drawOnTelevision(cursor.page(), panel.context);
 
-    CHECK(rowText(0) == ">Output Resolution>");
-    CHECK(rowText(1) == " Picture Settings          1");
+    CHECK(rowText(0) == ">Input>");
+    CHECK(rowText(1) == " Output Resolution         1");
 }
 
 TEST_CASE("an item that leads nowhere is not marked")
@@ -935,7 +979,8 @@ TEST_CASE("an item that leads nowhere is not marked")
     Cells.clear();
     drawOnTelevision(cursor.page(), panel.context);
 
-    CHECK(rowText(0) == ">Reset Settings            ^");
+    CHECK(rowText(0) == " Picture Settings          ^");
+    CHECK(rowText(1) == ">Reset Settings            2");
 }
 
 TEST_CASE("a rule of hyphens leads from the label to the value")

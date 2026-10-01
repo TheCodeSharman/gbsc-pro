@@ -37,6 +37,13 @@ public:
                         MenuCommand(), NULL, 0, NULL);
     }
 
+    static constexpr MenuItem inputAction(const char *label,
+                                          VideoSourceSelection::Id source)
+    {
+        return MenuItem(label, MenuCommand::input(source), MenuCommand(),
+                        MenuCommand(), NULL, 0, NULL);
+    }
+
     static constexpr MenuItem serialAction(const char *label, char letter)
     {
         return MenuItem(label, MenuCommand::serial(letter), MenuCommand(),

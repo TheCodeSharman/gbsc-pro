@@ -1002,7 +1002,9 @@ static void queueMenuCommand(const Osd::MenuCommand &asked)
 {
     if (!asked.asked())
         return;
-    if (asked.queue() == Osd::MenuCommand::UserCommand)
+    if (asked.queue() == Osd::MenuCommand::InputSelection)
+        pendingInputSelection = asked.source();
+    else if (asked.queue() == Osd::MenuCommand::UserCommand)
         userCommand = asked.letter();
     else
         serialCommand = asked.letter();
@@ -6740,9 +6742,15 @@ void startWebserver()
         if (asked.asked())
             body += asked.letter();
         body += "\",\"queue\":\"";
-        body += asked.asked()
-                    ? (asked.queue() == Osd::MenuCommand::UserCommand ? "uc" : "sc")
-                    : "";
+        if (asked.asked()) {
+            switch (asked.queue()) {
+            case Osd::MenuCommand::UserCommand: body += "uc"; break;
+            case Osd::MenuCommand::SerialCommand: body += "sc"; break;
+            case Osd::MenuCommand::InputSelection:
+                body += "input";
+                break;
+            }
+        }
         body += "\",\"remote\":";
         body += describedMenuDrivesRemote ? "true" : "false";
         body += ",\"rows\":[";

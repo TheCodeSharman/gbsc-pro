@@ -81,6 +81,15 @@ const char *clockGeneratorText(const MenuContext &context)
     return onOff(!context.options().disableExternalClockGenerator);
 }
 
+const MenuItem Input[] = {
+    MenuItem::inputAction("RGBs", VideoSourceSelection::Rgbs),
+    MenuItem::inputAction("RGsB", VideoSourceSelection::RgsB),
+    MenuItem::inputAction("VGA", VideoSourceSelection::Vga),
+    MenuItem::inputAction("YPBPR", VideoSourceSelection::Ypbpr),
+    MenuItem::inputAction("SV", VideoSourceSelection::SVideo),
+    MenuItem::inputAction("AV", VideoSourceSelection::Composite),
+};
+
 // Pass Through is absent deliberately: it is not a resolution -- OutputChoice
 // cannot express it -- and the option behind it is the upscaling preference
 // under System Settings.
@@ -119,12 +128,13 @@ const MenuItem System[] = {
 };
 
 const MenuItem Root[] = {
+    MenuItem::submenu("Input", Input, sizeof(Input) / sizeof(Input[0])),
     MenuItem::submenu("Output Resolution", Resolution,
                       sizeof(Resolution) / sizeof(Resolution[0])),
-    MenuItem::submenu("Picture Settings", Picture,
-                      sizeof(Picture) / sizeof(Picture[0])),
     MenuItem::submenu("System Settings", System,
                       sizeof(System) / sizeof(System[0])),
+    MenuItem::submenu("Picture Settings", Picture,
+                      sizeof(Picture) / sizeof(Picture[0])),
     MenuItem::action("Reset Settings", '1'),
 };
 
