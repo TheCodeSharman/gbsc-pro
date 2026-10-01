@@ -122,6 +122,15 @@ def shape(host):
     return body["aspect"]
 
 
+def rests(host):
+    """The framing once it has stopped moving, a queued press acting later."""
+    def still():
+        first = framing(host)
+        return first if first == framing(host) else None
+
+    return wait_for(still, timeout=5.0)
+
+
 def walk_to(host, label):
     """The cursor on `label` of the level it is in, whichever page holds it."""
     for _ in range(12):
@@ -135,14 +144,23 @@ def walk_to(host, label):
 def test_reset_puts_the_framing_and_the_shape_back(host, source, closed):
     """Both are stored against the source, so both are what the row undoes."""
     open_pad(host, "Move")
-    default = framing(host)
+    page(host, "menu")
+
+    # Pressed first, so what follows is compared against the SOURCE's defaults
+    # rather than against whatever an earlier test left stored for it.
+    walk_to(host, "Reset")
+    page(host, "ok")
+    default = rests(host)
+    defaulted = shape(host)
+
+    walk_to(host, "Move")
+    page(host, "ok")
     page(host, "left")
     panned = settles(host, default)
     assert panned is not None, "the capture did not move"
     page(host, "menu")
 
     walk_to(host, "Aspect")
-    defaulted = shape(host)
     page(host, "ok")
     assert wait_for(lambda: shape(host) != defaulted, timeout=5.0), \
         "Ok on Aspect did not change the shape"
@@ -152,4 +170,5 @@ def test_reset_puts_the_framing_and_the_shape_back(host, source, closed):
 
     assert wait_for(lambda: framing(host) == default, timeout=5.0), \
         f"the framing stayed at {framing(host)} rather than {default}"
-    assert shape(host) == defaulted
+    assert wait_for(lambda: shape(host) == defaulted, timeout=5.0), \
+        f"the shape stayed at {shape(host)} rather than {defaulted}"
