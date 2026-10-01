@@ -13,6 +13,13 @@ on the television.
 | **STV9426** | character OSD chip on the ESP's I²C bus at `0x5D`. Draws the menu, the volume bar and the Info screen | `OSD_TV/OSD_stv9426.h`, `OSD_menu_F()`, `OSD_c1()`..`OSD_c3()`, driven by the state machine in `OSD_selectOption()` | **yes** |
 | **OLED menu** | the 128x64 SSD1306 on the unit itself | `OLEDMenuManager`, `OLEDMenuImplementation.cpp` | yes, but it is a separate tree and holds no Move/Scale |
 
+**TWO TREES DRAW THE PANEL AND THE OPEN ONE OWNS IT.** `Osd::Panel` draws the
+described page there as `Osd::OSD` draws it on the television, and
+`NEW_OLED_MENU` is the gate: `loop()` clears it while the described menu is open,
+so the icon tree's `tick()` cannot paint over the page. Nothing on the board
+reports the panel, so `/menu`'s `panel` field reads that gate -- `described` or
+`icons` -- and is the only witness there is.
+
 The TV5725 has an icon-and-bar OSD of its own at `s0_90`..`s0_98`. **Nothing
 drives it** and the menu on the television comes from the STV9426, so the block
 has no owner. It is not quite unwritten: `Tv5725::Chip`'s bring-up parks the
@@ -125,6 +132,7 @@ by construction, so that class of loss cannot happen.
 | `MenuCursor` | where the remote is -- Up, Down, Ok, Menu as generic traversal, plus the three-row window |
 | `MenuRenderer` | the three calls a device supplies: begin, row, end |
 | `OSD` | the television's own renderer, and the only claimant on that name |
+| `Panel` | the 128x64 panel's renderer: a level, a label and a value |
 | `Menu` | a key in, a redraw and at most one command out |
 
 **An action is a letter AND a surface, because the board has two.** `/uc?`
@@ -174,6 +182,21 @@ page's own number. The bracketing in `MenuRenderer` is the panel's: it buffers a
 frame and flushes it, where the overlay writes characters as they arrive and
 ends with nothing to do. A host test substitutes a recording renderer and reads
 what the menu SAYS without either device.
+
+### `Panel` shows one item where the overlay shows three
+
+The panel is 128x64 and the chain drew three lines on it: a breadcrumb at the
+top, the selected row's label, and its value. `Osd::Panel` draws the same shape
+off the same page -- the level from `MenuPage::title()`, or `Menu` at the root
+where a page has nothing above it to name, then the selected row and what it is
+set to. A row with no value takes the middle position instead, which is where
+the chain drew a submenu.
+
+The other rows still arrive, a renderer being told the page rather than asked
+for a row, and are ignored. The sketch supplies the three calls that reach the
+part -- clear, a line at a y offset, and the flush -- as `OSD_parameters()` does
+for the overlay, so a host test records what would be drawn and needs neither
+device.
 
 **A level is cut into fixed pages of three, not scrolled a row at a time.** The
 page character at column 27 counts pages, so a window following the cursor would
@@ -331,7 +354,8 @@ curl 'http://<ip>/menu?key=ok'
 `page` is the one part of the drawn row the labels do not carry -- the number at
 column 27 and whether there is a page either side of this one. `adjusting` is a
 pad holding the arrows, where `key=up` asks for a granule of picture rather than
-moving the cursor.
+moving the cursor. `panel` is which of the two trees that draw the panel holds
+it, read off `NEW_OLED_MENU` itself rather than derived from `open`.
 
 **The page returned WITH a press still shows the old value**, because the letter
 is queued for `loop()` and has not run yet. Read again to see the effect.
@@ -388,10 +412,10 @@ and in the same colours.
 
 | column | what is there |
 |---|---|
-| 0 | the cursor, on the selected row only. The chain draws it on every row and in the background colour on the others, which is the same picture |
+| 0 | the cursor, on the selected row only, in `Cursor` rather than the row's own colour -- a dark glyph on a solid block, where the rest of the row is written over the bar. The chain draws it on every row and in the background colour on the others, which is the same picture |
 | 1 | the row's position in its level, on the root ring only. The chain carried it inside the label string |
 | 1.. or 3.. | the label, after the number where there is one |
-| after the label | the same glyph again where the item leads somewhere, on the selected row only, flush against the label rather than at a column chosen per item |
+| after the label | the same glyph again where the item descends a LEVEL, on the selected row only, flush against the label rather than at a column chosen per item. A pad does not carry it: Ok hands it the arrows rather than changing level, and the chain does not mark one either |
 | to the value | a rule of hyphens, where the row has a value |
 | ..25 | the value, right-aligned. The chain's field is 23..25 -- three digits, or `OFF` -- and `ON` is the one value it puts a column further left |
 | 26 | the gutter |
@@ -421,6 +445,7 @@ frame:
 | a cell | two writes, and the same value means different things at the two addresses: at the even one it is the colour, at the odd one a glyph |
 | **0x11** | both -- a filled block in the bar's colour, which is how `background_up()` paints a row |
 | **0xc0** | turns a cell off altogether, at either address. `OSD_Cut_0x01()` writes it to erase the overlay. As a glyph it does not leave the background showing -- it takes the whole cell out |
+| **0x60** | a filled cell with a dark glyph, which is the cursor. 0x16 beside it is the selected row's text -- an outlined glyph on the bar -- so the two arrows on a selected submenu row are deliberately different |
 
 So a row is painted as a bar and then written over, and a row the page does not
 fill is turned off rather than painted.
