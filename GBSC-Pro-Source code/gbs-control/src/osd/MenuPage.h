@@ -40,7 +40,9 @@ public:
     const MenuItem &itemAt(uint8_t row) const;
     const char *labelAt(uint8_t row) const;
 
-    bool leadsAt(uint8_t row) const;
+    // Whether Ok on the row descends a level. A pad leads somewhere too and
+    // is not marked: Ok hands it the arrows rather than changing level.
+    bool descendsAt(uint8_t row) const;
 
     uint8_t selected() const;
 

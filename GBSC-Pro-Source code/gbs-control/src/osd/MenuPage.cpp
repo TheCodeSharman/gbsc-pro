@@ -53,9 +53,10 @@ const char *MenuPage::labelAt(uint8_t row) const
     return row < rows_ ? items_[row]->label() : NULL;
 }
 
-bool MenuPage::leadsAt(uint8_t row) const
+bool MenuPage::descendsAt(uint8_t row) const
 {
-    return row < rows_ && items_[row]->leadsSomewhere();
+    return row < rows_ && items_[row]->leadsSomewhere()
+           && !items_[row]->isPad();
 }
 
 uint8_t MenuPage::selected() const { return selected_; }

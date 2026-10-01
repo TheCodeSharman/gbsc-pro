@@ -4,10 +4,19 @@ namespace Osd {
 
 Menu::Menu(const MenuItem *root, uint8_t count, const MenuRenderer &renderer,
            const MenuContext &context)
-    : root_(root), count_(count), renderer_(renderer), context_(context),
+    : root_(root), count_(count), deviceCount_(1), context_(context),
       cursor_(root, count), open_(false), adjusting_(false),
       redraw_(false)
 {
+    devices_[0] = &renderer;
+    for (uint8_t i = 1; i < Devices; ++i)
+        devices_[i] = NULL;
+}
+
+void Menu::alsoDrawOn(const MenuRenderer &renderer)
+{
+    if (deviceCount_ < Devices)
+        devices_[deviceCount_++] = &renderer;
 }
 
 bool Menu::isOpen() const { return open_; }
@@ -36,7 +45,9 @@ void Menu::drawIfNeeded()
     if (!needsRedraw())
         return;
     redraw_ = false;
-    renderer_.draw(open_ ? page() : MenuPage(), context_);
+    const MenuPage drawn = open_ ? page() : MenuPage();
+    for (uint8_t i = 0; i < deviceCount_; ++i)
+        devices_[i]->draw(drawn, context_);
 }
 
 const MenuCursor &Menu::cursor() const { return cursor_; }

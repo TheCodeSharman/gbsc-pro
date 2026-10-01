@@ -23,6 +23,7 @@ const char OSD::Selected;
 const char OSD::Unselected;
 const char OSD::Clear;
 const char OSD::Indicator;
+const char OSD::Cursor;
 
 OSD::WriteCell OSD::write_ = NULL;
 
@@ -121,7 +122,7 @@ void OSD::row(const MenuPage &page, uint8_t index, const char *value)
     // it; the chain kept the number inside the label string.
     uint8_t labelAt = LabelColumn;
     if (selected)
-        putCell(index, 0, Arrow, colour);
+        putCell(index, 0, Arrow, Cursor);
     if (page.title() == NULL) {
         putCell(index, labelAt, (char)('0' + page.positionAt(index)), colour);
         labelAt = (uint8_t)(labelAt + 2);
@@ -130,7 +131,7 @@ void OSD::row(const MenuPage &page, uint8_t index, const char *value)
     const uint8_t labelEnd = (uint8_t)(labelAt + lengthOf(label));
 
     uint8_t from = labelEnd;
-    if (selected && page.leadsAt(index))
+    if (selected && page.descendsAt(index))
         putCell(index, from++, Arrow, colour);
     putValue(index, from, selected && page.adjusting() ? PadArrows : value,
              colour);

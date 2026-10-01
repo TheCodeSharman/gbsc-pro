@@ -60,6 +60,10 @@ public:
     // colour whichever row is selected.
     static const char Indicator = 0x12;
 
+    // The cursor's cell is filled -- a dark glyph on a solid block -- where the
+    // rest of the selected row is written over the bar in Selected.
+    static const char Cursor = 0x60;
+
     // The one STV9426 on the board, or a recorder in a host test.
     static void writeThrough(WriteCell write);
 

@@ -23,6 +23,7 @@ class Print {};
 #include "../GBSC-Pro-Source code/gbs-control/src/osd/MenuTree.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/osd/Tune.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/osd/OSD.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/osd/Panel.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/osd/MenuCursor.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/osd/MenuItem.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/osd/MenuPad.h"
@@ -34,7 +35,7 @@ using namespace Osd;
 
 // A solved engine and a set of preferences, which is what an item reads to say
 // what it is currently set to.
-struct Panel {
+struct Unit {
     SolvedEngine solved;
     Print console;
     Tv5725::Controls controls;
@@ -42,7 +43,7 @@ struct Panel {
     avOptions av;
     MenuContext context;
 
-    Panel()
+    Unit()
         : controls(solved.engine, console), options(), av(),
           context(controls, options, av)
     {
@@ -276,11 +277,11 @@ static const MenuRenderer Recorder(recordBegin, recordRow, recordEnd);
 
 TEST_CASE("a renderer is told each row in view and which one is selected")
 {
-    Panel panel;
+    Unit unit;
     MenuCursor cursor(System, 5);
     cursor.down();
 
-    Recorder.draw(cursor.page(), panel.context);
+    Recorder.draw(cursor.page(), unit.context);
 
     REQUIRE(Drawn.size() == MenuPage::Rows);
     CHECK(Drawn[0].label == "Frame lock");
@@ -292,14 +293,14 @@ TEST_CASE("a renderer is told each row in view and which one is selected")
 
 TEST_CASE("a row carries the position it occupies, not the position in the level")
 {
-    Panel panel;
+    Unit unit;
     MenuCursor cursor(System, 5);
     cursor.down();
     cursor.down();
     cursor.down();
     REQUIRE(std::string(cursor.current().label()) == "Restart");
 
-    Recorder.draw(cursor.page(), panel.context);
+    Recorder.draw(cursor.page(), unit.context);
 
     REQUIRE(Drawn.size() == 2);
     CHECK(Drawn[0].index == 0);
@@ -309,12 +310,12 @@ TEST_CASE("a row carries the position it occupies, not the position in the level
 
 TEST_CASE("a redraw is bracketed, so a device that buffers knows when to flush")
 {
-    Panel panel;
+    Unit unit;
     MenuCursor cursor(Colour, 2);
     const int begun = Begun;
     const int ended = Ended;
 
-    Recorder.draw(cursor.page(), panel.context);
+    Recorder.draw(cursor.page(), unit.context);
 
     CHECK(Begun == begun + 1);
     CHECK(Ended == ended + 1);
@@ -330,8 +331,8 @@ TEST_CASE("a redraw is bracketed, so a device that buffers knows when to flush")
 
 TEST_CASE("Ok on a Choice yields its letter and stays where it is")
 {
-    Panel panel;
-    Menu menu(Root, RootCount, Recorder, panel.context);
+    Unit unit;
+    Menu menu(Root, RootCount, Recorder, unit.context);
     menu.open();
     menu.press(Menu::KeyDown);
     menu.press(Menu::KeyOk);
@@ -344,8 +345,8 @@ TEST_CASE("Ok on a Choice yields its letter and stays where it is")
 
 TEST_CASE("Ok on a Submenu descends and asks for nothing")
 {
-    Panel panel;
-    Menu menu(Root, RootCount, Recorder, panel.context);
+    Unit unit;
+    Menu menu(Root, RootCount, Recorder, unit.context);
     menu.open();
     menu.press(Menu::KeyDown);
 
@@ -355,8 +356,8 @@ TEST_CASE("Ok on a Submenu descends and asks for nothing")
 
 TEST_CASE("the Menu key opens from closed and leaves by the level it entered")
 {
-    Panel panel;
-    Menu menu(Root, RootCount, Recorder, panel.context);
+    Unit unit;
+    Menu menu(Root, RootCount, Recorder, unit.context);
     CHECK_FALSE(menu.isOpen());
 
     menu.press(Menu::KeyMenu);
@@ -379,8 +380,8 @@ TEST_CASE("closing erases what was drawn")
     // The overlay keeps what was written to it, so a menu that stops drawing
     // stays on the screen. Measured on the unit before this: Exit left the bar
     // and all three rows over the picture.
-    Panel panel;
-    Menu menu(Root, RootCount, Recorder, panel.context);
+    Unit unit;
+    Menu menu(Root, RootCount, Recorder, unit.context);
     menu.open();
     menu.drawIfNeeded();
     REQUIRE(Drawn.size() == MenuPage::Rows);
@@ -395,8 +396,8 @@ TEST_CASE("closing erases what was drawn")
 
 TEST_CASE("Exit leaves from any depth")
 {
-    Panel panel;
-    Menu menu(Root, RootCount, Recorder, panel.context);
+    Unit unit;
+    Menu menu(Root, RootCount, Recorder, unit.context);
     menu.open();
     menu.press(Menu::KeyDown);
     menu.press(Menu::KeyOk);
@@ -408,8 +409,8 @@ TEST_CASE("Exit leaves from any depth")
 
 TEST_CASE("a closed menu draws nothing and answers no key but Menu")
 {
-    Panel panel;
-    Menu menu(Root, RootCount, Recorder, panel.context);
+    Unit unit;
+    Menu menu(Root, RootCount, Recorder, unit.context);
     const int begun = Begun;
 
     CHECK_FALSE(menu.press(Menu::KeyOk).asked());
@@ -423,8 +424,8 @@ TEST_CASE("a press marks a redraw rather than drawing, so the bus stays in loop(
 {
     // The STV9426 is on the ESP's I2C bus, and a press arrives from a network
     // callback. Register access is deferred to loop() for exactly this reason.
-    Panel panel;
-    Menu menu(Root, RootCount, Recorder, panel.context);
+    Unit unit;
+    Menu menu(Root, RootCount, Recorder, unit.context);
     menu.open();
     const int begun = Begun;
 
@@ -442,8 +443,8 @@ TEST_CASE("a press that moves nothing still marks a redraw, because a value may 
 {
     // An Ok on a Choice queues a letter that loop() acts on, so the row's value
     // is stale until the next draw.
-    Panel panel;
-    Menu menu(Root, RootCount, Recorder, panel.context);
+    Unit unit;
+    Menu menu(Root, RootCount, Recorder, unit.context);
     menu.open();
     menu.drawIfNeeded();
 
@@ -453,8 +454,8 @@ TEST_CASE("a press that moves nothing still marks a redraw, because a value may 
 
 TEST_CASE("reopening starts at the top rather than where it was left")
 {
-    Panel panel;
-    Menu menu(Root, RootCount, Recorder, panel.context);
+    Unit unit;
+    Menu menu(Root, RootCount, Recorder, unit.context);
     menu.open();
     menu.press(Menu::KeyDown);
     menu.press(Menu::KeyOk);
@@ -480,8 +481,8 @@ static const MenuItem Surfaces[] = {
 
 TEST_CASE("an Ok names the surface its letter belongs to")
 {
-    Panel panel;
-    Menu menu(Surfaces, 2, Recorder, panel.context);
+    Unit unit;
+    Menu menu(Surfaces, 2, Recorder, unit.context);
     menu.open();
 
     const MenuCommand filter = menu.press(Menu::KeyOk);
@@ -496,8 +497,8 @@ TEST_CASE("an Ok names the surface its letter belongs to")
 
 TEST_CASE("a press that asks for nothing yields no letter")
 {
-    Panel panel;
-    Menu menu(Surfaces, 2, Recorder, panel.context);
+    Unit unit;
+    Menu menu(Surfaces, 2, Recorder, unit.context);
     menu.open();
 
     CHECK_FALSE(menu.press(Menu::KeyDown).asked());
@@ -523,8 +524,8 @@ static const MenuItem Screen[] = {
 
 TEST_CASE("Ok on a pad hands it the arrows rather than asking for anything")
 {
-    Panel panel;
-    Menu menu(Screen, 2, Recorder, panel.context);
+    Unit unit;
+    Menu menu(Screen, 2, Recorder, unit.context);
     menu.open();
 
     CHECK_FALSE(menu.press(Menu::KeyOk).asked());
@@ -533,8 +534,8 @@ TEST_CASE("Ok on a pad hands it the arrows rather than asking for anything")
 
 TEST_CASE("each arrow asks for the control and direction the pad gives it")
 {
-    Panel panel;
-    Menu menu(Screen, 2, Recorder, panel.context);
+    Unit unit;
+    Menu menu(Screen, 2, Recorder, unit.context);
     menu.open();
     REQUIRE(menu.press(Menu::KeyOk).asked() == false);
 
@@ -552,8 +553,8 @@ TEST_CASE("each arrow asks for the control and direction the pad gives it")
 
 TEST_CASE("Ok gives the arrows back to the level")
 {
-    Panel panel;
-    Menu menu(Screen, 2, Recorder, panel.context);
+    Unit unit;
+    Menu menu(Screen, 2, Recorder, unit.context);
     menu.open();
     REQUIRE(menu.press(Menu::KeyOk).asked() == false);
     REQUIRE(menu.isAdjusting());
@@ -566,8 +567,8 @@ TEST_CASE("Ok gives the arrows back to the level")
 
 TEST_CASE("Menu leaves the pad rather than the level it is on")
 {
-    Panel panel;
-    Menu menu(Screen, 2, Recorder, panel.context);
+    Unit unit;
+    Menu menu(Screen, 2, Recorder, unit.context);
     menu.open();
     REQUIRE(menu.press(Menu::KeyOk).asked() == false);
 
@@ -578,8 +579,8 @@ TEST_CASE("Menu leaves the pad rather than the level it is on")
 
 TEST_CASE("Exit closes from inside a pad")
 {
-    Panel panel;
-    Menu menu(Screen, 2, Recorder, panel.context);
+    Unit unit;
+    Menu menu(Screen, 2, Recorder, unit.context);
     menu.open();
     REQUIRE(menu.press(Menu::KeyOk).asked() == false);
 
@@ -592,8 +593,8 @@ TEST_CASE("the page drawn while a pad has the arrows says so")
 {
     // The device draws the pad -- the overlay its four arrows -- and nothing
     // else on the page changes, so the page is what carries it.
-    Panel panel;
-    Menu menu(Screen, 2, Recorder, panel.context);
+    Unit unit;
+    Menu menu(Screen, 2, Recorder, unit.context);
     menu.open();
     CHECK_FALSE(menu.page().adjusting());
 
@@ -603,8 +604,8 @@ TEST_CASE("the page drawn while a pad has the arrows says so")
 
 TEST_CASE("reopening leaves the arrows with the level")
 {
-    Panel panel;
-    Menu menu(Screen, 2, Recorder, panel.context);
+    Unit unit;
+    Menu menu(Screen, 2, Recorder, unit.context);
     menu.open();
     REQUIRE(menu.press(Menu::KeyOk).asked() == false);
     menu.press(Menu::KeyExit);
@@ -657,15 +658,23 @@ static MenuCursor cursorInside(const char *label)
     return cursor;
 }
 
+static MenuCursor cursorOn(const char *level, const char *label)
+{
+    MenuCursor cursor = cursorInside(level);
+    while (std::string(cursor.current().label()) != label)
+        cursor.down();
+    return cursor;
+}
+
 TEST_CASE("an item says what its option is currently set to")
 {
-    Panel panel;
+    Unit unit;
 
-    panel.options.wantVdsLineFilter = 1;
-    CHECK(std::string(item("Line filter").valueText(panel.context)) == "ON");
+    unit.options.wantVdsLineFilter = 1;
+    CHECK(std::string(item("Line filter").valueText(unit.context)) == "ON");
 
-    panel.options.wantVdsLineFilter = 0;
-    CHECK(std::string(item("Line filter").valueText(panel.context)) == "OFF");
+    unit.options.wantVdsLineFilter = 0;
+    CHECK(std::string(item("Line filter").valueText(unit.context)) == "OFF");
 }
 
 
@@ -766,9 +775,9 @@ TEST_CASE("each input asks for the selection rather than for a letter")
 
 TEST_CASE("an input selection is something asked for, as a letter is")
 {
-    Panel panel;
+    Unit unit;
     const MenuItem &page = item("Input");
-    Menu menu(page.children(), page.childCount(), Recorder, panel.context);
+    Menu menu(page.children(), page.childCount(), Recorder, unit.context);
     menu.open();
 
     const MenuCommand asked = menu.press(Menu::KeyOk);
@@ -806,19 +815,19 @@ TEST_CASE("each resolution asks for the letter the web and the console send")
 
 TEST_CASE("every picture option says what it is set to")
 {
-    Panel panel;
+    Unit unit;
 
-    panel.options.enableAutoGain = 1;
-    CHECK(std::string(item("ADC gain").valueText(panel.context)) == "ON");
+    unit.options.enableAutoGain = 1;
+    CHECK(std::string(item("ADC gain").valueText(unit.context)) == "ON");
 
-    panel.options.wantScanlines = 0;
-    CHECK(std::string(item("Scanlines").valueText(panel.context)) == "OFF");
+    unit.options.wantScanlines = 0;
+    CHECK(std::string(item("Scanlines").valueText(unit.context)) == "OFF");
 
-    panel.options.wantPeaking = 1;
-    CHECK(std::string(item("Peaking").valueText(panel.context)) == "ON");
+    unit.options.wantPeaking = 1;
+    CHECK(std::string(item("Peaking").valueText(unit.context)) == "ON");
 
-    panel.options.wantStepResponse = 0;
-    CHECK(std::string(item("Step response").valueText(panel.context)) == "OFF");
+    unit.options.wantStepResponse = 0;
+    CHECK(std::string(item("Step response").valueText(unit.context)) == "OFF");
 }
 
 TEST_CASE("the picture level names its rows in the order the chain drew them")
@@ -839,24 +848,24 @@ TEST_CASE("sharpness reports the preference rather than the gain it writes")
     // The chain read VDS_PK_LB_GAIN back to decide what to draw, so every
     // output change silently moved the row -- applyOutputResolutionSettings()
     // writes the resting gain.
-    Panel panel;
+    Unit unit;
 
-    panel.options.wantSharpness = 1;
-    CHECK(std::string(item("Sharpness").valueText(panel.context)) == "ON");
+    unit.options.wantSharpness = 1;
+    CHECK(std::string(item("Sharpness").valueText(unit.context)) == "ON");
 
-    panel.options.wantSharpness = 0;
-    CHECK(std::string(item("Sharpness").valueText(panel.context)) == "OFF");
+    unit.options.wantSharpness = 0;
+    CHECK(std::string(item("Sharpness").valueText(unit.context)) == "OFF");
 }
 
 TEST_CASE("each colour row reports the balance in the basis it names")
 {
-    Panel panel;
-    panel.controls.engine().colour().adopt(140, 120, 128, 130);
+    Unit unit;
+    unit.controls.engine().colour().adopt(140, 120, 128, 130);
 
-    CHECK(std::string(item("R").valueText(panel.context)) == "140");
-    CHECK(std::string(item("G").valueText(panel.context)) == "120");
-    CHECK(std::string(item("B").valueText(panel.context)) == "128");
-    CHECK(std::string(item("Y gain").valueText(panel.context)) == "130");
+    CHECK(std::string(item("R").valueText(unit.context)) == "140");
+    CHECK(std::string(item("G").valueText(unit.context)) == "120");
+    CHECK(std::string(item("B").valueText(unit.context)) == "128");
+    CHECK(std::string(item("Y gain").valueText(unit.context)) == "130");
 }
 
 TEST_CASE("Left and Right name the value they step rather than a letter")
@@ -913,46 +922,46 @@ TEST_CASE("Left and Right step an adjustable option")
 
 TEST_CASE("every system option says what it is set to")
 {
-    Panel panel;
+    Unit unit;
 
-    panel.options.enableFrameTimeLock = 1;
-    CHECK(std::string(item("Frame Time Lock").valueText(panel.context)) == "ON");
+    unit.options.enableFrameTimeLock = 1;
+    CHECK(std::string(item("Frame Time Lock").valueText(unit.context)) == "ON");
 
-    panel.options.frameTimeLockMethod = 1;
-    CHECK(std::string(item("Lock Method").valueText(panel.context)) == "Vtotal only");
-    panel.options.frameTimeLockMethod = 0;
-    CHECK(std::string(item("Lock Method").valueText(panel.context)) == "Vtotal+VSST");
+    unit.options.frameTimeLockMethod = 1;
+    CHECK(std::string(item("Lock Method").valueText(unit.context)) == "Vtotal only");
+    unit.options.frameTimeLockMethod = 0;
+    CHECK(std::string(item("Lock Method").valueText(unit.context)) == "Vtotal+VSST");
 
-    panel.options.enableCalibrationADC = 0;
-    CHECK(std::string(item("ADC calibration").valueText(panel.context)) == "OFF");
+    unit.options.enableCalibrationADC = 0;
+    CHECK(std::string(item("ADC calibration").valueText(unit.context)) == "OFF");
 
-    panel.options.deintMode = 1;
-    CHECK(std::string(item("Deinterlace").valueText(panel.context)) == "Bob");
-    panel.options.deintMode = 0;
-    CHECK(std::string(item("Deinterlace").valueText(panel.context)) == "Adaptive");
+    unit.options.deintMode = 1;
+    CHECK(std::string(item("Deinterlace").valueText(unit.context)) == "Bob");
+    unit.options.deintMode = 0;
+    CHECK(std::string(item("Deinterlace").valueText(unit.context)) == "Adaptive");
 }
 
 TEST_CASE("the clock generator reads the opposite way round to the option behind it")
 {
     // The preference is disableExternalClockGenerator, and the row reports the
     // generator.
-    Panel panel;
+    Unit unit;
 
-    panel.options.disableExternalClockGenerator = 0;
-    CHECK(std::string(item("Clock generator").valueText(panel.context)) == "ON");
+    unit.options.disableExternalClockGenerator = 0;
+    CHECK(std::string(item("Clock generator").valueText(unit.context)) == "ON");
 
-    panel.options.disableExternalClockGenerator = 1;
-    CHECK(std::string(item("Clock generator").valueText(panel.context)) == "OFF");
+    unit.options.disableExternalClockGenerator = 1;
+    CHECK(std::string(item("Clock generator").valueText(unit.context)) == "OFF");
 }
 
 TEST_CASE("the upscaling preference is on the menu, which the chain left unreachable")
 {
     // Branch 96 drew it and its Ok was commented out, and nothing reached the
     // branch: the only route was /uc?x.
-    Panel panel;
+    Unit unit;
 
-    panel.options.preferScalingRgbhv = 1;
-    CHECK(std::string(item("Use upscaling").valueText(panel.context)) == "ON");
+    unit.options.preferScalingRgbhv = 1;
+    CHECK(std::string(item("Use upscaling").valueText(unit.context)) == "ON");
     CHECK(item("Use upscaling").okCommand().letter() == 'x');
 }
 
@@ -970,17 +979,17 @@ TEST_CASE("restarting is on the menu, which the chain also left unreachable")
 
 TEST_CASE("the aspect item names the shape the source is shown in")
 {
-    Panel panel;
+    Unit unit;
 
     // The bench raster's own shape, which the source defaults to.
-    REQUIRE(panel.solved.engine.aspect() == Tv5725::Aspect(Tv5725::Aspect::FourThree));
-    CHECK(std::string(item("Aspect").valueText(panel.context)) == "4:3");
+    REQUIRE(unit.solved.engine.aspect() == Tv5725::Aspect(Tv5725::Aspect::FourThree));
+    CHECK(std::string(item("Aspect").valueText(unit.context)) == "4:3");
 
-    REQUIRE(panel.solved.engine.setAspect(Tv5725::Aspect(Tv5725::Aspect::SixteenNine)));
-    CHECK(std::string(item("Aspect").valueText(panel.context)) == "16:9");
+    REQUIRE(unit.solved.engine.setAspect(Tv5725::Aspect(Tv5725::Aspect::SixteenNine)));
+    CHECK(std::string(item("Aspect").valueText(unit.context)) == "16:9");
 
-    REQUIRE(panel.solved.engine.setAspect(Tv5725::Aspect(Tv5725::Aspect::Fill)));
-    CHECK(std::string(item("Aspect").valueText(panel.context)) == "Fill");
+    REQUIRE(unit.solved.engine.setAspect(Tv5725::Aspect(Tv5725::Aspect::Fill)));
+    CHECK(std::string(item("Aspect").valueText(unit.context)) == "Fill");
 
     CHECK(item("Aspect").okCommand().letter() == 'G');
 }
@@ -1016,44 +1025,44 @@ TEST_CASE("the Sv-Av level names its rows in the order the chain drew them")
 
 TEST_CASE("each Sv-Av row says what it is set to")
 {
-    Panel panel;
+    Unit unit;
 
-    panel.av.lineDouble = true;
-    CHECK(std::string(item("DoubleLine").valueText(panel.context)) == "2X");
-    panel.av.lineDouble = false;
-    CHECK(std::string(item("DoubleLine").valueText(panel.context)) == "1X");
+    unit.av.lineDouble = true;
+    CHECK(std::string(item("DoubleLine").valueText(unit.context)) == "2X");
+    unit.av.lineDouble = false;
+    CHECK(std::string(item("DoubleLine").valueText(unit.context)) == "1X");
 
-    panel.av.smooth = true;
-    CHECK(std::string(item("Smooth").valueText(panel.context)) == "ON");
+    unit.av.smooth = true;
+    CHECK(std::string(item("Smooth").valueText(unit.context)) == "ON");
 
-    panel.av.rgbCompatible = false;
-    CHECK(std::string(item("Compatibility").valueText(panel.context)) == "OFF");
+    unit.av.rgbCompatible = false;
+    CHECK(std::string(item("Compatibility").valueText(unit.context)) == "OFF");
 
-    panel.av.bright = 140;
-    CHECK(std::string(item("Bright").valueText(panel.context)) == "140");
-    panel.av.contrast = 7;
-    CHECK(std::string(item("Contrast").valueText(panel.context)) == "007");
-    panel.av.saturation = 255;
-    CHECK(std::string(item("Saturation").valueText(panel.context)) == "255");
+    unit.av.bright = 140;
+    CHECK(std::string(item("Bright").valueText(unit.context)) == "140");
+    unit.av.contrast = 7;
+    CHECK(std::string(item("Contrast").valueText(unit.context)) == "007");
+    unit.av.saturation = 255;
+    CHECK(std::string(item("Saturation").valueText(unit.context)) == "255");
 }
 
 TEST_CASE("the format row names the standard the decoder is told to expect")
 {
-    Panel panel;
+    Unit unit;
 
     // One row for both decoder inputs: it reports whichever is selected, and a
     // unit on neither shows what S-Video would get.
     VideoSourceSelection::selectStored(VideoSourceSelection::SVideo);
-    panel.av.svMode = 0;
-    CHECK(std::string(item("Format").valueText(panel.context)) == "Auto");
-    panel.av.svMode = 1;
-    CHECK(std::string(item("Format").valueText(panel.context)) == "PAL");
-    panel.av.svMode = 11;
-    CHECK(std::string(item("Format").valueText(panel.context)) == "SECAM");
+    unit.av.svMode = 0;
+    CHECK(std::string(item("Format").valueText(unit.context)) == "Auto");
+    unit.av.svMode = 1;
+    CHECK(std::string(item("Format").valueText(unit.context)) == "PAL");
+    unit.av.svMode = 11;
+    CHECK(std::string(item("Format").valueText(unit.context)) == "SECAM");
 
     VideoSourceSelection::selectStored(VideoSourceSelection::Composite);
-    panel.av.avMode = 2;
-    CHECK(std::string(item("Format").valueText(panel.context)) == "NTSC-M");
+    unit.av.avMode = 2;
+    CHECK(std::string(item("Format").valueText(unit.context)) == "NTSC-M");
 }
 
 TEST_CASE("the three picture rows name the value they step")
@@ -1093,15 +1102,13 @@ TEST_CASE("a dead option is not described")
 
 TEST_CASE("a row carries what its option is currently set to")
 {
-    Panel panel;
-    panel.options.wantVdsLineFilter = 1;
-    panel.options.wantPeaking = 0;
+    Unit unit;
+    unit.options.wantVdsLineFilter = 1;
+    unit.options.wantPeaking = 0;
 
-    MenuCursor cursor = cursorInside("Picture Settings");
-    while (std::string(cursor.current().label()) != "Line filter")
-        cursor.down();
+    MenuCursor cursor = cursorOn("Picture Settings", "Line filter");
 
-    Recorder.draw(cursor.page(), panel.context);
+    Recorder.draw(cursor.page(), unit.context);
 
     REQUIRE(Drawn.size() == MenuPage::Rows);
     CHECK(Drawn[cursor.page().selected()].label == "Line filter");
@@ -1110,12 +1117,12 @@ TEST_CASE("a row carries what its option is currently set to")
 
 TEST_CASE("a row with no value to show carries none")
 {
-    Panel panel;
+    Unit unit;
 
     MenuCursor cursor(MenuTree::root(), MenuTree::rootCount());
     REQUIRE(std::string(cursor.current().label()) == "Input");
 
-    Recorder.draw(cursor.page(), panel.context);
+    Recorder.draw(cursor.page(), unit.context);
 
     CHECK(Drawn[0].value == "");
 }
@@ -1210,6 +1217,19 @@ static char symbolAt(uint8_t row, uint8_t column)
     return column < text.size() ? text[column] : ' ';
 }
 
+// The colour written at one cell, which is the even address below its symbol.
+// The last write wins, the overlay keeping what it was given.
+static char colourAt(uint8_t row, uint8_t column)
+{
+    static const char Pages[] = { 0x00, 0x02, 0x03 };
+    char colour = 0;
+    for (size_t i = 0; i < Cells.size(); ++i)
+        if (Cells[i].page == Pages[row] && (Cells[i].address & 1) == 0
+            && Cells[i].address == (char)(2 * column))
+            colour = Cells[i].value;
+    return colour;
+}
+
 // Cells accumulate across draws, because the overlay keeps what was written to
 // it: a helper that started from blanks could not tell a row that was blanked
 // from one that was never written.
@@ -1221,13 +1241,13 @@ static void drawOnTelevision(const MenuPage &page, const MenuContext &context)
 
 TEST_CASE("the last column counts the pages of the level")
 {
-    Panel panel;
+    Unit unit;
 
     MenuCursor cursor = cursorInside("Picture Settings");
     REQUIRE(cursor.page().number() == 1);
 
     Cells.clear();
-    drawOnTelevision(cursor.page(), panel.context);
+    drawOnTelevision(cursor.page(), unit.context);
     CHECK(symbolAt(0, OSD::IndicatorColumn) == ' ');
     CHECK(symbolAt(1, OSD::IndicatorColumn) == '1');
     CHECK(symbolAt(2, OSD::IndicatorColumn) == 'v');
@@ -1238,7 +1258,7 @@ TEST_CASE("the last column counts the pages of the level")
     REQUIRE(cursor.page().number() == 2);
 
     Cells.clear();
-    drawOnTelevision(cursor.page(), panel.context);
+    drawOnTelevision(cursor.page(), unit.context);
     CHECK(symbolAt(0, OSD::IndicatorColumn) == '^');
     CHECK(symbolAt(1, OSD::IndicatorColumn) == '2');
     CHECK(symbolAt(2, OSD::IndicatorColumn) == 'v');
@@ -1248,11 +1268,11 @@ TEST_CASE("a level that fits on one page leaves the last column alone")
 {
     // The chain wrote the page character out per branch, so every level it drew
     // carried one. A level with nothing either side of it has nothing to count.
-    Panel panel;
+    Unit unit;
     MenuCursor cursor(Colour, 2);
 
     Cells.clear();
-    drawOnTelevision(cursor.page(), panel.context);
+    drawOnTelevision(cursor.page(), unit.context);
 
     CHECK(symbolAt(0, OSD::IndicatorColumn) == ' ');
     CHECK(symbolAt(1, OSD::IndicatorColumn) == ' ');
@@ -1262,11 +1282,11 @@ TEST_CASE("the selected row carries a cursor at the first column, the label besi
 {
     // The cursor is a glyph as well as the row colour, and every label is inset
     // by one to leave room for it.
-    Panel panel;
+    Unit unit;
 
     MenuCursor cursor(MenuTree::root(), MenuTree::rootCount());
     Cells.clear();
-    drawOnTelevision(cursor.page(), panel.context);
+    drawOnTelevision(cursor.page(), unit.context);
 
     CHECK(rowText(0).substr(0, 8) == ">1 Input");
     CHECK(rowText(1).substr(0, 20) == " 2 Output Resolution");
@@ -1276,13 +1296,13 @@ TEST_CASE("the selected row marks an item that leads somewhere, just after its l
 {
     // The chain marked it at a column chosen per item, which is why removing an
     // option left the mark where the label used to end.
-    Panel panel;
+    Unit unit;
 
     MenuCursor cursor(MenuTree::root(), MenuTree::rootCount());
     REQUIRE(std::string(cursor.current().label()) == "Input");
 
     Cells.clear();
-    drawOnTelevision(cursor.page(), panel.context);
+    drawOnTelevision(cursor.page(), unit.context);
 
     CHECK(rowText(0) == ">1 Input>");
     CHECK(rowText(1) == " 2 Output Resolution       1");
@@ -1290,14 +1310,14 @@ TEST_CASE("the selected row marks an item that leads somewhere, just after its l
 
 TEST_CASE("an item that leads nowhere is not marked")
 {
-    Panel panel;
+    Unit unit;
 
     MenuCursor cursor(MenuTree::root(), MenuTree::rootCount());
     cursor.up();
     REQUIRE(std::string(cursor.current().label()) == "Reset Settings");
 
     Cells.clear();
-    drawOnTelevision(cursor.page(), panel.context);
+    drawOnTelevision(cursor.page(), unit.context);
 
     CHECK(rowText(0) == " 4 System Settings         ^");
     CHECK(rowText(1) == " 5 Picture Settings        2");
@@ -1306,47 +1326,45 @@ TEST_CASE("an item that leads nowhere is not marked")
 
 TEST_CASE("a rule of hyphens leads from the label to the value")
 {
-    Panel panel;
-    panel.options.wantVdsLineFilter = 1;
+    Unit unit;
+    unit.options.wantVdsLineFilter = 1;
 
-    MenuCursor cursor = cursorInside("Picture Settings");
-    while (std::string(cursor.current().label()) != "Line filter")
-        cursor.down();
+    MenuCursor cursor = cursorOn("Picture Settings", "Line filter");
 
     Cells.clear();
-    drawOnTelevision(cursor.page(), panel.context);
+    drawOnTelevision(cursor.page(), unit.context);
 
     CHECK(rowText(cursor.page().selected()) == ">Line filter------------ON v");
 }
 
 TEST_CASE("a row is written whole, so a shorter label leaves no tail behind")
 {
-    Panel panel;
+    Unit unit;
 
-    MenuCursor cursor = cursorInside("System Settings");
-    while (std::string(cursor.current().label()) != "Frame Time Lock")
-        cursor.down();
+    MenuCursor cursor = cursorOn("System Settings", "Frame Time Lock");
+    const uint8_t row = cursor.page().selected();
 
     Cells.clear();
-    drawOnTelevision(cursor.page(), panel.context);
-    REQUIRE(rowText(1) == ">Frame Time Lock-------OFF 2");
+    drawOnTelevision(cursor.page(), unit.context);
+    REQUIRE(rowText(row) == ">Frame Time Lock-------OFF 2");
 
-    // A level whose second row is shorter, drawn over the same cells.
+    // A level whose row at that position is shorter, drawn over the same cells.
     MenuCursor second = cursorInside("Picture Settings");
-    drawOnTelevision(second.page(), panel.context);
+    REQUIRE(std::string(second.page().labelAt(row)) == "Scanlines");
+    drawOnTelevision(second.page(), unit.context);
 
-    CHECK(rowText(1) == " Scanlines-------------OFF 1");
+    CHECK(rowText(row) == " Scanlines-------------OFF 1");
 }
 
 TEST_CASE("a space inside a label is the font's blank, not its 0x20")
 {
     // 0x20 draws an accented letter. The overlay blanks a cell with 0x00, which
     // OSD_symbols_1() is what says: it writes that value at every address.
-    Panel panel;
+    Unit unit;
 
     MenuCursor cursor(MenuTree::root(), MenuTree::rootCount());
     Cells.clear();
-    drawOnTelevision(cursor.page(), panel.context);
+    drawOnTelevision(cursor.page(), unit.context);
 
     for (size_t i = 0; i < Cells.size(); ++i)
         if ((Cells[i].address & 1) != 0)
@@ -1357,12 +1375,12 @@ TEST_CASE("a row the page does not fill is cleared rather than painted")
 {
     // Painting it in the row colour leaves a bar of background across the
     // picture where there is no menu.
-    Panel panel;
+    Unit unit;
 
     const MenuItem *pair = item("System Settings").children();
     MenuCursor cursor(pair, 2);
     Cells.clear();
-    drawOnTelevision(cursor.page(), panel.context);
+    drawOnTelevision(cursor.page(), unit.context);
 
     bool cleared = true;
     for (size_t i = 0; i < Cells.size(); ++i)
@@ -1374,12 +1392,12 @@ TEST_CASE("a row the page does not fill is cleared rather than painted")
 
 TEST_CASE("the selected row is the only one in the highlight colour")
 {
-    Panel panel;
+    Unit unit;
 
     MenuCursor cursor(MenuTree::root(), MenuTree::rootCount());
     cursor.down();
     Cells.clear();
-    drawOnTelevision(cursor.page(), panel.context);
+    drawOnTelevision(cursor.page(), unit.context);
 
     // The colour of a row is the even address below each symbol.
     uint8_t highlighted = 0;
@@ -1399,16 +1417,16 @@ TEST_CASE("a page with fewer rows than the overlay blanks the rest")
 {
     // The overlay keeps what was written to it, so a short level drawn over a
     // full one leaves the third row painted unless the draw blanks it.
-    Panel panel;
+    Unit unit;
 
     Cells.clear();
     const MenuItem &picture = item("Picture Settings");
     MenuCursor full = cursorInside("Picture Settings");
-    drawOnTelevision(full.page(), panel.context);
+    drawOnTelevision(full.page(), unit.context);
     REQUIRE(rowText(2) != "");
 
     MenuCursor pair(picture.children(), 2);
-    drawOnTelevision(pair.page(), panel.context);
+    drawOnTelevision(pair.page(), unit.context);
 
     CHECK(rowText(2) == "");
 }
@@ -1416,26 +1434,28 @@ TEST_CASE("a page with fewer rows than the overlay blanks the rest")
 TEST_CASE("a pad draws its four arrows where a value would go")
 {
     // The chain drew the same four, at the column its own rule stopped at.
-    Panel panel;
-    Menu menu(Screen, 2, Recorder, panel.context);
+    Unit unit;
+    Menu menu(Screen, 2, Recorder, unit.context);
     menu.open();
     REQUIRE_FALSE(menu.press(Menu::KeyOk).asked());
 
     Cells.clear();
-    drawOnTelevision(menu.page(), panel.context);
+    drawOnTelevision(menu.page(), unit.context);
 
-    CHECK(rowText(0) == ">1 Move>--------------<^v>");
+    // The chain marks a submenu and leaves a pad unmarked: Ok descends one and
+    // hands the arrows to the other.
+    CHECK(rowText(0) == ">1 Move---------------<^v>");
 }
 
 TEST_CASE("the root ring is numbered, as the chain numbered it")
 {
     // The chain carried the number inside the label string -- "4 System
     // Settings" -- so it painted one on the root ring and nowhere else.
-    Panel panel;
+    Unit unit;
     MenuCursor cursor(MenuTree::root(), MenuTree::rootCount());
 
     Cells.clear();
-    drawOnTelevision(cursor.page(), panel.context);
+    drawOnTelevision(cursor.page(), unit.context);
 
     CHECK(rowText(0) == ">1 Input>");
     CHECK(rowText(1) == " 2 Output Resolution       1");
@@ -1444,20 +1464,172 @@ TEST_CASE("the root ring is numbered, as the chain numbered it")
     cursor.down();
     cursor.down();
     Cells.clear();
-    drawOnTelevision(cursor.page(), panel.context);
+    drawOnTelevision(cursor.page(), unit.context);
     CHECK(rowText(0) == ">4 System Settings>        ^");
 }
 
 TEST_CASE("a level below the root is not numbered")
 {
-    Panel panel;
+    Unit unit;
     const MenuItem &input = item("Input");
     MenuCursor cursor(MenuTree::root(), MenuTree::rootCount());
     REQUIRE(cursor.descend());
     REQUIRE(cursor.current().label() == input.children()[0].label());
 
     Cells.clear();
-    drawOnTelevision(cursor.page(), panel.context);
+    drawOnTelevision(cursor.page(), unit.context);
 
     CHECK(rowText(0) == ">RGBs");
 }
+
+
+// --- The menu on the panel
+//
+// The 128x64 panel on the unit, which shows one item at a time: the level, the
+// selected row's label and what it is set to. A row with no value is drawn
+// between the other two positions, where the chain drew a submenu.
+
+struct PanelLine {
+    uint8_t y;
+    std::string text;
+};
+
+static std::vector<PanelLine> Lines;
+static int Cleared;
+static int Flushed;
+
+static void recordClear()
+{
+    Lines.clear();
+    ++Cleared;
+}
+
+static void recordLine(uint8_t y, const char *text)
+{
+    PanelLine line;
+    line.y = y;
+    line.text = text;
+    Lines.push_back(line);
+}
+
+static void recordFlush() { ++Flushed; }
+
+static std::string lineAt(uint8_t y)
+{
+    for (size_t i = 0; i < Lines.size(); ++i)
+        if (Lines[i].y == y)
+            return Lines[i].text;
+    return "";
+}
+
+static void drawOnPanel(const MenuPage &page, const MenuContext &context)
+{
+    Panel::writeThrough(recordClear, recordLine, recordFlush);
+    Panel::renderer().draw(page, context);
+}
+
+TEST_CASE("the panel draws the level, the selected row and what it is set to")
+{
+    Unit unit;
+    unit.options.wantPeaking = 1;
+
+    drawOnPanel(cursorOn("Picture Settings", "Peaking").page(), unit.context);
+
+    CHECK(lineAt(Panel::LevelRow) == "Picture Settings");
+    CHECK(lineAt(Panel::LabelRow) == "Peaking");
+    CHECK(lineAt(Panel::ValueRow) == "ON");
+}
+
+TEST_CASE("a row with no value is drawn where the chain drew a submenu")
+{
+    Unit unit;
+
+    drawOnPanel(cursorOn("Picture Settings", "Default colour").page(),
+                unit.context);
+
+    CHECK(lineAt(Panel::AloneRow) == "Default colour");
+    CHECK(lineAt(Panel::LabelRow) == "");
+    CHECK(lineAt(Panel::ValueRow) == "");
+}
+
+TEST_CASE("the root level is named, a page having nothing above it to name")
+{
+    Unit unit;
+    MenuCursor cursor(MenuTree::root(), MenuTree::rootCount());
+    REQUIRE_FALSE((cursor.page().title() != NULL));
+
+    drawOnPanel(cursor.page(), unit.context);
+
+    CHECK(lineAt(Panel::LevelRow) == std::string(Panel::RootLevel));
+    CHECK(lineAt(Panel::AloneRow) == "Input");
+}
+
+TEST_CASE("the panel draws one item, not the three the overlay shows")
+{
+    Unit unit;
+
+    drawOnPanel(cursorOn("Picture Settings", "Scanlines").page(), unit.context);
+
+    REQUIRE(Lines.size() == 3);
+    CHECK(lineAt(Panel::LabelRow) == "Scanlines");
+}
+
+TEST_CASE("a closed page leaves the panel cleared and flushed")
+{
+    // A device that keeps what it was given has no other way to be told the
+    // menu has gone, and the panel has a tree of its own waiting underneath.
+    Unit unit;
+    const int cleared = Cleared;
+    const int flushed = Flushed;
+
+    drawOnPanel(MenuPage(), unit.context);
+
+    CHECK(Cleared == cleared + 1);
+    CHECK(Flushed == flushed + 1);
+    CHECK(Lines.empty());
+}
+
+TEST_CASE("a redraw reaches every device the menu draws on")
+{
+    Unit unit;
+    Menu menu(Screen, 2, OSD::renderer(), unit.context);
+    menu.alsoDrawOn(Panel::renderer());
+    OSD::writeThrough(recordCell);
+    Panel::writeThrough(recordClear, recordLine, recordFlush);
+    Cells.clear();
+    menu.open();
+
+    menu.drawIfNeeded();
+
+    CHECK(rowText(0) == ">1 Move");
+    CHECK(lineAt(Panel::AloneRow) == "Move");
+}
+
+TEST_CASE("the panel leaves the root ring unnumbered, where the overlay counts it")
+{
+    Unit unit;
+    MenuCursor cursor(MenuTree::root(), MenuTree::rootCount());
+    cursor.down();
+
+    drawOnPanel(cursor.page(), unit.context);
+
+    CHECK(lineAt(Panel::AloneRow) == "Output Resolution");
+}
+
+TEST_CASE("the cursor's cell is filled, where the rest of the row is written over the bar")
+{
+    // The chain draws a black glyph on a solid yellow cell for the cursor and
+    // the selected row's own colour everywhere else, the two differing.
+    Unit unit;
+    MenuCursor cursor(MenuTree::root(), MenuTree::rootCount());
+    cursor.down();
+    cursor.down();
+
+    Cells.clear();
+    drawOnTelevision(cursor.page(), unit.context);
+
+    const uint8_t row = cursor.page().selected();
+    CHECK(colourAt(row, 0) == OSD::Cursor);
+    CHECK(colourAt(row, OSD::LabelColumn) == OSD::Selected);
+}
+

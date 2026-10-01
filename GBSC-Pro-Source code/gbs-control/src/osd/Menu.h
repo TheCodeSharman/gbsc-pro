@@ -22,8 +22,14 @@ public:
     // own and never reaches here.
     enum Key { KeyUp, KeyDown, KeyLeft, KeyRight, KeyOk, KeyMenu, KeyExit };
 
+    // The board has two: the overlay on the television and the panel on the
+    // unit. One page, drawn by each the way its device wants it.
+    static const uint8_t Devices = 2;
+
     Menu(const MenuItem *root, uint8_t count, const MenuRenderer &renderer,
          const MenuContext &context);
+
+    void alsoDrawOn(const MenuRenderer &renderer);
 
     bool isOpen() const;
 
@@ -57,7 +63,8 @@ private:
 
     const MenuItem *root_;
     uint8_t count_;
-    const MenuRenderer &renderer_;
+    const MenuRenderer *devices_[Devices];
+    uint8_t deviceCount_;
     const MenuContext &context_;
     MenuCursor cursor_;
     bool open_;

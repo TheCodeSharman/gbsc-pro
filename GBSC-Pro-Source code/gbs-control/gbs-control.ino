@@ -102,6 +102,7 @@ static unsigned long Tim_Resolution = 0, Tim_Resolution_Start = 0;
 #include "src/osd/MenuContext.h"
 #include "src/osd/MenuTree.h"
 #include "src/osd/OSD.h"
+#include "src/osd/Panel.h"
 #include "src/clock/ClockGen.h"
 #include "src/input/HoldRamp.h"
 #include "src/input/IrReceiver.h"
@@ -1005,6 +1006,23 @@ private:
 static Osd::MenuContext menuContext(geometryControls, uopts, avopts);
 static Osd::Menu describedMenu(Osd::MenuTree::root(), Osd::MenuTree::rootCount(),
                                Osd::OSD::renderer(), menuContext);
+
+// The panel's end of Osd::Panel, as OSD_parameters() is the overlay's. The
+// chain set the colour, the alignment and the font at every branch it drew.
+static void panelClear()
+{
+    display.clear();
+    display.setColor(OLEDDISPLAY_COLOR::WHITE);
+    display.setTextAlignment(TEXT_ALIGN_LEFT);
+    display.setFont(ArialMT_Plain_16);
+}
+
+static void panelLine(uint8_t y, const char *text)
+{
+    display.drawString(1, y, text);
+}
+
+static void panelFlush() { display.display(); }
 
 // Whether the remote reaches the described menu instead of the chain. Off, so
 // the remote behaves as it did; /menu?ir=1 is how a subtree gets judged on the
@@ -3943,6 +3961,8 @@ void setup()
     OSD_clear();
     OSD();
     Osd::OSD::writeThrough(OSD_parameters);
+    Osd::Panel::writeThrough(panelClear, panelLine, panelFlush);
+    describedMenu.alsoDrawOn(Osd::Panel::renderer());
     PT_MUTE(0x78);
     PT_2257(70); // audible
 
@@ -4572,8 +4592,12 @@ void loop()
     // The overlay is on the ESP's I2C bus, so a /menu press only moves the
     // cursor and the drawing happens here. Only while the chain's menu is
     // closed, or the two would paint over each other.
-    if (oled_menuItem == 0)
+    // Two trees draw the panel, so whichever is open owns it: the icon tree's
+    // tick() would otherwise paint over a described page.
+    if (oled_menuItem == 0) {
+        NEW_OLED_MENU = !describedMenu.isOpen();
         describedMenu.drawIfNeeded();
+    }
     traceIrFrames(irAfterSelect - irBefore, irrecv.decodes() - irAfterSelect,
                   irMenuBefore);
 
@@ -6857,6 +6881,12 @@ void startWebserver()
         }
         body += "\",\"remote\":";
         body += describedMenuDrivesRemote ? "true" : "false";
+        // Which of the two trees that draw the panel holds it, read off the
+        // gate itself: nothing on the board reports the panel, so this is the
+        // only witness that the icon tree is staying out of a described page.
+        body += ",\"panel\":\"";
+        body += NEW_OLED_MENU ? "icons" : "described";
+        body += "\"";
         body += ",\"rows\":[";
         for (uint8_t row = 0; row < page.rows(); ++row) {
             const Osd::MenuItem &item = page.itemAt(row);
