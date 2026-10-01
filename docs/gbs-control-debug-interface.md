@@ -29,6 +29,14 @@ Useful ones:
 | `/uc?f` `/uc?g` `/uc?p` `/uc?s` | scaling presets: 1280×960, 1280×720, 1280×1024, 1920×1080 |
 | `/uc?G` | cycle the shape the picture is shown in — Fill, 4:3, 16:9, 5:4 |
 
+**Eight routes refuse under low heap, and a refusal is a 503 that says so** --
+the web UI, `/sc`, `/uc`, both slot routes, `/bin/slots.bin`, `/fs/download` and
+`/fs/dir`, with the free heap and what the route needed in the body. A route
+that builds a reply wants 10000 bytes; `/sc` and `/uc` queue a byte and answer
+an empty 200, so theirs is 4000. They used to return without sending anything,
+which curl reports as `Empty reply from server` and reads as a crashed handler.
+`known-issues.md`.
+
 `GET /menu?key=up|down|left|right|ok|menu|exit` drives the described menu and
 answers the page it would draw, so a menu change needs no remote. Behind
 `GBS_DEBUG`. A press queues its letter on the surface the item names, and the

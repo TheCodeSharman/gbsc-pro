@@ -3246,41 +3246,32 @@ entries resolve the raster match in time is open.
 
 ## Costs time rather than correctness
 
-### A build with a boot log cannot be armed for OTA, and three routes answer nothing
+### A build with a boot log cannot be armed for OTA, and USB is the way back
 
-`/`, `/sc`, `/uc`, `/bin/slots.bin`, `/slot/set`, `/slot/save`, `/fs/download`
-and `/fs/dir` are each wrapped in `if (ESP.getFreeHeap() > 10000)` with no else,
-so below that they **return without sending anything**. curl reports
-`Empty reply from server` and the exit status is 52, which reads as a crashed
-handler or a dead unit; `/menu`, `/geometry` and `/input` keep answering beside
-them, which makes it read as a selective fault rather than a heap gate.
+The refusal is legible now: `/`, `/sc`, `/uc`, `/bin/slots.bin`, `/slot/set`,
+`/slot/save`, `/fs/download` and `/fs/dir` go through `RouteHeap`, which answers
+**503 with the free heap and what the route needed** instead of returning
+without sending anything. A gate and a crashed handler are no longer the same
+reading. `/sc` and `/uc` have a floor of 4000 rather than 10000, which is what a
+queued byte and an empty 200 cost, so the arm route itself answers on a build
+the web UI could not load.
 
-Measured on the bench unit with `GBS_DEBUG=1 BOOTLOG_BYTES=4096`: **10832 bytes
-free at boot, settling to 9400..9736 within two minutes** with nothing attached.
-So the gate is shut for the life of the session, the web UI never loads, and
-`make -C build flash-ota` fails at its first line -- the `curl -fsS .../sc?c`
-that arms the unit.
-
-**An arm can answer 200 and still not arm**, which is the second half of the
-trap: `/sc?c` is queued for `loop()`, and `case 'c'` calls `initUpdateOTA()`,
-which allocates. Measured three times at ~10.8 KB free immediately after a
-reboot: 200 from the route, and `ota_probe.py` reporting the unit not armed
-5, 10 and 20 seconds later.
+**What is NOT closed is the arm.** `/sc?c` is queued for `loop()`, and `case 'c'`
+calls `initUpdateOTA()`, which allocates. Measured three times at ~10.8 KB free
+immediately after a reboot: 200 from the route, and `ota_probe.py` reporting the
+unit not armed 5, 10 and 20 seconds later. So a boot-log build can be told to arm
+and still not arm.
 
 The boot log is what costs it -- `BOOTLOG_BYTES=4096` is 4096 bytes of globals,
 and the default build is 0. So this is a property of the diagnostic build rather
 than of the product, but the diagnostic build is the one a session flashes.
 
-Two things would close it, and neither has been done. The routes should answer
-when they refuse, because a route that answers nothing cannot be told from a
-dead unit. And the gate should match what each handler costs: `/sc` and `/uc`
-set one byte and send an empty 200, where `/fs/dir` builds a String of the whole
-directory, and one constant covers both.
-
-**The reachable recovery is the menu's own Restart**, which queues `'a'` through
-`userCommand` rather than over HTTP and so is not gated: a reboot puts the heap
-back above 10000 for a minute or two. `/menu?key=…` to System Settings, Up to
-Restart, Ok.
+**A reboot does not open a window, and the claim that it does is wrong.**
+Measured with `GBS_DEBUG=1 BOOTLOG_BYTES=4096`: **9184 bytes free at boot**,
+below the 10000 a reply needs, and the menu's own Restart -- which queues `'a'`
+through `userCommand` and so was never gated -- comes back to the same figure.
+So the way to flash a boot-log build is **USB**, and a session that wants OTA
+afterwards flashes `BOOTLOG_BYTES=0`.
 
 
 ### A mode change arriving while a solve is pending keeps the old divider's premise
