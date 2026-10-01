@@ -2690,7 +2690,8 @@ void doPostPresetLoadSteps()
         // scaling-RGBHV one: a source that never reaches it keeps whatever sync
         // path the last one left, and a separate-sync source left on
         // sync-on-green counts nothing at all.
-        Tv5725::SyncProcessor::applyForSyncType(Tv5725::SyncMeasurement::isCsync());
+        Tv5725::SyncProcessor::applyForSyncType(Tv5725::SyncMeasurement::isCsync(),
+                                                sourceHasSerratedSync());
         prepareSyncProcessor();
         if (scalingRgbhv()) {
             if (Tv5725::SyncMeasurement::isCsync()) {

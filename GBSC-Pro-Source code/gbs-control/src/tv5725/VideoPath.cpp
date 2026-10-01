@@ -718,7 +718,7 @@ void VideoPath::applySyncType(bool csync)
              csync ? "composite or SOG" : "separate", (unsigned)syncTypeChosenFor_);
     tv5725Log(line);
 
-    SyncProcessor::applyForSyncType(csync);
+    SyncProcessor::applyForSyncType(csync, sampling_.hasSerratedSync());
     ModeDetect::applySyncType(csync ? ModeDetect::Csync : ModeDetect::SeparateSync);
     delay(SyncProcessor::PathSettleMs);
 }

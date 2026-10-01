@@ -240,8 +240,6 @@ void SyncProcessor::prepare(bool csync, bool serrated, bool rgbhvRoute)
         SP_HCST_AUTO_EN::write(0);
     }
 
-    setSubCoast(serrated);
-
     SP_HS_REG::write(1);
     SP_HS_PROC_INV_REG::write(0);
     SP_VS_PROC_INV_REG::write(0);
@@ -259,8 +257,10 @@ void SyncProcessor::applyForPassThrough()
     SP_HS2PLL_INV_REG::write(0);
 }
 
-void SyncProcessor::applyForSyncType(bool csync)
+void SyncProcessor::applyForSyncType(bool csync, bool serrated)
 {
+    setSubCoast(serrated);
+
     // No ordering constraint between these fields is established, so the two
     // branches keep their own write order.
     if (csync) {

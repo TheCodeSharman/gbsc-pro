@@ -2124,7 +2124,7 @@ TEST_CASE("a source that measures its own lines is left on the pair it has")
 {
     seedBenchSource();
     seedSourceHalfLines(624);
-    SyncProcessor::applyForSyncType(true);
+    SyncProcessor::applyForSyncType(true, false);
     const uint32_t before = SyncProcessor::SP_PRE_COAST::read();
 
     DisplayClock clock;

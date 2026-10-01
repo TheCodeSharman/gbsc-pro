@@ -25,22 +25,22 @@ using namespace Tv5725;
 static const uint8_t Poisons[2] = {0xA5, 0x5A};
 
 template <typename Field>
-static uint32_t applied(bool csync)
+static uint32_t applied(bool csync, bool serrated = false)
 {
     Wire.reset();
     Wire.poison(Poisons[0]);
-    SyncProcessor::applyForSyncType(csync);
+    SyncProcessor::applyForSyncType(csync, serrated);
     return Field::read();
 }
 
 template <typename Field>
-static bool wasWritten(bool csync)
+static bool wasWritten(bool csync, bool serrated = false)
 {
     uint32_t under[2];
     for (int i = 0; i < 2; ++i) {
         Wire.reset();
         Wire.poison(Poisons[i]);
-        SyncProcessor::applyForSyncType(csync);
+        SyncProcessor::applyForSyncType(csync, serrated);
         under[i] = Field::read();
     }
     return under[0] == under[1];
@@ -225,7 +225,7 @@ TEST_CASE("the default coast window leaves the coast lengths alone")
     // the window over must not silently undo them.
     Wire.reset();
     Wire.poison(Poisons[0]);
-    SyncProcessor::applyForSyncType(true);
+    SyncProcessor::applyForSyncType(true, false);
     const uint32_t pre = SyncProcessor::SP_PRE_COAST::read();
     const uint32_t post = SyncProcessor::SP_POST_COAST::read();
 
@@ -244,7 +244,7 @@ TEST_CASE("widening the coast covers more lines either side of the interval")
 {
     Wire.reset();
     Wire.poison(Poisons[0]);
-    SyncProcessor::applyForSyncType(true);
+    SyncProcessor::applyForSyncType(true, false);
 
     SyncProcessor::widenCoastForSerration();
 
@@ -504,7 +504,7 @@ TEST_CASE("the composite coast pair counts a source's lines, not its serrations"
     Wire.reset();
     Wire.poison(Poisons[0]);
 
-    SyncProcessor::applyForSyncType(true);
+    SyncProcessor::applyForSyncType(true, false);
 
     CHECK(SyncProcessor::SP_PRE_COAST::read() == 7);
     CHECK(SyncProcessor::SP_POST_COAST::read() == 6);
@@ -530,7 +530,7 @@ TEST_CASE("an overridden coast is what the sync type applies")
     SyncProcessor::overrideCoast(12, 9);
 
     Wire.reset();
-    SyncProcessor::applyForSyncType(true);
+    SyncProcessor::applyForSyncType(true, false);
 
     CHECK(SyncProcessor::SP_PRE_COAST::read() == 12);
     CHECK(SyncProcessor::SP_POST_COAST::read() == 9);
@@ -559,7 +559,7 @@ TEST_CASE("forgetting the override returns the constants")
     SyncProcessor::forgetCoastOverride();
 
     Wire.reset();
-    SyncProcessor::applyForSyncType(true);
+    SyncProcessor::applyForSyncType(true, false);
 
     CHECK(SyncProcessor::SP_PRE_COAST::read() == 7);
     CHECK(SyncProcessor::SP_POST_COAST::read() == 6);
@@ -575,7 +575,7 @@ TEST_CASE("coasting further for a serrated source leaves the pulse-ignore alone"
     // source's serrations are being counted must not become another one.
     Wire.reset();
     Wire.poison(Poisons[0]);
-    SyncProcessor::applyForSyncType(true);
+    SyncProcessor::applyForSyncType(true, false);
     SyncProcessor::SP_H_PULSE_IGNOR::write(107);
 
     SyncProcessor::widenCoast();
@@ -995,7 +995,7 @@ TEST_CASE("the per-load setup leaves the sync mode the sync type chose")
 {
     Wire.reset();
     Wire.poison(Poisons[0]);
-    SyncProcessor::applyForSyncType(false);
+    SyncProcessor::applyForSyncType(false, false);
 
     SyncProcessor::prepare(false, false, false);
 
@@ -1006,11 +1006,29 @@ TEST_CASE("the per-load setup leaves the coast enable the sync type chose")
 {
     Wire.reset();
     Wire.poison(Poisons[0]);
-    SyncProcessor::applyForSyncType(false);
+    SyncProcessor::applyForSyncType(false, false);
 
     SyncProcessor::prepare(false, false, false);
 
     CHECK(SyncProcessor::SP_NO_COAST_REG::read() == 1u);
+}
+
+// The sub coast is the coast WITHIN a line: SP_H_CST_ST/SP_H_CST_SP mask a
+// window of the retiming so a serration cannot be taken for the line's hsync.
+// A source with its own hsync needs none, and the default window masks exactly
+// where its edge arrives.
+//
+// Measured on the bench, 320x256@50 on `vga`, returning from SYNC 1 to SYNC 0:
+// left enabled with the window back at its default 16..256,
+// STATUS_SYNC_PROC_HTOTAL wandered 3218..3251 against a PLLAD_MD of 2200, so
+// every duty reading was refused as UNLOCKED, the solve never completed and the
+// sync pad was never driven back -- a correctly measured source and a black
+// output, for as long as it was left. Writing this one bit restored HTOTAL to
+// 2200 and the acquisition within seconds. docs/known-issues.md
+TEST_CASE("a source with its own hsync is left with no sub coast")
+{
+    CHECK(wasWritten<SyncProcessor::SP_DIS_SUB_COAST>(false));
+    CHECK(applied<SyncProcessor::SP_DIS_SUB_COAST>(false) == 1u);
 }
 
 TEST_CASE("the sync type writes the pulse width difference with the coast")
