@@ -25,7 +25,6 @@
 
 #define RGB1 0x01
 #define YUV0 0x00
-extern uint8_t RGB_Com;
 
 #define HV_Enable 0x00
 #define HV_Disable 0x01
@@ -44,6 +43,7 @@ extern void ChangeSvModeOption(uint8_t num);
 extern void doPostPresetLoadSteps();
 extern runTimeOptions *rto;
 extern userOptions *uopt;
+extern avOptions *avo;
 extern const char *ap_ssid;
 extern const char *final_ssid;
 extern const char *ap_password;
@@ -593,6 +593,43 @@ void SetReg(unsigned char reg, unsigned char val)
 //   sender.send(Adv_SIGNALIZED);
 // }
 
+// The ADV7391 takes the three picture controls on its own addresses, and
+// brightness as a signed offset from the middle of the range. Nothing on the
+// board can read them back -- the HC32's USART4 TX goes to the update button --
+// so what is held here is sent rather than adjusted from a reading.
+void applyAvPicture()
+{
+    SetReg(0x0a, avo->bright - 128);
+    SetReg(0x08, avo->contrast);
+    SetReg(0xe3, avo->saturation);
+}
+
+void resetAvPicture()
+{
+    SetReg('D', 'E');
+    avo->bright = 128;
+    avo->contrast = 128;
+    avo->saturation = 128;
+    saveUserPrefs();
+}
+
+// The decoder's standard, for whichever of the two inputs that reach it is
+// selected. A ring, so stepping past either end comes back round.
+void stepAvFormat(int16_t steps)
+{
+    const uint8_t count = sizeof(modes) / sizeof(modes[0]);
+    const bool composite =
+        VideoSourceSelection::selected() == VideoSourceSelection::Composite;
+    uint8_t &mode = composite ? avo->avMode : avo->svMode;
+
+    int32_t wanted = ((int32_t)mode + steps) % count;
+    if (wanted < 0)
+        wanted += count;
+    mode = (uint8_t)wanted;
+
+    Send_TvMode(modes[mode]);
+}
+
 void applyInputRegisters(const VideoSourceSelection::Settings &settings)
 {
     Tv5725::Adc::enableSyncOnGreen(settings.adcSogEn);
@@ -996,13 +1033,13 @@ bool SettingHandler(OLEDMenuManager *manager, OLEDMenuItem *item, OLEDMenuNav, b
     }
     else if (preset == SETTING_PresetPreference::MT_COMPATIBILITY_OFF)
     {
-        RGB_Com = COMPATIBILITY_OFF;
-        Send_Compatibility(RGB_Com);
+        avo->rgbCompatible = COMPATIBILITY_OFF;
+        Send_Compatibility(avo->rgbCompatible);
     }
     else if (preset == SETTING_PresetPreference::MT_COMPATIBILITY_ON)
     {
-        RGB_Com = COMPATIBILITY_ON;
-        Send_Compatibility(RGB_Com);
+        avo->rgbCompatible = COMPATIBILITY_ON;
+        Send_Compatibility(avo->rgbCompatible);
     }
 #ifdef ACE    
     else if (preset == SETTING_PresetPreference::MT_ACE_OFF)

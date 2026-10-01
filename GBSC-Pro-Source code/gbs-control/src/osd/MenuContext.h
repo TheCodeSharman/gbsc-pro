@@ -7,6 +7,7 @@
 // alike. docs/osd-menu.md
 
 struct userOptions;
+struct avOptions;
 
 namespace Tv5725 {
 class Controls;
@@ -16,14 +17,20 @@ namespace Osd {
 
 class MenuContext {
 public:
-    MenuContext(Tv5725::Controls &controls, userOptions &options);
+    MenuContext(Tv5725::Controls &controls, userOptions &options,
+                avOptions &av);
 
     Tv5725::Controls &controls() const;
     userOptions &options() const;
 
+    // The AV module's picture, which is not a scaler preference and is not in
+    // userOptions for that reason.
+    avOptions &av() const;
+
 private:
     Tv5725::Controls &controls_;
     userOptions &options_;
+    avOptions &av_;
 };
 
 }  // namespace Osd

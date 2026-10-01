@@ -136,6 +136,8 @@ struct userOptions uopts;
 struct userOptions *uopt = &uopts;
 struct adcOptions adcopts;
 struct adcOptions *adco = &adcopts;
+struct avOptions avopts = {0, 0, 128, 128, 128, false, false, false};
+struct avOptions *avo = &avopts;
 
 String slotIndexMap = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~()!*:,";
 
@@ -297,16 +299,8 @@ static int oled_menuItem_last = 0;
 static uint8_t OLED_clear_flag = ~0;
 boolean NEW_OLED_MENU = true;
 
-static uint8_t SvModeOption, AvModeOption;
 static uint8_t SvModeOptionChanged, AvModeOptionChanged;
-static bool SmoothOption;
-static bool LineOption;
 static bool SettingLineOptionChanged, SettingSmoothOptionChanged;
-static uint8_t Bright = 128;
-static uint8_t Contrast = 128;
-static uint8_t Saturation = 128;
-
-uint8_t RGB_Com;
 
 uint8_t Keep_S = 0;
 static uint8_t tentative = 0xfe;
@@ -672,8 +666,8 @@ void Mode_Option(void)
         SvModeOptionChanged = 0;
 
 
-        if (SvModeOption >= 0 && SvModeOption <= max_index) {
-            Send_TvMode(modes[SvModeOption]);
+        if (avo->svMode >= 0 && avo->svMode <= max_index) {
+            Send_TvMode(modes[avo->svMode]);
         } else {
             Send_TvMode(modes[1]); // 强制回退到 Auto 模式
         }
@@ -681,19 +675,19 @@ void Mode_Option(void)
     if (AvModeOptionChanged) {
         AvModeOptionChanged = 0;
 
-        if (AvModeOption >= 0 && AvModeOption <= max_index) {
-            Send_TvMode(modes[AvModeOption]);
+        if (avo->avMode >= 0 && avo->avMode <= max_index) {
+            Send_TvMode(modes[avo->avMode]);
         } else {
             Send_TvMode(modes[1]);
         }
     }
     if (SettingLineOptionChanged) {
         SettingLineOptionChanged = 0;
-        Send_Line(LineOption);
+        Send_Line(avo->lineDouble);
     }
     if (SettingSmoothOptionChanged) {
         SettingSmoothOptionChanged = 0;
-        Send_Smooth(SmoothOption);
+        Send_Smooth(avo->smooth);
     }
 }
 
@@ -706,13 +700,13 @@ void OSD_DISPLAY(const int T, const char C)
 void ChangeSvModeOption(uint8_t num);
 void ChangeSvModeOption(uint8_t num)
 {
-    SvModeOption = num;
+    avo->svMode = num;
     saveUserPrefs();
 }
 void ChangeAvModeOption(uint8_t num);
 void ChangeAvModeOption(uint8_t num)
 {
-    AvModeOption = num;
+    avo->avMode = num;
     saveUserPrefs();
 }
 void Osd_Display(uint8_t start, const char str[]);
@@ -1008,7 +1002,7 @@ private:
 // The described menu. /menu drives it; OSD_selectOption() is still what the
 // remote drives, so the two share the overlay and the described one draws only
 // while the chain's menu is closed. docs/osd-menu.md
-static Osd::MenuContext menuContext(geometryControls, uopts);
+static Osd::MenuContext menuContext(geometryControls, uopts, avopts);
 static Osd::Menu describedMenu(Osd::MenuTree::root(), Osd::MenuTree::rootCount(),
                                Osd::OSD::renderer(), menuContext);
 
@@ -1521,6 +1515,16 @@ void toggleIfAutoOffset()
     }
 }
 
+// The ADV7391's picture controls stop at the ends of their range, as the colour
+// balance does: a wrap takes a bright picture dark.
+static uint8_t steppedAvValue(uint8_t from, int16_t steps)
+{
+    const int32_t wanted = (int32_t)from + steps;
+    if (wanted > 254)
+        return 254;
+    return wanted < 0 ? 0 : (uint8_t)wanted;
+}
+
 // Which class holds the value a row named, and what moving it costs. The two
 // command letters and the two id surfaces all land in loop(); this is the one
 // for a named value. docs/osd-menu.md
@@ -1539,7 +1543,22 @@ void applyTune(Osd::Tune::Control control, int16_t steps)
     case Osd::Tune::LumaGain:
         geometry.colour().nudgeLumaGain(steps);
         break;
-    default:
+
+    // The AV module's, which is a different owner and a write-only path.
+    case Osd::Tune::Brightness:
+        avo->bright = steppedAvValue(avo->bright, steps);
+        applyAvPicture();
+        return;
+    case Osd::Tune::Contrast:
+        avo->contrast = steppedAvValue(avo->contrast, steps);
+        applyAvPicture();
+        return;
+    case Osd::Tune::Saturation:
+        avo->saturation = steppedAvValue(avo->saturation, steps);
+        applyAvPicture();
+        return;
+    case Osd::Tune::Format:
+        stepAvFormat(steps);
         return;
     }
     applyColourBalance();
@@ -4219,22 +4238,22 @@ void setup()
             // GBS::SP_EXT_SYNC_SEL::write((uint8_t)(f.read() - '0'));
             // GBS::ADC_INPUT_SEL::write((uint8_t)(f.read() - '0'));
 
-            SvModeOption = (uint8_t)(f.read() - '0') * 10 + (uint8_t)(f.read() - '0');
-            if (SvModeOption > MODEOPTION_MAX - 1)
-                SvModeOption = 0;
-            AvModeOption = (uint8_t)(f.read() - '0') * 10 + (uint8_t)(f.read() - '0');
-            if (AvModeOption > MODEOPTION_MAX - 1)
-                AvModeOption = 0;
+            avo->svMode = (uint8_t)(f.read() - '0') * 10 + (uint8_t)(f.read() - '0');
+            if (avo->svMode > MODEOPTION_MAX - 1)
+                avo->svMode = 0;
+            avo->avMode = (uint8_t)(f.read() - '0') * 10 + (uint8_t)(f.read() - '0');
+            if (avo->avMode > MODEOPTION_MAX - 1)
+                avo->avMode = 0;
 
-            // printf(" SV AV: %d  %d \n",SvModeOption,AvModeOption);
-            SmoothOption = (uint8_t)(f.read() - '0');
-            if (SmoothOption > 1)
-                SmoothOption = 0;
+            // printf(" SV AV: %d  %d \n",avo->svMode,avo->avMode);
+            avo->smooth = (uint8_t)(f.read() - '0');
+            if (avo->smooth > 1)
+                avo->smooth = 0;
 
-            LineOption = (uint8_t)(f.read() - '0');
-            // LineOption = 1;
-            if (LineOption > 1)
-                LineOption = 1;
+            avo->lineDouble = (uint8_t)(f.read() - '0');
+            // avo->lineDouble = 1;
+            if (avo->lineDouble > 1)
+                avo->lineDouble = 1;
 
             BriorCon = (uint8_t)(f.read() - '0');
             if (BriorCon > 2)
@@ -4242,22 +4261,22 @@ void setup()
 
             VideoSourceSelection::selectStored((uint8_t)(f.read() - '0'));
 
-            RGB_Com = (uint8_t)(f.read() - '0');
-            if (RGB_Com > 1)
-                RGB_Com = 0;
+            avo->rgbCompatible = (uint8_t)(f.read() - '0');
+            if (avo->rgbCompatible > 1)
+                avo->rgbCompatible = 0;
 
 
-            Bright = (uint8_t)(f.read() - '0') * 100 + (uint8_t)(f.read() - '0') * 10 + (uint8_t)(f.read() - '0');
-            if ((Bright > 0xFF - 1) || (Bright == 0))
-                Bright = 0x80;
+            avo->bright = (uint8_t)(f.read() - '0') * 100 + (uint8_t)(f.read() - '0') * 10 + (uint8_t)(f.read() - '0');
+            if ((avo->bright > 0xFF - 1) || (avo->bright == 0))
+                avo->bright = 0x80;
 
-            Contrast = (uint8_t)(f.read() - '0') * 100 + (uint8_t)(f.read() - '0') * 10 + (uint8_t)(f.read() - '0');
-            if ((Contrast > 0xFF - 1) || (Contrast == 0))
-                Contrast = 0x80;
+            avo->contrast = (uint8_t)(f.read() - '0') * 100 + (uint8_t)(f.read() - '0') * 10 + (uint8_t)(f.read() - '0');
+            if ((avo->contrast > 0xFF - 1) || (avo->contrast == 0))
+                avo->contrast = 0x80;
 
-            Saturation = (uint8_t)(f.read() - '0') * 100 + (uint8_t)(f.read() - '0') * 10 + (uint8_t)(f.read() - '0');
-            if ((Saturation > 0xFF - 1) || (Saturation == 0))
-                Saturation = 0x80;
+            avo->saturation = (uint8_t)(f.read() - '0') * 100 + (uint8_t)(f.read() - '0') * 10 + (uint8_t)(f.read() - '0');
+            if ((avo->saturation > 0xFF - 1) || (avo->saturation == 0))
+                avo->saturation = 0x80;
 
             // The colour balance, appended in the three-digit form the BCSH
             // values above use. A file written before this one ends here, and
@@ -6031,6 +6050,30 @@ void handleType2Command(char argument)
         case 'Y':
             saveUserPrefs();
             break;
+
+        // The AV module's four single presses. Send_Line, Send_Smooth and
+        // Send_Compatibility each save the preferences themselves.
+        case 'b':
+            avo->lineDouble = !avo->lineDouble;
+            Send_Line(avo->lineDouble);
+            break;
+        case 'c':
+            // Smoothing is a property of the doubled line, so it does nothing
+            // while the doubler is out -- which is the chain's gate too.
+            if (avo->lineDouble) {
+                avo->smooth = !avo->smooth;
+                Send_Smooth(avo->smooth);
+            }
+            break;
+        case 'd':
+            avo->rgbCompatible = !avo->rgbCompatible;
+            Send_Compatibility(avo->rgbCompatible);
+            if (GBS::ADC_INPUT_SEL::read())
+                applyPresets();
+            break;
+        case 'k':
+            resetAvPicture();
+            break;
         case 'V':
             // Цвет +
             GBS::VDS_VCOS_GAIN::write(GBS::VDS_VCOS_GAIN::read() + 1);
@@ -7646,28 +7689,28 @@ void saveUserPrefs()
     // f.write(GBS::SP_EXT_SYNC_SEL::read() + '0');
     // f.write(GBS::ADC_INPUT_SEL::read() + '0');
 
-    f.write(SvModeOption / 10 + '0');
-    f.write(SvModeOption % 10 + '0');
-    f.write(AvModeOption / 10 + '0');
-    f.write(AvModeOption % 10 + '0');
-    // printf(" SV AV: %d  %d \n",SvModeOption,AvModeOption);
-    f.write(SmoothOption + '0');
-    f.write(LineOption + '0');
+    f.write(avo->svMode / 10 + '0');
+    f.write(avo->svMode % 10 + '0');
+    f.write(avo->avMode / 10 + '0');
+    f.write(avo->avMode % 10 + '0');
+    // printf(" SV AV: %d  %d \n",avo->svMode,avo->avMode);
+    f.write(avo->smooth + '0');
+    f.write(avo->lineDouble + '0');
     f.write(BriorCon + '0'); // 27
     f.write(VideoSourceSelection::selected() + '0');     // 28
-    f.write(RGB_Com + '0');
+    f.write(avo->rgbCompatible + '0');
 
-    f.write((Bright / 100) + '0');
-    f.write((Bright % 100) / 10 + '0');
-    f.write(Bright % 10 + '0');
+    f.write((avo->bright / 100) + '0');
+    f.write((avo->bright % 100) / 10 + '0');
+    f.write(avo->bright % 10 + '0');
 
-    f.write((Contrast / 100) + '0');
-    f.write((Contrast % 100) / 10 + '0');
-    f.write(Contrast % 10 + '0');
+    f.write((avo->contrast / 100) + '0');
+    f.write((avo->contrast % 100) / 10 + '0');
+    f.write(avo->contrast % 10 + '0');
 
-    f.write((Saturation / 100) + '0');
-    f.write((Saturation % 100) / 10 + '0');
-    f.write(Saturation % 10 + '0');
+    f.write((avo->saturation / 100) + '0');
+    f.write((avo->saturation % 100) / 10 + '0');
+    f.write(avo->saturation % 10 + '0');
 
     ColourBalanceFile::save(f, geometry.colour());
     f.close();
@@ -10649,8 +10692,8 @@ void OSD_selectOption()
             switch (results.value) {
                 case IRKeyOk:
                     Info_sate = 0;
-                    RGB_Com = 1;
-                    InputRGBs_mode(RGB_Com);
+                    avo->rgbCompatible = 1;
+                    InputRGBs_mode(avo->rgbCompatible);
                     rto->isInLowPowerMode = false; 
                     break;
 
@@ -10714,8 +10757,8 @@ void OSD_selectOption()
             switch (results.value) {
                 case IRKeyOk:
                     Info_sate = 0;
-                    RGB_Com = 1;
-                    InputRGsB_mode(RGB_Com);
+                    avo->rgbCompatible = 1;
+                    InputRGsB_mode(avo->rgbCompatible);
                     break;
                 case IRKeyMenu:
                     COl_L = 1;
@@ -10777,9 +10820,9 @@ void OSD_selectOption()
             switch (results.value) {
                 case IRKeyOk:
                     Info_sate = 0;
-                    RGB_Com = 0;
-                    InputVGA_mode(RGB_Com);
-                    // printf("\n\n RGB_Com %d \n\n", RGB_Com);
+                    avo->rgbCompatible = 0;
+                    InputVGA_mode(avo->rgbCompatible);
+                    // printf("\n\n avo->rgbCompatible %d \n\n", avo->rgbCompatible);
                     break;
                 case IRKeyMenu:
                     COl_L = 1;
@@ -10879,7 +10922,7 @@ void OSD_selectOption()
         display.drawString(1, 0, "Menu->Input");
         display.drawString(1, 22, "SV");
         // display.drawString(1, 45, "Format:");
-        switch (SvModeOption) {
+        switch (avo->svMode) {
             case 0: {
                 display.drawString(1, 44, "Auto");
             } break;
@@ -10933,7 +10976,7 @@ void OSD_selectOption()
 
                 case IRKeyOk:
                     Info_sate = 0;
-                    InputSV_mode(SvModeOption + 1);
+                    InputSV_mode(avo->svMode + 1);
                     break;
                 case IRKeyMenu:
                     COl_L = 1;
@@ -10952,15 +10995,15 @@ void OSD_selectOption()
                     oled_menuItem = OSD_Input_AV;
                     break;
                 case IRKeyLeft:
-                    if (SvModeOption <= MODEOPTION_MIN)
-                        SvModeOption = MODEOPTION_MAX;
-                    SvModeOption--;
+                    if (avo->svMode <= MODEOPTION_MIN)
+                        avo->svMode = MODEOPTION_MAX;
+                    avo->svMode--;
                     SvModeOptionChanged = 1;
                     break;
                 case IRKeyRight:
-                    SvModeOption++;
-                    if (SvModeOption >= MODEOPTION_MAX)
-                        SvModeOption = MODEOPTION_MIN;
+                    avo->svMode++;
+                    if (avo->svMode >= MODEOPTION_MAX)
+                        avo->svMode = MODEOPTION_MIN;
                     SvModeOptionChanged = 1;
                     break;
                 case IRKeyExit:
@@ -10982,7 +11025,7 @@ void OSD_selectOption()
         display.drawString(1, 0, "Menu->Input");
         display.drawString(1, 22, "AV");
         // display.drawString(1, 45, "Format:");
-        switch (AvModeOption) {
+        switch (avo->avMode) {
             case 0: {
                 display.drawString(1, 44, "Auto");
             } break;
@@ -11036,7 +11079,7 @@ void OSD_selectOption()
             switch (results.value) {
                 case IRKeyOk:
                     Info_sate = 0;
-                    InputAV_mode(AvModeOption + 1);
+                    InputAV_mode(avo->avMode + 1);
                     // rto->isInLowPowerMode = false;  
 
                     break;
@@ -11058,15 +11101,15 @@ void OSD_selectOption()
                 //     OSD_menu_F('@');
                 //     break;
                 case IRKeyLeft:
-                    if (AvModeOption <= MODEOPTION_MIN)
-                        AvModeOption = MODEOPTION_MAX;
-                    AvModeOption--;
+                    if (avo->avMode <= MODEOPTION_MIN)
+                        avo->avMode = MODEOPTION_MAX;
+                    avo->avMode--;
                     AvModeOptionChanged = 1;
                     break;
                 case IRKeyRight:
-                    AvModeOption++;
-                    if (AvModeOption >= MODEOPTION_MAX)
-                        AvModeOption = MODEOPTION_MIN;
+                    avo->avMode++;
+                    if (avo->avMode >= MODEOPTION_MAX)
+                        avo->avMode = MODEOPTION_MIN;
                     AvModeOptionChanged = 1;
                     break;
                 case IRKeyExit:
@@ -11141,7 +11184,7 @@ void OSD_selectOption()
         display.setFont(ArialMT_Plain_16);
         display.drawString(1, 0, "M>Sys>SvAv Set");
         display.drawString(1, 22, "DoubleLine");
-        if (LineOption) {
+        if (avo->lineDouble) {
             display.drawString(1, 44, "2X");
         } else {
             display.drawString(1, 44, "1X");
@@ -11178,11 +11221,11 @@ void OSD_selectOption()
                     break;
 
                 case IRKeyOk:
-                    LineOption = !LineOption;
+                    avo->lineDouble = !avo->lineDouble;
                     SettingLineOptionChanged = 1;
                     break;
                 // case IRKeyRight:
-                //   LineOption = !LineOption;
+                //   avo->lineDouble = !avo->lineDouble;
                 //   SettingLineOptionChanged = 1;
                 //   break;
                 case IRKeyExit:
@@ -11204,7 +11247,7 @@ void OSD_selectOption()
         display.setFont(ArialMT_Plain_16);
         display.drawString(1, 0, "M>Sys>SvAv Set");
         display.drawString(1, 22, "Smooth");
-        if (SmoothOption) {
+        if (avo->smooth) {
             display.drawString(1, 44, "ON");
         } else {
             display.drawString(1, 44, "OFF");
@@ -11239,13 +11282,13 @@ void OSD_selectOption()
                     oled_menuItem = OSD_SystemSettings_SVAVInput_Bright;
                     break;
                 case IRKeyOk:
-                    if (LineOption) {
-                        SmoothOption = !SmoothOption;
+                    if (avo->lineDouble) {
+                        avo->smooth = !avo->smooth;
                         SettingSmoothOptionChanged = 1;
                     }
                     break;
                 // case IRKeyRight:
-                //   SmoothOption = !SmoothOption;
+                //   avo->smooth = !avo->smooth;
                 //   SettingSmoothOptionChanged = 1;
                 //   break;
                 case IRKeyExit:
@@ -11266,7 +11309,7 @@ void OSD_selectOption()
         display.setTextAlignment(TEXT_ALIGN_LEFT);
         display.setFont(ArialMT_Plain_16);
         display.drawString(1, 0, "M>Sys>SvAv Set");
-        display.drawString(1, 22, "Bright");
+        display.drawString(1, 22, "avo->bright");
         display.display();
 
         if (results.value == IRKeyDown || results.value == IRKeyUp) {
@@ -11303,14 +11346,14 @@ void OSD_selectOption()
                     oled_menuItem = OSD_SystemSettings_SVAVInput_contrast;
                     break;
                 case IRKeyRight:
-                    Bright = MIN(Bright + STEP, 254);
-                    SetReg(0x0a, Bright - 128);
-                    // printf("Bright: 0x%02x \n",Bright);
+                    avo->bright = MIN(avo->bright + STEP, 254);
+                    SetReg(0x0a, avo->bright - 128);
+                    // printf("avo->bright: 0x%02x \n",avo->bright);
                     break;
                 case IRKeyLeft:
-                    Bright = MAX(Bright - STEP, 0);
-                    SetReg(0x0a, Bright - 128);
-                    // printf("Bright: 0x%02x \n",Bright);
+                    avo->bright = MAX(avo->bright - STEP, 0);
+                    SetReg(0x0a, avo->bright - 128);
+                    // printf("avo->bright: 0x%02x \n",avo->bright);
                     break;
                 case IRKeyOk:
                     saveUserPrefs();
@@ -11333,7 +11376,7 @@ void OSD_selectOption()
         display.setTextAlignment(TEXT_ALIGN_LEFT);
         display.setFont(ArialMT_Plain_16);
         display.drawString(1, 0, "M>Sys>SvAv Set");
-        display.drawString(1, 22, "Contrast");
+        display.drawString(1, 22, "avo->contrast");
         display.display();
 
         if (results.value == IRKeyDown || results.value == IRKeyUp) {
@@ -11373,14 +11416,14 @@ void OSD_selectOption()
 
                     break;
                 case IRKeyRight:
-                    Contrast = MIN(Contrast + STEP, 254);
-                    SetReg(0x08, Contrast);
-                    // printf("contrast: 0x%02x \n",Contrast);
+                    avo->contrast = MIN(avo->contrast + STEP, 254);
+                    SetReg(0x08, avo->contrast);
+                    // printf("contrast: 0x%02x \n",avo->contrast);
                     break;
                 case IRKeyLeft:
-                    Contrast = MAX(Contrast - STEP, 0);
-                    SetReg(0x08, Contrast);
-                    // printf("contrast: 0x%02x \n",Contrast);
+                    avo->contrast = MAX(avo->contrast - STEP, 0);
+                    SetReg(0x08, avo->contrast);
+                    // printf("contrast: 0x%02x \n",avo->contrast);
                     break;
                 case IRKeyOk:
                     saveUserPrefs();
@@ -11403,7 +11446,7 @@ void OSD_selectOption()
         display.setTextAlignment(TEXT_ALIGN_LEFT);
         display.setFont(ArialMT_Plain_16);
         display.drawString(1, 0, "M>Sys>SvAv Set");
-        display.drawString(1, 22, "Saturation");
+        display.drawString(1, 22, "avo->saturation");
         display.display();
 
         if (results.value == IRKeyDown || results.value == IRKeyUp) {
@@ -11438,14 +11481,14 @@ void OSD_selectOption()
                     oled_menuItem = OSD_SystemSettings_SVAVInput_default;    
                     break;
                 case IRKeyRight:
-                    Saturation = MIN(Saturation + STEP, 254);
-                    SetReg(0xe3, Saturation);
-                    // printf("saturation: 0x%02x \n",Saturation);
+                    avo->saturation = MIN(avo->saturation + STEP, 254);
+                    SetReg(0xe3, avo->saturation);
+                    // printf("saturation: 0x%02x \n",avo->saturation);
                     break;
                 case IRKeyLeft:
-                    Saturation = MAX(Saturation - STEP, 0);       
-                    SetReg(0xe3, Saturation);
-                    // printf("saturation: 0x%02x \n",Saturation);
+                    avo->saturation = MAX(avo->saturation - STEP, 0);       
+                    SetReg(0xe3, avo->saturation);
+                    // printf("saturation: 0x%02x \n",avo->saturation);
                     break;
                 case IRKeyOk:
                     saveUserPrefs();
@@ -11496,9 +11539,9 @@ void OSD_selectOption()
                     break;
                 case IRKeyOk:
                     SetReg('D', 'E');
-                    Bright = 128;
-                    Contrast = 128;
-                    Saturation = 128;
+                    avo->bright = 128;
+                    avo->contrast = 128;
+                    avo->saturation = 128;
                     saveUserPrefs();
                     break;
                 case IRKeyExit:
@@ -11520,7 +11563,7 @@ void OSD_selectOption()
         display.setFont(ArialMT_Plain_16);
         display.drawString(1, 0, "Menu->System");
         display.drawString(1, 22, "Compatibility");
-        if (RGB_Com == 1) {
+        if (avo->rgbCompatible == 1) {
             display.drawString(1, 44, "ON");
         } else {
             display.drawString(1, 44, "OFF");
@@ -11554,18 +11597,18 @@ void OSD_selectOption()
                     oled_menuItem = 94;
                     break;
                 case IRKeyOk:
-                    RGB_Com = !RGB_Com;
-                    if (RGB_Com > 1)
-                        RGB_Com = 0;
-                    Send_Compatibility(RGB_Com);
+                    avo->rgbCompatible = !avo->rgbCompatible;
+                    if (avo->rgbCompatible > 1)
+                        avo->rgbCompatible = 0;
+                    Send_Compatibility(avo->rgbCompatible);
                     if (GBS::ADC_INPUT_SEL::read())
                         applyPresets();
                     break;
                 // case IRKeyRight:
-                //   RGB_Com = !RGB_Com;
-                //   if (RGB_Com > 1)
-                //     RGB_Com = 0;
-                //   Send_Compatibility(RGB_Com);
+                //   avo->rgbCompatible = !avo->rgbCompatible;
+                //   if (avo->rgbCompatible > 1)
+                //     avo->rgbCompatible = 0;
+                //   Send_Compatibility(avo->rgbCompatible);
                 //   break;
                 case IRKeyExit:
                     oled_menuItem = 0;
@@ -12997,7 +13040,7 @@ void handle_j(void)
     OSD_c2(0x3E, P20, main0);
     OSD_c2(0x3E, P21, main0);
     OSD_c2(0x3E, P22, main0);
-    if (RGB_Com == 1) {
+    if (avo->rgbCompatible == 1) {
         OSD_c2(O, P23, main0);
         OSD_c2(N, P24, main0);
         OSD_c2(F, P25, blue_fill);
@@ -13523,12 +13566,12 @@ void handle_j(void)
 
         colour1 = A1_yellow;
         number_stroca = stroca1;
-        Osd_Display(1, "Contrast");
-        // Osd_Display(1, "Saturation");
+        Osd_Display(1, "avo->contrast");
+        // Osd_Display(1, "avo->saturation");
 
         colour1 = A2_main0;
         number_stroca = stroca2;
-        Osd_Display(1, "Saturation");
+        Osd_Display(1, "avo->saturation");
 
         colour1 = A3_main0;
         number_stroca = stroca3;
@@ -13552,7 +13595,7 @@ void handle_j(void)
         sequence_number1 = _25;
         sequence_number2 = _24;
         sequence_number3 = _23;
-        Typ(Contrast);
+        Typ(avo->contrast);
 
 
         OSD_c2(0x3E, P13, main0);
@@ -13568,7 +13611,7 @@ void handle_j(void)
         sequence_number1 = _25;
         sequence_number2 = _24;
         sequence_number3 = _23;
-        Typ(Saturation);
+        Typ(avo->saturation);
 
     };
 
@@ -13581,7 +13624,7 @@ void handle_j(void)
             A3_main0 = main0;
         } else if (COl_L == 2) {
             A1_yellow = main0;
-            if (!LineOption)
+            if (!avo->lineDouble)
                 A2_main0 = 0x14;
             else
                 A2_main0 = yellowT;
@@ -13607,12 +13650,12 @@ void handle_j(void)
         colour1 = A2_main0;
         number_stroca = stroca2;
         Osd_Display(1, "Smooth");
-        // Osd_Display(1, "Bright");
+        // Osd_Display(1, "avo->bright");
 
         colour1 = A3_main0;
         number_stroca = stroca3;
-        Osd_Display(1, "Bright");
-        // Osd_Display(1, "Contrast");
+        Osd_Display(1, "avo->bright");
+        // Osd_Display(1, "avo->contrast");
     };
     void handle_at(void)
     {
@@ -13737,7 +13780,7 @@ void handle_j(void)
             OSD_writeString(4, 2, "                      ");
             OSD_writeString(4, 3, "                      ");
         }
-        switch (SvModeOption) {
+        switch (avo->svMode) {
             case 0: {
                 if (oled_menuItem == OSD_Input_SV)
                     OSD_writeString(11, 2, "Auto           ");
@@ -13792,7 +13835,7 @@ void handle_j(void)
             } break;
         }
 
-        switch (AvModeOption) {
+        switch (avo->avMode) {
             case 0: {
                 if (oled_menuItem == OSD_Input_AV)
                     OSD_writeString(11, 3, "Auto           ");
@@ -13892,15 +13935,15 @@ void handle_j(void)
         OSD_c3(0x3E, P17, main0);
         OSD_c3(0x3E, P18, main0);
 
-        if (LineOption) {
+        if (avo->lineDouble) {
             OSD_c1(n2, P23, main0);
             OSD_c1(X, P24, main0);
         } else {
             OSD_c1(n1, P23, main0);
             OSD_c1(X, P24, main0);
-            SmoothOption = false;
+            avo->smooth = false;
         }
-        if (SmoothOption) {
+        if (avo->smooth) {
             OSD_c2(O, P23, main0);
             OSD_c2(N, P24, main0);
             OSD_c2(F, P25, blue_fill);
@@ -13915,7 +13958,7 @@ void handle_j(void)
         sequence_number1 = _25;
         sequence_number2 = _24;
         sequence_number3 = _23;
-        Typ(Bright);
+        Typ(avo->bright);
 
 
         // colour1 = main0;
@@ -13923,7 +13966,7 @@ void handle_j(void)
         // sequence_number1 = _25;
         // sequence_number2 = _24;
         // sequence_number3 = _23;
-        // Typ(Contrast);
+        // Typ(avo->contrast);
     };
     void handle_asterisk(void)
     {

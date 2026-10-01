@@ -139,5 +139,12 @@ void InputNULL(void);
 
 
 void SetReg(unsigned char reg, unsigned char val);
+
+// The AV module's picture: the three ADV7391 controls from what is held, the
+// reset the Sv-Av level's Default row asks for, and the decoder's standard
+// stepped for whichever input reaches it.
+void applyAvPicture();
+void resetAvPicture();
+void stepAvFormat(int16_t steps);
 void Signalized(void);
 #endif

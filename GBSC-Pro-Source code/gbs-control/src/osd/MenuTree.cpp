@@ -83,6 +83,63 @@ const char *lumaGainText(const MenuContext &context)
     return decimal(text, balanceOf(context).lumaGain());
 }
 
+const char *doubleLineText(const MenuContext &context)
+{
+    return context.av().lineDouble ? "2X" : "1X";
+}
+
+const char *smoothText(const MenuContext &context)
+{
+    return onOff(context.av().smooth);
+}
+
+const char *compatibilityText(const MenuContext &context)
+{
+    return onOff(context.av().rgbCompatible);
+}
+
+const char *brightText(const MenuContext &context)
+{
+    static char text[4];
+    return decimal(text, context.av().bright);
+}
+
+const char *contrastText(const MenuContext &context)
+{
+    static char text[4];
+    return decimal(text, context.av().contrast);
+}
+
+const char *saturationText(const MenuContext &context)
+{
+    static char text[4];
+    return decimal(text, context.av().saturation);
+}
+
+// The broadcast standards the decoder can be told to expect, in the order the
+// frame's mode table carries them.
+const char *const Formats[] = {
+    "Auto",   "PAL",       "NTSC-M", "PAL-60",       "NTSC443",
+    "NTSC-J", "PAL-N w/p", "PAL-M",  "PAL-M w/o p",  "PAL Cmb-N",
+    "PAL Cmb-N w/p", "SECAM",
+};
+
+// One row for both decoder inputs, reporting whichever is selected. Composite
+// and S-Video are the only two that reach the ADV7280, and a unit on neither
+// shows what S-Video would get.
+uint8_t formatOf(const MenuContext &context)
+{
+    return VideoSourceSelection::selected() == VideoSourceSelection::Composite
+               ? context.av().avMode
+               : context.av().svMode;
+}
+
+const char *formatText(const MenuContext &context)
+{
+    const uint8_t mode = formatOf(context);
+    return mode < sizeof(Formats) / sizeof(Formats[0]) ? Formats[mode] : "Auto";
+}
+
 const char *aspectText(const MenuContext &context)
 {
     switch (context.controls().engine().aspect().tenThousandths()) {
@@ -193,7 +250,31 @@ const MenuItem Picture[] = {
     MenuItem::action("Default colour", 'U'),
 };
 
+// The AV module's own picture: the decoder's standard, the ADV7391's line
+// doubling and smoothing, its three picture controls, and the compatibility
+// preference the RGB inputs share. None of it can be read back -- the HC32's
+// UART reply pin goes to the update button -- so each row reports what is held.
+const MenuItem SvAv[] = {
+    MenuItem::adjust("Format", MenuCommand(),
+                     MenuCommand::tune(Tune::Format, +1),
+                     MenuCommand::tune(Tune::Format, -1), formatText),
+    MenuItem::choice("DoubleLine", 'b', doubleLineText),
+    MenuItem::choice("Smooth", 'c', smoothText),
+    MenuItem::adjust("Bright", MenuCommand::user('Y'),
+                     MenuCommand::tune(Tune::Brightness, +1),
+                     MenuCommand::tune(Tune::Brightness, -1), brightText),
+    MenuItem::adjust("Contrast", MenuCommand::user('Y'),
+                     MenuCommand::tune(Tune::Contrast, +1),
+                     MenuCommand::tune(Tune::Contrast, -1), contrastText),
+    MenuItem::adjust("Saturation", MenuCommand::user('Y'),
+                     MenuCommand::tune(Tune::Saturation, +1),
+                     MenuCommand::tune(Tune::Saturation, -1), saturationText),
+    MenuItem::action("Default", 'k'),
+    MenuItem::choice("Compatibility", 'd', compatibilityText),
+};
+
 const MenuItem System[] = {
+    MenuItem::submenu("Sv-Av InPutSet", SvAv, sizeof(SvAv) / sizeof(SvAv[0])),
     MenuItem::choice("Aspect", 'G', aspectText),
     MenuItem::choice("Use upscaling", 'x', upscalingText),
     MenuItem::adjust("Deinterlace", MenuCommand(), MenuCommand::user('q'),

@@ -129,6 +129,31 @@ struct runTimeOptions
     bool deinterlaceAutoEnabled;
     bool isValidForScalingRGBHV;
 };
+// The AV module's own picture, which lives behind the HC32 on the ADV7280 and
+// the ADV7391. That path is WRITE-ONLY -- no conductor carries a reply -- so
+// these are held here and sent, never read back.
+//
+// Separate from userOptions because Reset Settings wipes that one, and the AV
+// module's calibration is not a scaler preference.
+struct avOptions
+{
+    // Which broadcast standard the decoder is told to expect, per input. An
+    // index into the mode table the HC32 frame carries.
+    uint8_t svMode;
+    uint8_t avMode;
+
+    // The ADV7391's picture controls, 128 being the middle of each range.
+    uint8_t bright;
+    uint8_t contrast;
+    uint8_t saturation;
+
+    bool lineDouble;
+    bool smooth;
+
+    // The persisted compatibility preference the RGB inputs also write.
+    bool rgbCompatible;
+};
+
 // remember adc options across presets
 struct adcOptions
 {

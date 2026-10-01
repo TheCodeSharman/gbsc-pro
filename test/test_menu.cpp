@@ -39,9 +39,14 @@ struct Panel {
     Print console;
     Tv5725::Controls controls;
     userOptions options;
+    avOptions av;
     MenuContext context;
 
-    Panel() : controls(solved.engine, console), options(), context(controls, options) {}
+    Panel()
+        : controls(solved.engine, console), options(), av(),
+          context(controls, options, av)
+    {
+    }
 };
 
 // A tree with one submenu, which is the smallest shape that can tell descending
@@ -669,11 +674,6 @@ TEST_CASE("an item says what its option is currently set to")
 // The chain's root was not a ring: Input had no Up and Reset Settings no Down,
 // so the two ends were dead. A level that joins is the described form's
 // navigation rather than a target written out per branch.
-//
-// The Sv-Av submenu is not here yet. Its items act by calling a sketch function
-// -- the HC32 frame, SetReg on the ADV7391 -- rather than by asking for a
-// letter, so describing it waits on each action reaching one command surface.
-// docs/osd-menu.md
 
 TEST_CASE("the root names every top-level page, in the order the remote walks them")
 {
@@ -988,6 +988,94 @@ TEST_CASE("the aspect item names the shape the source is shown in")
 
 // --- The two options the doc records as dead
 
+// --- Sv-Av InPutSet
+//
+// The AV module's own picture, behind the HC32 on the ADV7280 and the ADV7391.
+// That path is write-only, so every row reports what is held rather than what
+// the part has.
+
+TEST_CASE("the system level leads to the Sv-Av settings, as the chain's did")
+{
+    const MenuItem &level = item("System Settings");
+    CHECK(std::string(level.children()[0].label()) == "Sv-Av InPutSet");
+    CHECK(level.children()[0].leadsSomewhere());
+}
+
+TEST_CASE("the Sv-Av level names its rows in the order the chain drew them")
+{
+    const char *const expected[] = {
+        "Format", "DoubleLine", "Smooth", "Bright", "Contrast", "Saturation",
+        "Default", "Compatibility",
+    };
+
+    const MenuItem &level = item("Sv-Av InPutSet");
+    REQUIRE(level.childCount() == sizeof(expected) / sizeof(expected[0]));
+    for (uint8_t i = 0; i < level.childCount(); ++i)
+        CHECK(std::string(level.children()[i].label()) == expected[i]);
+}
+
+TEST_CASE("each Sv-Av row says what it is set to")
+{
+    Panel panel;
+
+    panel.av.lineDouble = true;
+    CHECK(std::string(item("DoubleLine").valueText(panel.context)) == "2X");
+    panel.av.lineDouble = false;
+    CHECK(std::string(item("DoubleLine").valueText(panel.context)) == "1X");
+
+    panel.av.smooth = true;
+    CHECK(std::string(item("Smooth").valueText(panel.context)) == "ON");
+
+    panel.av.rgbCompatible = false;
+    CHECK(std::string(item("Compatibility").valueText(panel.context)) == "OFF");
+
+    panel.av.bright = 140;
+    CHECK(std::string(item("Bright").valueText(panel.context)) == "140");
+    panel.av.contrast = 7;
+    CHECK(std::string(item("Contrast").valueText(panel.context)) == "007");
+    panel.av.saturation = 255;
+    CHECK(std::string(item("Saturation").valueText(panel.context)) == "255");
+}
+
+TEST_CASE("the format row names the standard the decoder is told to expect")
+{
+    Panel panel;
+
+    // One row for both decoder inputs: it reports whichever is selected, and a
+    // unit on neither shows what S-Video would get.
+    VideoSourceSelection::selectStored(VideoSourceSelection::SVideo);
+    panel.av.svMode = 0;
+    CHECK(std::string(item("Format").valueText(panel.context)) == "Auto");
+    panel.av.svMode = 1;
+    CHECK(std::string(item("Format").valueText(panel.context)) == "PAL");
+    panel.av.svMode = 11;
+    CHECK(std::string(item("Format").valueText(panel.context)) == "SECAM");
+
+    VideoSourceSelection::selectStored(VideoSourceSelection::Composite);
+    panel.av.avMode = 2;
+    CHECK(std::string(item("Format").valueText(panel.context)) == "NTSC-M");
+}
+
+TEST_CASE("the three picture rows name the value they step")
+{
+    CHECK(item("Bright").nextCommand().queue() == MenuCommand::ValueTune);
+    CHECK(item("Bright").nextCommand().tuned() == Tune::Brightness);
+    CHECK(item("Contrast").nextCommand().tuned() == Tune::Contrast);
+    CHECK(item("Saturation").previousCommand().tuned() == Tune::Saturation);
+    CHECK(item("Saturation").previousCommand().direction() == -1);
+    CHECK(item("Format").nextCommand().tuned() == Tune::Format);
+}
+
+TEST_CASE("the toggles and the reset are letters, which a single press fits")
+{
+    CHECK(item("DoubleLine").okCommand().letter() == 'b');
+    CHECK(item("Smooth").okCommand().letter() == 'c');
+    CHECK(item("Compatibility").okCommand().letter() == 'd');
+    CHECK(item("Default").okCommand().letter() == 'k');
+    CHECK(item("DoubleLine").okCommand().queue() == MenuCommand::UserCommand);
+}
+
+
 TEST_CASE("a dead option is not described")
 {
     // PalForce60 had its standard-byte swap deleted and matchPresetSource never
@@ -1236,11 +1324,12 @@ TEST_CASE("a row is written whole, so a shorter label leaves no tail behind")
     Panel panel;
 
     MenuCursor cursor = cursorInside("System Settings");
-    REQUIRE(std::string(cursor.current().label()) == "Aspect");
+    while (std::string(cursor.current().label()) != "Frame Time Lock")
+        cursor.down();
 
     Cells.clear();
     drawOnTelevision(cursor.page(), panel.context);
-    REQUIRE(rowText(1) == " Use upscaling---------OFF 1");
+    REQUIRE(rowText(1) == ">Frame Time Lock-------OFF 2");
 
     // A level whose second row is shorter, drawn over the same cells.
     MenuCursor second = cursorInside("Picture Settings");
