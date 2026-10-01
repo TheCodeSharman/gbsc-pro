@@ -714,7 +714,7 @@ TEST_CASE("the root's ends join, which the chain's did not")
 TEST_CASE("the screen pads name the geometry control each arrow moves")
 {
     const MenuItem &screen = item("Screen Settings");
-    REQUIRE(screen.childCount() == 2);
+    REQUIRE(screen.childCount() == 4);
 
     const MenuItem &move = screen.children()[0];
     CHECK(std::string(move.label()) == "Move");
@@ -992,6 +992,17 @@ TEST_CASE("the aspect item names the shape the source is shown in")
     CHECK(std::string(item("Aspect").valueText(unit.context)) == "Fill");
 
     CHECK(item("Aspect").okCommand().letter() == 'G');
+}
+
+TEST_CASE("the aspect sits with the pads, all three being the picture's shape")
+{
+    const MenuItem &screen = item("Screen Settings");
+    REQUIRE(screen.childCount() == 4);
+    CHECK(std::string(screen.children()[2].label()) == "Aspect");
+
+    const MenuItem &system = item("System Settings");
+    for (uint8_t i = 0; i < system.childCount(); ++i)
+        CHECK(std::string(system.children()[i].label()) != "Aspect");
 }
 
 
@@ -1346,14 +1357,14 @@ TEST_CASE("a row is written whole, so a shorter label leaves no tail behind")
 
     Cells.clear();
     drawOnTelevision(cursor.page(), unit.context);
-    REQUIRE(rowText(row) == ">Frame Time Lock-------OFF 2");
+    REQUIRE(rowText(row) == ">Frame Time Lock-------OFF ^");
 
     // A level whose row at that position is shorter, drawn over the same cells.
     MenuCursor second = cursorInside("Picture Settings");
-    REQUIRE(std::string(second.page().labelAt(row)) == "Scanlines");
+    REQUIRE(std::string(second.page().labelAt(row)) == "ADC gain");
     drawOnTelevision(second.page(), unit.context);
 
-    CHECK(rowText(row) == " Scanlines-------------OFF 1");
+    CHECK(rowText(row) == ">ADC gain--------------OFF");
 }
 
 TEST_CASE("a space inside a label is the font's blank, not its 0x20")
@@ -1633,3 +1644,13 @@ TEST_CASE("the cursor's cell is filled, where the rest of the row is written ove
     CHECK(colourAt(row, OSD::LabelColumn) == OSD::Selected);
 }
 
+TEST_CASE("the screen level resets the framing and the shape together")
+{
+    const MenuItem &screen = item("Screen Settings");
+    REQUIRE(screen.childCount() == 4);
+
+    const MenuItem &reset = screen.children()[3];
+    CHECK(std::string(reset.label()) == "Reset");
+    CHECK(reset.okCommand().queue() == MenuCommand::SerialCommand);
+    CHECK(reset.okCommand().letter() == 'B');
+}

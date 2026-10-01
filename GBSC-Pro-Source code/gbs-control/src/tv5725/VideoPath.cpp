@@ -542,6 +542,7 @@ bool VideoPath::reset()
     // to what they already hold -- and re-arming would freeze capture for
     // seconds to reach them.
     framing_.reset();
+    aspect_ = SourceTiming::matching(framedKey_).aspect();
     return solveWindows();
 }
 

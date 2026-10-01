@@ -222,6 +222,8 @@ const MenuPad ScalePad(MenuCommand::nudge(Tv5725::Nudge::VerticalZoom, -1),
 const MenuItem Screen[] = {
     MenuItem::pad("Move", MovePad),
     MenuItem::pad("Scale", ScalePad),
+    MenuItem::choice("Aspect", 'G', aspectText),
+    MenuItem::serialAction("Reset", 'B'),
 };
 
 const MenuItem Picture[] = {
@@ -275,7 +277,6 @@ const MenuItem SvAv[] = {
 
 const MenuItem System[] = {
     MenuItem::submenu("Sv-Av InPutSet", SvAv, sizeof(SvAv) / sizeof(SvAv[0])),
-    MenuItem::choice("Aspect", 'G', aspectText),
     MenuItem::choice("Use upscaling", 'x', upscalingText),
     MenuItem::adjust("Deinterlace", MenuCommand(), MenuCommand::user('q'),
                      MenuCommand::user('r'), deinterlaceText),

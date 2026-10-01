@@ -2394,3 +2394,27 @@ TEST_CASE("a source returns to the shape it was left at")
     REQUIRE(framings.find(bench, (PanAndZoom *)NULL, &stored));
     CHECK(stored == Aspect(Aspect::SixteenNine));
 }
+
+TEST_CASE("a reset puts the shape back as well as the framing")
+{
+    // Both are stored against the source and both are what "back to default"
+    // means: a shape left behind would keep its bars over a reset picture.
+    seedBenchSource();
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+    VideoSourceAcquisition acquisition(sampling, engine);
+
+    engine.setOutputMode(benchMode());
+    engine.inputTimingsChanged(4);
+    REQUIRE(pollUntilSolved(acquisition));
+    const Aspect defaulted = engine.aspect();
+
+    REQUIRE(engine.setAspect(Aspect(Aspect::SixteenNine)));
+    REQUIRE(engine.aspect() != defaulted);
+
+    REQUIRE(engine.reset());
+
+    CHECK(engine.aspect() == defaulted);
+}
