@@ -40,6 +40,12 @@ public:
     static const char PreviousPage = 0x06;
     static const char NextPage = 0x16;
 
+    // The cluster a pad draws in place of a value, as the chain drew it.
+    static const char PadLeft = 0x03;
+    static const char PadUp = 0x08;
+    static const char PadDown = 0x18;
+    static const char PadRight = 0x13;
+
     // A cell is written twice, and the same value means different things at the
     // two addresses: at the even one it is the colour, at the odd one a glyph.
     // Background is both -- a filled block in the bar's colour, which is how

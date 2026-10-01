@@ -61,6 +61,21 @@ bool Controls::verticalZoomFine(int16_t steps)
     return verticalZoom(finePixels(AxisVertical, steps));
 }
 
+bool Controls::nudge(Nudge::Control control, int16_t steps)
+{
+    switch (control) {
+    case Nudge::HorizontalPan:
+        return horizontalPanFine(steps);
+    case Nudge::VerticalPan:
+        return verticalPanFine(steps);
+    case Nudge::HorizontalZoom:
+        return horizontalZoomFine(steps);
+    case Nudge::VerticalZoom:
+        return verticalZoomFine(steps);
+    }
+    return false;
+}
+
 VideoPath &Controls::engine() const { return engine_; }
 
 void Controls::report(const char *control, int16_t pixels) const

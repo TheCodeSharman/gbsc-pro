@@ -12,6 +12,18 @@ VideoSourceSelection::Id MenuCommand::source() const
                                     : VideoSourceSelection::None;
 }
 
-bool MenuCommand::asked() const { return letter_ != 0; }
+Tv5725::Nudge::Control MenuCommand::control() const
+{
+    return (Tv5725::Nudge::Control)letter_;
+}
+
+int8_t MenuCommand::direction() const { return direction_; }
+
+// A nudge's control is an id and the first of them is zero, so what says a pad
+// press asked for something is its direction.
+bool MenuCommand::asked() const
+{
+    return queue_ == GeometryNudge ? direction_ != 0 : letter_ != 0;
+}
 
 }  // namespace Osd

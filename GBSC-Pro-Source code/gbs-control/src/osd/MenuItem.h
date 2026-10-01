@@ -10,6 +10,7 @@
 #include <stdint.h>
 
 #include "MenuCommand.h"
+#include "MenuPad.h"
 
 namespace Osd {
 
@@ -28,40 +29,47 @@ public:
                                       const MenuItem *children, uint8_t count)
     {
         return MenuItem(label, MenuCommand(), MenuCommand(), MenuCommand(),
-                        children, count, NULL);
+                        children, count, NULL, NULL);
+    }
+
+    // Ok hands the four arrows to the picture, and Menu takes them back.
+    static constexpr MenuItem pad(const char *label, const MenuPad &directions)
+    {
+        return MenuItem(label, MenuCommand(), MenuCommand(), MenuCommand(),
+                        NULL, 0, NULL, &directions);
     }
 
     static constexpr MenuItem action(const char *label, char letter)
     {
         return MenuItem(label, MenuCommand::user(letter), MenuCommand(),
-                        MenuCommand(), NULL, 0, NULL);
+                        MenuCommand(), NULL, 0, NULL, NULL);
     }
 
     static constexpr MenuItem inputAction(const char *label,
                                           VideoSourceSelection::Id source)
     {
         return MenuItem(label, MenuCommand::input(source), MenuCommand(),
-                        MenuCommand(), NULL, 0, NULL);
+                        MenuCommand(), NULL, 0, NULL, NULL);
     }
 
     static constexpr MenuItem serialAction(const char *label, char letter)
     {
         return MenuItem(label, MenuCommand::serial(letter), MenuCommand(),
-                        MenuCommand(), NULL, 0, NULL);
+                        MenuCommand(), NULL, 0, NULL, NULL);
     }
 
     static constexpr MenuItem choice(const char *label, char letter,
                                      ValueText value)
     {
         return MenuItem(label, MenuCommand::user(letter), MenuCommand(),
-                        MenuCommand(), NULL, 0, value);
+                        MenuCommand(), NULL, 0, value, NULL);
     }
 
     static constexpr MenuItem serialChoice(const char *label, char letter,
                                            ValueText value)
     {
         return MenuItem(label, MenuCommand::serial(letter), MenuCommand(),
-                        MenuCommand(), NULL, 0, value);
+                        MenuCommand(), NULL, 0, value, NULL);
     }
 
     // Left and Right step the value. `ok` may be absent, and the three letters
@@ -71,7 +79,7 @@ public:
                                      MenuCommand next, MenuCommand previous,
                                      ValueText value)
     {
-        return MenuItem(label, ok, next, previous, NULL, 0, value);
+        return MenuItem(label, ok, next, previous, NULL, 0, value, NULL);
     }
 
     const char *label() const;
@@ -85,7 +93,11 @@ public:
 
     const MenuItem *children() const;
     uint8_t childCount() const;
+
+    // Where Ok goes: a level to descend, or a pad to hand the arrows to.
     bool leadsSomewhere() const;
+    bool isPad() const;
+    const MenuPad &pad() const;
 
     bool hasValue() const;
     const char *valueText(const MenuContext &context) const;
@@ -93,9 +105,11 @@ public:
 private:
     constexpr MenuItem(const char *label, MenuCommand ok, MenuCommand next,
                        MenuCommand previous, const MenuItem *children,
-                       uint8_t childCount, ValueText valueText)
+                       uint8_t childCount, ValueText valueText,
+                       const MenuPad *pad)
         : label_(label), ok_(ok), next_(next), previous_(previous),
-          children_(children), childCount_(childCount), valueText_(valueText)
+          children_(children), childCount_(childCount), valueText_(valueText),
+          pad_(pad)
     {
     }
 
@@ -106,6 +120,7 @@ private:
     const MenuItem *children_;
     uint8_t childCount_;
     ValueText valueText_;
+    const MenuPad *pad_;
 };
 
 }  // namespace Osd

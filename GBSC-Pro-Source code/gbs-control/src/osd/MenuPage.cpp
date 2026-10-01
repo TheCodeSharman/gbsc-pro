@@ -10,7 +10,7 @@ const uint8_t MenuPage::Rows;
 
 MenuPage::MenuPage()
     : title_(NULL), rows_(0), selected_(0), number_(0), previous_(false),
-      next_(false)
+      next_(false), adjusting_(false)
 {
     for (uint8_t i = 0; i < Rows; ++i)
         items_[i] = NULL;
@@ -35,9 +35,16 @@ void MenuPage::numberPage(uint8_t number, bool previous, bool next)
     next_ = next;
 }
 
+void MenuPage::markAdjusting() { adjusting_ = true; }
+
 const char *MenuPage::title() const { return title_; }
 
 uint8_t MenuPage::rows() const { return rows_; }
+
+uint8_t MenuPage::positionAt(uint8_t row) const
+{
+    return (uint8_t)((number_ - 1) * Rows + row + 1);
+}
 
 const MenuItem &MenuPage::itemAt(uint8_t row) const { return *items_[row]; }
 
@@ -52,6 +59,8 @@ bool MenuPage::leadsAt(uint8_t row) const
 }
 
 uint8_t MenuPage::selected() const { return selected_; }
+
+bool MenuPage::adjusting() const { return adjusting_; }
 
 uint8_t MenuPage::number() const { return number_; }
 

@@ -16,6 +16,7 @@ class Print {};
 
 #include "../GBSC-Pro-Source code/gbs-control/options.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Controls.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Nudge.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/osd/Menu.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/osd/MenuCommand.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/osd/MenuContext.h"
@@ -23,6 +24,7 @@ class Print {};
 #include "../GBSC-Pro-Source code/gbs-control/src/osd/OSD.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/osd/MenuCursor.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/osd/MenuItem.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/osd/MenuPad.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/osd/MenuPage.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/osd/MenuRenderer.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/videosource/VideoSourceSelection.h"
@@ -496,6 +498,116 @@ TEST_CASE("a press that asks for nothing yields no letter")
 }
 
 
+// --- A pad
+//
+// Four directions on one row rather than a level of four items: Ok hands the
+// arrows to the picture and Menu takes them back. A direction asks for a
+// control and the way it goes -- never for a letter, the /sc? geometry letters
+// being stated in output pixels where a tap asks for one granule.
+
+static const MenuPad Move(MenuCommand::nudge(Tv5725::Nudge::VerticalPan, +1),
+                          MenuCommand::nudge(Tv5725::Nudge::VerticalPan, -1),
+                          MenuCommand::nudge(Tv5725::Nudge::HorizontalPan, +1),
+                          MenuCommand::nudge(Tv5725::Nudge::HorizontalPan, -1));
+
+static const MenuItem Screen[] = {
+    MenuItem::pad("Move", Move),
+    MenuItem::choice("Line filter", 'm', NULL),
+};
+
+TEST_CASE("Ok on a pad hands it the arrows rather than asking for anything")
+{
+    Panel panel;
+    Menu menu(Screen, 2, Recorder, panel.context);
+    menu.open();
+
+    CHECK_FALSE(menu.press(Menu::KeyOk).asked());
+    CHECK(menu.isAdjusting());
+}
+
+TEST_CASE("each arrow asks for the control and direction the pad gives it")
+{
+    Panel panel;
+    Menu menu(Screen, 2, Recorder, panel.context);
+    menu.open();
+    REQUIRE(menu.press(Menu::KeyOk).asked() == false);
+
+    const MenuCommand up = menu.press(Menu::KeyUp);
+    CHECK(up.queue() == MenuCommand::GeometryNudge);
+    CHECK(up.control() == Tv5725::Nudge::VerticalPan);
+    CHECK(up.direction() == +1);
+    CHECK(up.asked());
+
+    CHECK(menu.press(Menu::KeyDown).direction() == -1);
+    CHECK(menu.press(Menu::KeyLeft).control() == Tv5725::Nudge::HorizontalPan);
+    CHECK(menu.press(Menu::KeyLeft).direction() == +1);
+    CHECK(menu.press(Menu::KeyRight).direction() == -1);
+}
+
+TEST_CASE("Ok gives the arrows back to the level")
+{
+    Panel panel;
+    Menu menu(Screen, 2, Recorder, panel.context);
+    menu.open();
+    REQUIRE(menu.press(Menu::KeyOk).asked() == false);
+    REQUIRE(menu.isAdjusting());
+
+    CHECK_FALSE(menu.press(Menu::KeyOk).asked());
+    CHECK_FALSE(menu.isAdjusting());
+    menu.press(Menu::KeyDown);
+    CHECK(std::string(menu.cursor().current().label()) == "Line filter");
+}
+
+TEST_CASE("Menu leaves the pad rather than the level it is on")
+{
+    Panel panel;
+    Menu menu(Screen, 2, Recorder, panel.context);
+    menu.open();
+    REQUIRE(menu.press(Menu::KeyOk).asked() == false);
+
+    menu.press(Menu::KeyMenu);
+    CHECK_FALSE(menu.isAdjusting());
+    CHECK(menu.isOpen());
+}
+
+TEST_CASE("Exit closes from inside a pad")
+{
+    Panel panel;
+    Menu menu(Screen, 2, Recorder, panel.context);
+    menu.open();
+    REQUIRE(menu.press(Menu::KeyOk).asked() == false);
+
+    menu.press(Menu::KeyExit);
+    CHECK_FALSE(menu.isOpen());
+    CHECK_FALSE(menu.isAdjusting());
+}
+
+TEST_CASE("the page drawn while a pad has the arrows says so")
+{
+    // The device draws the pad -- the overlay its four arrows -- and nothing
+    // else on the page changes, so the page is what carries it.
+    Panel panel;
+    Menu menu(Screen, 2, Recorder, panel.context);
+    menu.open();
+    CHECK_FALSE(menu.page().adjusting());
+
+    menu.press(Menu::KeyOk);
+    CHECK(menu.page().adjusting());
+}
+
+TEST_CASE("reopening leaves the arrows with the level")
+{
+    Panel panel;
+    Menu menu(Screen, 2, Recorder, panel.context);
+    menu.open();
+    REQUIRE(menu.press(Menu::KeyOk).asked() == false);
+    menu.press(Menu::KeyExit);
+
+    menu.open();
+    CHECK_FALSE(menu.isAdjusting());
+}
+
+
 // ===== The described tree =====
 //
 // Above is the machinery over a tree of its own. Below is the tree the remote
@@ -528,6 +640,17 @@ static const MenuItem &item(const char *label)
     return *found;
 }
 
+// Descended from the root as the remote descends it: a cursor rooted at a level
+// of its own is that level's root ring, which the overlay numbers.
+static MenuCursor cursorInside(const char *label)
+{
+    MenuCursor cursor(MenuTree::root(), MenuTree::rootCount());
+    while (std::string(cursor.current().label()) != label)
+        cursor.down();
+    REQUIRE(cursor.descend());
+    return cursor;
+}
+
 TEST_CASE("an item says what its option is currently set to")
 {
     Panel panel;
@@ -554,8 +677,8 @@ TEST_CASE("an item says what its option is currently set to")
 TEST_CASE("the root names every top-level page, in the order the remote walks them")
 {
     const char *const expected[] = {
-        "Input", "Output Resolution", "System Settings", "Picture Settings",
-        "Reset Settings",
+        "Input", "Output Resolution", "Screen Settings", "System Settings",
+        "Picture Settings", "Reset Settings",
     };
 
     REQUIRE(MenuTree::rootCount() == sizeof(expected) / sizeof(expected[0]));
@@ -570,6 +693,44 @@ TEST_CASE("the root's ends join, which the chain's did not")
 
     cursor.up();
     CHECK(std::string(cursor.current().label()) == "Reset Settings");
+}
+
+
+// --- Screen Settings
+//
+// Two pads rather than two levels: Ok hands the arrows to the picture, and the
+// hold ramp behind a held key multiplies the granule each one asks for.
+
+TEST_CASE("the screen pads name the geometry control each arrow moves")
+{
+    const MenuItem &screen = item("Screen Settings");
+    REQUIRE(screen.childCount() == 2);
+
+    const MenuItem &move = screen.children()[0];
+    CHECK(std::string(move.label()) == "Move");
+    REQUIRE(move.isPad());
+    CHECK(move.pad().up().control() == Tv5725::Nudge::VerticalPan);
+    CHECK(move.pad().up().direction() == +1);
+    CHECK(move.pad().down().control() == Tv5725::Nudge::VerticalPan);
+    CHECK(move.pad().down().direction() == -1);
+    CHECK(move.pad().left().control() == Tv5725::Nudge::HorizontalPan);
+    CHECK(move.pad().left().direction() == +1);
+    CHECK(move.pad().right().control() == Tv5725::Nudge::HorizontalPan);
+    CHECK(move.pad().right().direction() == -1);
+
+    // The key follows the edge that moves: the picture is pinned at the top of
+    // the active region, so Down grows it and Up shrinks it.
+    const MenuItem &scale = screen.children()[1];
+    CHECK(std::string(scale.label()) == "Scale");
+    REQUIRE(scale.isPad());
+    CHECK(scale.pad().up().control() == Tv5725::Nudge::VerticalZoom);
+    CHECK(scale.pad().up().direction() == -1);
+    CHECK(scale.pad().down().control() == Tv5725::Nudge::VerticalZoom);
+    CHECK(scale.pad().down().direction() == +1);
+    CHECK(scale.pad().left().control() == Tv5725::Nudge::HorizontalZoom);
+    CHECK(scale.pad().left().direction() == -1);
+    CHECK(scale.pad().right().control() == Tv5725::Nudge::HorizontalZoom);
+    CHECK(scale.pad().right().direction() == +1);
 }
 
 
@@ -780,8 +941,7 @@ TEST_CASE("a row carries what its option is currently set to")
     panel.options.wantVdsLineFilter = 1;
     panel.options.wantPeaking = 0;
 
-    const MenuItem &picture = item("Picture Settings");
-    MenuCursor cursor(picture.children(), picture.childCount());
+    MenuCursor cursor = cursorInside("Picture Settings");
     while (std::string(cursor.current().label()) != "Line filter")
         cursor.down();
 
@@ -817,6 +977,7 @@ TEST_CASE("a page names the item its level was descended from")
     bool named = cursor.page().title() != NULL;
     CHECK_FALSE(named);
 
+    cursor.down();
     cursor.down();
     cursor.down();
     REQUIRE(std::string(cursor.current().label()) == "System Settings");
@@ -876,6 +1037,10 @@ static std::string rowText(uint8_t row)
                        : symbol == OSD::PreviousPage                    ? '^'
                        : symbol == OSD::NextPage                        ? 'v'
                        : symbol == OSD::Hyphen                          ? '-'
+                       : symbol == OSD::PadLeft                         ? '<'
+                       : symbol == OSD::PadUp                           ? '^'
+                       : symbol == OSD::PadDown                         ? 'v'
+                       : symbol == OSD::PadRight                        ? '>'
                                                                         : symbol;
     }
     while (!text.empty() && text[text.size() - 1] == ' ')
@@ -902,8 +1067,7 @@ TEST_CASE("the last column counts the pages of the level")
 {
     Panel panel;
 
-    const MenuItem &picture = item("Picture Settings");
-    MenuCursor cursor(picture.children(), picture.childCount());
+    MenuCursor cursor = cursorInside("Picture Settings");
     REQUIRE(cursor.page().number() == 1);
 
     Cells.clear();
@@ -948,8 +1112,8 @@ TEST_CASE("the selected row carries a cursor at the first column, the label besi
     Cells.clear();
     drawOnTelevision(cursor.page(), panel.context);
 
-    CHECK(rowText(0).substr(0, 6) == ">Input");
-    CHECK(rowText(1).substr(0, 18) == " Output Resolution");
+    CHECK(rowText(0).substr(0, 8) == ">1 Input");
+    CHECK(rowText(1).substr(0, 20) == " 2 Output Resolution");
 }
 
 TEST_CASE("the selected row marks an item that leads somewhere, just after its label")
@@ -964,8 +1128,8 @@ TEST_CASE("the selected row marks an item that leads somewhere, just after its l
     Cells.clear();
     drawOnTelevision(cursor.page(), panel.context);
 
-    CHECK(rowText(0) == ">Input>");
-    CHECK(rowText(1) == " Output Resolution         1");
+    CHECK(rowText(0) == ">1 Input>");
+    CHECK(rowText(1) == " 2 Output Resolution       1");
 }
 
 TEST_CASE("an item that leads nowhere is not marked")
@@ -979,8 +1143,9 @@ TEST_CASE("an item that leads nowhere is not marked")
     Cells.clear();
     drawOnTelevision(cursor.page(), panel.context);
 
-    CHECK(rowText(0) == " Picture Settings          ^");
-    CHECK(rowText(1) == ">Reset Settings            2");
+    CHECK(rowText(0) == " 4 System Settings         ^");
+    CHECK(rowText(1) == " 5 Picture Settings        2");
+    CHECK(rowText(2) == ">6 Reset Settings");
 }
 
 TEST_CASE("a rule of hyphens leads from the label to the value")
@@ -988,8 +1153,7 @@ TEST_CASE("a rule of hyphens leads from the label to the value")
     Panel panel;
     panel.options.wantVdsLineFilter = 1;
 
-    const MenuItem &picture = item("Picture Settings");
-    MenuCursor cursor(picture.children(), picture.childCount());
+    MenuCursor cursor = cursorInside("Picture Settings");
     while (std::string(cursor.current().label()) != "Line filter")
         cursor.down();
 
@@ -1003,8 +1167,7 @@ TEST_CASE("a row is written whole, so a shorter label leaves no tail behind")
 {
     Panel panel;
 
-    const MenuItem &system = item("System Settings");
-    MenuCursor cursor(system.children(), system.childCount());
+    MenuCursor cursor = cursorInside("System Settings");
     REQUIRE(std::string(cursor.current().label()) == "Aspect");
 
     Cells.clear();
@@ -1012,8 +1175,7 @@ TEST_CASE("a row is written whole, so a shorter label leaves no tail behind")
     REQUIRE(rowText(1) == " Use upscaling---------OFF 1");
 
     // A level whose second row is shorter, drawn over the same cells.
-    const MenuItem &picture = item("Picture Settings");
-    MenuCursor second(picture.children(), picture.childCount());
+    MenuCursor second = cursorInside("Picture Settings");
     drawOnTelevision(second.page(), panel.context);
 
     CHECK(rowText(1) == " Scanlines-------------OFF 1");
@@ -1084,7 +1246,7 @@ TEST_CASE("a page with fewer rows than the overlay blanks the rest")
 
     Cells.clear();
     const MenuItem &picture = item("Picture Settings");
-    MenuCursor full(picture.children(), picture.childCount());
+    MenuCursor full = cursorInside("Picture Settings");
     drawOnTelevision(full.page(), panel.context);
     REQUIRE(rowText(2) != "");
 
@@ -1092,4 +1254,53 @@ TEST_CASE("a page with fewer rows than the overlay blanks the rest")
     drawOnTelevision(pair.page(), panel.context);
 
     CHECK(rowText(2) == "");
+}
+
+TEST_CASE("a pad draws its four arrows where a value would go")
+{
+    // The chain drew the same four, at the column its own rule stopped at.
+    Panel panel;
+    Menu menu(Screen, 2, Recorder, panel.context);
+    menu.open();
+    REQUIRE_FALSE(menu.press(Menu::KeyOk).asked());
+
+    Cells.clear();
+    drawOnTelevision(menu.page(), panel.context);
+
+    CHECK(rowText(0) == ">1 Move>--------------<^v>");
+}
+
+TEST_CASE("the root ring is numbered, as the chain numbered it")
+{
+    // The chain carried the number inside the label string -- "4 System
+    // Settings" -- so it painted one on the root ring and nowhere else.
+    Panel panel;
+    MenuCursor cursor(MenuTree::root(), MenuTree::rootCount());
+
+    Cells.clear();
+    drawOnTelevision(cursor.page(), panel.context);
+
+    CHECK(rowText(0) == ">1 Input>");
+    CHECK(rowText(1) == " 2 Output Resolution       1");
+
+    cursor.down();
+    cursor.down();
+    cursor.down();
+    Cells.clear();
+    drawOnTelevision(cursor.page(), panel.context);
+    CHECK(rowText(0) == ">4 System Settings>        ^");
+}
+
+TEST_CASE("a level below the root is not numbered")
+{
+    Panel panel;
+    const MenuItem &input = item("Input");
+    MenuCursor cursor(MenuTree::root(), MenuTree::rootCount());
+    REQUIRE(cursor.descend());
+    REQUIRE(cursor.current().label() == input.children()[0].label());
+
+    Cells.clear();
+    drawOnTelevision(cursor.page(), panel.context);
+
+    CHECK(rowText(0) == ">RGBs");
 }

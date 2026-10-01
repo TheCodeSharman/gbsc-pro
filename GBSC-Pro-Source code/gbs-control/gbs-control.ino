@@ -996,18 +996,35 @@ static Osd::Menu describedMenu(Osd::MenuTree::root(), Osd::MenuTree::rootCount()
 // switch, not a preference.
 static bool describedMenuDrivesRemote = false;
 
+// A pad press, queued for loop() like every other: an arrow arrives from a
+// network callback on /menu and from the IR handler on the remote, and the
+// engine is reached from one place. Zero steps is nothing pending.
+static Tv5725::Nudge::Control pendingNudge = Tv5725::Nudge::HorizontalPan;
+static int16_t pendingNudgeSteps = 0;
+
 // One action per option: the menu asks for a letter and the letter goes to the
-// handler that already serves /uc? and /sc?.
-static void queueMenuCommand(const Osd::MenuCommand &asked)
+// handler that already serves /uc? and /sc?. A pad asks for a control and a
+// direction instead, because a tap is one capture granule and the letters are
+// stated in output pixels.
+static void queueMenuCommand(const Osd::MenuCommand &asked, int16_t steps = 1)
 {
     if (!asked.asked())
         return;
-    if (asked.queue() == Osd::MenuCommand::InputSelection)
+    switch (asked.queue()) {
+    case Osd::MenuCommand::InputSelection:
         pendingInputSelection = asked.source();
-    else if (asked.queue() == Osd::MenuCommand::UserCommand)
+        break;
+    case Osd::MenuCommand::GeometryNudge:
+        pendingNudge = asked.control();
+        pendingNudgeSteps = (int16_t)(asked.direction() * steps);
+        break;
+    case Osd::MenuCommand::UserCommand:
         userCommand = asked.letter();
-    else
+        break;
+    case Osd::MenuCommand::SerialCommand:
         serialCommand = asked.letter();
+        break;
+    }
 }
 
 // Only the seven keys the menu answers. Volume, Mute and Info are the chain's
@@ -1017,9 +1034,16 @@ static void pressDescribedMenuFromRemote()
     if (!irrecv.decode(&results))
         return;
 
+    // A held key sends repeat frames rather than the code, and only a pad acts
+    // on one: the ramp is what makes a held arrow go faster, where a level that
+    // scrolled on repeat is not what the remote does today.
+    const uint32_t frame = describedMenu.isAdjusting()
+                               ? geometryHold.resolve(results.value, millis())
+                               : results.value;
+
     bool known = true;
     Osd::Menu::Key key = Osd::Menu::KeyMenu;
-    switch (results.value) {
+    switch (frame) {
     case IRKeyUp:
         key = Osd::Menu::KeyUp;
         break;
@@ -1046,8 +1070,13 @@ static void pressDescribedMenuFromRemote()
         break;
     }
 
-    if (known)
-        queueMenuCommand(describedMenu.press(key));
+    if (known) {
+        const Osd::MenuCommand asked = describedMenu.press(key);
+        queueMenuCommand(asked,
+                         asked.queue() == Osd::MenuCommand::GeometryNudge
+                             ? geometryHold.multiplierFor(frame, millis())
+                             : 1);
+    }
     irrecv.resume();
 }
 
@@ -5509,6 +5538,12 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                               rto->osr, inputAcquisition.sourceLineRateHz());
         }
 #endif
+        if (pendingNudgeSteps != 0) {
+            const int16_t steps = pendingNudgeSteps;
+            pendingNudgeSteps = 0;
+            geometryControls.nudge(pendingNudge, steps);
+        }
+
         if (pendingInputSelection != VideoSourceSelection::None) {
             // Cleared before acting, not after: every handler below blocks for
             // seconds while detection runs, and a second request landing in that
@@ -6727,9 +6762,11 @@ void startWebserver()
         if (request->hasParam("ir"))
             describedMenuDrivesRemote = request->getParam("ir")->value().toInt() != 0;
 
-        const Osd::MenuPage page = describedMenu.cursor().page();
+        const Osd::MenuPage page = describedMenu.page();
         String body = "{\"open\":";
         body += describedMenu.isOpen() ? "true" : "false";
+        body += ",\"adjusting\":";
+        body += describedMenu.isAdjusting() ? "true" : "false";
         body += ",\"depth\":";
         body += describedMenu.cursor().depth();
         body += ",\"page\":{\"number\":";
@@ -6739,16 +6776,19 @@ void startWebserver()
         body += ",\"next\":";
         body += page.hasNextPage() ? "true" : "false";
         body += "},\"asked\":\"";
-        if (asked.asked())
+        if (asked.asked() && asked.queue() == Osd::MenuCommand::GeometryNudge) {
+            body += Tv5725::Nudge::name(asked.control());
+            body += asked.direction() > 0 ? '+' : '-';
+        } else if (asked.asked()) {
             body += asked.letter();
+        }
         body += "\",\"queue\":\"";
         if (asked.asked()) {
             switch (asked.queue()) {
             case Osd::MenuCommand::UserCommand: body += "uc"; break;
             case Osd::MenuCommand::SerialCommand: body += "sc"; break;
-            case Osd::MenuCommand::InputSelection:
-                body += "input";
-                break;
+            case Osd::MenuCommand::InputSelection: body += "input"; break;
+            case Osd::MenuCommand::GeometryNudge: body += "nudge"; break;
             }
         }
         body += "\",\"remote\":";

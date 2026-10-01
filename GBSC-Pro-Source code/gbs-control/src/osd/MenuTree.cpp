@@ -3,6 +3,7 @@
 #include "../../options.h"
 #include "../tv5725/Aspect.h"
 #include "../tv5725/Controls.h"
+#include "../tv5725/Nudge.h"
 #include "../tv5725/VideoPath.h"
 #include "MenuContext.h"
 
@@ -102,6 +103,25 @@ const MenuItem Resolution[] = {
     MenuItem::action("720x480", 'h'),
 };
 
+// A pad asks for a control and the way it goes, which the remote's hold ramp
+// multiplies -- the /sc? geometry letters are stated in output pixels, where one
+// tap asks for one capture granule. The key follows the edge that moves: the
+// picture is pinned at the top of the active region, so Down grows it.
+const MenuPad MovePad(MenuCommand::nudge(Tv5725::Nudge::VerticalPan, +1),
+                      MenuCommand::nudge(Tv5725::Nudge::VerticalPan, -1),
+                      MenuCommand::nudge(Tv5725::Nudge::HorizontalPan, +1),
+                      MenuCommand::nudge(Tv5725::Nudge::HorizontalPan, -1));
+
+const MenuPad ScalePad(MenuCommand::nudge(Tv5725::Nudge::VerticalZoom, -1),
+                       MenuCommand::nudge(Tv5725::Nudge::VerticalZoom, +1),
+                       MenuCommand::nudge(Tv5725::Nudge::HorizontalZoom, -1),
+                       MenuCommand::nudge(Tv5725::Nudge::HorizontalZoom, +1));
+
+const MenuItem Screen[] = {
+    MenuItem::pad("Move", MovePad),
+    MenuItem::pad("Scale", ScalePad),
+};
+
 const MenuItem Picture[] = {
     MenuItem::adjust("ADC gain", MenuCommand::serial('T'), MenuCommand::user('n'),
                      MenuCommand::user('o'), autoGainText),
@@ -131,6 +151,8 @@ const MenuItem Root[] = {
     MenuItem::submenu("Input", Input, sizeof(Input) / sizeof(Input[0])),
     MenuItem::submenu("Output Resolution", Resolution,
                       sizeof(Resolution) / sizeof(Resolution[0])),
+    MenuItem::submenu("Screen Settings", Screen,
+                      sizeof(Screen) / sizeof(Screen[0])),
     MenuItem::submenu("System Settings", System,
                       sizeof(System) / sizeof(System[0])),
     MenuItem::submenu("Picture Settings", Picture,

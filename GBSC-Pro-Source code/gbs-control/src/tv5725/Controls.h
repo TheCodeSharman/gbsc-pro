@@ -7,6 +7,7 @@
 #include <stdint.h>
 
 #include "Axis.h"
+#include "Nudge.h"
 #include "VideoPath.h"
 
 class Print;
@@ -34,6 +35,10 @@ public:
     bool verticalPanFine(int16_t steps);
     bool horizontalZoomFine(int16_t steps);
     bool verticalZoomFine(int16_t steps);
+
+    // The same four, named rather than called, which is what a pad on the menu
+    // asks for: a control and a signed number of granules.
+    bool nudge(Nudge::Control control, int16_t steps);
 
     VideoPath &engine() const;
 

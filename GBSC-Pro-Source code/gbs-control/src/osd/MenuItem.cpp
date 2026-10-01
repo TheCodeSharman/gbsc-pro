@@ -16,8 +16,12 @@ uint8_t MenuItem::childCount() const { return childCount_; }
 
 bool MenuItem::leadsSomewhere() const
 {
-    return children_ != NULL && childCount_ != 0;
+    return (children_ != NULL && childCount_ != 0) || isPad();
 }
+
+bool MenuItem::isPad() const { return pad_ != NULL; }
+
+const MenuPad &MenuItem::pad() const { return *pad_; }
 
 bool MenuItem::hasValue() const { return valueText_ != NULL; }
 

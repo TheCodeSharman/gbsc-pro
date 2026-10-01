@@ -14,6 +14,10 @@ const char OSD::Hyphen;
 const char OSD::Arrow;
 const char OSD::PreviousPage;
 const char OSD::NextPage;
+const char OSD::PadLeft;
+const char OSD::PadUp;
+const char OSD::PadDown;
+const char OSD::PadRight;
 const char OSD::Background;
 const char OSD::Selected;
 const char OSD::Unselected;
@@ -27,6 +31,9 @@ namespace {
 // The page byte that selects a row. Not consecutive, and the second is 0x02
 // rather than 0x01.
 const char Pages[MenuPage::Rows] = { 0x00, 0x02, 0x03 };
+
+const char PadArrows[] = { OSD::PadLeft, OSD::PadUp, OSD::PadDown,
+                           OSD::PadRight, '\0' };
 
 uint8_t lengthOf(const char *text)
 {
@@ -109,14 +116,24 @@ void OSD::row(const MenuPage &page, uint8_t index, const char *value)
     const bool selected = index == page.selected();
     const char colour = selected ? Selected : Unselected;
     const char *const label = page.labelAt(index);
-    const uint8_t labelEnd = (uint8_t)(LabelColumn + lengthOf(label));
 
+    // The root ring carries its position, which is the level with nothing above
+    // it; the chain kept the number inside the label string.
+    uint8_t labelAt = LabelColumn;
     if (selected)
         putCell(index, 0, Arrow, colour);
-    putText(index, LabelColumn, label, colour);
+    if (page.title() == NULL) {
+        putCell(index, labelAt, (char)('0' + page.positionAt(index)), colour);
+        labelAt = (uint8_t)(labelAt + 2);
+    }
+    putText(index, labelAt, label, colour);
+    const uint8_t labelEnd = (uint8_t)(labelAt + lengthOf(label));
+
+    uint8_t from = labelEnd;
     if (selected && page.leadsAt(index))
-        putCell(index, labelEnd, Arrow, colour);
-    putValue(index, labelEnd, value, colour);
+        putCell(index, from++, Arrow, colour);
+    putValue(index, from, selected && page.adjusting() ? PadArrows : value,
+             colour);
     putIndicator(page, index);
 }
 

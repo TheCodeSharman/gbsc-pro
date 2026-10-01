@@ -27,6 +27,10 @@ public:
 
     bool isOpen() const;
 
+    // Whether the four arrows are the picture's rather than the cursor's, which
+    // Ok on a pad item hands over and Menu or Ok takes back.
+    bool isAdjusting() const;
+
     void open();
     void close();
 
@@ -44,13 +48,20 @@ public:
 
     const MenuCursor &cursor() const;
 
+    // What a redraw would draw: where the cursor is, and whether a pad has the
+    // arrows.
+    MenuPage page() const;
+
 private:
+    MenuCommand adjust(Key key);
+
     const MenuItem *root_;
     uint8_t count_;
     const MenuRenderer &renderer_;
     const MenuContext &context_;
     MenuCursor cursor_;
     bool open_;
+    bool adjusting_;
     bool redraw_;
 };
 

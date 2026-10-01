@@ -43,7 +43,8 @@ void MenuCursor::down()
 bool MenuCursor::descend()
 {
     const MenuItem &item = current();
-    if (!item.leadsSomewhere() || depth_ >= MaxDepth)
+    if (item.children() == NULL || item.childCount() == 0
+        || depth_ >= MaxDepth)
         return false;
 
     levels_[depth_].items = item.children();

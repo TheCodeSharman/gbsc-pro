@@ -12,7 +12,10 @@
 // the console is never written to. Controls.h forward-declares this.
 class Print {};
 
+#include <string>
+
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Controls.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Nudge.h"
 
 using namespace Tv5725;
 
@@ -145,4 +148,57 @@ TEST_CASE("a fine press moves one granule, whatever that costs in pixels")
         CHECK(before - panel.extent(AxisVertical)
               == 3 * AxisVertical.captureGranularity());
     }
+}
+
+// A REMOTE'S PAD ASKS FOR A CONTROL AND A DIRECTION, not for a letter. The four
+// /sc? geometry letters are stated in output pixels, which a tap cannot use:
+// the described menu names the control instead and the hold ramp supplies the
+// number of granules.
+TEST_CASE("a nudge reaches the control it names, a granule at a time")
+{
+    SUBCASE("horizontal pan") {
+        Panel asked;
+        asked.controls.horizontalZoom(400);
+        const long before = asked.origin(AxisHorizontal);
+
+        REQUIRE(asked.controls.nudge(Nudge::HorizontalPan, 2));
+        CHECK(asked.origin(AxisHorizontal) - before
+              == 2 * AxisHorizontal.captureGranularity());
+    }
+
+    SUBCASE("vertical pan") {
+        Panel asked;
+        asked.controls.verticalZoom(100);
+        const long before = asked.origin(AxisVertical);
+
+        REQUIRE(asked.controls.nudge(Nudge::VerticalPan, -1));
+        CHECK(before - asked.origin(AxisVertical)
+              == AxisVertical.captureGranularity());
+    }
+
+    SUBCASE("horizontal zoom") {
+        Panel asked;
+        const long before = asked.extent(AxisHorizontal);
+
+        REQUIRE(asked.controls.nudge(Nudge::HorizontalZoom, 3));
+        CHECK(before - asked.extent(AxisHorizontal)
+              == 3 * AxisHorizontal.captureGranularity());
+    }
+
+    SUBCASE("vertical zoom") {
+        Panel asked;
+        const long before = asked.extent(AxisVertical);
+
+        REQUIRE(asked.controls.nudge(Nudge::VerticalZoom, 3));
+        CHECK(before - asked.extent(AxisVertical)
+              == 3 * AxisVertical.captureGranularity());
+    }
+}
+
+TEST_CASE("a control is named, which is how /menu reports a pad press")
+{
+    CHECK(std::string(Nudge::name(Nudge::HorizontalPan)) == "hpan");
+    CHECK(std::string(Nudge::name(Nudge::VerticalPan)) == "vpan");
+    CHECK(std::string(Nudge::name(Nudge::HorizontalZoom)) == "hzoom");
+    CHECK(std::string(Nudge::name(Nudge::VerticalZoom)) == "vzoom");
 }

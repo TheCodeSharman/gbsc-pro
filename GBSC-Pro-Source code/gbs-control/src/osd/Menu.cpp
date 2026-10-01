@@ -5,22 +5,27 @@ namespace Osd {
 Menu::Menu(const MenuItem *root, uint8_t count, const MenuRenderer &renderer,
            const MenuContext &context)
     : root_(root), count_(count), renderer_(renderer), context_(context),
-      cursor_(root, count), open_(false), redraw_(false)
+      cursor_(root, count), open_(false), adjusting_(false),
+      redraw_(false)
 {
 }
 
 bool Menu::isOpen() const { return open_; }
 
+bool Menu::isAdjusting() const { return adjusting_; }
+
 void Menu::open()
 {
     cursor_ = MenuCursor(root_, count_);
     open_ = true;
+    adjusting_ = false;
     redraw_ = true;
 }
 
 void Menu::close()
 {
     open_ = false;
+    adjusting_ = false;
     redraw_ = true;
 }
 
@@ -31,10 +36,43 @@ void Menu::drawIfNeeded()
     if (!needsRedraw())
         return;
     redraw_ = false;
-    renderer_.draw(open_ ? cursor_.page() : MenuPage(), context_);
+    renderer_.draw(open_ ? page() : MenuPage(), context_);
 }
 
 const MenuCursor &Menu::cursor() const { return cursor_; }
+
+MenuPage Menu::page() const
+{
+    MenuPage drawn = cursor_.page();
+    if (adjusting_)
+        drawn.markAdjusting();
+    return drawn;
+}
+
+// The arrows are the picture's while a pad holds them, and Ok gives them back.
+MenuCommand Menu::adjust(Key key)
+{
+    redraw_ = true;
+    const MenuPad &pad = cursor_.current().pad();
+    switch (key) {
+    case KeyUp:
+        return pad.up();
+    case KeyDown:
+        return pad.down();
+    case KeyLeft:
+        return pad.left();
+    case KeyRight:
+        return pad.right();
+    case KeyExit:
+        close();
+        break;
+    case KeyOk:
+    case KeyMenu:
+        adjusting_ = false;
+        break;
+    }
+    return MenuCommand();
+}
 
 MenuCommand Menu::press(Key key)
 {
@@ -43,6 +81,9 @@ MenuCommand Menu::press(Key key)
             open();
         return MenuCommand();
     }
+
+    if (adjusting_)
+        return adjust(key);
 
     switch (key) {
     case KeyUp:
@@ -58,6 +99,10 @@ MenuCommand Menu::press(Key key)
         redraw_ = true;
         return cursor_.current().nextCommand();
     case KeyOk:
+        if (cursor_.current().isPad()) {
+            adjusting_ = true;
+            break;
+        }
         if (cursor_.descend())
             break;
         redraw_ = true;

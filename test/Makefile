@@ -69,7 +69,8 @@ TIMING_SRC = src/tv5725/SourceTiming.cpp src/tv5725/SourceKey.cpp
 # acquisition path makes in order -- so a case that wants a solve links the
 # layer with it.
 OSD_SRC = src/osd/Menu.cpp src/osd/MenuCommand.cpp src/osd/MenuContext.cpp \
-	src/osd/MenuCursor.cpp src/osd/MenuItem.cpp src/osd/MenuPage.cpp \
+	src/osd/MenuCursor.cpp src/osd/MenuItem.cpp src/osd/MenuPad.cpp \
+	src/osd/MenuPage.cpp \
 	src/osd/MenuRenderer.cpp src/osd/MenuTree.cpp src/osd/OSD.cpp
 
 GEOMETRY_RASTER_SRC = $$(ls src/tv5725/*.cpp | grep -vE '^src/tv5725/(Controls)\.cpp$$') \
