@@ -6650,6 +6650,45 @@ void startWebserver()
     // from a session at all. A press that asks for a letter queues it on the
     // surface the item names, so the tree's letters are proven against the
     // handlers that already serve /uc? and /sc?. docs/osd-menu.md
+    // Press a key on the remote, from here. Both menus decode through
+    // IrReceiver, so an injected key reaches whichever is live by exactly the
+    // path a real press takes -- which is what lets the chain and the described
+    // menu be walked and photographed side by side. docs/osd-menu.md
+    server.on("/ir", HTTP_GET, [](AsyncWebServerRequest *request) {
+        struct Named {
+            const char *name;
+            uint32_t code;
+        };
+        static const Named keys[] = {
+            { "menu", IRKeyMenu },   { "up", IRKeyUp },
+            { "down", IRKeyDown },   { "left", IRKeyLeft },
+            { "right", IRKeyRight }, { "ok", IRKeyOk },
+            { "exit", IRKeyExit },   { "info", IRKeyInfo },
+            { "save", IRKeySave },   { "mute", IRKeyMute },
+            { "volup", kRecv2 },     { "voldown", kRecv3 },
+        };
+
+        if (!request->hasParam("key")) {
+            request->send(400, "application/json",
+                          "{\"error\":\"key is menu up down left right ok exit "
+                          "info save mute volup voldown\"}");
+            return;
+        }
+
+        const String wanted = request->getParam("key")->value();
+        for (size_t i = 0; i < sizeof(keys) / sizeof(keys[0]); ++i) {
+            if (wanted == keys[i].name) {
+                irrecv.inject(keys[i].code);
+                String body = "{\"key\":\"";
+                body += keys[i].name;
+                body += "\"}";
+                request->send(200, "application/json", body);
+                return;
+            }
+        }
+        request->send(400, "application/json", "{\"error\":\"unknown key\"}");
+    });
+
     server.on("/menu", HTTP_GET, [](AsyncWebServerRequest *request) {
         Osd::MenuCommand asked;
         if (request->hasParam("key")) {

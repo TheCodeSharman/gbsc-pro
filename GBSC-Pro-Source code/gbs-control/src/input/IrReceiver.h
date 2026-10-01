@@ -1,7 +1,8 @@
 #ifndef INPUT_IR_RECEIVER_H_
 #define INPUT_IR_RECEIVER_H_
 
-// The IR receiver: IRrecv, plus a count of the frames taken off it.
+// The IR receiver: IRrecv, plus a count of the frames taken off it, plus a key
+// that arrived by some other route than the air. docs/osd-menu.md
 
 #include <IRremoteESP8266.h>
 #include <IRrecv.h>
@@ -17,6 +18,11 @@ public:
 
     void resume();
 
+    // Deliver `value` as the next frame. It is taken exactly once and cleared
+    // by resume(), as a frame off the air is, because the menus read
+    // `results.value` outside the decode block as well as inside it.
+    void inject(uint32_t value);
+
     // Frames taken off the receiver since boot. Only ever increases, so a
     // difference across a call is how many that call consumed.
     uint32_t decodes() const;
@@ -24,6 +30,9 @@ public:
 private:
     IRrecv recv_;
     uint32_t decodes_;
+    uint32_t injected_;
+    bool hasInjected_;
+    bool injectedTaken_;
 };
 
 #endif  // INPUT_IR_RECEIVER_H_
