@@ -140,17 +140,17 @@ const char *formatText(const MenuContext &context)
     return mode < sizeof(Formats) / sizeof(Formats[0]) ? Formats[mode] : "Auto";
 }
 
+// Declaring no shape and declaring the panel's are the same picture, so a
+// filled one reads as the panel's rather than as a shape of its own.
 const char *aspectText(const MenuContext &context)
 {
     switch (context.controls().engine().aspect().tenThousandths()) {
     case Tv5725::Aspect::FourThree:
         return "4:3";
-    case Tv5725::Aspect::SixteenNine:
-        return "16:9";
     case Tv5725::Aspect::FiveFour:
         return "5:4";
     default:
-        return "Fill";
+        return "16:9";
     }
 }
 

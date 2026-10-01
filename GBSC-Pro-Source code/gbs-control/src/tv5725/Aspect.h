@@ -46,6 +46,12 @@ public:
     // so folding it in would letterbox every SD output by a few percent.
     float roomFraction(const Axis &axis, Aspect shown) const;
 
+    // The next shape the menu offers. Filling is not among them: the panel is
+    // 16:9, so it and SixteenNine are one picture and the step changed nothing.
+    // A shape on none of them -- anything an older framing file carries --
+    // steps onto the first, so the ring is reachable from outside it.
+    Aspect next() const;
+
     bool operator==(const Aspect &o) const;
     bool operator!=(const Aspect &o) const;
 

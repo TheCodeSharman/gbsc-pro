@@ -68,3 +68,21 @@ TEST_CASE("a default-constructed shape fills")
     CHECK(Aspect().fills());
     CHECK(Aspect(Aspect::FourThree) != Aspect());
 }
+
+TEST_CASE("the shapes on offer ring, and filling is not one of them")
+{
+    // Fill is gone from the ring because the panel is 16:9: declaring no shape
+    // and declaring the panel's are the same picture, so it was a step that
+    // changed nothing. docs/aspect-ratio.md
+    CHECK(Aspect(Aspect::FourThree).next() == Aspect(Aspect::SixteenNine));
+    CHECK(Aspect(Aspect::SixteenNine).next() == Aspect(Aspect::FiveFour));
+    CHECK(Aspect(Aspect::FiveFour).next() == Aspect(Aspect::FourThree));
+}
+
+TEST_CASE("a shape that is on no offer steps onto the first of them")
+{
+    // An older framing file may carry any shape at all, so the ring has to be
+    // reachable from outside it.
+    CHECK(Aspect(Aspect::Fill).next() == Aspect(Aspect::FourThree));
+    CHECK(Aspect(11000).next() == Aspect(Aspect::FourThree));
+}

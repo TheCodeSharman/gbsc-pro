@@ -4622,6 +4622,7 @@ void loop()
     }
     web_service(inputStage, segmentCurrent, registerCurrent, readout, inputToogleBit);
 
+
           
     if (rto->syncWatcherEnabled && Tv5725::Chip::hasPower()) {
         if ((millis() - lastTimeInterruptClear) > 3000) {
@@ -5698,18 +5699,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
 // source was left at. docs/aspect-ratio.md
 static void cycleAspect()
 {
-    static const uint16_t Cycle[] = {
-        Tv5725::Aspect::Fill, Tv5725::Aspect::FourThree,
-        Tv5725::Aspect::SixteenNine, Tv5725::Aspect::FiveFour,
-    };
-    const uint8_t count = sizeof(Cycle) / sizeof(Cycle[0]);
-
-    uint8_t at = 0;
-    for (uint8_t i = 0; i < count; ++i)
-        if (geometry.aspect() == Tv5725::Aspect(Cycle[i]))
-            at = (uint8_t)(i + 1);
-
-    const Tv5725::Aspect wanted(Cycle[at % count]);
+    const Tv5725::Aspect wanted = geometry.aspect().next();
     const bool moved = geometry.setAspect(wanted);
 
     char line[48];

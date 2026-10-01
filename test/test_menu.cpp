@@ -988,8 +988,10 @@ TEST_CASE("the aspect item names the shape the source is shown in")
     REQUIRE(unit.solved.engine.setAspect(Tv5725::Aspect(Tv5725::Aspect::SixteenNine)));
     CHECK(std::string(item("Aspect").valueText(unit.context)) == "16:9");
 
+    // The panel is 16:9, so a picture with no shape declared and one declared
+    // 16:9 are the same picture: the row says what is on the screen.
     REQUIRE(unit.solved.engine.setAspect(Tv5725::Aspect(Tv5725::Aspect::Fill)));
-    CHECK(std::string(item("Aspect").valueText(unit.context)) == "Fill");
+    CHECK(std::string(item("Aspect").valueText(unit.context)) == "16:9");
 
     CHECK(item("Aspect").okCommand().letter() == 'G');
 }
@@ -1654,3 +1656,5 @@ TEST_CASE("the screen level resets the framing and the shape together")
     CHECK(reset.okCommand().queue() == MenuCommand::SerialCommand);
     CHECK(reset.okCommand().letter() == 'B');
 }
+
+

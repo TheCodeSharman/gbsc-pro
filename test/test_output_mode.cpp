@@ -748,3 +748,18 @@ TEST_CASE("pass-through and a custom preset are handed back unchanged")
     CHECK((OutputMode::transmittableFor(&ModeBypass, 84.68f) == &ModeBypass));
     CHECK((OutputMode::transmittableFor(0, 84.68f) == 0));
 }
+
+TEST_CASE("every raster is shown on a 16:9 panel, whatever its own counts are")
+{
+    // The sink's shape cannot be asked for, EDID reaching no MCU on the board,
+    // and a set stretches whatever raster it is given onto its own panel. So
+    // the raster's pixel ratio is not the shape the picture is seen in:
+    // 1280x1024 is 5:4 in counts and 16:9 on the screen, and narrowing a 4:3
+    // picture against 5:4 left it wider than 4:3 once the panel had stretched
+    // it. docs/aspect-ratio.md
+    const OutputMode *modes[] = {&Mode1080p, &Mode1024p, &Mode960p,
+                                 &Mode720p, &Mode576p, &Mode480p};
+
+    for (int i = 0; i < 6; ++i)
+        CHECK(modes[i]->displayAspect() == Aspect(Aspect::SixteenNine));
+}

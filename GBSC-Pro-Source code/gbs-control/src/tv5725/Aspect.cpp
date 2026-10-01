@@ -29,6 +29,18 @@ float Aspect::roomFraction(const Axis &axis, Aspect shown) const
     return wanted < raster ? wanted / raster : 1.0f;
 }
 
+Aspect Aspect::next() const
+{
+    switch (tenThousandths_) {
+    case FourThree:
+        return Aspect(SixteenNine);
+    case SixteenNine:
+        return Aspect(FiveFour);
+    default:
+        return Aspect(FourThree);
+    }
+}
+
 bool Aspect::operator==(const Aspect &o) const
 {
     return tenThousandths_ == o.tenThousandths_;

@@ -52,13 +52,17 @@ public:
     // `carriedPx` is what the CHAIN takes, in the standard's own pixels, which
     // is the standard's `activePx` on four of the six modes and measurably less
     // on the two SD ones. See below.
-    // `displayAspect` is the standard's PICTURE aspect ratio, which is not the
-    // active counts' ratio on the two SD modes: 720x480 is 3:2 in pixels and
-    // 4:3 on the screen. Stated because it cannot be derived.
     OutputMode(uint16_t activeLines, uint16_t syncPx, uint16_t backPorchPx,
                uint16_t activePx, uint16_t carriedPx, uint16_t totalPx,
                uint32_t standardHz, uint16_t vsyncLines, uint16_t vBackPorchLines,
-               uint16_t vFrontPorchLines, uint16_t displayAspect);
+               uint16_t vFrontPorchLines);
+
+    // The shape of the PANEL the picture lands on, which every mode shares.
+    // EDID reaches no MCU on this board, so the sink cannot be asked and a set
+    // stretches whatever raster it is given onto its own panel -- which makes
+    // the raster's own counts the wrong thing to narrow a shape against.
+    // docs/aspect-ratio.md
+    static const uint16_t PanelShape = Aspect::SixteenNine;
 
     // Swept on the bench 2026-08-11, RiscPC 320x256@50, judged on the TV:
     //
@@ -204,9 +208,8 @@ public:
 
     uint16_t activeLines() const;
 
-    // The shape this mode puts on the screen, which is what a source's own
-    // shape is narrowed against. Fill for pass-through, which has no raster and
-    // so no shape to narrow into.
+    // What a source's own shape is narrowed against: PanelShape, or Fill for
+    // pass-through, which has no raster and so no shape to narrow into.
     Aspect displayAspect() const;
 
     // The number of lines in a frame including porch and sync.
@@ -249,7 +252,6 @@ private:
     uint16_t syncPx_, backPorchPx_, activePx_, carriedPx_, totalPx_;
     uint32_t standardHz_;
     uint16_t vsyncLines_, vBackPorchLines_, vFrontPorchLines_;
-    uint16_t displayAspect_;
 };
 
 // From the STANDARDS rather than from the tables --
