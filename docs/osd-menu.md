@@ -118,6 +118,7 @@ by construction, so that class of loss cannot happen.
 |---|---|
 | `MenuItem` | one node: label, what Ok / Left / Right ask for, children, a value-text function |
 | `MenuCommand` | one action: a letter and which command surface it belongs to |
+| `MenuPad` | the four directions of a pad, each a nudge |
 | `MenuContext` | what a value-text reads -- the preferences and the engine |
 | `MenuTree` | the menu as data, one declaration per option |
 | `MenuPage` | one screen: the items in view and which is selected |
@@ -138,6 +139,20 @@ through `/uc?` and toggles automatic gain through `/sc?`.
 reaches the HC32's analog switches as well as `ADC_INPUT_SEL` -- two muxes in
 series, from one row. So an Input item names the source rather than a letter, and
 a press that asks for one reports `"queue":"input"`.
+
+**A pad is a fourth surface, because a tap is not a number of pixels.** The four
+geometry letters `/sc?` carries -- `+ - * /` and `z h I O` -- are stated in output
+pixels, and one capture granule is `granularity x magnification` of those, so a
+tap stated as a pixel rounds to nothing above x2 and the press reports a limit
+that is not there. A pad names one of `Tv5725::Nudge`'s four controls and the way
+it goes; `Tv5725::Controls::nudge()` takes it in granules, and the number of them
+is the remote's, from the hold ramp behind a held key. A press that asks for one
+reports `"queue":"nudge"` and `"asked":"vpan+"`.
+
+**Ok hands the arrows to the pad and Menu or Ok takes them back.** Exit closes
+from inside one, and reopening leaves them with the level. While a pad has them
+the cursor does not move, so Up and Down reach the picture rather than the level
+-- which is why leaving is Menu as well as Ok.
 
 **A page carries its items rather than their text**, because a row's current
 value is only knowable from a context and neither the cursor nor the page has
@@ -163,11 +178,12 @@ mean `PROGMEM` and a `pgm_read` at every access. Free heap at boot went 12784 to
 
 ### What is described, and what is not
 
-Described: the root ring, Input, Output Resolution, System Settings, Picture
-Settings and Reset Settings -- in that order, which is the chain's. The labels
-are the chain's too, except that its root carries the item's number inside the
-label string (`"4 System Settings"`); numbering here waits on Screen Settings,
-since the numbers would otherwise be wrong.
+Described: the root ring, Input, Output Resolution, Screen Settings, System
+Settings, Picture Settings and Reset Settings -- in that order, which is the
+chain's. The labels are the chain's too, except for the number each root item
+carries: the chain kept it inside the label string (`Osd_Display(1, "4 System
+Settings")`) and here it is a column of its own, which the overlay draws for the
+level with nothing above it. The panel therefore gets the label without it.
 
 **Not described, because their items act by calling a sketch function rather
 than by asking for a letter** -- each waits on its action reaching one command
@@ -176,7 +192,6 @@ surface:
 | subtree | what its items call |
 |---|---|
 | Sv-Av InPutSet | the HC32 frame, and `SetReg` on the ADV7391 |
-| Move / Scale | `geometryControls` with the hold ramp |
 | R / G / B, Y gain | `R_VAL` and friends, then `Color_Conversion()` |
 | Sharpness | `VDS_PK_LB_GAIN` read back to decide what to draw, with no held field |
 
@@ -205,7 +220,8 @@ curl 'http://<ip>/menu?key=ok'
 ```
 
 ```json
-{"open":true,"depth":2,"page":{"number":1,"previous":false,"next":true},
+{"open":true,"adjusting":false,"depth":2,
+ "page":{"number":1,"previous":false,"next":true},
  "asked":"G","queue":"uc",
  "rows":[{"label":"Aspect","value":"Fill","selected":true},
          {"label":"Use upscaling","value":"ON","selected":false},
@@ -213,7 +229,9 @@ curl 'http://<ip>/menu?key=ok'
 ```
 
 `page` is the one part of the drawn row the labels do not carry -- the number at
-column 27 and whether there is a page either side of this one.
+column 27 and whether there is a page either side of this one. `adjusting` is a
+pad holding the arrows, where `key=up` asks for a granule of picture rather than
+moving the cursor.
 
 **The page returned WITH a press still shows the old value**, because the letter
 is queued for `loop()` and has not run yet. Read again to see the effect.
@@ -271,12 +289,18 @@ and in the same colours.
 | column | what is there |
 |---|---|
 | 0 | the cursor, on the selected row only. The chain draws it on every row and in the background colour on the others, which is the same picture |
-| 1.. | the label |
+| 1 | the row's position in its level, on the root ring only. The chain carried it inside the label string |
+| 1.. or 3.. | the label, after the number where there is one |
 | after the label | the same glyph again where the item leads somewhere, on the selected row only, flush against the label rather than at a column chosen per item |
 | to the value | a rule of hyphens, where the row has a value |
 | ..25 | the value, right-aligned. The chain's field is 23..25 -- three digits, or `OFF` -- and `ON` is the one value it puts a column further left |
 | 26 | the gutter |
 | 27 | up arrow on the first row, the page number on the second, down arrow on the third, each only where that page exists |
+
+**A pad draws four arrows where a value would go**, which is the cluster the
+chain drew at the column its own rule stopped at -- `0x03`, `0x08`, `0x18`,
+`0x13`. They are the overlay's glyphs rather than the page's, so the page says
+only that a pad has the arrows and each device draws its own.
 
 Two differences from the chain are deliberate. **A row the page does not fill is
 cleared rather than painted**, so a short level leaves no bar of background

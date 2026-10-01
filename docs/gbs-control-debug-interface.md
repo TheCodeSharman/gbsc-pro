@@ -33,7 +33,9 @@ Useful ones:
 answers the page it would draw, so a menu change needs no remote. Behind
 `GBS_DEBUG`. A press queues its letter on the surface the item names, and the
 page returned WITH the press still shows the old value because `loop()` has not
-run it yet. `osd-menu.md`.
+run it yet. On a pad -- Move or Scale under Screen Settings -- Ok hands the four
+arrows to the picture instead, and each one asks for a capture granule of pan or
+zoom rather than a letter: `"queue":"nudge"`, `"asked":"vpan+"`. `osd-menu.md`.
 
 ### Registers
 
