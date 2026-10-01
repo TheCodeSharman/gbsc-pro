@@ -15,7 +15,7 @@ void MenuRenderer::draw(const MenuPage &page, const MenuContext &context) const
         for (uint8_t row = 0; row < page.rows(); ++row)
             row_(page, row, page.itemAt(row).valueText(context));
     if (end_ != NULL)
-        end_();
+        end_(page);
 }
 
 }  // namespace Osd

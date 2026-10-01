@@ -70,18 +70,25 @@ public:
     static const MenuRenderer &renderer();
 
 private:
-    static void begin();
+    // One row composed before any of it is sent. The part has no back buffer,
+    // so a cell written twice shows the first value: composing here is what
+    // makes a redraw go straight from the old row to the new one.
+    struct Line {
+        char symbol[Columns];
+        char colour[Columns];
+    };
+
     static void row(const MenuPage &page, uint8_t index, const char *value);
-    static void end();
+    static void end(const MenuPage &page);
 
-    static void putValue(uint8_t index, uint8_t from, const char *value,
+    static void fill(Line &line, char symbol, char colour);
+    static void putValue(Line &line, uint8_t from, const char *value,
                          char colour);
-    static void putIndicator(const MenuPage &page, uint8_t index);
+    static void putIndicator(Line &line, const MenuPage &page, uint8_t index);
 
-    static void putCell(uint8_t index, uint8_t column, char symbol,
-                        char colour);
-    static void putText(uint8_t index, uint8_t at, const char *text,
-                        char colour);
+    static void putCell(Line &line, uint8_t column, char symbol, char colour);
+    static void putText(Line &line, uint8_t at, const char *text, char colour);
+    static void send(uint8_t index, const Line &line);
 
     static WriteCell write_;
 };

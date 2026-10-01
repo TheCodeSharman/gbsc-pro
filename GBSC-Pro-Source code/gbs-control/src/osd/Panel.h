@@ -39,7 +39,7 @@ public:
 private:
     static void begin();
     static void row(const MenuPage &page, uint8_t index, const char *value);
-    static void end();
+    static void end(const MenuPage &page);
 
     static Frame clear_;
     static WriteLine line_;

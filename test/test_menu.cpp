@@ -271,7 +271,7 @@ static void recordRow(const MenuPage &page, uint8_t index, const char *value)
     Drawn.push_back(row);
 }
 
-static void recordEnd() { ++Ended; }
+static void recordEnd(const MenuPage &) { ++Ended; }
 
 static const MenuRenderer Recorder(recordBegin, recordRow, recordEnd);
 
@@ -1658,3 +1658,36 @@ TEST_CASE("the screen level resets the framing and the shape together")
 }
 
 
+TEST_CASE("a cell is written once per draw, so nothing blanks before it repaints")
+{
+    // The overlay has no back buffer -- a character appears as it arrives -- so
+    // writing a cell clear, then as background, then as its glyph shows both
+    // intermediate states, which is a flicker on every press.
+    Unit unit;
+    MenuCursor cursor = cursorInside("Picture Settings");
+
+    Cells.clear();
+    drawOnTelevision(cursor.page(), unit.context);
+
+    static const char Pages[] = { 0x00, 0x02, 0x03 };
+    uint8_t written[MenuPage::Rows][OSD::Columns];
+    for (uint8_t row = 0; row < MenuPage::Rows; ++row)
+        for (uint8_t column = 0; column < OSD::Columns; ++column)
+            written[row][column] = 0;
+
+    for (size_t i = 0; i < Cells.size(); ++i) {
+        if ((Cells[i].address & 1) == 0)
+            continue;
+        const uint8_t column = (uint8_t)((Cells[i].address - 1) / 2);
+        for (uint8_t row = 0; row < MenuPage::Rows; ++row)
+            if (Cells[i].page == Pages[row] && column < OSD::Columns)
+                ++written[row][column];
+    }
+
+    uint8_t twice = 0;
+    for (uint8_t row = 0; row < MenuPage::Rows; ++row)
+        for (uint8_t column = 0; column < OSD::Columns; ++column)
+            if (written[row][column] != 1)
+                ++twice;
+    CHECK(twice == 0);
+}

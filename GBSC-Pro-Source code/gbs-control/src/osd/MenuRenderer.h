@@ -14,12 +14,14 @@ class MenuPage;
 
 class MenuRenderer {
 public:
-    // A redraw is bracketed because the panel buffers a frame and flushes it;
-    // the overlay writes characters as they arrive and ends with nothing to do.
+    // A redraw is bracketed because the panel buffers a frame and flushes it.
+    // The end is given the page as well: the overlay has nothing to flush and
+    // uses it to clear the rows the page did not fill, which it can only do
+    // once they have been drawn.
     constexpr MenuRenderer(void (*begin)(),
                            void (*row)(const MenuPage &page, uint8_t index,
                                        const char *value),
-                           void (*end)())
+                           void (*end)(const MenuPage &page))
         : begin_(begin), row_(row), end_(end)
     {
     }
@@ -29,7 +31,7 @@ public:
 private:
     void (*begin_)();
     void (*row_)(const MenuPage &, uint8_t, const char *);
-    void (*end_)();
+    void (*end_)(const MenuPage &);
 };
 
 }  // namespace Osd

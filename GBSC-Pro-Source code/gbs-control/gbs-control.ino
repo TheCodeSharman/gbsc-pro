@@ -1044,6 +1044,16 @@ static int16_t pendingTuneSteps = 0;
 // handler that already serves /uc? and /sc?. A pad asks for a control and a
 // direction instead, because a tap is one capture granule and the letters are
 // stated in output pixels.
+// Whether anything the menu asked for is still waiting to be acted on. What a
+// row says is read from whoever holds the value, so the page cannot be drawn
+// finally until every queue the press filled has drained.
+static bool menuCommandPending()
+{
+    return userCommand != '@' || serialCommand != '@' || pendingNudgeSteps != 0
+           || pendingTuneSteps != 0
+           || pendingInputSelection != VideoSourceSelection::None;
+}
+
 static void queueMenuCommand(const Osd::MenuCommand &asked, int16_t steps = 1)
 {
     if (!asked.asked())
@@ -4589,15 +4599,10 @@ void loop()
     uint32_t irAfterSelect = irrecv.decodes();
     OSD_IR();
 
-    // The overlay is on the ESP's I2C bus, so a /menu press only moves the
-    // cursor and the drawing happens here. Only while the chain's menu is
-    // closed, or the two would paint over each other.
     // Two trees draw the panel, so whichever is open owns it: the icon tree's
     // tick() would otherwise paint over a described page.
-    if (oled_menuItem == 0) {
+    if (oled_menuItem == 0)
         NEW_OLED_MENU = !describedMenu.isOpen();
-        describedMenu.drawIfNeeded();
-    }
     traceIrFrames(irAfterSelect - irBefore, irrecv.decodes() - irAfterSelect,
                   irMenuBefore);
 
@@ -4622,6 +4627,15 @@ void loop()
     }
     web_service(inputStage, segmentCurrent, registerCurrent, readout, inputToogleBit);
 
+    // Once the press has acted, not before. A press only moves the cursor and
+    // queues a letter, and what a row says is read from whoever holds the
+    // value, so a page drawn while the queue is still full shows every value
+    // row as it was one press ago. Held until it drains rather than drawn
+    // twice: a redraw flushes the panel's whole framebuffer, and a second one
+    // per press slows loop() enough to make presses coalesce. Only while the
+    // chain's menu is closed, or the two paint over each other.
+    if (oled_menuItem == 0 && !menuCommandPending())
+        describedMenu.drawIfNeeded();
 
           
     if (rto->syncWatcherEnabled && Tv5725::Chip::hasPower()) {

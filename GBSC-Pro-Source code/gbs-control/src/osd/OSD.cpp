@@ -48,56 +48,58 @@ uint8_t lengthOf(const char *text)
 
 void OSD::writeThrough(WriteCell write) { write_ = write; }
 
-void OSD::putCell(uint8_t index, uint8_t column, char symbol,
-                             char colour)
+void OSD::putCell(Line &line, uint8_t column, char symbol, char colour)
 {
-    if (write_ == NULL || index >= MenuPage::Rows || column >= Columns)
+    if (column >= Columns)
         return;
-    const char address = (char)(1 + 2 * column);
-    write_(address, Pages[index], symbol);
-    write_((char)(address - 1), Pages[index], colour);
+    line.symbol[column] = symbol;
+    line.colour[column] = colour;
 }
 
-// Every row, because the overlay keeps what was written to it: a level shorter
-// than the window would otherwise leave the previous level's last row painted.
-// Cleared rather than blanked, so a row the page does not fill draws nothing
-// instead of a bar of background across the picture.
-void OSD::begin()
+void OSD::fill(Line &line, char symbol, char colour)
 {
-    for (uint8_t index = 0; index < MenuPage::Rows; ++index)
-        for (uint8_t column = 0; column < Columns; ++column)
-            putCell(index, column, Clear, Clear);
+    for (uint8_t column = 0; column < Columns; ++column)
+        putCell(line, column, symbol, colour);
+}
+
+void OSD::send(uint8_t index, const Line &line)
+{
+    if (write_ == NULL || index >= MenuPage::Rows)
+        return;
+    for (uint8_t column = 0; column < Columns; ++column) {
+        const char address = (char)(1 + 2 * column);
+        write_(address, Pages[index], line.symbol[column]);
+        write_((char)(address - 1), Pages[index], line.colour[column]);
+    }
 }
 
 // A space is not written at all, as Osd_Display() does not write one either:
 // the bar is already there and a space has no glyph to put over it.
-void OSD::putText(uint8_t index, uint8_t at, const char *text,
-                             char colour)
+void OSD::putText(Line &line, uint8_t at, const char *text, char colour)
 {
     for (uint8_t i = 0; text != NULL && text[i] != '\0'; ++i) {
         if (text[i] == ' ')
             continue;
-        putCell(index, (uint8_t)(at + i), text[i] == '-' ? Hyphen : text[i],
+        putCell(line, (uint8_t)(at + i), text[i] == '-' ? Hyphen : text[i],
                 colour);
     }
 }
 
 // Up on the first row, the page number on the second and down on the third,
 // which is the chain's strip. A level of one page has nothing to count.
-void OSD::putIndicator(const MenuPage &page, uint8_t index)
+void OSD::putIndicator(Line &line, const MenuPage &page, uint8_t index)
 {
     if (index == 0 && page.hasPreviousPage())
-        putCell(index, IndicatorColumn, PreviousPage, Indicator);
+        putCell(line, IndicatorColumn, PreviousPage, Indicator);
     else if (index == 1 && (page.hasPreviousPage() || page.hasNextPage()))
-        putCell(index, IndicatorColumn, (char)('0' + page.number()), Indicator);
+        putCell(line, IndicatorColumn, (char)('0' + page.number()), Indicator);
     else if (index == 2 && page.hasNextPage())
-        putCell(index, IndicatorColumn, NextPage, Indicator);
+        putCell(line, IndicatorColumn, NextPage, Indicator);
 }
 
 // Right-aligned at the far end, with a rule of hyphens leading to it from
 // wherever the label stopped.
-void OSD::putValue(uint8_t index, uint8_t from, const char *value,
-                   char colour)
+void OSD::putValue(Line &line, uint8_t from, const char *value, char colour)
 {
     const uint8_t length = lengthOf(value);
     if (length == 0 || length > ValueLastColumn)
@@ -105,14 +107,14 @@ void OSD::putValue(uint8_t index, uint8_t from, const char *value,
 
     const uint8_t at = (uint8_t)(ValueLastColumn + 1 - length);
     for (uint8_t column = from; column < at; ++column)
-        putCell(index, column, Hyphen, colour);
-    putText(index, at, value, colour);
+        putCell(line, column, Hyphen, colour);
+    putText(line, at, value, colour);
 }
 
 void OSD::row(const MenuPage &page, uint8_t index, const char *value)
 {
-    for (uint8_t column = 0; column < Columns; ++column)
-        putCell(index, column, Background, Background);
+    Line line;
+    fill(line, Background, Background);
 
     const bool selected = index == page.selected();
     const char colour = selected ? Selected : Unselected;
@@ -122,27 +124,41 @@ void OSD::row(const MenuPage &page, uint8_t index, const char *value)
     // it; the chain kept the number inside the label string.
     uint8_t labelAt = LabelColumn;
     if (selected)
-        putCell(index, 0, Arrow, Cursor);
+        putCell(line, 0, Arrow, Cursor);
     if (page.title() == NULL) {
-        putCell(index, labelAt, (char)('0' + page.positionAt(index)), colour);
+        putCell(line, labelAt, (char)('0' + page.positionAt(index)), colour);
         labelAt = (uint8_t)(labelAt + 2);
     }
-    putText(index, labelAt, label, colour);
+    putText(line, labelAt, label, colour);
     const uint8_t labelEnd = (uint8_t)(labelAt + lengthOf(label));
 
     uint8_t from = labelEnd;
     if (selected && page.descendsAt(index))
-        putCell(index, from++, Arrow, colour);
-    putValue(index, from, selected && page.adjusting() ? PadArrows : value,
+        putCell(line, from++, Arrow, colour);
+    putValue(line, from, selected && page.adjusting() ? PadArrows : value,
              colour);
-    putIndicator(page, index);
+    putIndicator(line, page, index);
+
+    send(index, line);
 }
 
-void OSD::end() {}
+// The rows the page does not fill, and only those: the overlay keeps what was
+// written to it, so a level shorter than the window would leave the previous
+// level's last row painted. Cleared rather than blanked, so it draws nothing
+// instead of a bar of background across the picture -- and after the rows
+// rather than before them, a cell cleared ahead of being repainted being a
+// flicker on a part with no back buffer.
+void OSD::end(const MenuPage &page)
+{
+    Line blank;
+    fill(blank, Clear, Clear);
+    for (uint8_t index = page.rows(); index < MenuPage::Rows; ++index)
+        send(index, blank);
+}
 
 const MenuRenderer &OSD::renderer()
 {
-    static const MenuRenderer instance(begin, row, end);
+    static const MenuRenderer instance(NULL, row, end);
     return instance;
 }
 

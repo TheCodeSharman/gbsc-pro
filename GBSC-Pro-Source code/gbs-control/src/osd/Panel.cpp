@@ -45,7 +45,7 @@ void Panel::row(const MenuPage &page, uint8_t index, const char *value)
         line_(ValueRow, value);
 }
 
-void Panel::end()
+void Panel::end(const MenuPage &)
 {
     if (flush_ != NULL)
         flush_();
