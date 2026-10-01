@@ -33,6 +33,11 @@ const char *peakingText(const MenuContext &context)
     return onOff(context.options().wantPeaking);
 }
 
+const char *sharpnessText(const MenuContext &context)
+{
+    return onOff(context.options().wantSharpness);
+}
+
 const char *stepResponseText(const MenuContext &context)
 {
     return onOff(context.options().wantStepResponse);
@@ -128,6 +133,7 @@ const MenuItem Picture[] = {
     MenuItem::adjust("Scanlines", MenuCommand::user('7'), MenuCommand::user('K'),
                      MenuCommand::user('K'), scanlinesText),
     MenuItem::choice("Line filter", 'm', lineFilterText),
+    MenuItem::choice("Sharpness", 'W', sharpnessText),
     MenuItem::serialChoice("Peaking", 'f', peakingText),
     MenuItem::serialChoice("Step response", 'V', stepResponseText),
     MenuItem::adjust("Colour", MenuCommand(), MenuCommand::user('V'),

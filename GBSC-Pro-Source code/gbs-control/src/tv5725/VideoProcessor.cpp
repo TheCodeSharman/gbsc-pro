@@ -22,6 +22,13 @@ void VideoProcessor::setSixTapFilter(bool wanted)
     VDS_TAP6_BYPS::write(wanted ? 0 : 1);
 }
 
+// 0x5F in the chain, which is the same gain: both fields are six bits wide.
+void VideoProcessor::setSharpness(bool wanted, bool at1080p)
+{
+    VDS_PK_LB_GAIN::write(wanted ? 0x1F : 0x16);
+    VDS_PK_LH_GAIN::write(wanted ? 0x1F : (at1080p ? 0x0A : 0x18));
+}
+
 void VideoProcessor::init()
 {
     VDS_FIELDAB_EN::write(0x1);                  // s3_00[1:1]

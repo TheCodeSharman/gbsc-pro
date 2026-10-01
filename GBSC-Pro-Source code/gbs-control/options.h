@@ -79,6 +79,7 @@ struct userOptions
     uint8_t deintMode;        //非int模式
     uint8_t wantVdsLineFilter;  //想要 VdsLine过滤器
     uint8_t wantPeaking;   //峰值
+    uint8_t wantSharpness;
     uint8_t wantTap6;
     uint8_t preferScalingRgbhv;
     uint8_t PalForce60;

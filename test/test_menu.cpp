@@ -669,10 +669,10 @@ TEST_CASE("an item says what its option is currently set to")
 // so the two ends were dead. A level that joins is the described form's
 // navigation rather than a target written out per branch.
 //
-// Input, Screen Settings and the Sv-Av submenu are not here yet. Their items act
-// by calling a sketch function -- InputVGA_mode(), the HC32 frame, the pan and
-// zoom ramp -- rather than by asking for a letter, so describing them waits on
-// each action reaching one command surface. docs/osd-menu.md
+// The Sv-Av submenu and the four colour rows are not here yet. Their items act
+// by calling a sketch function -- the HC32 frame, Color_Conversion() -- rather
+// than by asking for a letter, so describing them waits on each action reaching
+// one command surface. docs/osd-menu.md
 
 TEST_CASE("the root names every top-level page, in the order the remote walks them")
 {
@@ -818,6 +818,33 @@ TEST_CASE("every picture option says what it is set to")
 
     panel.options.wantStepResponse = 0;
     CHECK(std::string(item("Step response").valueText(panel.context)) == "OFF");
+}
+
+TEST_CASE("the picture level names its rows in the order the chain drew them")
+{
+    const char *const expected[] = {
+        "ADC gain", "Scanlines", "Line filter", "Sharpness", "Peaking",
+        "Step response", "Colour", "Default colour",
+    };
+
+    const MenuItem &level = item("Picture Settings");
+    REQUIRE(level.childCount() == sizeof(expected) / sizeof(expected[0]));
+    for (uint8_t i = 0; i < level.childCount(); ++i)
+        CHECK(std::string(level.children()[i].label()) == expected[i]);
+}
+
+TEST_CASE("sharpness reports the preference rather than the gain it writes")
+{
+    // The chain read VDS_PK_LB_GAIN back to decide what to draw, so every
+    // output change silently moved the row -- applyOutputResolutionSettings()
+    // writes the resting gain.
+    Panel panel;
+
+    panel.options.wantSharpness = 1;
+    CHECK(std::string(item("Sharpness").valueText(panel.context)) == "ON");
+
+    panel.options.wantSharpness = 0;
+    CHECK(std::string(item("Sharpness").valueText(panel.context)) == "OFF");
 }
 
 TEST_CASE("an option whose letter is a serial command says so")

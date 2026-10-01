@@ -848,6 +848,12 @@ public:
     static void setStepResponse(bool wanted);
     static void setSixTapFilter(bool wanted);
 
+    // The two peaking band gains, which are one control: sharpness. The
+    // unsharpened high band follows the output resolution, the low band does
+    // not. It leaves VDS_PK_Y_H_BYPS to setPeaking(), so the gains do nothing
+    // while peaking is bypassed.
+    static void setSharpness(bool wanted, bool at1080p);
+
     // Output timing that ignores the input vertical sync. RD-5725-1.1 gives the
     // two bits as one table: VDS_FLOCK_EN with VDS_SYNC_EN, 0/0 free run.
     static void applyFreeRunTiming();

@@ -1257,17 +1257,21 @@ static Tv5725::OutputChoice outputChoiceFor()
       (Tv5725::PresetPreference)uopt->presetPreference);
 }
 
+// The two picture controls whose value depends on the output resolution read
+// this, so the preset ids live in one place.
+static bool outputIsAt1080p()
+{
+  return rto->presetID == 0x05 || rto->presetID == 0x15;
+}
+
 // What the OUTPUT resolution decides, and all it decides. Everything else
 // doPostPresetLoadSteps() writes is about the source, the ADC or the sync
 // processor, none of which an output change touches.
 static void applyOutputResolutionSettings()
 {
-  const bool at1080p = (rto->presetID == 0x05 || rto->presetID == 0x15);
-
-  // The low band's gain is the same either way; only the high band's differs.
-  GBS::VDS_PK_LB_GAIN::write(0x16);
-  GBS::VDS_PK_LH_GAIN::write(at1080p ? 0x0A : 0x18);
-  Tv5725::VideoProcessor::setStepResponse(uopt->wantStepResponse && !at1080p);
+  Tv5725::VideoProcessor::setSharpness(uopt->wantSharpness, outputIsAt1080p());
+  Tv5725::VideoProcessor::setStepResponse(uopt->wantStepResponse &&
+                                          !outputIsAt1080p());
 }
 
 // A preset load: the mode state a load decides, and nothing else. Every
@@ -3587,6 +3591,7 @@ void loadDefaultUserOptions()
     uopt->deintMode = 0;           
     uopt->wantVdsLineFilter = 0;
     uopt->wantPeaking = 1;
+    uopt->wantSharpness = 0;
     uopt->preferScalingRgbhv = 0;
     applyPassThroughPreference();
     uopt->wantTap6 = 1;
@@ -4135,7 +4140,9 @@ void setup()
             if (uopt->wantStepResponse > 1)
                 uopt->wantStepResponse = 1;
 
-            f.read();  // byte 15, reserved -- see saveUserPrefs()
+            uopt->wantSharpness = (uint8_t)(f.read() - '0');
+            if (uopt->wantSharpness > 1)
+                uopt->wantSharpness = 0;
 
             uopt->enableCalibrationADC = (uint8_t)(f.read() - '0');
             if (uopt->enableCalibrationADC > 1)
@@ -4865,13 +4872,8 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                             GBS::HD_V_OFFSET::write(GBS::HD_V_OFFSET::read() + 0x24);
                         }; // SerialMprintln("on");
                     } else {
-                        if (rto->presetID == 0x05) {
-                            GBS::VDS_PK_LB_GAIN::write(0x16);
-                            GBS::VDS_PK_LH_GAIN::write(0x0A);
-                        } else {
-                            GBS::VDS_PK_LB_GAIN::write(0x16);
-                            GBS::VDS_PK_LH_GAIN::write(0x18);
-                        }
+                        Tv5725::VideoProcessor::setSharpness(
+                            uopt->wantSharpness, outputIsAt1080p());
                         GBS::VDS_Y_OFST::write(GBS::ADC_UNUSED_60::read());
                         GBS::HD_Y_OFFSET::write(GBS::ADC_UNUSED_61::read());
                         if (!rto->inputIsYpBpR) {
@@ -5091,7 +5093,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     if (uopt->wantPeaking == 0) {
                         uopt->wantPeaking = 1;
                         Tv5725::VideoProcessor::setPeaking(true);
-                    } else if (GBS::VDS_PK_LB_GAIN::read() == 0x16) {
+                    } else if (!uopt->wantSharpness) {
                         uopt->wantPeaking = 0;
                         Tv5725::VideoProcessor::setPeaking(false);
                     }
@@ -5945,26 +5947,10 @@ void handleType2Command(char argument)
             saveUserPrefs();
             break;
         case 'W':
-            // Четкость
-            if (GBS::VDS_PK_LB_GAIN::read() == 0x16) {
-                Tv5725::VideoProcessor::setPeaking(true);
-                GBS::VDS_PK_LB_GAIN::write(0x5f); // 3_45
-                GBS::VDS_PK_LH_GAIN::write(0x5f); // 3_47
-                ;                                 // SerialMprintln("Sharpness - Medium");
-                ;                                 // SerialMprint(F("LB_GAIN :"));
-                ;                                 // SerialMprintln(GBS::VDS_PK_LB_GAIN::read(), HEX);
-                ;                                 // SerialMprint(F("LH_GAIN :"));
-                ;                                 // SerialMprintln(GBS::VDS_PK_LH_GAIN::read(), HEX);
-            } else {
-                Tv5725::VideoProcessor::setPeaking(false);
-                GBS::VDS_PK_LB_GAIN::write(0x16); // 3_45
-                GBS::VDS_PK_LH_GAIN::write(0x0A); // 3_47
-                ;                                 // SerialMprintln("Sharpness - Norm");
-                ;                                 // SerialMprint(F("LB_GAIN :"));
-                ;                                 // SerialMprintln(GBS::VDS_PK_LB_GAIN::read(), HEX);
-                ;                                 // SerialMprint(F("LH_GAIN :"));
-                ;                                 // SerialMprintln(GBS::VDS_PK_LH_GAIN::read(), HEX);
-            }
+            uopt->wantSharpness = uopt->wantSharpness ? 0 : 1;
+            Tv5725::VideoProcessor::setSharpness(uopt->wantSharpness,
+                                                 outputIsAt1080p());
+            saveUserPrefs();
             break;
         case 'Z':
             // Y_offset +
@@ -7642,11 +7628,13 @@ void saveUserPrefs()
     f.write(uopt->PalForce60 + '0');
     f.write(uopt->matchPresetSource + '0');
     f.write(uopt->wantStepResponse + '0');
-    // Byte 15 held wantFullHeight. The file is positional and unversioned, and
-    // the load path admits any file of at least PREFS_BYTES, so dropping the
-    // byte shifts volume, input selection and the BCSH values by one on every
-    // file already on flash. It stays, written as a constant and discarded.
-    f.write('0');
+    // Byte 15 held wantFullHeight, which was written as a constant and
+    // discarded once that option went: the file is positional and unversioned,
+    // so dropping the byte would shift volume, input selection and the BCSH
+    // values by one on every file already on flash. Sharpness takes it, and a
+    // file written before this reads 0 -- the resting gain, which is what those
+    // units are showing.
+    f.write(uopt->wantSharpness + '0');
     f.write(uopt->enableCalibrationADC + '0');
     f.write(uopt->scanlineStrength + '0');
     f.write(uopt->disableExternalClockGenerator + '0');

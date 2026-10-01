@@ -124,3 +124,46 @@ TEST_CASE("only a line-doubled RGB source shortens the luma delay")
     VideoProcessor::applyLineDoubling(false, false);
     CHECK(Wire.field(3, 0x24, 4, 2) == 3);
 }
+
+// --- sharpness, which is the peaking band gains ------------------------------
+
+TEST_CASE("sharpness raises both peaking band gains")
+{
+    // 0x1F rather than the 0x5F the value is written as elsewhere: both fields
+    // are six bits wide, so a write of 0x5F lands as 0x1F and that is the gain
+    // the picture has always had.
+    Wire.reset();
+    Wire.poison(Poisons[0]);
+    VideoProcessor::setSharpness(true, false);
+    CHECK(VideoProcessor::VDS_PK_LB_GAIN::read() == 0x1F);
+    CHECK(VideoProcessor::VDS_PK_LH_GAIN::read() == 0x1F);
+}
+
+TEST_CASE("the high band's unsharpened gain follows the output resolution")
+{
+    // The low band's resting gain is the same either way; only the high band's
+    // differs, and 1080p is the output that takes the lower one.
+    Wire.reset();
+    Wire.poison(Poisons[0]);
+    VideoProcessor::setSharpness(false, true);
+    CHECK(VideoProcessor::VDS_PK_LB_GAIN::read() == 0x16);
+    CHECK(VideoProcessor::VDS_PK_LH_GAIN::read() == 0x0A);
+
+    VideoProcessor::setSharpness(false, false);
+    CHECK(VideoProcessor::VDS_PK_LB_GAIN::read() == 0x16);
+    CHECK(VideoProcessor::VDS_PK_LH_GAIN::read() == 0x18);
+}
+
+TEST_CASE("sharpness leaves the peaking bypass to the control that owns it")
+{
+    // VDS_PK_Y_H_BYPS is setPeaking()'s. A second writer here would leave the
+    // Peaking row reporting a value the user did not set.
+    uint32_t under[2];
+    for (int i = 0; i < 2; ++i) {
+        Wire.reset();
+        Wire.poison(Poisons[i]);
+        VideoProcessor::setSharpness(true, false);
+        under[i] = VideoProcessor::VDS_PK_Y_H_BYPS::read();
+    }
+    CHECK(under[0] != under[1]);
+}
