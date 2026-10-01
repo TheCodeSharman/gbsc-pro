@@ -44,7 +44,7 @@ def open_pad(host, which):
     while selected(page(host)) != SCREEN_SETTINGS:
         page(host, "down")
     body = page(host, "ok")
-    assert labels(body) == ["Move", "Scale"]
+    assert "Move" in labels(body) and "Scale" in labels(body)
     while selected(page(host)) != which:
         page(host, "down")
     body = page(host, "ok")
@@ -78,7 +78,7 @@ def test_a_pad_takes_the_arrows_and_gives_them_back(host, source, closed):
 
     body = page(host, "menu")
     assert not body["adjusting"]
-    assert labels(body) == ["Move", "Scale"], "Menu left the level as well as the pad"
+    assert "Move" in labels(body), "Menu left the level as well as the pad"
 
 
 @pytest.mark.pan
@@ -114,3 +114,42 @@ def test_a_scale_arrow_crops_the_capture_and_the_opposite_one_puts_it_back(
 
     page(host, "left")
     assert settles(host, cropped) == before
+
+
+def shape(host):
+    status, body = get_json(host, "/geometry")
+    assert status == 200
+    return body["aspect"]
+
+
+def walk_to(host, label):
+    """The cursor on `label` of the level it is in, whichever page holds it."""
+    for _ in range(12):
+        if selected(page(host)) == label:
+            return
+        page(host, "down")
+    raise AssertionError(f"{label} is not on this level")
+
+
+@pytest.mark.pan
+def test_reset_puts_the_framing_and_the_shape_back(host, source, closed):
+    """Both are stored against the source, so both are what the row undoes."""
+    open_pad(host, "Move")
+    default = framing(host)
+    page(host, "left")
+    panned = settles(host, default)
+    assert panned is not None, "the capture did not move"
+    page(host, "menu")
+
+    walk_to(host, "Aspect")
+    defaulted = shape(host)
+    page(host, "ok")
+    assert wait_for(lambda: shape(host) != defaulted, timeout=5.0), \
+        "Ok on Aspect did not change the shape"
+
+    walk_to(host, "Reset")
+    page(host, "ok")
+
+    assert wait_for(lambda: framing(host) == default, timeout=5.0), \
+        f"the framing stayed at {framing(host)} rather than {default}"
+    assert shape(host) == defaulted
