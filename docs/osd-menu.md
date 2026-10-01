@@ -459,6 +459,22 @@ press arrives from a network callback, so `press()` marks a redraw and `loop()`
 performs it -- the same reason register access is deferred. It draws only while
 the chain's menu is closed, or the two paint over each other.
 
+**AND NOT UNTIL THE PRESS HAS ACTED.** A press only moves the cursor and queues
+a letter, and what a value row says is read from whoever holds the value -- so a
+page drawn while the queue is still full shows every value row as it was one
+press ago, which reads as the row naming the shape the NEXT press will reach.
+The draw is therefore held until every queue the press filled has drained, not
+taken twice: a redraw flushes the panel's whole framebuffer, and a second one
+per press slows `loop()` enough to make presses coalesce.
+
+**A CELL IS WRITTEN ONCE PER DRAW.** The part has no back buffer -- a character
+appears as it arrives -- so a cell written clear, then as background, then as
+its glyph shows both intermediate states, which is a flicker on every press.
+`OSD::Line` composes a row's 28 cells before any of it is sent, and `end()`
+clears only the rows the page did not fill, after they are drawn rather than
+before. Three writes per cell became one, which is also why the draw is
+affordable on every press.
+
 **Closing draws an EMPTY page rather than nothing.** A device that keeps what it
 was given has no other way to be told: measured before this, Exit left the bar
 and all three rows over the picture for ever.
