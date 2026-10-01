@@ -6276,6 +6276,42 @@ static void serviceRegisterQueue()
 }
 #endif
 
+// Heap a route needs before it will answer, and a refusal that SAYS so. Nothing
+// at all is what these used to send, which reads exactly like a crashed handler
+// -- three OTA attempts went into one. docs/known-issues.md
+//
+// A class because the sketch's free functions get a prototype inserted above the
+// includes, where AsyncWebServerRequest is not a type yet.
+class RouteHeap {
+public:
+    // A route that assembles a reply: the web UI, a directory listing, a slot
+    // file. One that queues a byte and answers an empty 200 costs almost
+    // nothing, so its floor is only there to keep a genuinely exhausted heap
+    // from being asked for a response object.
+    static bool allowsAReply(AsyncWebServerRequest *request)
+    {
+        return allows(request, 10000);
+    }
+
+    static bool allowsAByte(AsyncWebServerRequest *request)
+    {
+        return allows(request, 4000);
+    }
+
+private:
+    static bool allows(AsyncWebServerRequest *request, uint32_t needed)
+    {
+        if (ESP.getFreeHeap() > needed)
+            return true;
+        char body[72];
+        snprintf_P(body, sizeof(body),
+                   PSTR("{\"error\":\"low heap\",\"free\":%u,\"needs\":%u}"),
+                   (unsigned)ESP.getFreeHeap(), (unsigned)needed);
+        request->send(503, "application/json", body);
+        return false;
+    }
+};
+
 void startWebserver()
 {
 
@@ -6294,8 +6330,7 @@ void startWebserver()
     Serial.println(event.reason); });
 
     server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
-    
-    if (ESP.getFreeHeap() > 10000)
+    if (RouteHeap::allowsAReply(request))
     {
       AsyncWebServerResponse *response = request->beginResponse_P(200, "text/html", webui_html, webui_html_len);
       response->addHeader("Content-Encoding", "gzip");
@@ -6303,7 +6338,7 @@ void startWebserver()
     } });
 
     server.on("/sc", HTTP_GET, [](AsyncWebServerRequest *request) {
-    if (ESP.getFreeHeap() > 10000)
+    if (RouteHeap::allowsAByte(request))
     {
       int params = request->params();
       
@@ -6324,7 +6359,7 @@ void startWebserver()
     } });
 
     server.on("/uc", HTTP_GET, [](AsyncWebServerRequest *request) {
-    if (ESP.getFreeHeap() > 10000)
+    if (RouteHeap::allowsAByte(request))
     {
       int params = request->params();
       
@@ -6950,7 +6985,7 @@ void startWebserver()
     userCommand = 'u'; });
 
     server.on("/bin/slots.bin", HTTP_GET, [](AsyncWebServerRequest *request) {
-    if (ESP.getFreeHeap() > 10000)
+    if (RouteHeap::allowsAReply(request))
     {
       SlotMetaArray slotsObject;
       File slotsBinaryFileRead = LittleFS.open(SLOTS_FILE, "r");
@@ -6984,7 +7019,7 @@ void startWebserver()
     server.on("/slot/set", HTTP_GET, [](AsyncWebServerRequest *request) {
     bool result = false;
 
-    if (ESP.getFreeHeap() > 10000)
+    if (RouteHeap::allowsAReply(request))
     {
       int params = request->params();
 
@@ -7008,7 +7043,7 @@ void startWebserver()
     server.on("/slot/save", HTTP_GET, [](AsyncWebServerRequest *request) {
     bool result = false;
 
-    if (ESP.getFreeHeap() > 10000)
+    if (RouteHeap::allowsAReply(request))
     {
       int params = request->params();
 
@@ -7178,7 +7213,7 @@ fail:
         });
 
     server.on("/fs/download", HTTP_GET, [](AsyncWebServerRequest *request) {
-    if (ESP.getFreeHeap() > 10000)
+    if (RouteHeap::allowsAReply(request))
     {
       int params = request->params();
       if (params > 0)
@@ -7189,14 +7224,10 @@ fail:
       {
         request->send(200, "application/json", "false");
       }
-    }
-    else
-    {
-      request->send(200, "application/json", "false");
     } });
 
     server.on("/fs/dir", HTTP_GET, [](AsyncWebServerRequest *request) {
-    if (ESP.getFreeHeap() > 10000)
+    if (RouteHeap::allowsAReply(request))
     {
       Dir dir = LittleFS.openDir("/");
       String output = "[";
@@ -7228,9 +7259,7 @@ fail:
       output.replace(",]", "]");
 
       request->send(200, "application/json", output);
-      return;
-    }
-    request->send(200, "application/json", "false"); });
+    } });
 
     // Remove ONE file. /fs/format was the only way to delete anything and it
     // takes /preferencesv2.txt and /slots.bin with it -- and /fs/upload is a
