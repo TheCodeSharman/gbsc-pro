@@ -1024,6 +1024,10 @@ static bool describedMenuDrivesRemote = false;
 static Tv5725::Nudge::Control pendingNudge = Tv5725::Nudge::HorizontalPan;
 static int16_t pendingNudgeSteps = 0;
 
+// The same shape for an adjustable value: which one, and how many counts.
+static Osd::Tune::Control pendingTune = Osd::Tune::Red;
+static int16_t pendingTuneSteps = 0;
+
 // One action per option: the menu asks for a letter and the letter goes to the
 // handler that already serves /uc? and /sc?. A pad asks for a control and a
 // direction instead, because a tap is one capture granule and the letters are
@@ -1039,6 +1043,10 @@ static void queueMenuCommand(const Osd::MenuCommand &asked, int16_t steps = 1)
     case Osd::MenuCommand::GeometryNudge:
         pendingNudge = asked.control();
         pendingNudgeSteps = (int16_t)(asked.direction() * steps);
+        break;
+    case Osd::MenuCommand::ValueTune:
+        pendingTune = asked.tuned();
+        pendingTuneSteps = (int16_t)(asked.direction() * steps);
         break;
     case Osd::MenuCommand::UserCommand:
         userCommand = asked.letter();
@@ -1096,6 +1104,7 @@ static void pressDescribedMenuFromRemote()
         const Osd::MenuCommand asked = describedMenu.press(key);
         queueMenuCommand(asked,
                          asked.queue() == Osd::MenuCommand::GeometryNudge
+                                 || asked.queue() == Osd::MenuCommand::ValueTune
                              ? geometryHold.multiplierFor(frame, millis())
                              : 1);
     }
@@ -1510,6 +1519,30 @@ void toggleIfAutoOffset()
         GBS::IF_AUTO_OFST_EN::write(0);
         GBS::IF_AUTO_OFST_PRD::write(0);
     }
+}
+
+// Which class holds the value a row named, and what moving it costs. The two
+// command letters and the two id surfaces all land in loop(); this is the one
+// for a named value. docs/osd-menu.md
+void applyTune(Osd::Tune::Control control, int16_t steps)
+{
+    switch (control) {
+    case Osd::Tune::Red:
+        geometry.colour().nudgeRed(steps);
+        break;
+    case Osd::Tune::Green:
+        geometry.colour().nudgeGreen(steps);
+        break;
+    case Osd::Tune::Blue:
+        geometry.colour().nudgeBlue(steps);
+        break;
+    case Osd::Tune::LumaGain:
+        geometry.colour().nudgeLumaGain(steps);
+        break;
+    default:
+        return;
+    }
+    applyColourBalance();
 }
 
 // Every press that moves the balance ends here: the four registers are
@@ -5569,6 +5602,12 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                               rto->osr, inputAcquisition.sourceLineRateHz());
         }
 #endif
+        if (pendingTuneSteps != 0) {
+            const int16_t steps = pendingTuneSteps;
+            pendingTuneSteps = 0;
+            applyTune(pendingTune, steps);
+        }
+
         if (pendingNudgeSteps != 0) {
             const int16_t steps = pendingNudgeSteps;
             pendingNudgeSteps = 0;
@@ -5985,41 +6024,10 @@ void handleType2Command(char argument)
         // VDS_V_OFST a count at a time, which is the same three dimensions in
         // the basis nothing on the menu shows -- and a second owner of the
         // registers Tv5725::ColourBalance now writes. docs/osd-menu.md
-        case 'Z':
-            geometry.colour().nudgeRed(+1);
-            applyColourBalance();
-            break;
-        case 'T':
-            geometry.colour().nudgeRed(-1);
-            applyColourBalance();
-            break;
-        case 'N':
-            geometry.colour().nudgeGreen(+1);
-            applyColourBalance();
-            break;
-        case 'M':
-            geometry.colour().nudgeGreen(-1);
-            applyColourBalance();
-            break;
-        case 'Q':
-            geometry.colour().nudgeBlue(+1);
-            applyColourBalance();
-            break;
-        case 'H':
-            geometry.colour().nudgeBlue(-1);
-            applyColourBalance();
-            break;
-        case 'P':
-            geometry.colour().nudgeLumaGain(+1);
-            applyColourBalance();
-            break;
-        case 'S':
-            geometry.colour().nudgeLumaGain(-1);
-            applyColourBalance();
-            break;
         // Keeping the balance is a press of its own, as it was on the chain:
         // Left and Right are held keys, and a save per step would write flash a
-        // hundred times for one adjustment.
+        // hundred times for one adjustment. The steps themselves are not letters
+        // -- a row names the value it moves. docs/osd-menu.md
         case 'Y':
             saveUserPrefs();
             break;
@@ -6788,6 +6796,9 @@ void startWebserver()
         if (asked.asked() && asked.queue() == Osd::MenuCommand::GeometryNudge) {
             body += Tv5725::Nudge::name(asked.control());
             body += asked.direction() > 0 ? '+' : '-';
+        } else if (asked.asked() && asked.queue() == Osd::MenuCommand::ValueTune) {
+            body += Osd::Tune::name(asked.tuned());
+            body += asked.direction() > 0 ? '+' : '-';
         } else if (asked.asked()) {
             body += asked.letter();
         }
@@ -6798,6 +6809,7 @@ void startWebserver()
             case Osd::MenuCommand::SerialCommand: body += "sc"; break;
             case Osd::MenuCommand::InputSelection: body += "input"; break;
             case Osd::MenuCommand::GeometryNudge: body += "nudge"; break;
+            case Osd::MenuCommand::ValueTune: body += "tune"; break;
             }
         }
         body += "\",\"remote\":";

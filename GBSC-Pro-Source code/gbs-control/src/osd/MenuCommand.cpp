@@ -19,11 +19,14 @@ Tv5725::Nudge::Control MenuCommand::control() const
 
 int8_t MenuCommand::direction() const { return direction_; }
 
-// A nudge's control is an id and the first of them is zero, so what says a pad
+Tune::Control MenuCommand::tuned() const { return (Tune::Control)letter_; }
+
+// A control is an id and the first of them is zero, so what says a pad or a tune
 // press asked for something is its direction.
 bool MenuCommand::asked() const
 {
-    return queue_ == GeometryNudge ? direction_ != 0 : letter_ != 0;
+    return queue_ == GeometryNudge || queue_ == ValueTune ? direction_ != 0
+                                                         : letter_ != 0;
 }
 
 }  // namespace Osd

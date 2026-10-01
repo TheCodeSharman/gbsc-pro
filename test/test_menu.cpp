@@ -21,6 +21,7 @@ class Print {};
 #include "../GBSC-Pro-Source code/gbs-control/src/osd/MenuCommand.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/osd/MenuContext.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/osd/MenuTree.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/osd/Tune.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/osd/OSD.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/osd/MenuCursor.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/osd/MenuItem.h"
@@ -858,22 +859,33 @@ TEST_CASE("each colour row reports the balance in the basis it names")
     CHECK(std::string(item("Y gain").valueText(panel.context)) == "130");
 }
 
-TEST_CASE("Left and Right step one colour each, and Ok keeps the set")
+TEST_CASE("Left and Right name the value they step rather than a letter")
 {
-    // The six letters were the raw YUV offsets, which is the same three
-    // dimensions in a basis no row shows.
-    CHECK(item("R").nextCommand().letter() == 'Z');
-    CHECK(item("R").previousCommand().letter() == 'T');
-    CHECK(item("G").nextCommand().letter() == 'N');
-    CHECK(item("G").previousCommand().letter() == 'M');
-    CHECK(item("B").nextCommand().letter() == 'Q');
-    CHECK(item("B").previousCommand().letter() == 'H');
-    CHECK(item("Y gain").nextCommand().letter() == 'P');
-    CHECK(item("Y gain").previousCommand().letter() == 'S');
+    // A fifth surface, for the same reason as the pad's: a single-character
+    // command space cannot carry a pair of letters per adjustable value, and a
+    // named control says what was asked for.
+    CHECK(item("R").nextCommand().queue() == MenuCommand::ValueTune);
+    CHECK(item("R").nextCommand().tuned() == Tune::Red);
+    CHECK(item("R").nextCommand().direction() == +1);
+    CHECK(item("R").previousCommand().tuned() == Tune::Red);
+    CHECK(item("R").previousCommand().direction() == -1);
 
+    CHECK(item("G").nextCommand().tuned() == Tune::Green);
+    CHECK(item("B").nextCommand().tuned() == Tune::Blue);
+    CHECK(item("Y gain").nextCommand().tuned() == Tune::LumaGain);
+}
+
+TEST_CASE("Ok keeps the set, which Left and Right do not")
+{
     // Left and Right are held keys, so the save is a press of its own.
     CHECK(item("R").okCommand().letter() == 'Y');
     CHECK(item("Y gain").okCommand().queue() == MenuCommand::UserCommand);
+}
+
+TEST_CASE("a tuned value is reported by name, as a pad's control is")
+{
+    CHECK(std::string(Tune::name(Tune::Red)) == "red");
+    CHECK(std::string(Tune::name(Tune::LumaGain)) == "luma");
 }
 
 TEST_CASE("an option whose letter is a serial command says so")
