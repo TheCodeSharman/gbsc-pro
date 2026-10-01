@@ -69,9 +69,9 @@ def offsets(host):
 def step_to(host, label, want):
     """Press until the row reads `want`.
 
-    /uc? holds ONE queued letter, so presses sent faster than loop() consumes
-    them coalesce -- 20 rapid ones landed 4. The row is what says how far it
-    actually got, so this presses until it arrives rather than counting.
+    One press is queued for loop() at a time, so presses sent faster than it
+    consumes them coalesce -- 20 rapid ones landed 4. The row is what says how
+    far it actually got, so this presses until it arrives rather than counting.
     """
     key = "right" if want > shown(host, label) else "left"
 
@@ -98,6 +98,11 @@ def test_red_lifts_luma_and_v_and_drops_u(host, source, preset_save, neutral):
     # U -0.169, V 0.500.
     on_row(host, "R")
     assert offsets(host) == (0, 0, 0), "an RGB source does not rest at zero"
+
+    # A row names the value it moves rather than carrying a letter.
+    pressed = page(host, "right")
+    assert pressed["queue"] == "tune", f"Right asked for {pressed['queue']!r}"
+    assert pressed["asked"] == "red+"
 
     assert step_to(host, "R", NEUTRAL + 20), "the row never reached 148"
     assert wait_for(lambda: offsets(host) == (5, -3, 10) or None, timeout=5.0)
