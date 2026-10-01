@@ -179,11 +179,12 @@ mean `PROGMEM` and a `pgm_read` at every access. Free heap at boot went 12784 to
 ### What is described, and what is not
 
 Described: the root ring, Input, Output Resolution, Screen Settings, System
-Settings, Picture Settings and Reset Settings -- in that order, which is the
-chain's. The labels are the chain's too, except for the number each root item
-carries: the chain kept it inside the label string (`Osd_Display(1, "4 System
-Settings")`) and here it is a column of its own, which the overlay draws for the
-level with nothing above it. The panel therefore gets the label without it.
+Settings, Picture Settings -- every row of it but the four colour ones -- and
+Reset Settings, in that order, which is the chain's. The labels are the chain's
+too, except for the number each root item carries: the chain kept it inside the
+label string (`Osd_Display(1, "4 System Settings")`) and here it is a column of
+its own, which the overlay draws for the level with nothing above it. The panel
+therefore gets the label without it.
 
 **Not described, because their items act by calling a sketch function rather
 than by asking for a letter** -- each waits on its action reaching one command
@@ -193,7 +194,6 @@ surface:
 |---|---|
 | Sv-Av InPutSet | the HC32 frame, and `SetReg` on the ADV7391 |
 | R / G / B, Y gain | `R_VAL` and friends, then `Color_Conversion()` |
-| Sharpness | `VDS_PK_LB_GAIN` read back to decide what to draw, with no held field |
 
 **Two things the chain's Input items do that these do not.** Each of its RGBs,
 RGsB and VGA items writes `RGB_Com` -- the persisted compatibility preference the
@@ -207,6 +207,27 @@ belongs with the Sv-Av subtree where the option lives.
 resolution, `Tv5725::OutputChoice` says so in as many words, and the option
 behind it is the upscaling preference under System Settings. A second label for
 one option is a divergence with no reason.
+
+### Sharpness is the peaking band gains, and it is held rather than read back
+
+`Tv5725::VideoProcessor::setSharpness()` writes `VDS_PK_LB_GAIN` and
+`VDS_PK_LH_GAIN`, which are one control. Sharpened is **0x1F** on both bands:
+the value is written as 0x5F in several places and each field is six bits wide,
+so that is the gain the picture has always had. Unsharpened, the low band rests
+at 0x16 and only the high band follows the output resolution -- 0x0A at 1080p,
+0x18 elsewhere.
+
+**`uopt->wantSharpness` is what the row reports**, in the preferences byte that
+used to hold `wantFullHeight` and was read and discarded. The chain read
+`VDS_PK_LB_GAIN` back instead, and `applyOutputResolutionSettings()` writes the
+resting gain on every output change, so the setting was lost and the row then
+reported the loss as the user's choice. `applyOutputResolutionSettings()` asks
+the preference now, which is also why the two are one function's business.
+
+**It leaves `VDS_PK_Y_H_BYPS` to `setPeaking()`.** The chain's `W` wrote that bit
+as well, so pressing Sharpness moved the Peaking row to a value nobody set --
+two owners on one bit. The consequence is that sharpening does nothing while
+peaking is bypassed, which both rows now say.
 
 ### `/menu` drives it, so a menu change needs no remote
 
