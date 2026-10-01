@@ -51,6 +51,27 @@ Key roles, from `OSD_TV/remote.h`:
 waits for the timeout. Do not add a handler to one without first establishing it
 is reachable.
 
+## What a row of the chain's menu looks like
+
+Measured off the emitted frame with `osd_walk.py`, because nothing states it: the
+handlers paint characters at numbered positions and the layout is only visible on
+the screen.
+
+| column | what is there |
+|---|---|
+| 0 | `0x15`, an arrow. Yellow on the selected row and the background colour on the others, so the cursor is a glyph AND the row colour |
+| 1.. | the label. **On the root ring the number is part of the label string** -- `Osd_Display(1, "4 System Settings")` -- rather than a column of its own |
+| after the label | `0x15` again where the item leads somewhere, at a column chosen per item (`P18` on one row, `P19` on the next) |
+| the middle | for an adjustable value, a rule of `0x3e` hyphens |
+| before the last | the value, right-aligned -- `128` on the colour rows |
+| 27 | `icon5` (up) on row 1, the page character on row 2, `icon6` (down) on row 3, in `blue`, and only where that direction exists |
+
+**The root ring is six items on two FIXED pages of three** -- `1 Input`,
+`2 Output Resolution`, `3 Screen Settings`, then `4 System Settings`,
+`5 Picture Settings`, `6 Reset Settings` -- which is what the page character at
+column 27 counts. A described level scrolls its window instead, so the number
+and the page character have to be derived rather than written out.
+
 ## Removing a menu item is a layout judgement, not a deletion
 
 Both menus navigate by explicit per-key targets written out at each branch, so a
@@ -187,6 +208,21 @@ while it is on.
 curl 'http://<ip>/menu?ir=1'         # the remote drives the described menu
 curl 'http://<ip>/menu?ir=0'         # back to the chain
 ```
+
+### `/ir` presses a key, and `osd_walk.py` photographs the result
+
+`/ir?key=<name>` injects a frame at the receiver, so it reaches whichever menu is
+live by exactly the path a real press takes -- the chain included, which answers
+nothing over HTTP and decodes inside every branch. `menu up down left right ok
+exit info save mute volup voldown`.
+
+```sh
+curl 'http://<ip>/ir?key=down'
+python3 tools/gbsc-pro-hwtest/osd_walk.py --host <ip> --out /tmp/old  menu down ok
+python3 tools/gbsc-pro-hwtest/osd_walk.py --host <ip> --out /tmp/new --described menu down ok
+```
+
+The same sequence run twice, once per menu, is what makes the two comparable.
 
 **The chain is still what the remote drives by default**, and nothing has been
 deleted from it. What remains is the panel's renderer, and switching the remote
