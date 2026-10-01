@@ -3262,6 +3262,24 @@ entries resolve the raster match in time is open.
 
 ## Costs time rather than correctness
 
+### `test_reset_puts_the_framing_and_the_shape_back` is intermittent in a suite run
+
+It passes alone every time and fails perhaps one battery run in three, always on
+the same shape assertion. Two causes have been removed already -- it read the
+shape it started with and called that the source's default, and it compared the
+shape without polling for it -- and neither was the whole of it.
+
+What remains is most likely the press queue: each surface holds ONE press, so
+presses sent faster than `loop()` consumes them coalesce, and this test walks
+two levels and presses Ok four times. A press that lands on the wrong row leaves
+the cursor somewhere the next `walk_to()` still finds, so the test gets further
+than it should before anything disagrees.
+
+**Judge a battery run by whether this one test is the only failure**, and re-run
+it alone before believing it. A run where the colour suite fails as well is a
+different fault -- that one is the unit being too slow, and the draw cost is
+what moves it.
+
 ### A build with a boot log cannot be armed for OTA, and USB is the way back
 
 The refusal is legible now: `/`, `/sc`, `/uc`, `/bin/slots.bin`, `/slot/set`,

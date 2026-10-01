@@ -243,7 +243,7 @@ the registers after a preset load against the engine re-solving the same
 framing alone, so the sketch winning any of them would show as a difference.
 
 So the genuinely live conflicts are the user-action paths — `moveHS()`,
-`moveVS()`, `OSD_selectOption()`, `OSD_IR()`, `web_service()` — and the 81 raw
+`moveVS()`, `handleRemoteKey()`, `web_service()` — and the raw
 `writeOneByte()`/`writeBytes()` sites, which carry no field name and are
 therefore invisible to any check that compares names.
 

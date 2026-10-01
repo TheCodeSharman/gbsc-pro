@@ -10,7 +10,7 @@ on the television.
 
 | | what | where | live? |
 |---|---|---|---|
-| **STV9426** | character OSD chip on the ESP's I²C bus at `0x5D`. Draws the menu, the volume bar and the Info screen | `OSD_TV/OSD_stv9426.h`, `OSD_menu_F()`, `OSD_c1()`..`OSD_c3()`, driven by the state machine in `OSD_selectOption()` | **yes** |
+| **STV9426** | character OSD chip on the ESP's I²C bus at `0x5D`. Draws the menu, the volume bar and the Info screen | `OSD_TV/OSD_stv9426.h`, `Osd::OSD` for the menu and `drawOverlayScreens()` for the other two | **yes** |
 | **OLED menu** | the 128x64 SSD1306 on the unit itself | `OLEDMenuManager`, `OLEDMenuImplementation.cpp` | yes, but it is a separate tree and holds no Move/Scale |
 
 **TWO TREES DRAW THE PANEL AND THE OPEN ONE OWNS IT.** `Osd::Panel` draws the
@@ -37,14 +37,18 @@ has why the declarations stay when the constants do not.
 analysing — colours, position and zoom all set up — from an entry point nothing
 called, and analysing it explains nothing about what the remote does.
 
-## The state machine
+## Two screens that are not menu rows
 
-`OSD_selectOption()` is one long `else if` chain over `oled_menuItem`, each
-branch drawing its screen and decoding IR itself. `0` is closed.
+`drawOverlayScreens()` draws the volume overlay and the Info screen. Neither is
+reached by the cursor: a key points `oled_menuItem` at one -- `1` for volume,
+`152` for Info -- and the function draws whichever is set, `0` being nothing.
+A timeout closes either.
 
-The root ring is `OSD_Input`, `OSD_Resolution`, `OSD_ScreenSettings`,
-`OSD_ColorSettings`, `OSD_SystemSettings`, `OSD_ResetDefault`. `75` and `76` are
-Move and Scale under Screen Settings; `1` is the volume overlay; `152` is Info.
+**That is all that is left of the chain.** `OSD_selectOption()` was one `else if`
+over `oled_menuItem` per menu state, 4357 lines and 65 menu branches, each
+drawing its screen and decoding IR itself. The described tree replaced every one
+of them and they are deleted; the two screens above were never menu rows and
+stayed.
 
 Key roles, from `OSD_TV/remote.h`:
 
@@ -53,69 +57,14 @@ Key roles, from `OSD_TV/remote.h`:
 - **Exit** leaves the OSD from any depth.
 - **Up/Down** move within a level; **+/- Volume** are `kRecv2`/`kRecv3`.
 
-**Ten branches have their entire IR switch commented out** — `72`, `73`, `97`,
-`104`..`108`, `153`, `109`. No key reaches them, so anything that lands there
-waits for the timeout. Do not add a handler to one without first establishing it
-is reachable.
-
-## What a row of the chain's menu looks like
-
-Measured off the emitted frame with `osd_walk.py`, because nothing states it: the
-handlers paint characters at numbered positions and the layout is only visible on
-the screen.
-
-| column | what is there |
-|---|---|
-| 0 | `0x15`, an arrow. Yellow on the selected row and the background colour on the others, so the cursor is a glyph AND the row colour |
-| 1.. | the label. **On the root ring the number is part of the label string** -- `Osd_Display(1, "4 System Settings")` -- rather than a column of its own |
-| after the label | `0x15` again where the item leads somewhere, at a column chosen per item (`P18` on one row, `P19` on the next) |
-| the middle | for an adjustable value, a rule of `0x3e` hyphens |
-| before the last | the value, right-aligned -- `128` on the colour rows |
-| 27 | `icon5` (up) on row 1, the page character on row 2, `icon6` (down) on row 3, in `blue`, and only where that direction exists |
-
-**The root ring is six items on two FIXED pages of three** -- `1 Input`,
-`2 Output Resolution`, `3 Screen Settings`, then `4 System Settings`,
-`5 Picture Settings`, `6 Reset Settings` -- which is what the page character at
-column 27 counts. Every level is cut that way, by hand, a page letter per three
-items.
-
-## Removing a menu item is a layout judgement, not a deletion
-
-Both menus navigate by explicit per-key targets written out at each branch, so a
-state has no owner that knows its neighbours. **The Up and Down targets are not
-symmetric**: `94`'s Up reaches Compatibility while the branch above it reaches
-`94` on Up and `98` on Down, and `94`'s Down is `103` rather than the branch it
-came from. Splicing a state out therefore means choosing what each inbound key
-should reach, which the code does not say.
-
-The television side is worse: a row is a run of `OSD_c2`/`OSD_c3` character
-writes at fixed `P` positions, so removing an option's ON/OFF field leaves its
-label painted and the page unreflowed.
-
-**This is what blocks removing a user option** from the chain, rather than the
-option's own plumbing. `PalForce60` and `matchPresetSource` are both dead -- the
-first had its standard-byte swap deleted and the second never had a consumer at
-all, only a preferences byte, a websocket status bit, an IR toggle and two menu
-displays -- and both still occupy an OLED state and a TV OSD row for that reason.
-Neither is in the described tree, where leaving an item out is leaving a line
-out.
-
-**The same mechanism loses items as readily as it keeps them, and five are
-lost.** An item whose neighbours were never pointed at it is unreachable however
-live its option is, and nothing says so. Walking Up, Down and Ok from the root
-ring reaches every branch except these:
-
-| branch | item | the only route left |
-|---|---|---|
-| 96 | Use upscaling (`preferScalingRgbhv`) | `/uc?x` |
-| 110 | Restart | `/uc?a` |
-| `OSD_Resolution_pass` | Pass Through | its Ok is commented out too |
-| 91 | Y gain | its Left and Right are commented out too |
-| 92 | Color | `/uc?V` and `/uc?R` |
-
-Each has a live Up target and no inbound Down, which is what makes it invisible:
-the branch draws, decodes and looks entirely healthy. A described level is a ring
-by construction, so that class of loss cannot happen.
+**A frame is decoded ONCE, and whoever reads it first is the only one who can.**
+`pressDescribedMenuFromRemote()` reads every frame and answers seven keys;
+anything else it hands to `handleRemoteKey()`, which owns Volume, Mute and Info.
+Leaving an unanswered frame for the next caller does not work -- the second
+`decode()` of a pass returns false either way -- so a key the menu reads and
+does not forward is a key that does nothing. That was measured: Info, Mute and
+both Volume keys were dead for as long as the described menu drove the remote,
+reading `selectOption:1 OSD_IR:0` on the console's IR trace.
 
 ## The described form
 
@@ -134,6 +83,17 @@ by construction, so that class of loss cannot happen.
 | `OSD` | the television's own renderer, and the only claimant on that name |
 | `Panel` | the 128x64 panel's renderer: a level, a label and a value |
 | `Menu` | a key in, a redraw and at most one command out |
+
+**A LEVEL IS A RING BY CONSTRUCTION, so an item cannot become unreachable.**
+The chain wrote every Up and Down target out by hand at each branch and they
+were not symmetric, so an item whose neighbours were never pointed at it was
+invisible however live its option was -- and nothing said so. Five were in that
+state when it was deleted: `Use upscaling`, `Restart`, `Pass Through`, `Y gain`
+and `Colour`, each with a live Up target and no inbound Down. Two more options
+survived only because splicing a state out meant choosing what each inbound key
+should reach, which the code did not say: `PalForce60` and `matchPresetSource`
+are both dead and neither is described. Here, leaving an item out is leaving a
+line out.
 
 **An action is a letter AND a surface, because the board has two.** `/uc?`
 reaches `handleType2Command()` and `/sc?` the switch in `loop()`, and four of the
@@ -224,9 +184,7 @@ label string (`Osd_Display(1, "4 System Settings")`) and here it is a column of
 its own, which the overlay draws for the level with nothing above it. The panel
 therefore gets the label without it.
 
-Every row of the chain's tree is described, which is what `OSD_selectOption()`
-can now be deleted against -- a subtree at a time, each judged on the remote with
-`/menu?ir=1` first.
+Every row the chain drew is described, which is what it was deleted against.
 
 **Two things the chain's Input items do that these do not.** Each of its RGBs,
 RGsB and VGA items writes `RGB_Com` -- the persisted compatibility preference the
@@ -373,35 +331,24 @@ with `/geometry` agreeing at each step, and the emitted frame went from
 **Two items act at once and without confirmation**: `Restart` resets the ESP and
 `Reset Settings` wipes the preferences and reboots.
 
-`ir=1` routes the remote's seven menu keys to the described menu instead of
-`OSD_selectOption()`, which is how a subtree is judged on the remote before its
-branches are deleted. Off by default and not persisted; `/menu` reports which is
-driving as `remote`. Volume, Mute and Info are the chain's and are not reached
-while it is on.
-
-```sh
-curl 'http://<ip>/menu?ir=1'         # the remote drives the described menu
-curl 'http://<ip>/menu?ir=0'         # back to the chain
-```
-
 ### `/ir` presses a key, and `osd_walk.py` photographs the result
 
-`/ir?key=<name>` injects a frame at the receiver, so it reaches whichever menu is
-live by exactly the path a real press takes -- the chain included, which answers
-nothing over HTTP and decodes inside every branch. `menu up down left right ok
-exit info save mute volup voldown`.
+`/ir?key=<name>` injects a frame at the receiver, so a key reaches the menu by
+exactly the path a real press takes rather than through `/menu`. `menu up down
+left right ok exit info save mute volup voldown`.
 
 ```sh
 curl 'http://<ip>/ir?key=down'
-python3 tools/gbsc-pro-hwtest/osd_walk.py --host <ip> --out /tmp/old  menu down ok
-python3 tools/gbsc-pro-hwtest/osd_walk.py --host <ip> --out /tmp/new --described menu down ok
+python3 tools/gbsc-pro-hwtest/osd_walk.py --host <ip> --out /tmp/new menu down ok
 ```
 
-The same sequence run twice, once per menu, is what makes the two comparable.
-
-**The chain is still what the remote drives by default**, and nothing has been
-deleted from it. What remains is the panel's renderer, and switching the remote
-over a subtree at a time with `/menu?ir=1`.
+Each step is photographed off the HDMI capture and reported with the page the
+menu says it is on, so the same sequence run before and after a change is what
+makes two states comparable. **It is the cheapest instrument for anything the
+overlay draws**: three differences from the chain -- the cursor's colour, a mark
+on a pad row, and a value row one press behind -- were each found by running one
+sequence through both menus and looking at the frames side by side, and none of
+them is visible in a register dump or a host test.
 
 ### `OSD`, and four things about the STV9426
 
