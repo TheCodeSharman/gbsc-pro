@@ -179,8 +179,8 @@ mean `PROGMEM` and a `pgm_read` at every access. Free heap at boot went 12784 to
 ### What is described, and what is not
 
 Described: the root ring, Input, Output Resolution, Screen Settings, System
-Settings, Picture Settings -- every row of it but the four colour ones -- and
-Reset Settings, in that order, which is the chain's. The labels are the chain's
+Settings, Picture Settings and Reset Settings -- in that order, which is the
+chain's. The labels are the chain's
 too, except for the number each root item carries: the chain kept it inside the
 label string (`Osd_Display(1, "4 System Settings")`) and here it is a column of
 its own, which the overlay draws for the level with nothing above it. The panel
@@ -193,7 +193,6 @@ surface:
 | subtree | what its items call |
 |---|---|
 | Sv-Av InPutSet | the HC32 frame, and `SetReg` on the ADV7391 |
-| R / G / B, Y gain | `R_VAL` and friends, then `Color_Conversion()` |
 
 **Two things the chain's Input items do that these do not.** Each of its RGBs,
 RGsB and VGA items writes `RGB_Com` -- the persisted compatibility preference the
@@ -228,6 +227,51 @@ the preference now, which is also why the two are one function's business.
 as well, so pressing Sharpness moved the Peaking row to a value nobody set --
 two owners on one bit. The consequence is that sharpening does nothing while
 peaking is bypassed, which both rows now say.
+
+### The colour balance is held in the basis the rows show
+
+`Tv5725::ColourBalance` holds a red, green and blue balance and a luma gain, each
+0..255 with **128 meaning the colour space's own rest**, and owns `VDS_Y_OFST`,
+`VDS_U_OFST`, `VDS_V_OFST` and `VDS_Y_GAIN`. A balance is converted to the three
+offsets on the way out, by the matrix the sketch used to mix in floating point,
+in thousandths:
+
+| | from R | from G | from B |
+|---|---|---|---|
+| Y | 299 | 587 | 114 |
+| U | -169 | -331 | 500 |
+| V | 500 | -419 | -81 |
+
+**Where a neutral balance sits is the colour space's**, and `ColourBalance::Rest`
+is the whole list: RGB at 0/0/0, component at 0x0E/0x03/0x04, a component OUTPUT
+at -2/0x01/0x04 with a luma gain of 0x64 rather than 0x80. `ColourSpace` is handed
+the balance and names the rest, so one class writes those four registers and a
+load cannot put the balance back to neutral.
+
+**The chain derived the balance by reading the offsets back**, which cost it two
+things. The round trip is lossy -- 147/138/147 converts to 13/2/3 against the
+14/3/4 it came from, so every colour space change walked the picture a count
+further -- and the same read meant a component source rested at 147/138/147 and an
+RGB one at 128/128/128, the same picture reported two ways. It reads 128 on both
+now.
+
+**Left and Right step, Ok keeps.** Each row's Left and Right are the letters that
+used to step the raw offsets -- `Z`/`T` red, `N`/`M` green, `Q`/`H` blue, and
+`P`/`S` the luma gain, which were commented out -- and `Y` writes the preferences.
+Those are held keys, so a save per step would write flash a hundred times for one
+adjustment; the balance is four three-digit decimals appended to
+`/preferencesv2.txt`, in the form the BCSH values there already use. A file
+written before that ends early and reads as neutral.
+
+**`Default colour` resets the balance** rather than writing the four registers,
+and still writes the chroma gains and the ADC offsets, which are not the
+balance's.
+
+**One queued letter is all `/uc?` holds**, so presses sent faster than `loop()`
+consumes them coalesce: twenty `/menu?key=right` in a row landed four. A remote
+press is one key event per loop and does not; a test of a row must press until
+the row reads what it asked for, and must see a save land before asking for
+anything else.
 
 ### `/menu` drives it, so a menu change needs no remote
 
