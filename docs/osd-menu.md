@@ -214,7 +214,11 @@ mean `PROGMEM` and a `pgm_read` at every access. Free heap at boot went 12784 to
 
 Described: the root ring, Input, Output Resolution, Screen Settings, System
 Settings, Picture Settings and Reset Settings -- in that order, which is the
-chain's. The labels are the chain's
+chain's. **Screen Settings carries two rows the chain's did not**: `Aspect`,
+which is the item the whole extraction was for, and `Reset`, which puts the
+framing and the shape back to the source's defaults. The three picture controls
+and their undo therefore sit on one level, which is why the aspect is not under
+System Settings. The labels are the chain's
 too, except for the number each root item carries: the chain kept it inside the
 label string (`Osd_Display(1, "4 System Settings")`) and here it is a column of
 its own, which the overlay draws for the level with nothing above it. The panel

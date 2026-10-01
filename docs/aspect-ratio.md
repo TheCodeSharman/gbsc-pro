@@ -17,6 +17,12 @@ how many samples a line is cut into is `PLLAD_MD`, which is our own choice — s
 It is therefore a convention, and it is handled as one: defaulted from the
 published raster the source matched, stored per source, and overridable.
 
+**A reset puts it back with the framing.** Both are stored against the source
+key in the framing file and both are what "back to default" means, so
+`VideoPath::reset()` forgets the stored entry, clears the pan and zoom and takes
+the shape from `SourceTiming` again. A shape left behind would keep its bars
+over a reset picture. Screen Settings' `Reset` row is the menu's end of it.
+
 `Tv5725::Aspect` holds width over height in ten-thousandths — 4:3 is 13333,
 16:9 is 17778, 5:4 is 12500 — because that is what the framing file already
 carries, so a stored shape is one more integer in a grammar with no floats.
