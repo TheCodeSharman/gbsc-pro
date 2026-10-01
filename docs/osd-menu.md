@@ -154,6 +154,17 @@ from inside one, and reopening leaves them with the level. While a pad has them
 the cursor does not move, so Up and Down reach the picture rather than the level
 -- which is why leaving is Menu as well as Ok.
 
+**A tune is a fifth surface, because a letter per adjustable value runs out.**
+`/uc?` had twelve single characters left and the rows wanting a pair of them
+needed more than that, so a row names the value it steps -- `Osd::Tune::Red`,
+`Brightness`, `Format` -- and the sketch routes it to whichever class holds that
+value. A press reports `"queue":"tune"` and `"asked":"red+"`.
+
+**It is not the pad's surface, and the difference is the gesture.** A pad takes
+the arrows and asks for capture granules, which only the solve can size; a tune
+row keeps the cursor and asks for counts of a value somebody holds. Both take
+their number of steps from the remote's hold ramp.
+
 **A page carries its items rather than their text**, because a row's current
 value is only knowable from a context and neither the cursor nor the page has
 one. The renderer resolves it at draw time and hands the device the page and
@@ -255,19 +266,21 @@ further -- and the same read meant a component source rested at 147/138/147 and 
 RGB one at 128/128/128, the same picture reported two ways. It reads 128 on both
 now.
 
-**Left and Right step, Ok keeps.** Each row's Left and Right are the letters that
-used to step the raw offsets -- `Z`/`T` red, `N`/`M` green, `Q`/`H` blue, and
-`P`/`S` the luma gain, which were commented out -- and `Y` writes the preferences.
-Those are held keys, so a save per step would write flash a hundred times for one
-adjustment; the balance is four three-digit decimals appended to
-`/preferencesv2.txt`, in the form the BCSH values there already use. A file
-written before that ends early and reads as neutral.
+**Left and Right step, Ok keeps.** Each row's Left and Right name the value they
+move, on the tune surface above; `Y` writes the preferences. Those are held keys,
+so a save per step would write flash a hundred times for one adjustment; the
+balance is four three-digit decimals appended to `/preferencesv2.txt`, in the
+form the BCSH values there already use. A file written before that ends early and
+reads as neutral.
+
+The eight letters these rows briefly used -- `Z`/`T`, `N`/`M`, `Q`/`H` and
+`P`/`S`, which before that stepped the raw offsets -- are free again.
 
 **`Default colour` resets the balance** rather than writing the four registers,
 and still writes the chroma gains and the ADC offsets, which are not the
 balance's.
 
-**One queued letter is all `/uc?` holds**, so presses sent faster than `loop()`
+**One press is all a surface queues**, so presses sent faster than `loop()`
 consumes them coalesce: twenty `/menu?key=right` in a row landed four. A remote
 press is one key event per loop and does not; a test of a row must press until
 the row reads what it asked for, and must see a save land before asking for
