@@ -3199,6 +3199,57 @@ gives 45.13 / 45.56 at the new phase against 45.00 / 45.55 at the old, and the
 Wii's text 2.16 / 2.02 against 2.05 / 2.02 -- the control's own repeat spans the
 whole difference in both.
 
+### A stored framing of shape 0 fills the raster, so a 4:3 source is stretched
+
+**OPEN -- not yet established whether anything but a user wrote it.** The
+framing table stores the shape beside the framing, and 0 means fill. Read off
+the bench unit, both entries for the RiscPC at 320x256@50 carry it:
+
+```
+# framing, one source a line: <lines>@<fieldRateHz>/<syncWidth><hPol><vPol> = originH extentH originV extentV shape
+311@50.45/732++ = 2570 6412 1186 8269 0
+311@50.06/686++ = 2153 6249 1154 8205 0
+```
+
+So `/geometry` reports `aspect: 0, shaped: true` and the card is stretched to the
+full 16:9 raster, where the 4:3 default would pillarbox it. It survives `/sc?~`,
+because a stored framing is meant to.
+
+**The two entries are also why the two sync types frame differently**, which
+reads as a composite-sync pan and is not one: the sync width is part of the key
+-- 732 on composite against 686 on separate -- so each arrangement has its own
+entry, and these two were tuned to different framings. That is the design.
+docs/source-identity-and-framing-lookup.md.
+
+**What is not established is how shape 0 came to be stored.** If the auto-save
+can write 0 where the source matched no published raster, every untuned source
+ends up filling and the shape default never reaches the picture. Deleting
+`/framing.txt` restores the defaults and throws away the tuning with it, so that
+is the user's call rather than a repair.
+
+### The Wii on ypbpr takes about seventy seconds to acquire 576i
+
+**OPEN.** Measured with the console attached, `/input?src=ypbpr` to a presented
+picture: `state: absent` for the first ~70 s, the first unrefused duty at 72 s
+(`duty: 156 pulse / 2200 divider, htotal 2200, negative`), acquired and holding
+afterwards at `STATUS_SYNC_PROC_VTOTAL` 310 x 50.02 Hz. `docs/bench-sources.md`
+records 576i as about 40 s.
+
+The console shows the derived line rate ping-ponging for some 45 s of that --
+15924 and 16025 alternating, each one re-deriving the same divider 2200 -- with
+`recovery: full reset at pass 150` in the middle. An interlaced source alternates
+its count by one, which `SteadyRun::agree()` accepts; the LINE RATE the pair
+gives differs by 6.3 per thousand, which is what has to settle before a solve.
+Whether that is the gate has not been established.
+
+**The emitted frame could not be judged**: it is a static flat yellow field with
+line structure, stable to 0.01 grey levels across 12 s, and nothing here can say
+what the Wii was displaying. The colour path is configured as designed --
+`ColourSpace::applyYuv()` writes `DEC_MATRIX_BYPS` 1 deliberately, all three DAC
+channel enables read 1 and the three ADC gains are equal -- so the yellow is not
+the `DAC_RGBS_B0ENZ` signature. Establish the Wii's output mode and what it is
+showing before judging the input.
+
 ### Returning from composite to separate sync left the output black for ever
 
 **FIXED.** `SP_DIS_SUB_COAST` was written by `SyncProcessor::prepare()` and by
