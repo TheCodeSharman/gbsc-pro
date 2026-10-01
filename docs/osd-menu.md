@@ -133,6 +133,12 @@ presets on one and bumps `VDS_Y_OFST` on the other. So a letter alone does not
 say what an Ok asked for, and Left and Right carry one each: `ADC gain` steps
 through `/uc?` and toggles automatic gain through `/sc?`.
 
+**Selecting a source is a third surface, because it is not a letter.** It is
+`pendingInputSelection`, which `/input?src=` queues and `loop()` acts on, and it
+reaches the HC32's analog switches as well as `ADC_INPUT_SEL` -- two muxes in
+series, from one row. So an Input item names the source rather than a letter, and
+a press that asks for one reports `"queue":"input"`.
+
 **A page carries its items rather than their text**, because a row's current
 value is only knowable from a context and neither the cursor nor the page has
 one. The renderer resolves it at draw time and hands the device the page and
@@ -157,8 +163,11 @@ mean `PROGMEM` and a `pgm_read` at every access. Free heap at boot went 12784 to
 
 ### What is described, and what is not
 
-Described: the root ring, Output Resolution, Picture Settings, System Settings
-and Reset Settings.
+Described: the root ring, Input, Output Resolution, System Settings, Picture
+Settings and Reset Settings -- in that order, which is the chain's. The labels
+are the chain's too, except that its root carries the item's number inside the
+label string (`"4 System Settings"`); numbering here waits on Screen Settings,
+since the numbers would otherwise be wrong.
 
 **Not described, because their items act by calling a sketch function rather
 than by asking for a letter** -- each waits on its action reaching one command
@@ -166,11 +175,18 @@ surface:
 
 | subtree | what its items call |
 |---|---|
-| Input | `InputVGA_mode()` and its siblings |
 | Sv-Av InPutSet | the HC32 frame, and `SetReg` on the ADV7391 |
 | Move / Scale | `geometryControls` with the hold ramp |
 | R / G / B, Y gain | `R_VAL` and friends, then `Color_Conversion()` |
 | Sharpness | `VDS_PK_LB_GAIN` read back to decide what to draw, with no held field |
+
+**Two things the chain's Input items do that these do not.** Each of its RGBs,
+RGsB and VGA items writes `RGB_Com` -- the persisted compatibility preference the
+Sv-Av subtree also shows -- so selecting an input there silently moves an option
+the user did not touch. And its SV and AV items put the stored format option in
+the frame's low nibble, where `InputSV()` and `InputAV()` send the bare `0x10`
+and `0x20`; that is `/input?src=`'s behaviour as much as the menu's, and it
+belongs with the Sv-Av subtree where the option lives.
 
 `Pass Through` is deliberately absent rather than pending: it is not a
 resolution, `Tv5725::OutputChoice` says so in as many words, and the option
