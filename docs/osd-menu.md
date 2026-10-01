@@ -197,21 +197,17 @@ label string (`Osd_Display(1, "4 System Settings")`) and here it is a column of
 its own, which the overlay draws for the level with nothing above it. The panel
 therefore gets the label without it.
 
-**Not described, because their items act by calling a sketch function rather
-than by asking for a letter** -- each waits on its action reaching one command
-surface:
-
-| subtree | what its items call |
-|---|---|
-| Sv-Av InPutSet | the HC32 frame, and `SetReg` on the ADV7391 |
+Every row of the chain's tree is described, which is what `OSD_selectOption()`
+can now be deleted against -- a subtree at a time, each judged on the remote with
+`/menu?ir=1` first.
 
 **Two things the chain's Input items do that these do not.** Each of its RGBs,
 RGsB and VGA items writes `RGB_Com` -- the persisted compatibility preference the
-Sv-Av subtree also shows -- so selecting an input there silently moves an option
+Sv-Av level also shows -- so selecting an input there silently moves an option
 the user did not touch. And its SV and AV items put the stored format option in
 the frame's low nibble, where `InputSV()` and `InputAV()` send the bare `0x10`
-and `0x20`; that is `/input?src=`'s behaviour as much as the menu's, and it
-belongs with the Sv-Av subtree where the option lives.
+and `0x20`; that is `/input?src=`'s behaviour as much as the menu's, and the
+option lives on the Sv-Av level, which is where the described tree shows it.
 
 `Pass Through` is deliberately absent rather than pending: it is not a
 resolution, `Tv5725::OutputChoice` says so in as many words, and the option
@@ -279,6 +275,32 @@ The eight letters these rows briefly used -- `Z`/`T`, `N`/`M`, `Q`/`H` and
 **`Default colour` resets the balance** rather than writing the four registers,
 and still writes the chroma gains and the ADC offsets, which are not the
 balance's.
+
+### Sv-Av InPutSet is the AV module's picture, and none of it reads back
+
+Eight rows under System Settings, which is where the chain put them: the
+decoder's standard, the ADV7391's line doubling and smoothing, its brightness,
+contrast and saturation, a Default, and the compatibility preference the RGB
+inputs share.
+
+**The whole path is write-only.** The HC32's `USART4` TX goes to the J18 header
+and the update button rather than back to the ESP, so nothing on the board can
+read any of it, and `avOptions` is what each row reports. It is a struct of its
+own rather than part of `userOptions` because Reset Settings wipes that one and
+the AV module's calibration is not a scaler preference.
+
+| row | what it asks for |
+|---|---|
+| Format | a tune, which rings through the twelve standards the frame's mode table carries. **One row for both decoder inputs**, following whichever is selected |
+| DoubleLine | `/uc?b`, then `Send_Line()` |
+| Smooth | `/uc?c`, then `Send_Smooth()`. **Gated on the doubler**: smoothing is a property of the doubled line, so the press does nothing while it is out, which is the chain's gate too |
+| Bright, Contrast, Saturation | a tune each, written together by `applyAvPicture()`. Brightness reaches `SetReg(0x0a)` as a signed offset from the middle, where the other two are the value |
+| Default | `/uc?k`, which sends the ADV7391's own reset and puts the three back to 128 |
+| Compatibility | `/uc?d`, then `Send_Compatibility()` -- and `applyPresets()` on an RGB source, because the preference is shared with the RGB inputs |
+
+`Send_Line()`, `Send_Smooth()`, `Send_Compatibility()` and `Send_TvMode()` each
+save the preferences themselves, so those four rows need no Ok. The three
+picture controls do, for the same reason the colour balance does.
 
 **One press is all a surface queues**, so presses sent faster than `loop()`
 consumes them coalesce: twenty `/menu?key=right` in a row landed four. A remote
