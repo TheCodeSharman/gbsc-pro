@@ -20,7 +20,7 @@ class Print {};
 #include "../GBSC-Pro-Source code/gbs-control/src/osd/MenuCommand.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/osd/MenuContext.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/osd/MenuTree.h"
-#include "../GBSC-Pro-Source code/gbs-control/src/osd/TelevisionMenu.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/osd/OSD.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/osd/MenuCursor.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/osd/MenuItem.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/osd/MenuPage.h"
@@ -791,14 +791,14 @@ static void recordCell(char address, char page, char value)
 static std::string rowText(uint8_t row)
 {
     static const char Pages[] = { 0x00, 0x02, 0x03 };
-    std::string text(TelevisionMenu::Columns, ' ');
+    std::string text(OSD::Columns, ' ');
     for (size_t i = 0; i < Cells.size(); ++i) {
         if (Cells[i].page != Pages[row] || (Cells[i].address & 1) == 0)
             continue;
         const uint8_t column = (uint8_t)((Cells[i].address - 1) / 2);
-        if (column < TelevisionMenu::Columns)
-            text[column] = Cells[i].value == TelevisionMenu::Background
-                                   || Cells[i].value == TelevisionMenu::Clear
+        if (column < OSD::Columns)
+            text[column] = Cells[i].value == OSD::Background
+                                   || Cells[i].value == OSD::Clear
                                ? ' '
                                : Cells[i].value;
     }
@@ -812,8 +812,8 @@ static std::string rowText(uint8_t row)
 // from one that was never written.
 static void drawOnTelevision(const MenuPage &page, const MenuContext &context)
 {
-    TelevisionMenu::writeThrough(recordCell);
-    TelevisionMenu::renderer().draw(page, context);
+    OSD::writeThrough(recordCell);
+    OSD::renderer().draw(page, context);
 }
 
 TEST_CASE("a row carries its label and what the option is set to, at the two ends")
@@ -881,7 +881,7 @@ TEST_CASE("a row the page does not fill is cleared rather than painted")
     bool cleared = true;
     for (size_t i = 0; i < Cells.size(); ++i)
         if (Cells[i].page == 0x03 && (Cells[i].address & 1) == 0
-            && Cells[i].value != TelevisionMenu::Clear)
+            && Cells[i].value != OSD::Clear)
             cleared = false;
     CHECK(cleared);
 }
@@ -901,7 +901,7 @@ TEST_CASE("the selected row is the only one in the highlight colour")
     for (uint8_t row = 0; row < MenuPage::Rows; ++row) {
         for (size_t i = 0; i < Cells.size(); ++i)
             if (Cells[i].page == Pages[row] && (Cells[i].address & 1) == 0
-                && Cells[i].value == TelevisionMenu::Selected) {
+                && Cells[i].value == OSD::Selected) {
                 ++highlighted;
                 break;
             }

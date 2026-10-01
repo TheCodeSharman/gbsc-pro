@@ -102,6 +102,7 @@ by construction, so that class of loss cannot happen.
 | `MenuPage` | one screen: the items in view and which is selected |
 | `MenuCursor` | where the remote is -- Up, Down, Ok, Menu as generic traversal, plus the three-row window |
 | `MenuRenderer` | the three calls a device supplies: begin, row, end |
+| `OSD` | the television's own renderer, and the only claimant on that name |
 | `Menu` | a key in, a redraw and at most one command out |
 
 **An action is a letter AND a surface, because the board has two.** `/uc?`
@@ -191,9 +192,9 @@ curl 'http://<ip>/menu?ir=0'         # back to the chain
 deleted from it. What remains is the panel's renderer, and switching the remote
 over a subtree at a time with `/menu?ir=1`.
 
-### The television renderer, and four things about the STV9426
+### `OSD`, and four things about the STV9426
 
-`TelevisionMenu` writes a page as three rows of 28 character cells. A row is
+`OSD` writes a page as three rows of 28 character cells. A row is
 written WHOLE, so it reflows -- the chain painted each label at a fixed `P`
 position, which is why removing an option's value left its label behind.
 

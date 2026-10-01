@@ -1,4 +1,4 @@
-#include "TelevisionMenu.h"
+#include "OSD.h"
 
 #include <stddef.h>
 
@@ -6,14 +6,14 @@
 
 namespace Osd {
 
-const uint8_t TelevisionMenu::Columns;
-const char TelevisionMenu::Hyphen;
-const char TelevisionMenu::Background;
-const char TelevisionMenu::Selected;
-const char TelevisionMenu::Unselected;
-const char TelevisionMenu::Clear;
+const uint8_t OSD::Columns;
+const char OSD::Hyphen;
+const char OSD::Background;
+const char OSD::Selected;
+const char OSD::Unselected;
+const char OSD::Clear;
 
-TelevisionMenu::WriteCell TelevisionMenu::write_ = NULL;
+OSD::WriteCell OSD::write_ = NULL;
 
 namespace {
 
@@ -31,9 +31,9 @@ uint8_t lengthOf(const char *text)
 
 }  // namespace
 
-void TelevisionMenu::writeThrough(WriteCell write) { write_ = write; }
+void OSD::writeThrough(WriteCell write) { write_ = write; }
 
-void TelevisionMenu::putCell(uint8_t index, uint8_t column, char symbol,
+void OSD::putCell(uint8_t index, uint8_t column, char symbol,
                              char colour)
 {
     if (write_ == NULL || index >= MenuPage::Rows || column >= Columns)
@@ -47,7 +47,7 @@ void TelevisionMenu::putCell(uint8_t index, uint8_t column, char symbol,
 // than the window would otherwise leave the previous level's last row painted.
 // Cleared rather than blanked, so a row the page does not fill draws nothing
 // instead of a bar of background across the picture.
-void TelevisionMenu::begin()
+void OSD::begin()
 {
     for (uint8_t index = 0; index < MenuPage::Rows; ++index)
         for (uint8_t column = 0; column < Columns; ++column)
@@ -56,7 +56,7 @@ void TelevisionMenu::begin()
 
 // A space is not written at all, as Osd_Display() does not write one either:
 // the bar is already there and a space has no glyph to put over it.
-void TelevisionMenu::putText(uint8_t index, uint8_t at, const char *text,
+void OSD::putText(uint8_t index, uint8_t at, const char *text,
                              char colour)
 {
     for (uint8_t i = 0; text != NULL && text[i] != '\0'; ++i) {
@@ -67,7 +67,7 @@ void TelevisionMenu::putText(uint8_t index, uint8_t at, const char *text,
     }
 }
 
-void TelevisionMenu::row(uint8_t index, const char *label, const char *value,
+void OSD::row(uint8_t index, const char *label, const char *value,
                          bool selected)
 {
     for (uint8_t column = 0; column < Columns; ++column)
@@ -80,9 +80,9 @@ void TelevisionMenu::row(uint8_t index, const char *label, const char *value,
         putText(index, (uint8_t)(Columns - valueLength), value, colour);
 }
 
-void TelevisionMenu::end() {}
+void OSD::end() {}
 
-const MenuRenderer &TelevisionMenu::renderer()
+const MenuRenderer &OSD::renderer()
 {
     static const MenuRenderer instance(begin, row, end);
     return instance;

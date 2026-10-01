@@ -1,5 +1,5 @@
-#ifndef OSD_TELEVISION_MENU_H_
-#define OSD_TELEVISION_MENU_H_
+#ifndef OSD_OSD_H_
+#define OSD_OSD_H_
 
 // The menu on the television, drawn by the STV9426. Three rows of 28 character
 // cells, and a row is written whole -- the chain painted each label at a fixed
@@ -12,7 +12,7 @@
 
 namespace Osd {
 
-class TelevisionMenu {
+class OSD {
 public:
     // A cell is two writes: the symbol at an odd address and its colour at the
     // even one below it, both in the page byte that selects the row.
@@ -57,4 +57,4 @@ private:
 
 }  // namespace Osd
 
-#endif  // OSD_TELEVISION_MENU_H_
+#endif  // OSD_OSD_H_

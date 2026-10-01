@@ -101,7 +101,7 @@ static unsigned long Tim_Resolution = 0, Tim_Resolution_Start = 0;
 #include "src/osd/Menu.h"
 #include "src/osd/MenuContext.h"
 #include "src/osd/MenuTree.h"
-#include "src/osd/TelevisionMenu.h"
+#include "src/osd/OSD.h"
 #include "src/clock/ClockGen.h"
 #include "src/input/HoldRamp.h"
 #include "src/input/IrReceiver.h"
@@ -988,7 +988,7 @@ Tv5725::Controls geometryControls(geometry, SerialM);
 // while the chain's menu is closed. docs/osd-menu.md
 static Osd::MenuContext menuContext(geometryControls, uopts);
 static Osd::Menu describedMenu(Osd::MenuTree::root(), Osd::MenuTree::rootCount(),
-                               Osd::TelevisionMenu::renderer(), menuContext);
+                               Osd::OSD::renderer(), menuContext);
 
 // Whether the remote reaches the described menu instead of the chain. Off, so
 // the remote behaves as it did; /menu?ir=1 is how a subtree gets judged on the
@@ -3831,7 +3831,7 @@ void setup()
     irrecv.enableIRIn();
     OSD_clear();
     OSD();
-    Osd::TelevisionMenu::writeThrough(OSD_parameters);
+    Osd::OSD::writeThrough(OSD_parameters);
     PT_MUTE(0x78);
     PT_2257(70); // audible
 
