@@ -2098,6 +2098,22 @@ So a failure here is only a finding if it survives a re-solve. The fix is for
 the test to take the engine's own reading rather than a fresh one, which
 `/geometry` does not currently publish.
 
+### Three hardware tests carry their own copy of a firmware constant
+
+`test_if_head_blanking.py` declares `LINE_DOUBLE_RESET = 272` where
+`InputFormatter::LineDoubleReset` is **160**, so
+`test_head_blanking_follows_the_scan_mode` fails on the bench's line-doubled
+source: `IF_HBIN_SP` reads 160 and the test wants 272. The firmware moved the
+doubled path's origin and the copy did not, which is the hazard a copied fact
+carries -- the test reads as a firmware defect and is a stale constant.
+
+`test_capture_origin.py`'s two failures are beside it and are NOT the same
+thing: the first capture it computes is **3 units** past what the engine reports
+(101 against 98, `HLOW_LEN` 156, `PLLAD_MD` 2200), where the entry below
+attributes a **one** unit disagreement to a live sync width read against a
+latched one, and `/sc?U` does not clear it. Which of the two numbers is right
+has not been measured.
+
 ### The capture starts in a different place, and the mechanism this was filed against is gone
 
 `PLLAD_MD` came out **2250, 2206 and 2202** across solves on one unchanged
