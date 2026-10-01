@@ -1079,8 +1079,11 @@ static void queueMenuCommand(const Osd::MenuCommand &asked, int16_t steps = 1)
     }
 }
 
-// Only the seven keys the menu answers. Volume, Mute and Info are the chain's
-// and are not reached while this is what drives the remote.
+static void handleRemoteKey();
+
+// Only the seven keys the menu answers; anything else is handed to the handler
+// that owns Volume, Mute and Info. decode() is one-shot, so a frame this reads
+// and does not forward is a key that does nothing.
 static void pressDescribedMenuFromRemote()
 {
     if (!irrecv.decode(&results))
@@ -1129,6 +1132,8 @@ static void pressDescribedMenuFromRemote()
                                  || asked.queue() == Osd::MenuCommand::ValueTune
                              ? geometryHold.multiplierFor(frame, millis())
                              : 1);
+    } else {
+        handleRemoteKey();
     }
     irrecv.resume();
 }
@@ -12125,143 +12130,152 @@ void OSD_menu_F(char incomingByte)
     // OSD_default_F();
 }
 
-void OSD_IR()
+// What a remote key does outside the menu: the volume overlay, Mute and the
+// Info screen. Takes a frame already decoded rather than reading one, because
+// decode() is one-shot -- whichever caller reads it first is the only one that
+// can, so the menu forwards what it does not answer instead of leaving it.
+static void handleRemoteKey()
 {
-    if (irrecv.decode(&results)) {
-        decode_flag = 1;
-        if (results.value == IRKeyMenu) {
-            Tim_menuItem = millis();
-            if (rto->sourceDisconnected || !Tv5725::Chip::hasPower() || GBS::PAD_CKIN_ENZ::read()) // || !GBS::STATUS_MISC_VSYNC::read()
-            {
+    decode_flag = 1;
+    if (results.value == IRKeyMenu) {
+        Tim_menuItem = millis();
+        if (rto->sourceDisconnected || !Tv5725::Chip::hasPower() || GBS::PAD_CKIN_ENZ::read()) // || !GBS::STATUS_MISC_VSYNC::read()
+        {
 
-                NEW_OLED_MENU = false;
-                background_up(stroca1, _27, blue_fill);
-                background_up(stroca2, _27, blue_fill);
-                
-                oled_menuItem = 152;
-
-                // InputINFO();
-                //////////new
-                Info_sate = 1;
-                St = GBS::VDS_DIS_HB_ST::read();
-                Sp = GBS::VDS_DIS_HB_SP::read();
-
-                /////////new
-                // loadDefaultUserOptions();
-                loadComputedPreset(Tv5725::OutputChoice(Output480P), 0x04); 
-                doPostPresetLoadSteps();
-                GBS::VDS_DIS_HB_ST::write(0x00);
-                GBS::VDS_DIS_HB_SP::write(0xffff);
-                Tv5725::FrameBuffer::freezeCapture();                  
-                GBS::SP_CLAMP_MANUAL::write(1); 
-                                                // GBS::VDS_U_OFST::write(GBS::VDS_U_OFST::read() + 100);
-            } else {
-                NEW_OLED_MENU = false;
-                COl_L = 1;
-                OSD_menu_F('0');
-                oled_menuItem = 154;
-                display.clear();
-                // display.init();
-                // display.flipScreenVertically();   
-                // printf("Oled Init\n");
-            }
-        }
-
-        // if (results.value == kRecv14)
-        // {
-        //     NEW_OLED_MENU = false;
-        //     background_up(stroca1, _10, blue_fill);
-        //     for (int i = 0; i <= 800; i++)
-        //     {
-        //         colour1 = yellowT;
-        //         number_stroca = stroca1;
-        //         __(R, _2), __(e, _3), __(s, _4), __(t, _5), __(a, _6), __(r, _7), __(t, _8);
-        //         display.clear();
-        //         display.setTextAlignment(TEXT_ALIGN_LEFT);
-        //         display.setFont(ArialMT_Plain_16);
-        //         display.drawString(8, 15, "Resetting GBS");
-        //         display.drawString(8, 35, "Please Wait...");
-        //         display.display();
-        //     }
-        //     webSocket.close();
-        //     delay(60);
-        //     ESP.reset();
-        //     oled_menuItem = 0;
-        //     PT_MUTE(0x79);
-        // }
-
-
-        if (results.value == IRKeyInfo) {
-            Tim_menuItem = millis();
             NEW_OLED_MENU = false;
             background_up(stroca1, _27, blue_fill);
             background_up(stroca2, _27, blue_fill);
+            
             oled_menuItem = 152;
+
+            // InputINFO();
+            //////////new
+            Info_sate = 1;
+            St = GBS::VDS_DIS_HB_ST::read();
+            Sp = GBS::VDS_DIS_HB_SP::read();
+
+            /////////new
+            // loadDefaultUserOptions();
+            loadComputedPreset(Tv5725::OutputChoice(Output480P), 0x04); 
+            doPostPresetLoadSteps();
+            GBS::VDS_DIS_HB_ST::write(0x00);
+            GBS::VDS_DIS_HB_SP::write(0xffff);
+            Tv5725::FrameBuffer::freezeCapture();                  
+            GBS::SP_CLAMP_MANUAL::write(1); 
+                                            // GBS::VDS_U_OFST::write(GBS::VDS_U_OFST::read() + 100);
+        } else {
+            NEW_OLED_MENU = false;
+            COl_L = 1;
+            OSD_menu_F('0');
+            oled_menuItem = 154;
+            display.clear();
+            // display.init();
+            // display.flipScreenVertically();   
+            // printf("Oled Init\n");
         }
+    }
 
-        switch (results.value) {
-            case IRKeyMute:
-                Tim_menuItem = millis();
-                if (MUTE_R == 0) {
-                    PT_MUTE(0x79);
-                    NEW_OLED_MENU = false;
-                    background_up(stroca1, _9, blue_fill);
-                    for (int i = 0; i <= 800; i++) {
-                        colour1 = yellowT;
-                        number_stroca = stroca1;
-                        __(M, _1), __(U, _2), __(T, _3), __(E, _4);
-                        colour1 = main0;
-                        __(O, _6), __(N, _7);
-                        display.clear();
-                        display.flipScreenVertically();
-                        display.setTextAlignment(TEXT_ALIGN_LEFT);
-                        display.setFont(ArialMT_Plain_16);
-                        display.drawString(8, 15, "MUTE ON");
-                        display.display();
-                    }
-                    oled_menuItem = 0;
-                    background_up(stroca1, _9, blue_fill);
-                    OSD_Cut_0x01();
-                    OSD();
-                    MUTE_R = 1;
-                } else if (MUTE_R == 1) {
+    // if (results.value == kRecv14)
+    // {
+    //     NEW_OLED_MENU = false;
+    //     background_up(stroca1, _10, blue_fill);
+    //     for (int i = 0; i <= 800; i++)
+    //     {
+    //         colour1 = yellowT;
+    //         number_stroca = stroca1;
+    //         __(R, _2), __(e, _3), __(s, _4), __(t, _5), __(a, _6), __(r, _7), __(t, _8);
+    //         display.clear();
+    //         display.setTextAlignment(TEXT_ALIGN_LEFT);
+    //         display.setFont(ArialMT_Plain_16);
+    //         display.drawString(8, 15, "Resetting GBS");
+    //         display.drawString(8, 35, "Please Wait...");
+    //         display.display();
+    //     }
+    //     webSocket.close();
+    //     delay(60);
+    //     ESP.reset();
+    //     oled_menuItem = 0;
+    //     PT_MUTE(0x79);
+    // }
 
-                    PT_MUTE(0x78);
-                    NEW_OLED_MENU = false;
-                    background_up(stroca1, _9, blue_fill);
-                    for (int i = 0; i <= 800; i++) {
-                        colour1 = yellowT;
-                        number_stroca = stroca1;
-                        __(M, _1), __(U, _2), __(T, _3), __(E, _4);
-                        colour1 = main0;
-                        __(O, _6), __(F, _7), __(F, _8);
-                        display.clear();
-                        display.setTextAlignment(TEXT_ALIGN_LEFT);
-                        display.setFont(ArialMT_Plain_16);
-                        display.drawString(8, 15, "MUTE OFF");
-                        display.display();
-                    }
-                    oled_menuItem = 0;
-                    background_up(stroca1, _9, blue_fill);
-                    OSD_Cut_0x01();
-                    OSD();
-                    MUTE_R = 0;
+
+    if (results.value == IRKeyInfo) {
+        Tim_menuItem = millis();
+        NEW_OLED_MENU = false;
+        background_up(stroca1, _27, blue_fill);
+        background_up(stroca2, _27, blue_fill);
+        oled_menuItem = 152;
+    }
+
+    switch (results.value) {
+        case IRKeyMute:
+            Tim_menuItem = millis();
+            if (MUTE_R == 0) {
+                PT_MUTE(0x79);
+                NEW_OLED_MENU = false;
+                background_up(stroca1, _9, blue_fill);
+                for (int i = 0; i <= 800; i++) {
+                    colour1 = yellowT;
+                    number_stroca = stroca1;
+                    __(M, _1), __(U, _2), __(T, _3), __(E, _4);
+                    colour1 = main0;
+                    __(O, _6), __(N, _7);
+                    display.clear();
+                    display.flipScreenVertically();
+                    display.setTextAlignment(TEXT_ALIGN_LEFT);
+                    display.setFont(ArialMT_Plain_16);
+                    display.drawString(8, 15, "MUTE ON");
+                    display.display();
                 }
-                break;
-            case kRecv2:
-                Tim_menuItem = millis();
-                NEW_OLED_MENU = false;
-                background_up(stroca1, _25, blue_fill);
-                oled_menuItem = 1;
-                break;
-            case kRecv3:
-                Tim_menuItem = millis();
-                NEW_OLED_MENU = false;
-                background_up(stroca1, _25, blue_fill);
-                oled_menuItem = 1;
-                break;
-        }
+                oled_menuItem = 0;
+                background_up(stroca1, _9, blue_fill);
+                OSD_Cut_0x01();
+                OSD();
+                MUTE_R = 1;
+            } else if (MUTE_R == 1) {
 
+                PT_MUTE(0x78);
+                NEW_OLED_MENU = false;
+                background_up(stroca1, _9, blue_fill);
+                for (int i = 0; i <= 800; i++) {
+                    colour1 = yellowT;
+                    number_stroca = stroca1;
+                    __(M, _1), __(U, _2), __(T, _3), __(E, _4);
+                    colour1 = main0;
+                    __(O, _6), __(F, _7), __(F, _8);
+                    display.clear();
+                    display.setTextAlignment(TEXT_ALIGN_LEFT);
+                    display.setFont(ArialMT_Plain_16);
+                    display.drawString(8, 15, "MUTE OFF");
+                    display.display();
+                }
+                oled_menuItem = 0;
+                background_up(stroca1, _9, blue_fill);
+                OSD_Cut_0x01();
+                OSD();
+                MUTE_R = 0;
+            }
+            break;
+        case kRecv2:
+            Tim_menuItem = millis();
+            NEW_OLED_MENU = false;
+            background_up(stroca1, _25, blue_fill);
+            oled_menuItem = 1;
+            break;
+        case kRecv3:
+            Tim_menuItem = millis();
+            NEW_OLED_MENU = false;
+            background_up(stroca1, _25, blue_fill);
+            oled_menuItem = 1;
+            break;
+    }
+
+}
+
+void OSD_IR()
+{
+    if (irrecv.decode(&results)) {
+        handleRemoteKey();
         irrecv.resume();
         delay(5);
     }
