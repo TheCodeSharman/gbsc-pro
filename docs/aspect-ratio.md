@@ -28,6 +28,24 @@ over a reset picture. Screen Settings' `Reset` row is the menu's end of it.
 carries, so a stored shape is one more integer in a grammar with no floats.
 **Zero means fill**, which is the absence of a shape rather than a shape.
 
+## The sink is 16:9, so the raster's own counts are not what a shape narrows against
+
+EDID reaches no MCU on this board, so the panel cannot be asked what shape it
+is, and a set stretches whatever raster it is given onto that panel. A
+1280x1024 output is therefore not 5:4 on the screen — it is the panel's shape,
+and a 4:3 picture narrowed against 5:4 came out wider than 4:3 once the panel
+had stretched it.
+
+`OutputMode::PanelShape` is the assumption, stated once and 16:9, and every
+mode's `displayAspect()` returns it. Pass-through keeps `Fill`, having no raster
+and so no shape to narrow into. **This is an assumption and not a measurement**:
+a 4:3 or 5:4 sink would want a different constant, and there is no way to find
+out from here which it is.
+
+A consequence worth knowing: `Fill` and `SixteenNine` are now the same picture,
+so filling is no longer a step the shape cycle offers and a filled shape reports
+as 16:9 on the menu.
+
 ## Where the default comes from
 
 Every row of `SourceTiming`'s three tables states its own shape, in a twelfth
@@ -77,6 +95,8 @@ blank its outer columns, which discards a flush border rather than moving it.
 
 Measured on the bench, RiscPC 320x256@50 into 1080p, cycling the shape with the
 framing untouched at `2153 6249 1154 8205`:
+
+Measured into 1080p, whose raster is the panel's own shape:
 
 | shape | emitted picture | bars | ratio |
 |---|---|---|---|
@@ -149,7 +169,9 @@ malformed line.
 
 ## Control
 
-`/uc?G` cycles Fill, 4:3, 16:9, 5:4 and round. A preset cycle rather than a
+`/uc?G` cycles 4:3, 16:9, 5:4 and round — `Aspect::next()`, which the menu row
+and the letter share. Filling is not in it: against a 16:9 panel it is the same
+picture as 16:9, so it was a step that changed nothing. A preset cycle rather than a
 number, because the remote has one button for it; the shape is stored against
 the source, so the cycle starts from whatever that source was left at.
 

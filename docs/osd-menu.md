@@ -366,9 +366,9 @@ is queued for `loop()` and has not run yet. Read again to see the effect.
 
 A press queues its letter on the surface the item names, so this proves the tree
 against the handlers that already serve `/uc?` and `/sc?` rather than against a
-copy of them. Measured on the unit: four Oks on `Aspect` walked Fill, 4:3, 16:9
-and 5:4 with `/geometry` agreeing at each step, and the emitted frame went from
-1899x1078 filling to 1424x1078 with bars of 242 and 254.
+copy of them. Measured on the unit: Oks on `Aspect` walked 4:3, 16:9 and 5:4
+with `/geometry` agreeing at each step, and the emitted frame went from
+1899x1078 at 16:9 to 1424x1078 with bars of 242 and 254 at 4:3.
 
 **Two items act at once and without confirmation**: `Restart` resets the ESP and
 `Reset Settings` wipes the preferences and reboots.
