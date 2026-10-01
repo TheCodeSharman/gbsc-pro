@@ -1,18 +1,16 @@
 #!/usr/bin/env python3
 """Walk the menu the remote drives and photograph each step.
 
-    python3 tools/gbsc-pro-hwtest/osd_walk.py --host <ip> --out /tmp/old \
-        menu down ok down
     python3 tools/gbsc-pro-hwtest/osd_walk.py --host <ip> --out /tmp/new \
-        --described menu down ok down
+        menu down ok down
 
 Keys go in through /ir, which injects a frame at the receiver, so they reach
-whichever menu is live by exactly the path a real press takes. --described
-switches the remote to the described menu first and back afterwards.
+the menu by exactly the path a real press takes, and each step is reported
+with the page the menu says it is on.
 
 Each step writes <out>/NN-<key>.png off the USB HDMI capture, which is the
-emitted frame rather than a photograph of the panel. Two runs of the same
-sequence, one per menu, are what makes the two comparable.
+emitted frame rather than a photograph of the panel. The same sequence run
+before and after a change is what makes two states comparable.
 """
 
 import argparse
@@ -65,8 +63,6 @@ def main():
     parser.add_argument("--host", required=True)
     parser.add_argument("--out", required=True,
                         help="directory for the frames; created if absent")
-    parser.add_argument("--described", action="store_true",
-                        help="walk the described menu rather than the chain")
     parser.add_argument("--frames", type=int, default=2)
     parser.add_argument("--settle", type=float, default=1.5,
                         help="seconds between a key and its frame")
@@ -79,29 +75,23 @@ def main():
 
     os.makedirs(args.out, exist_ok=True)
 
-    # Both menus hold their own state, so a walk starts from closed either way.
+    # The menu holds its own state, so a walk starts from closed.
     get(args.host, "/ir?key=exit")
     time.sleep(0.5)
-    if args.described:
-        get(args.host, "/menu?ir=1")
 
     try:
         for step, key in enumerate(args.keys):
             get(args.host, f"/ir?key={key}")
             png = os.path.join(args.out, f"{step:02d}-{key}.png")
             margins = capture(png, args.frames, args.settle)
-            said = ""
-            if args.described:
-                page = get(args.host, "/menu")
-                rows = [r["label"] + (f" = {r['value']}" if r["value"] else "")
-                        for r in page["rows"]]
-                said = f"  depth {page['depth']}  {rows}"
+            page = get(args.host, "/menu")
+            rows = [r["label"] + (f" = {r['value']}" if r["value"] else "")
+                    for r in page["rows"]]
+            said = f"  depth {page['depth']}  {rows}"
             print(f"{step:02d} {key:8s} {margins}{said}", flush=True)
     finally:
         get(args.host, "/ir?key=exit")
         time.sleep(0.5)
-        if args.described:
-            get(args.host, "/menu?ir=0")
 
     print(f"\n{len(args.keys)} frames in {args.out}")
 
