@@ -3199,6 +3199,52 @@ gives 45.13 / 45.56 at the new phase against 45.00 / 45.55 at the old, and the
 Wii's text 2.16 / 2.02 against 2.05 / 2.02 -- the control's own repeat spans the
 whole difference in both.
 
+### Returning from composite to separate sync left the output black for ever
+
+**FIXED.** `SP_DIS_SUB_COAST` was written by `SyncProcessor::prepare()` and by
+nothing that follows the sync type, so a source that had acquired on composite
+sync kept the sub coast enabled when it went back to separate sync -- while
+`prepare()`'s own `applyDefaultCoastWindow()` put the sub-coast window back to
+its default 16..256.
+
+The sub coast is the coast WITHIN a line: `SP_H_CST_ST`/`SP_H_CST_SP` mask a
+window of the retiming so a serration cannot be taken for the line's hsync. The
+default window masks exactly where a separate-sync source's own hsync edge
+arrives, so the retiming lost the edge and the ADC PLL never relocked.
+
+Measured on the bench, RiscPC 320x256@50 on `vga`:
+
+```
+csync, acquired:    SP_DIS_SUB_COAST 0   SP_H_CST_SP 1672   HTOTAL 2200   PLLAD_MD 2200
+back on separate:   SP_DIS_SUB_COAST 0   SP_H_CST_SP  256   HTOTAL 3245   PLLAD_MD 2200
+write the bit:      SP_DIS_SUB_COAST 1   SP_H_CST_SP 1672   HTOTAL 2200   PLLAD_MD 2200
+```
+
+`STATUS_SYNC_PROC_HTOTAL` wandering 3218..3251 against a divider of 2200 is an
+unlocked ADC PLL at the CORRECT divider, so every duty reading was refused as
+`UNLOCKED`, the solve never completed, and `presentWhenSettled()` never drove the
+sync pad back: `sync pad: away` with no `driven` after it. The console reported
+`sampling: 311 lines x 50.08 Hz -> line rate 15625` 482 times in 60 s throughout,
+so every instrument but the picture said the unit was healthy. The escalation
+ladder climbed to its last rung without clearing it -- including
+`RestartSamplingClock`, which re-applies the whole PLL group and latches it --
+and `/sc?~` cleared it at once. A full 1536-register diff between the wedged and
+recovered states named this one bit: the PLL group and every other sync-type
+field were byte-identical.
+
+**The bug needed the composite leg to acquire first**, which is what ran
+`prepare()` with serration in force, so a round trip whose composite leg never
+settled did not reproduce it.
+
+**This is `sp-sog-mode-had-two-owners` one field later.** That repair moved
+`SP_SOG_MODE`, the coast pair and `SP_NO_COAST_REG` into `applyForSyncType()`
+and left the sub coast behind. `applyForSyncType()` now takes `serrated` and owns
+it, and `prepare()` no longer writes it.
+
+Guarded by `test_sync_type_round_trip.py`, which measured 3 of 3 return legs
+failing before and 6 of 6 legs settling after, and by `a source with its own
+hsync is left with no sub coast` in `test_sync_processor.cpp`.
+
 ### Composite sync re-solved every two to four seconds, and the sink dropped it
 
 **FIXED.** `countMoved` compared a raw count against the solve's raw count
