@@ -591,9 +591,9 @@ void VideoPath::configureScalingPath()
     // channel converts for itself. Which one the source wants is held by the
     // class that selected the connector, so it is asked rather than handed in.
     if (Adc::inputIsComponent())
-        ColourSpace::applyYuv();
+        ColourSpace::applyYuv(colour_);
     else
-        ColourSpace::applyRgb();
+        ColourSpace::applyRgb(colour_);
 }
 
 SourceKey VideoPath::arrivingKey() const
@@ -1181,6 +1181,8 @@ bool VideoPath::step(const PanAndZoom &wanted)
 }
 
 Aspect VideoPath::aspect() const { return aspect_; }
+
+ColourBalance &VideoPath::colour() { return colour_; }
 
 bool VideoPath::shapeHonoured() const { return output_.shapeHonoured(); }
 

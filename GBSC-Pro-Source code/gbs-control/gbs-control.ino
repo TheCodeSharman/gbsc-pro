@@ -216,33 +216,8 @@ static uint8_t lastSegment = 0xFF;
 static uint16_t St;
 static uint16_t Sp;
 
-static unsigned char R_VAL = 0;
-static unsigned char G_VAL = 0;
-static unsigned char B_VAL = 0;
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #define MIN(a, b) ((a) > (b) ? (b) : (a))
-
-
-void PR_rgb(void)
-{
-#if 0 
-  printf("\n\n");
-
-  printf("Read VAL:Y %d U %d V %d \n", (signed char)GBS::VDS_Y_OFST::read(), (signed char)GBS::VDS_U_OFST::read(), (signed char)GBS::VDS_V_OFST::read());
-
-  // printf("VAL:Y %d U %d V %d \n",(signed char)(signed char)GBS::VDS_Y_OFST::read(),(signed char)((signed char)GBS::VDS_U_OFST::read()),(signed char)((signed char)GBS::VDS_V_OFST::read()));
-
-  printf("math:R %0.2lf G %0.2lf B %0.2lf \n", ((signed char)((signed char)GBS::VDS_Y_OFST::read()) + (float)(1.402 * (signed char)((signed char)GBS::VDS_V_OFST::read()))), ((signed char)((signed char)GBS::VDS_Y_OFST::read()) - (float)(0.344136 * (signed char)((signed char)GBS::VDS_U_OFST::read())) - 0.714136 * (signed char)((signed char)GBS::VDS_V_OFST::read())), ((signed char)((signed char)GBS::VDS_Y_OFST::read()) + (float)(1.772 * (signed char)((signed char)GBS::VDS_U_OFST::read()))));
-  printf("VAL:R %d G %d B %d \n", R_VAL, G_VAL, B_VAL);
-#endif
-}
-void Color_Conversion(void)
-{
-    GBS::VDS_Y_OFST::write((signed char)((float)(0.299f * (R_VAL - 128)) + (float)(0.587f * (G_VAL - 128)) + (float)(0.114f * (B_VAL - 128))));
-    GBS::VDS_U_OFST::write((signed char)((float)(-0.169f * (R_VAL - 128)) - (float)(0.331f * (G_VAL - 128)) + (float)(0.500f * (B_VAL - 128)))); //
-    GBS::VDS_V_OFST::write((signed char)((float)(0.500f * (R_VAL - 128)) - (float)(0.419f * (G_VAL - 128)) - (float)(0.081f * (B_VAL - 128))));
-    // printf(" RGB: 0x%02x,0x%02x,0x%02x \n",GBS::VDS_Y_OFST::read(),GBS::VDS_U_OFST::read(),GBS::VDS_V_OFST::read());
-}
 
 /*
 IR
@@ -983,6 +958,53 @@ static bool slotFramingIsSuspect = true;
 
 Tv5725::Controls geometryControls(geometry, SerialM);
 
+// The colour balance in the preferences file, three digits per value, appended
+// in the form the BCSH values already use. A class because a sketch's free
+// functions get their prototypes hoisted above the includes, where File is not
+// declared yet.
+class ColourBalanceFile {
+public:
+    static void load(File &f, Tv5725::ColourBalance &balance)
+    {
+        const uint16_t red = digits(f);
+        const uint16_t green = digits(f);
+        const uint16_t blue = digits(f);
+        const uint16_t lumaGain = digits(f);
+        balance.adopt(kept(red), kept(green), kept(blue), kept(lumaGain));
+    }
+
+    static void save(File &f, const Tv5725::ColourBalance &balance)
+    {
+        write(f, balance.red());
+        write(f, balance.green());
+        write(f, balance.blue());
+        write(f, balance.lumaGain());
+    }
+
+private:
+    static uint16_t digits(File &f)
+    {
+        return (uint8_t)(f.read() - '0') * 100 + (uint8_t)(f.read() - '0') * 10
+               + (uint8_t)(f.read() - '0');
+    }
+
+    // A file written before the balance was appended ends early, and f.read()
+    // then gives -1: three of those read as 23077, which is out of range.
+    static uint8_t kept(uint16_t value)
+    {
+        return value > Tv5725::ColourBalance::Limit
+                   ? (uint8_t)Tv5725::ColourBalance::Neutral
+                   : (uint8_t)value;
+    }
+
+    static void write(File &f, uint8_t value)
+    {
+        f.write(value / 100 + '0');
+        f.write((value % 100) / 10 + '0');
+        f.write(value % 10 + '0');
+    }
+};
+
 // The described menu. /menu drives it; OSD_selectOption() is still what the
 // remote drives, so the two share the overlay and the described one draws only
 // while the chain's menu is closed. docs/osd-menu.md
@@ -1465,12 +1487,11 @@ void setResetParameters()
 
 void applyComponentColorMixing()
 {
-    GBS::VDS_Y_GAIN::write(0x64);
     GBS::VDS_UCOS_GAIN::write(0x19);
     GBS::VDS_VCOS_GAIN::write(0x19);
 
-    GBS::VDS_Y_OFST::write(0xfe);
-    GBS::VDS_U_OFST::write(0x01);
+    geometry.colour().restFor(Tv5725::ColourBalance::ComponentOutput);
+    geometry.colour().apply();
 }
 
 void toggleIfAutoOffset()
@@ -1491,31 +1512,33 @@ void toggleIfAutoOffset()
     }
 }
 
+// Every press that moves the balance ends here: the four registers are
+// ColourBalance's and it writes them from what it holds.
+void applyColourBalance()
+{
+    geometry.colour().apply();
+    debugPrintf("colour: R %u G %u B %u luma %u\n", geometry.colour().red(),
+                geometry.colour().green(), geometry.colour().blue(),
+                geometry.colour().lumaGain());
+}
+
 void applyYuvPatches()
 {
-    Tv5725::ColourSpace::applyYuv();
+    Tv5725::ColourSpace::applyYuv(geometry.colour());
 
     if (uopt->wantOutputComponent) 
     {
         applyComponentColorMixing();
     }
-
-    R_VAL = ((GBS::VDS_Y_OFST::read() + (float)(1.402 * (GBS::VDS_V_OFST::read())))) + 128;
-    G_VAL = ((GBS::VDS_Y_OFST::read() - (float)(0.344136  * (GBS::VDS_U_OFST::read())) - 0.714136 * GBS::VDS_V_OFST::read())) + 128;
-    B_VAL = ((GBS::VDS_Y_OFST::read() + (float)(1.772 * (GBS::VDS_U_OFST::read())))) + 128;
 }
 
 void applyRGBPatches()
 {
-    Tv5725::ColourSpace::applyRgb();
+    Tv5725::ColourSpace::applyRgb(geometry.colour());
 
     if (uopt->wantOutputComponent) {
         applyComponentColorMixing();
     }
-
-    R_VAL = ((GBS::VDS_Y_OFST::read() + (float)(1.402 * (GBS::VDS_V_OFST::read())))) + 128;
-    G_VAL = ((GBS::VDS_Y_OFST::read() - (float)(0.344136  * (GBS::VDS_U_OFST::read())) - 0.714136 * GBS::VDS_V_OFST::read())) + 128;
-    B_VAL = ((GBS::VDS_Y_OFST::read() + (float)(1.772 * (GBS::VDS_U_OFST::read())))) + 128;
 }
 
 void setAdcGain(uint8_t gain)
@@ -4202,6 +4225,12 @@ void setup()
             Saturation = (uint8_t)(f.read() - '0') * 100 + (uint8_t)(f.read() - '0') * 10 + (uint8_t)(f.read() - '0');
             if ((Saturation > 0xFF - 1) || (Saturation == 0))
                 Saturation = 0x80;
+
+            // The colour balance, appended in the three-digit form the BCSH
+            // values above use. A file written before this one ends here, and
+            // f.read() past the end gives -1 -- which lands out of range and so
+            // reads as neutral rather than as a colour nobody chose.
+            ColourBalanceFile::load(f, geometry.colour());
             // RGBs_Com = (uint8_t)(f.read() - '0');
             // RGsB_Com = (uint8_t)(f.read() - '0');
             // VGA_Com = (uint8_t)(f.read() - '0');
@@ -4860,7 +4889,6 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     if (GBS::ADC_UNUSED_62::read() == 0x00) {
                         GBS::VDS_PK_LB_GAIN::write(0x3f);
                         GBS::VDS_PK_LH_GAIN::write(0x3f);
-                        GBS::ADC_UNUSED_60::write(GBS::VDS_Y_OFST::read());
                         GBS::ADC_UNUSED_61::write(GBS::HD_Y_OFFSET::read());
                         GBS::ADC_UNUSED_62::write(1);
                         GBS::VDS_Y_OFST::write(GBS::VDS_Y_OFST::read() + 0x24);
@@ -4874,7 +4902,9 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     } else {
                         Tv5725::VideoProcessor::setSharpness(
                             uopt->wantSharpness, outputIsAt1080p());
-                        GBS::VDS_Y_OFST::write(GBS::ADC_UNUSED_60::read());
+                        // The luma offset is the balance's, so leaving the view
+                        // asks it rather than putting back a saved copy.
+                        applyColourBalance();
                         GBS::HD_Y_OFFSET::write(GBS::ADC_UNUSED_61::read());
                         if (!rto->inputIsYpBpR) {
 
@@ -4883,7 +4913,6 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                             GBS::HD_V_OFFSET::write(0);
                         }
 
-                        GBS::ADC_UNUSED_60::write(0);
                         GBS::ADC_UNUSED_61::write(0);
                         GBS::ADC_UNUSED_62::write(0);
                         ; // SerialMprintln("off");
@@ -5952,66 +5981,47 @@ void handleType2Command(char argument)
                                                  outputIsAt1080p());
             saveUserPrefs();
             break;
+        // The colour balance. These six used to step VDS_Y_OFST, VDS_U_OFST and
+        // VDS_V_OFST a count at a time, which is the same three dimensions in
+        // the basis nothing on the menu shows -- and a second owner of the
+        // registers Tv5725::ColourBalance now writes. docs/osd-menu.md
         case 'Z':
-            // Y_offset +
-            GBS::VDS_Y_OFST::write(GBS::VDS_Y_OFST::read() + 1);
-            if (GBS::VDS_Y_OFST::read() == 0x80)
-                GBS::VDS_Y_OFST::write(0x00);
+            geometry.colour().nudgeRed(+1);
+            applyColourBalance();
             break;
         case 'T':
-            // Y_offset -
-            GBS::VDS_Y_OFST::write(GBS::VDS_Y_OFST::read() - 1);
-            if (GBS::VDS_Y_OFST::read() == 0x7F) {
-                GBS::VDS_Y_OFST::write(0x00);
-            }
+            geometry.colour().nudgeRed(-1);
+            applyColourBalance();
             break;
         case 'N':
-            // U_offset +
-            GBS::VDS_U_OFST::write(GBS::VDS_U_OFST::read() + 1);
-            ; // SerialMprint(F("U_offset + : "));
-            ; // SerialMprintln(GBS::VDS_U_OFST::read(), DEC);
-            if (GBS::VDS_U_OFST::read() == 0x80) {
-                GBS::VDS_U_OFST::write(0x00);
-            }
+            geometry.colour().nudgeGreen(+1);
+            applyColourBalance();
             break;
         case 'M':
-            // U_offset -
-            GBS::VDS_U_OFST::write(GBS::VDS_U_OFST::read() - 1);
-            ; // SerialMprint(F("U_offset - : "));
-            ; // SerialMprintln(GBS::VDS_U_OFST::read(), DEC);
-            if (GBS::VDS_U_OFST::read() == 0x7F) {
-                GBS::VDS_U_OFST::write(0x00);
-            }
+            geometry.colour().nudgeGreen(-1);
+            applyColourBalance();
             break;
         case 'Q':
-            // V_offset +
-            GBS::VDS_V_OFST::write(GBS::VDS_V_OFST::read() + 1);
-            ; // SerialMprint(F("V_offset + : "));
-            ; // SerialMprintln(GBS::VDS_V_OFST::read(), DEC);
-            if (GBS::VDS_V_OFST::read() == 0x80) {
-                GBS::VDS_V_OFST::write(0x00);
-            }
+            geometry.colour().nudgeBlue(+1);
+            applyColourBalance();
             break;
         case 'H':
-            // V_offset -
-            GBS::VDS_V_OFST::write(GBS::VDS_V_OFST::read() - 1);
-            ; // SerialMprint(F("V_offset - : "));
-            ; // SerialMprintln(GBS::VDS_V_OFST::read(), DEC);
-            if (GBS::VDS_V_OFST::read() == 0x7F) {
-                GBS::VDS_V_OFST::write(0x00);
-            }
+            geometry.colour().nudgeBlue(-1);
+            applyColourBalance();
             break;
-            // case 'P':
-            //     // Y_gain +
-            //     GBS::VDS_Y_GAIN::write(GBS::VDS_Y_GAIN::read() + 1);
-            //     ; // SerialMprint(F("Y_gain + : "));
-            //     ; // SerialMprintln(GBS::VDS_Y_GAIN::read(), DEC);
-            //     break;
-            // case 'S':
-            //     // Y_gain -
-            //     GBS::VDS_Y_GAIN::write(GBS::VDS_Y_GAIN::read() - 1);
-            //     ; // SerialMprint(F("Y_gain - : "));
-            //     ; // SerialMprintln(GBS::VDS_Y_GAIN::read(), DEC);
+        case 'P':
+            geometry.colour().nudgeLumaGain(+1);
+            applyColourBalance();
+            break;
+        case 'S':
+            geometry.colour().nudgeLumaGain(-1);
+            applyColourBalance();
+            break;
+        // Keeping the balance is a press of its own, as it was on the chain:
+        // Left and Right are held keys, and a save per step would write flash a
+        // hundred times for one adjustment.
+        case 'Y':
+            saveUserPrefs();
             break;
         case 'V':
             // Цвет +
@@ -6074,37 +6084,15 @@ void handleType2Command(char argument)
             }
             break;
         case 'U': // Default
-            // Сброс
-            if (GBS::ADC_INPUT_SEL::read() == 1)     //（RGB）RGB1 channel
-            {
-                GBS::VDS_Y_GAIN::write(128);
-                GBS::VDS_UCOS_GAIN::write(28);
-                GBS::VDS_VCOS_GAIN::write(41);
-
-                GBS::VDS_Y_OFST::write(0);
-                GBS::VDS_U_OFST::write(0);
-                GBS::VDS_V_OFST::write(0);
-
-                Tv5725::Adc::applyOffset(adco->r_off, adco->g_off, adco->b_off);
-                ; // SerialMprintln("RGB:defauit");
-            } 
-            else //（YUV）RGB0 channel
-            {   
-
-                GBS::VDS_Y_GAIN::write(0x80);
-                GBS::VDS_UCOS_GAIN::write(0x1c);//0x1c
-                GBS::VDS_VCOS_GAIN::write(0x29);//0x29
-
-                GBS::VDS_Y_OFST::write(0x0E); 
-                GBS::VDS_U_OFST::write(0x03); 
-                GBS::VDS_V_OFST::write(0x04);
-
-                Tv5725::Adc::applyOffset(adco->r_off, adco->g_off, adco->b_off);
-
-            }
-            R_VAL = ((GBS::VDS_Y_OFST::read() + (float)(1.402 * (GBS::VDS_V_OFST::read())))) + 128;
-            G_VAL = ((GBS::VDS_Y_OFST::read() - (float)(0.344136  * (GBS::VDS_U_OFST::read())) - 0.714136 * GBS::VDS_V_OFST::read())) + 128;
-            B_VAL = ((GBS::VDS_Y_OFST::read() + (float)(1.772 * (GBS::VDS_U_OFST::read())))) + 128;   
+            // The chroma gains and the ADC offsets are not the balance's; the
+            // offsets and the luma gain are, and the rest the balance returns to
+            // is the colour space's own.
+            GBS::VDS_UCOS_GAIN::write(0x1C);
+            GBS::VDS_VCOS_GAIN::write(0x29);
+            Tv5725::Adc::applyOffset(adco->r_off, adco->g_off, adco->b_off);
+            geometry.colour().reset();
+            applyColourBalance();
+            saveUserPrefs();
             break;
         case 'I':
             if (IR == 0) {
@@ -7668,6 +7656,8 @@ void saveUserPrefs()
     f.write((Saturation / 100) + '0');
     f.write((Saturation % 100) / 10 + '0');
     f.write(Saturation % 10 + '0');
+
+    ColourBalanceFile::save(f, geometry.colour());
     f.close();
 }
 
@@ -9221,19 +9211,17 @@ void OSD_selectOption()
                     break;
                 case IRKeyRight:
                     // Y_offset +
-                    R_VAL = MIN(R_VAL + STEP, 255);
+                    geometry.colour().nudgeRed(+STEP);
                     // GBS::VDS_Y_OFST::write(cur);
 
-                    Color_Conversion();
-                    PR_rgb();
+                    applyColourBalance();
                     break;
                 case IRKeyLeft:
                     // userCommand = 'T';
                     // Y_offset -
-                    R_VAL = MAX(0, R_VAL - STEP);
+                    geometry.colour().nudgeRed(-STEP);
                     // GBS::VDS_Y_OFST::write(cur);
-                    Color_Conversion();
-                    PR_rgb();
+                    applyColourBalance();
                     break;
                 case IRKeyOk:
                     saveUserPrefs();
@@ -9293,16 +9281,14 @@ void OSD_selectOption()
                     break;
                 case IRKeyRight:
                     // userCommand = 'N';
-                    G_VAL = MIN(G_VAL + STEP, 255);
+                    geometry.colour().nudgeGreen(+STEP);
 
-                    Color_Conversion();
-                    PR_rgb();
+                    applyColourBalance();
                     break;
                 case IRKeyLeft:
                     // userCommand = 'M';
-                    G_VAL = MAX(0, G_VAL - STEP);
-                    Color_Conversion();
-                    PR_rgb();
+                    geometry.colour().nudgeGreen(-STEP);
+                    applyColourBalance();
                     break;
 
                 case IRKeyOk:
@@ -9364,18 +9350,16 @@ void OSD_selectOption()
                     // cur = MIN(cur + STEP, 255);
                     // GBS::VDS_V_OFST::write(cur);
 
-                    B_VAL = MIN(B_VAL + STEP, 255);
+                    geometry.colour().nudgeBlue(+STEP);
 
-                    Color_Conversion();
-                    PR_rgb();
+                    applyColourBalance();
                     break;
                 case IRKeyLeft:
                     // userCommand = 'H';
                     // cur = MAX(0, cur - STEP);
                     // GBS::VDS_V_OFST::write(cur);
-                    B_VAL = MAX(0, B_VAL - STEP);
-                    Color_Conversion();
-                    PR_rgb();
+                    geometry.colour().nudgeBlue(-STEP);
+                    applyColourBalance();
                     break;
                 case IRKeyOk:
                     saveUserPrefs();
@@ -9391,7 +9375,6 @@ void OSD_selectOption()
     }
 
     else if (oled_menuItem == 91) {
-        uint8_t cur = GBS::VDS_Y_GAIN::read();
         if (OLED_clear_flag)
             display.clear();
         OLED_clear_flag = ~0;
@@ -9430,14 +9413,12 @@ void OSD_selectOption()
                     oled_menuItem = 92;
                     break;
                 case IRKeyRight:
-                    // userCommand = 'P';
-                    cur = MIN(cur + STEP, 255);
-                    GBS::VDS_Y_GAIN::write(cur);
+                    geometry.colour().nudgeLumaGain(+STEP);
+                    applyColourBalance();
                     break;
                 case IRKeyLeft:
-                    // userCommand = 'S';
-                    cur = MAX(0, cur - STEP);
-                    GBS::VDS_Y_GAIN::write(cur);
+                    geometry.colour().nudgeLumaGain(-STEP);
+                    applyColourBalance();
                     break;
                 case IRKeyExit:
                     oled_menuItem = 0;
@@ -12871,7 +12852,7 @@ void handle_g(void)
     sequence_number2 = _24;
     sequence_number3 = _23;
     // Typ(((signed char)((signed char)GBS::VDS_Y_OFST::read()) +(float)( 1.402     * (signed char)((signed char)GBS::VDS_V_OFST::read()) )) + 128);
-    Typ(R_VAL);
+    Typ(geometry.colour().red());
     // adl = (128 + GBS::VDS_U_OFST::read());  //G
     // adl = ((signed char)GBS::VDS_Y_OFST::read() - 0.88 * ((signed char)GBS::VDS_U_OFST::read()) - 0.764 * ((signed char)GBS::VDS_V_OFST::read()));  //G
     // adl = (signed char)GBS::VDS_Y_OFST::read()-0.344136*((signed char)GBS::VDS_U_OFST::read()-128)-0.714136*((signed char)GBS::VDS_V_OFST::read()-128);
@@ -12882,7 +12863,7 @@ void handle_g(void)
     sequence_number2 = _24;
     sequence_number3 = _23;
     // Typ(((signed char)((signed char)GBS::VDS_Y_OFST::read()) -(float)( 0.344136  * (signed char)((signed char)GBS::VDS_U_OFST::read()) )- 0.714136 * (signed char)((signed char)GBS::VDS_V_OFST::read()) ) + 128);
-    Typ(G_VAL);
+    Typ(geometry.colour().green());
 
     // adl = (128 + GBS::VDS_V_OFST::read());  //B
     // adl = ((signed char)GBS::VDS_Y_OFST::read() + 2 * ((signed char)GBS::VDS_U_OFST::read()));  //B
@@ -12894,7 +12875,7 @@ void handle_g(void)
     sequence_number2 = _24;
     sequence_number3 = _23;
     // Typ(((signed char)((signed char)GBS::VDS_Y_OFST::read()) +(float)( 1.772     * (signed char)((signed char)GBS::VDS_U_OFST::read()) )) + 128);
-    Typ(B_VAL);
+    Typ(geometry.colour().blue());
 };
 void handle_h(void)
 {

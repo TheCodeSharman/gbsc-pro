@@ -669,10 +669,10 @@ TEST_CASE("an item says what its option is currently set to")
 // so the two ends were dead. A level that joins is the described form's
 // navigation rather than a target written out per branch.
 //
-// The Sv-Av submenu and the four colour rows are not here yet. Their items act
-// by calling a sketch function -- the HC32 frame, Color_Conversion() -- rather
-// than by asking for a letter, so describing them waits on each action reaching
-// one command surface. docs/osd-menu.md
+// The Sv-Av submenu is not here yet. Its items act by calling a sketch function
+// -- the HC32 frame, SetReg on the ADV7391 -- rather than by asking for a
+// letter, so describing it waits on each action reaching one command surface.
+// docs/osd-menu.md
 
 TEST_CASE("the root names every top-level page, in the order the remote walks them")
 {
@@ -824,7 +824,7 @@ TEST_CASE("the picture level names its rows in the order the chain drew them")
 {
     const char *const expected[] = {
         "ADC gain", "Scanlines", "Line filter", "Sharpness", "Peaking",
-        "Step response", "Colour", "Default colour",
+        "Step response", "R", "G", "B", "Y gain", "Colour", "Default colour",
     };
 
     const MenuItem &level = item("Picture Settings");
@@ -845,6 +845,35 @@ TEST_CASE("sharpness reports the preference rather than the gain it writes")
 
     panel.options.wantSharpness = 0;
     CHECK(std::string(item("Sharpness").valueText(panel.context)) == "OFF");
+}
+
+TEST_CASE("each colour row reports the balance in the basis it names")
+{
+    Panel panel;
+    panel.controls.engine().colour().adopt(140, 120, 128, 130);
+
+    CHECK(std::string(item("R").valueText(panel.context)) == "140");
+    CHECK(std::string(item("G").valueText(panel.context)) == "120");
+    CHECK(std::string(item("B").valueText(panel.context)) == "128");
+    CHECK(std::string(item("Y gain").valueText(panel.context)) == "130");
+}
+
+TEST_CASE("Left and Right step one colour each, and Ok keeps the set")
+{
+    // The six letters were the raw YUV offsets, which is the same three
+    // dimensions in a basis no row shows.
+    CHECK(item("R").nextCommand().letter() == 'Z');
+    CHECK(item("R").previousCommand().letter() == 'T');
+    CHECK(item("G").nextCommand().letter() == 'N');
+    CHECK(item("G").previousCommand().letter() == 'M');
+    CHECK(item("B").nextCommand().letter() == 'Q');
+    CHECK(item("B").previousCommand().letter() == 'H');
+    CHECK(item("Y gain").nextCommand().letter() == 'P');
+    CHECK(item("Y gain").previousCommand().letter() == 'S');
+
+    // Left and Right are held keys, so the save is a press of its own.
+    CHECK(item("R").okCommand().letter() == 'Y');
+    CHECK(item("Y gain").okCommand().queue() == MenuCommand::UserCommand);
 }
 
 TEST_CASE("an option whose letter is a serial command says so")

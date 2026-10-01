@@ -24,23 +24,27 @@ using namespace Tv5725;
 
 static const uint8_t Poisons[2] = {0xA5, 0x5A};
 
+// A neutral balance, so the offsets and the luma gain are the colour space's own
+// rest -- which is what these cases are about.
 template <typename Field>
-static uint32_t after(void (*apply)())
+static uint32_t after(void (*apply)(ColourBalance &))
 {
+    ColourBalance balance;
     Wire.reset();
     Wire.poison(Poisons[0]);
-    apply();
+    apply(balance);
     return Field::read();
 }
 
 template <typename Field>
-static bool wasWritten(void (*apply)())
+static bool wasWritten(void (*apply)(ColourBalance &))
 {
     uint32_t under[2];
     for (int i = 0; i < 2; ++i) {
+        ColourBalance balance;
         Wire.reset();
         Wire.poison(Poisons[i]);
-        apply();
+        apply(balance);
         under[i] = Field::read();
     }
     return under[0] == under[1];

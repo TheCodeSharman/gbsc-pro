@@ -16,6 +16,7 @@
 #include "OutputTiming.h"
 #include "PanAndZoom.h"
 #include "Aspect.h"
+#include "ColourBalance.h"
 #include "OutputWindow.h"
 #include "FramingTable.h"
 #include "SourceKey.h"
@@ -64,6 +65,10 @@ public:
     // axis filled instead, which no register distinguishes from having been
     // given no shape at all.
     bool shapeHonoured() const;
+
+    // The user's picture colour, which a load must not put back to neutral --
+    // so it lives beside the framing rather than being read off the chip.
+    ColourBalance &colour();
 
     // Where the last solve put the picture, for a caller that wants to report
     // it rather than read a register back.
@@ -473,6 +478,7 @@ private:
     InputFormatter &inputFormatter_;
     PanAndZoom framing_;
     Aspect aspect_;
+    ColourBalance colour_;
     // The capturable region the last solve ran against, per axis: the
     // denominator a press converts its units into a proportion with.
     uint16_t usableHorizontal_, usableVertical_;

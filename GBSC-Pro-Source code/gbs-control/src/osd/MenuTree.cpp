@@ -43,6 +43,46 @@ const char *stepResponseText(const MenuContext &context)
     return onOff(context.options().wantStepResponse);
 }
 
+// A balance reads as the number the chain's overlay drew, three digits wide.
+// One buffer per row, because a page resolves three of them.
+const char *decimal(char *into, uint8_t value)
+{
+    into[0] = (char)('0' + value / 100);
+    into[1] = (char)('0' + (value % 100) / 10);
+    into[2] = (char)('0' + value % 10);
+    into[3] = '\0';
+    return into;
+}
+
+Tv5725::ColourBalance &balanceOf(const MenuContext &context)
+{
+    return context.controls().engine().colour();
+}
+
+const char *redText(const MenuContext &context)
+{
+    static char text[4];
+    return decimal(text, balanceOf(context).red());
+}
+
+const char *greenText(const MenuContext &context)
+{
+    static char text[4];
+    return decimal(text, balanceOf(context).green());
+}
+
+const char *blueText(const MenuContext &context)
+{
+    static char text[4];
+    return decimal(text, balanceOf(context).blue());
+}
+
+const char *lumaGainText(const MenuContext &context)
+{
+    static char text[4];
+    return decimal(text, balanceOf(context).lumaGain());
+}
+
 const char *aspectText(const MenuContext &context)
 {
     switch (context.controls().engine().aspect().tenThousandths()) {
@@ -136,6 +176,14 @@ const MenuItem Picture[] = {
     MenuItem::choice("Sharpness", 'W', sharpnessText),
     MenuItem::serialChoice("Peaking", 'f', peakingText),
     MenuItem::serialChoice("Step response", 'V', stepResponseText),
+    MenuItem::adjust("R", MenuCommand::user('Y'), MenuCommand::user('Z'),
+                     MenuCommand::user('T'), redText),
+    MenuItem::adjust("G", MenuCommand::user('Y'), MenuCommand::user('N'),
+                     MenuCommand::user('M'), greenText),
+    MenuItem::adjust("B", MenuCommand::user('Y'), MenuCommand::user('Q'),
+                     MenuCommand::user('H'), blueText),
+    MenuItem::adjust("Y gain", MenuCommand::user('Y'), MenuCommand::user('P'),
+                     MenuCommand::user('S'), lumaGainText),
     MenuItem::adjust("Colour", MenuCommand(), MenuCommand::user('V'),
                      MenuCommand::user('R'), NULL),
     MenuItem::action("Default colour", 'U'),
