@@ -11,13 +11,9 @@ void MenuRenderer::draw(const MenuPage &page, const MenuContext &context) const
 {
     if (begin_ != NULL)
         begin_();
-    if (row_ != NULL) {
-        for (uint8_t row = 0; row < page.rows(); ++row) {
-            const MenuItem &item = page.itemAt(row);
-            row_(row, item.label(), item.valueText(context),
-                 row == page.selected());
-        }
-    }
+    if (row_ != NULL)
+        for (uint8_t row = 0; row < page.rows(); ++row)
+            row_(page, row, page.itemAt(row).valueText(context));
     if (end_ != NULL)
         end_();
 }

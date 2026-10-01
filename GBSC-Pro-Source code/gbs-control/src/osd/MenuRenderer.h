@@ -17,8 +17,8 @@ public:
     // A redraw is bracketed because the panel buffers a frame and flushes it;
     // the overlay writes characters as they arrive and ends with nothing to do.
     constexpr MenuRenderer(void (*begin)(),
-                           void (*row)(uint8_t index, const char *label,
-                                       const char *value, bool selected),
+                           void (*row)(const MenuPage &page, uint8_t index,
+                                       const char *value),
                            void (*end)())
         : begin_(begin), row_(row), end_(end)
     {
@@ -28,7 +28,7 @@ public:
 
 private:
     void (*begin_)();
-    void (*row_)(uint8_t, const char *, const char *, bool);
+    void (*row_)(const MenuPage &, uint8_t, const char *);
     void (*end_)();
 };
 

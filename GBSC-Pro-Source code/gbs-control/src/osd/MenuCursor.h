@@ -33,8 +33,8 @@ public:
     bool descend();
     bool ascend();
 
-    // The rows in view and which is highlighted, the window following the
-    // cursor.
+    // The rows in view and which is highlighted, the page being the group of
+    // three the cursor is in.
     MenuPage page() const;
 
 private:
@@ -42,10 +42,7 @@ private:
         const MenuItem *items;
         uint8_t count;
         uint8_t index;
-        uint8_t first;
     };
-
-    void scrollIntoView();
 
     Level levels_[MaxDepth];
     uint8_t depth_;

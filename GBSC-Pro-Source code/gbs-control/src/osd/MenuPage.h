@@ -15,9 +15,9 @@ class MenuItem;
 
 class MenuPage {
 public:
-    // The television overlay carries three. The chain cut its pages to match by
-    // hand, a page letter per three items; the window follows the cursor
-    // instead.
+    // The television overlay carries three, and a level is cut into pages of
+    // that many rather than scrolled a row at a time, so a page is a fixed
+    // group of three and the overlay's page character counts them.
     static const uint8_t Rows = 3;
 
     MenuPage();
@@ -25,6 +25,7 @@ public:
     void nameLevel(const char *title);
     void add(const MenuItem &item);
     void select(uint8_t row);
+    void numberPage(uint8_t number, bool previous, bool next);
 
     // The item this level was descended from, or NULL at the root. A renderer
     // composes its own breadcrumb from it.
@@ -34,13 +35,24 @@ public:
     const MenuItem &itemAt(uint8_t row) const;
     const char *labelAt(uint8_t row) const;
 
+    bool leadsAt(uint8_t row) const;
+
     uint8_t selected() const;
+
+    // 1 for the first page of the level, and 0 where there is no level at all,
+    // which is the page a closed menu draws.
+    uint8_t number() const;
+    bool hasPreviousPage() const;
+    bool hasNextPage() const;
 
 private:
     const char *title_;
     const MenuItem *items_[Rows];
     uint8_t rows_;
     uint8_t selected_;
+    uint8_t number_;
+    bool previous_;
+    bool next_;
 };
 
 }  // namespace Osd

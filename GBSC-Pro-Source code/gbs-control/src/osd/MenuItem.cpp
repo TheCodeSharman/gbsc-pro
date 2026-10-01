@@ -14,6 +14,11 @@ const MenuItem *MenuItem::children() const { return children_; }
 
 uint8_t MenuItem::childCount() const { return childCount_; }
 
+bool MenuItem::leadsSomewhere() const
+{
+    return children_ != NULL && childCount_ != 0;
+}
+
 bool MenuItem::hasValue() const { return valueText_ != NULL; }
 
 const char *MenuItem::valueText(const MenuContext &context) const

@@ -6730,7 +6730,13 @@ void startWebserver()
         body += describedMenu.isOpen() ? "true" : "false";
         body += ",\"depth\":";
         body += describedMenu.cursor().depth();
-        body += ",\"asked\":\"";
+        body += ",\"page\":{\"number\":";
+        body += page.number();
+        body += ",\"previous\":";
+        body += page.hasPreviousPage() ? "true" : "false";
+        body += ",\"next\":";
+        body += page.hasNextPage() ? "true" : "false";
+        body += "},\"asked\":\"";
         if (asked.asked())
             body += asked.letter();
         body += "\",\"queue\":\"";

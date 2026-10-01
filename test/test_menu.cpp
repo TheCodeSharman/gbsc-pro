@@ -167,7 +167,7 @@ TEST_CASE("the selected row is the one the cursor is on")
     CHECK(cursor.page().selected() == 1);
 }
 
-TEST_CASE("a level longer than the window shows the first rows until the cursor leaves them")
+TEST_CASE("a level longer than the window shows the first three until the cursor leaves them")
 {
     MenuCursor cursor(System, 5);
     REQUIRE(cursor.page().rows() == MenuPage::Rows);
@@ -181,25 +181,50 @@ TEST_CASE("a level longer than the window shows the first rows until the cursor 
     CHECK(cursor.page().selected() == 2);
 }
 
-TEST_CASE("the window scrolls to keep the cursor in view")
+TEST_CASE("the window turns a page rather than scrolling by a row")
 {
     MenuCursor cursor(System, 5);
     cursor.down();
     cursor.down();
     cursor.down();
 
-    CHECK(std::string(cursor.page().labelAt(0)) == "Auto gain");
-    CHECK(std::string(cursor.page().labelAt(2)) == "Restart");
-    CHECK(cursor.page().selected() == 2);
+    CHECK(std::string(cursor.page().labelAt(0)) == "Restart");
+    CHECK(std::string(cursor.page().labelAt(1)) == "Info");
+    CHECK(cursor.page().rows() == 2);
+    CHECK(cursor.page().selected() == 0);
 }
 
-TEST_CASE("wrapping to the end brings the window with it")
+TEST_CASE("wrapping to the end lands on the last page")
 {
     MenuCursor cursor(System, 5);
     cursor.up();
 
-    CHECK(std::string(cursor.page().labelAt(2)) == "Info");
-    CHECK(cursor.page().selected() == 2);
+    CHECK(std::string(cursor.page().labelAt(1)) == "Info");
+    CHECK(cursor.page().selected() == 1);
+}
+
+TEST_CASE("a page is numbered within its level, which is what the overlay counts")
+{
+    MenuCursor cursor(System, 5);
+    CHECK(cursor.page().number() == 1);
+    CHECK_FALSE(cursor.page().hasPreviousPage());
+    CHECK(cursor.page().hasNextPage());
+
+    cursor.down();
+    cursor.down();
+    cursor.down();
+    CHECK(cursor.page().number() == 2);
+    CHECK(cursor.page().hasPreviousPage());
+    CHECK_FALSE(cursor.page().hasNextPage());
+}
+
+TEST_CASE("a level that fits is one page with nothing either side of it")
+{
+    MenuCursor cursor(Colour, 2);
+
+    CHECK(cursor.page().number() == 1);
+    CHECK_FALSE(cursor.page().hasPreviousPage());
+    CHECK_FALSE(cursor.page().hasNextPage());
 }
 
 
@@ -226,14 +251,13 @@ static void recordBegin()
     ++Begun;
 }
 
-static void recordRow(uint8_t index, const char *label, const char *value,
-                      bool selected)
+static void recordRow(const MenuPage &page, uint8_t index, const char *value)
 {
     DrawnRow row;
     row.index = index;
-    row.label = label;
+    row.label = page.labelAt(index);
     row.value = value != NULL ? value : "";
-    row.selected = selected;
+    row.selected = index == page.selected();
     Drawn.push_back(row);
 }
 
@@ -268,11 +292,10 @@ TEST_CASE("a row carries the position it occupies, not the position in the level
 
     Recorder.draw(cursor.page(), panel.context);
 
-    REQUIRE(Drawn.size() == MenuPage::Rows);
+    REQUIRE(Drawn.size() == 2);
     CHECK(Drawn[0].index == 0);
-    CHECK(Drawn[0].label == "Auto gain");
-    CHECK(Drawn[2].index == 2);
-    CHECK(Drawn[2].selected);
+    CHECK(Drawn[0].label == "Restart");
+    CHECK(Drawn[0].selected);
 }
 
 TEST_CASE("a redraw is bracketed, so a device that buffers knows when to flush")
@@ -786,8 +809,13 @@ static void recordCell(char address, char page, char value)
     Cells.push_back(cell);
 }
 
-// The symbols of one row, read back off the recorded writes in address order,
-// with the overlay's blank rendered as a space.
+// The symbol at one cell, as rowText() renders it.
+static char symbolAt(uint8_t row, uint8_t column);
+
+// The symbols of one row, read back off the recorded writes in address order.
+// The four glyphs that are not ASCII are written as stand-ins so a whole row
+// reads as a line of text: a blank cell as a space, the cursor and the submenu
+// marker as `>`, and the two page arrows as `^` and `v`.
 static std::string rowText(uint8_t row)
 {
     static const char Pages[] = { 0x00, 0x02, 0x03 };
@@ -796,15 +824,25 @@ static std::string rowText(uint8_t row)
         if (Cells[i].page != Pages[row] || (Cells[i].address & 1) == 0)
             continue;
         const uint8_t column = (uint8_t)((Cells[i].address - 1) / 2);
-        if (column < OSD::Columns)
-            text[column] = Cells[i].value == OSD::Background
-                                   || Cells[i].value == OSD::Clear
-                               ? ' '
-                               : Cells[i].value;
+        if (column >= OSD::Columns)
+            continue;
+        const char symbol = Cells[i].value;
+        text[column] = symbol == OSD::Background || symbol == OSD::Clear ? ' '
+                       : symbol == OSD::Arrow                           ? '>'
+                       : symbol == OSD::PreviousPage                    ? '^'
+                       : symbol == OSD::NextPage                        ? 'v'
+                       : symbol == OSD::Hyphen                          ? '-'
+                                                                        : symbol;
     }
     while (!text.empty() && text[text.size() - 1] == ' ')
         text.erase(text.size() - 1);
     return text;
+}
+
+static char symbolAt(uint8_t row, uint8_t column)
+{
+    const std::string text = rowText(row);
+    return column < text.size() ? text[column] : ' ';
 }
 
 // Cells accumulate across draws, because the overlay keeps what was written to
@@ -816,7 +854,91 @@ static void drawOnTelevision(const MenuPage &page, const MenuContext &context)
     OSD::renderer().draw(page, context);
 }
 
-TEST_CASE("a row carries its label and what the option is set to, at the two ends")
+TEST_CASE("the last column counts the pages of the level")
+{
+    Panel panel;
+
+    const MenuItem &picture = item("Picture Settings");
+    MenuCursor cursor(picture.children(), picture.childCount());
+    REQUIRE(cursor.page().number() == 1);
+
+    Cells.clear();
+    drawOnTelevision(cursor.page(), panel.context);
+    CHECK(symbolAt(0, OSD::IndicatorColumn) == ' ');
+    CHECK(symbolAt(1, OSD::IndicatorColumn) == '1');
+    CHECK(symbolAt(2, OSD::IndicatorColumn) == 'v');
+
+    cursor.down();
+    cursor.down();
+    cursor.down();
+    REQUIRE(cursor.page().number() == 2);
+
+    Cells.clear();
+    drawOnTelevision(cursor.page(), panel.context);
+    CHECK(symbolAt(0, OSD::IndicatorColumn) == '^');
+    CHECK(symbolAt(1, OSD::IndicatorColumn) == '2');
+    CHECK(symbolAt(2, OSD::IndicatorColumn) == 'v');
+}
+
+TEST_CASE("a level that fits on one page leaves the last column alone")
+{
+    // The chain wrote the page character out per branch, so every level it drew
+    // carried one. A level with nothing either side of it has nothing to count.
+    Panel panel;
+    MenuCursor cursor(Colour, 2);
+
+    Cells.clear();
+    drawOnTelevision(cursor.page(), panel.context);
+
+    CHECK(symbolAt(0, OSD::IndicatorColumn) == ' ');
+    CHECK(symbolAt(1, OSD::IndicatorColumn) == ' ');
+}
+
+TEST_CASE("the selected row carries a cursor at the first column, the label beside it")
+{
+    // The cursor is a glyph as well as the row colour, and every label is inset
+    // by one to leave room for it.
+    Panel panel;
+
+    MenuCursor cursor(MenuTree::root(), MenuTree::rootCount());
+    Cells.clear();
+    drawOnTelevision(cursor.page(), panel.context);
+
+    CHECK(rowText(0).substr(0, 18) == ">Output Resolution");
+    CHECK(rowText(1).substr(0, 17) == " Picture Settings");
+}
+
+TEST_CASE("the selected row marks an item that leads somewhere, just after its label")
+{
+    // The chain marked it at a column chosen per item, which is why removing an
+    // option left the mark where the label used to end.
+    Panel panel;
+
+    MenuCursor cursor(MenuTree::root(), MenuTree::rootCount());
+    REQUIRE(std::string(cursor.current().label()) == "Output Resolution");
+
+    Cells.clear();
+    drawOnTelevision(cursor.page(), panel.context);
+
+    CHECK(rowText(0) == ">Output Resolution>");
+    CHECK(rowText(1) == " Picture Settings          1");
+}
+
+TEST_CASE("an item that leads nowhere is not marked")
+{
+    Panel panel;
+
+    MenuCursor cursor(MenuTree::root(), MenuTree::rootCount());
+    cursor.up();
+    REQUIRE(std::string(cursor.current().label()) == "Reset Settings");
+
+    Cells.clear();
+    drawOnTelevision(cursor.page(), panel.context);
+
+    CHECK(rowText(0) == ">Reset Settings            ^");
+}
+
+TEST_CASE("a rule of hyphens leads from the label to the value")
 {
     Panel panel;
     panel.options.wantVdsLineFilter = 1;
@@ -829,7 +951,7 @@ TEST_CASE("a row carries its label and what the option is set to, at the two end
     Cells.clear();
     drawOnTelevision(cursor.page(), panel.context);
 
-    CHECK(rowText(cursor.page().selected()) == "Line filter               ON");
+    CHECK(rowText(cursor.page().selected()) == ">Line filter------------ON v");
 }
 
 TEST_CASE("a row is written whole, so a shorter label leaves no tail behind")
@@ -842,14 +964,14 @@ TEST_CASE("a row is written whole, so a shorter label leaves no tail behind")
 
     Cells.clear();
     drawOnTelevision(cursor.page(), panel.context);
-    REQUIRE(rowText(1) == "Use upscaling            OFF");
+    REQUIRE(rowText(1) == " Use upscaling---------OFF 1");
 
     // A level whose second row is shorter, drawn over the same cells.
     const MenuItem &picture = item("Picture Settings");
     MenuCursor second(picture.children(), picture.childCount());
     drawOnTelevision(second.page(), panel.context);
 
-    CHECK(rowText(1) == "Scanlines                OFF");
+    CHECK(rowText(1) == " Scanlines-------------OFF 1");
 }
 
 TEST_CASE("a space inside a label is the font's blank, not its 0x20")

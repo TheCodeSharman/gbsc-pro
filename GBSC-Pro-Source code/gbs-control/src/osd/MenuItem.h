@@ -78,6 +78,7 @@ public:
 
     const MenuItem *children() const;
     uint8_t childCount() const;
+    bool leadsSomewhere() const;
 
     bool hasValue() const;
     const char *valueText(const MenuContext &context) const;

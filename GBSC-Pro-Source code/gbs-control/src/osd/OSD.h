@@ -21,10 +21,24 @@ public:
 
     static const uint8_t Columns = 28;
 
+    // Where a row's four fields sit. The cursor takes the first column, so a
+    // label is inset by one; the value ends two columns short, leaving the last
+    // to the page indicator and the one before it as a gutter.
+    static const uint8_t LabelColumn = 1;
+    static const uint8_t ValueLastColumn = 25;
+    static const uint8_t IndicatorColumn = 27;
+
     // The font is ASCII from 0x21 up, so a label needs no translation. Two
     // characters are not where ASCII puts it: 0x20 is an accented letter rather
     // than a space, and the hyphen is at 0x3e.
     static const char Hyphen = 0x3e;
+
+    // The cursor on the selected row and, after a label, the mark that the item
+    // leads somewhere -- one glyph for both, as the chain draws it. The other
+    // two are the page arrows at the last column.
+    static const char Arrow = 0x15;
+    static const char PreviousPage = 0x06;
+    static const char NextPage = 0x16;
 
     // A cell is written twice, and the same value means different things at the
     // two addresses: at the even one it is the colour, at the odd one a glyph.
@@ -36,6 +50,10 @@ public:
     static const char Unselected = 0x17;
     static const char Clear = (char)0xc0;
 
+    // The last column's strip is the level's, not the row's, so it keeps one
+    // colour whichever row is selected.
+    static const char Indicator = 0x12;
+
     // The one STV9426 on the board, or a recorder in a host test.
     static void writeThrough(WriteCell write);
 
@@ -43,9 +61,12 @@ public:
 
 private:
     static void begin();
-    static void row(uint8_t index, const char *label, const char *value,
-                    bool selected);
+    static void row(const MenuPage &page, uint8_t index, const char *value);
     static void end();
+
+    static void putValue(uint8_t index, uint8_t from, const char *value,
+                         char colour);
+    static void putIndicator(const MenuPage &page, uint8_t index);
 
     static void putCell(uint8_t index, uint8_t column, char symbol,
                         char colour);
