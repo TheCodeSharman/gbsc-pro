@@ -69,8 +69,8 @@ the screen.
 **The root ring is six items on two FIXED pages of three** -- `1 Input`,
 `2 Output Resolution`, `3 Screen Settings`, then `4 System Settings`,
 `5 Picture Settings`, `6 Reset Settings` -- which is what the page character at
-column 27 counts. A described level scrolls its window instead, so the number
-and the page character have to be derived rather than written out.
+column 27 counts. Every level is cut that way, by hand, a page letter per three
+items.
 
 ## Removing a menu item is a layout judgement, not a deletion
 
@@ -135,10 +135,19 @@ through `/uc?` and toggles automatic gain through `/sc?`.
 
 **A page carries its items rather than their text**, because a row's current
 value is only knowable from a context and neither the cursor nor the page has
-one. The renderer resolves it at draw time. The bracketing in `MenuRenderer` is
-the panel's: it buffers a frame and flushes it, where the overlay writes
-characters as they arrive and ends with nothing to do. A host test substitutes a
-recording renderer and reads what the menu SAYS without either device.
+one. The renderer resolves it at draw time and hands the device the page and
+which of its rows to draw, the rest of a row's layout being what the page says:
+the label, which row is selected, whether an item leads somewhere, and the
+page's own number. The bracketing in `MenuRenderer` is the panel's: it buffers a
+frame and flushes it, where the overlay writes characters as they arrive and
+ends with nothing to do. A host test substitutes a recording renderer and reads
+what the menu SAYS without either device.
+
+**A level is cut into fixed pages of three, not scrolled a row at a time.** The
+page character at column 27 counts pages, so a window following the cursor would
+show triples the chain never draws. `MenuCursor` derives the page from the
+index -- `index / Rows` -- and holds nothing for it; the level is still a ring,
+so Up from the first item lands on the last, which is on the last page.
 
 **The tree costs 1292 bytes of globals, and `constexpr` does not fix that.**
 Const data on this part lands in RAM rather than in flash, so a `constexpr`
@@ -180,11 +189,15 @@ curl 'http://<ip>/menu?key=ok'
 ```
 
 ```json
-{"open":true,"depth":2,"asked":"G","queue":"uc",
+{"open":true,"depth":2,"page":{"number":1,"previous":false,"next":true},
+ "asked":"G","queue":"uc",
  "rows":[{"label":"Aspect","value":"Fill","selected":true},
          {"label":"Use upscaling","value":"ON","selected":false},
          {"label":"Deinterlace","value":"Adaptive","selected":false}]}
 ```
+
+`page` is the one part of the drawn row the labels do not carry -- the number at
+column 27 and whether there is a page either side of this one.
 
 **The page returned WITH a press still shows the old value**, because the letter
 is queued for `loop()` and has not run yet. Read again to see the effect.
@@ -233,6 +246,31 @@ over a subtree at a time with `/menu?ir=1`.
 `OSD` writes a page as three rows of 28 character cells. A row is
 written WHOLE, so it reflows -- the chain painted each label at a fixed `P`
 position, which is why removing an option's value left its label behind.
+
+**A row is laid out as the chain's**, so the two can be compared on a photograph
+of the same page. Measured on the unit against the chain's own rows: the cursor,
+the mark, the rule, the value field and the page strip land on the same cells
+and in the same colours.
+
+| column | what is there |
+|---|---|
+| 0 | the cursor, on the selected row only. The chain draws it on every row and in the background colour on the others, which is the same picture |
+| 1.. | the label |
+| after the label | the same glyph again where the item leads somewhere, on the selected row only, flush against the label rather than at a column chosen per item |
+| to the value | a rule of hyphens, where the row has a value |
+| ..25 | the value, right-aligned. The chain's field is 23..25 -- three digits, or `OFF` -- and `ON` is the one value it puts a column further left |
+| 26 | the gutter |
+| 27 | up arrow on the first row, the page number on the second, down arrow on the third, each only where that page exists |
+
+Two differences from the chain are deliberate. **A row the page does not fill is
+cleared rather than painted**, so a short level leaves no bar of background
+across the picture -- which also means the page number is not drawn where the
+second row is empty, and the up arrow already says there is a page before this
+one. And **a row is drawn in one colour**, where the chain left a selected row's
+rule and value in the unselected colour and only changed the label.
+
+A level of one page leaves column 27 alone. The chain always drew a page
+character because every level it drew had pages.
 
 Nothing on the board reports any of this, so each was measured off the emitted
 frame:
