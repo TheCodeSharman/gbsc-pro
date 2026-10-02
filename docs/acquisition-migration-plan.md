@@ -25,8 +25,8 @@ are**. This page is the order to move it in, and the seam each step cuts on.
 ## Why it keeps costing sessions
 
 **The sketch is not host-compiled, so nothing in that 880 lines has a unit
-test, and every fault in it costs a flash cycle and the bench.** Five faults
-found in one session make the point:
+test, and every fault in it costs a flash cycle and the bench.** The faults
+found so far make the point:
 
 | fault | where | what it cost |
 |---|---|---|
@@ -35,6 +35,15 @@ found in one session make the point:
 | a single sample powers the chip down | `inputAndSyncDetect` | reflashing the OLD build to prove the test red |
 | the separator search cannot exit early | `detectAndSwitchToActiveInput` | filed, untestable where it lives |
 | the held sync type outlives the source | spread across both | a session |
+| leaving low power is a flag, not an act | `setResetParameters`, with the only build-up in `doPostPresetLoadSteps` | an evening, and it was diagnosed only from the console -- every register read correct throughout |
+
+That last one is the shape of the whole page. The act of waking the chip lived
+in a 262-line sketch function reached from five `/uc?` sites, so when the engine
+stopped loading presets the build-up went with it and nothing said so. The
+repair is two lines in two owned classes, each with a host test:
+`Adc::applySampleRate()` restarts the PLL it configures and
+`VideoPath::prepareToMeasure()` builds the chip up when it finds it armed.
+`docs/investigations/the-ladder-never-restarts-the-adc-pll.md`.
 
 The one fault in the engine was the cheapest to find, prove and fix. **Where a
 thing lives decides what it costs to get wrong.**
