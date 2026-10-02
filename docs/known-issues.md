@@ -1332,6 +1332,21 @@ group and the sync-type decision all read exactly what a healthy unit reads --
 `own V sync: yes` probing to separate H/V. The engine is measuring faithfully;
 what it is measuring is half a signal.
 
+**What puts it in is the low-power teardown, measured once.**
+`test_acquisition_time.py::test_a_torn_down_chip_is_built_back_up_by_the_next_pass`
+tears the chip down on each input in turn and times the rebuild. On a unit
+acquired and emitting on `vga` a minute earlier it reported **ypbpr 0.6 s, vga
+30.0 s** -- the watch limit -- and `vga` has not acquired since. So the trigger
+is narrower than a whole suite run: it is a teardown taken on this input, and
+the handover-era note that it arrived somewhere inside a run carrying four
+disruptive flags can be replaced by the module that does it.
+
+**The teardown is undone and that is not the fault.** Afterwards `s0_46` reads
+0x7f with every block released, `PLLAD_PDZ`, `ADC_POWDZ` and `DAC_RGBS_PWDNZ`
+are all 1 and `PLLAD_VCORST` is 0, while `STATUS_SYNC_PROC_HTOTAL` stays 0. The
+rebuild the test is named for happens; what does not come back is the horizontal
+sync it has nothing to do with.
+
 **The discriminator is the other input.** `ypbpr` acquiring on the same board at
 the same moment -- 525 lines at 31468 Hz, held over five samples -- is what
 separates a board fault from a signal-path one, and it costs one `/input`
