@@ -1224,9 +1224,12 @@ card emitted. **A `ypbpr` -> `vga` round trip on its own does not do it**, which
 is what leaves the freeze as the acting part. The entry condition is not known,
 so the recovery stands on one occasion and is not proven reproducible.
 
-**So freeze before going to the bench.** The two faults differ in that one
-reading and in no other: frozen, the HC32 fault still has no horizontal edges,
-and this one counts the source perfectly.
+**So freeze before going to the bench.** What this fault shows frozen is the
+source counted exactly, and that is enough on its own: a count that matches the
+source over repeated samples, with `STATUS_SYNC_PROC_HTOTAL` holding the
+divider, says the signal arriving is intact whatever else is true. The HC32
+fault has not been read frozen -- its entry is written from the ladder running --
+so the pair has been separated from this side only.
 
 ### The HC32 stops following input selections, and only a true power cycle returns it
 
