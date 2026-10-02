@@ -1591,6 +1591,41 @@ TEST_CASE("the scan mode is corrected even when the source cannot be measured")
     CHECK(InputFormatter::IF_PRGRSV_CNTRL::read() == 0);
 }
 
+TEST_CASE("leaving pass-through measures from the reference clock")
+{
+    // LEAVING IS A MODE CHANGE LIKE AN INPUT CHANGE, and an input change
+    // installs the reference sampling clock before it measures for exactly this
+    // reason: the channel's divider is sized for the rate pass-through was
+    // entered on, so a measurement taken through it counts the arriving source
+    // in the previous mode's samples.
+    //
+    // Measured on the bench at 800x600@60 on `vga`: a pass-through round trip
+    // back to 1080p leaves the picture translated 312..313 output px to the
+    // right, truncated at the right, in 9 of 9 trips -- with every one of the
+    // 1536 registers identical to a state that fills. Re-detecting the input,
+    // which installs this clock, clears it.
+    seedBenchSource();
+    seedPassThroughSource();
+
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+    VideoSourceAcquisition acquisition(sampling, engine);
+
+    engine.setOutputMode(benchMode());
+    engine.inputTimingsChanged(4);
+    REQUIRE(pollUntilSolved(acquisition));
+
+    engine.setOutputMode(&ModeBypass);
+    Adc::applySampleRate(2038, false, 1);
+    REQUIRE(Adc::dividerInForce() == 2038);
+
+    engine.setOutputMode(benchMode());
+
+    CHECK(Adc::dividerInForce() == Adc::BringUpDivider);
+}
+
 TEST_CASE("bypass keeps the line rate it last measured")
 {
     // Bypass does not measure, so the held rate is the one from the mode that

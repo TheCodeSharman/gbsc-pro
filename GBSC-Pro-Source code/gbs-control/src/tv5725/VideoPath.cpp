@@ -609,6 +609,18 @@ void VideoPath::configureScalingPath()
     if (BringUp::armed())
         BringUp::init(inputFormatter_);
 
+    // LEAVING IS A MODE CHANGE LIKE AN INPUT CHANGE, and an input change
+    // installs the reference clock before it measures for exactly this reason:
+    // the channel's divider is sized for the rate pass-through was ENTERED on,
+    // so the measurement that follows would count the arriving source in the
+    // previous mode's samples. The scan goes with it, because the one on the
+    // chip is the one the last install put there.
+    // ../../../../docs/investigations/leaving-pass-through-measures-through-the-channels-divider.md
+    Adc::installReferenceSamplingClock();
+    inputFormatter_.applyScan(Adc::BringUpDivider, Adc::BringUpLineDoubled,
+                              Adc::inputIsComponent());
+    SyncProcessor::reset();
+
     // Configured, then restarted. Chip::init() leaves the VDS and the input
     // formatter held -- only this releases them, and only on the scaling
     // branch, which the route above is what selects.
