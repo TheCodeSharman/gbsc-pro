@@ -7715,7 +7715,7 @@ void drawOverlayScreens()
         else
             report.kind = Osd::InfoScreen::Rgb;
 
-        const Tv5725::SourceKey &key = geometry.framedKey();
+        const Tv5725::SourceKey key = geometry.reportedKey();
         report.lines = key.lines();
         report.rateHz = (uint8_t)(key.rateHz() + 0.5f);
         report.interlaced =

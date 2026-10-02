@@ -78,6 +78,16 @@ public:
     // measured, so a caller storing a framing against it has to ask first.
     const SourceKey &framedKey() const;
 
+    // The source a REPORT names. The framed key where a solve framed one, and
+    // the arriving measurement where none did: pass-through spends the mode
+    // change rather than solving, so a bypassed boot never adopts a key at all
+    // and a screen reading framedKey() named 0 lines at 0 Hz.
+    //
+    // Held both ways, never measured here. The framed key is preferred where
+    // there is one because it is quantised, so it does not move in its last
+    // digit at a redraw cadence.
+    SourceKey reportedKey() const;
+
     // The capturable region the last solve ran against, which is the
     // denominator the framing's proportions are taken against.
     uint16_t lineUnitsOn(const Axis &axis) const;

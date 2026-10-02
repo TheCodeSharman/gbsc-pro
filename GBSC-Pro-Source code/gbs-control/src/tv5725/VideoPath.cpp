@@ -54,6 +54,11 @@ const PanAndZoom &VideoPath::framing() const { return framing_; }
 
 const SourceKey &VideoPath::framedKey() const { return framedKey_; }
 
+SourceKey VideoPath::reportedKey() const
+{
+    return framedKey_.valid() ? framedKey_ : arrivingKey();
+}
+
 // THE BLANK FOLLOWS WHETHER THERE IS A PICTURE TO SHOW, and it lands on the
 // DETECTION rather than on the arm: a mode change is seen about half a second
 // before anything arms one, and until the blank lands the panel is showing the

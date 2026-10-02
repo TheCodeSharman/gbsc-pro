@@ -16,8 +16,9 @@ namespace Osd {
 // TIMES PULSES, and in pass-through there is no pulse to time, which took a
 // register read from 0.03 s to 5.2 s and starved OTA.
 //
-// The rate is the source key's, which is also the output's: the raster is
-// solved FOR that rate, so there are not two numbers here.
+// The rate is the source's, which on the scaling path is also the output's
+// because the raster is solved FOR it -- so there are not two numbers here.
+// Pass-through solves no raster, and there the source's is the only one.
 class InfoScreen {
 public:
     static const char Bar = 0x11;
@@ -43,8 +44,9 @@ public:
         // engine's held answer rather than a status bit's.
         bool separateSync;
 
-        // The source key the engine holds. Nothing below `present` means
-        // anything when it is false.
+        // The source the engine reports, which is the framed key where a solve
+        // framed one and the measurement where none did. Nothing below
+        // `present` means anything when it is false.
         bool present;
         uint16_t lines;
         bool interlaced;

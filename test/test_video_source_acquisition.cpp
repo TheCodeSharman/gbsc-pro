@@ -681,6 +681,33 @@ TEST_CASE("a source the panel takes straight is passed through, not scaled")
     CHECK(g_passThroughSwitches == 1);
 }
 
+TEST_CASE("a source passed through still reports the raster it measured")
+{
+    // PASS-THROUGH SPENDS THE MODE CHANGE THE ARM TOOK. setOutputMode()
+    // configures the channel and returns, so solveFromMeasurement() never runs
+    // and adoptSourceKey() with it -- framedKey() stays invalid for the life of
+    // a bypassed boot, and no `source key:` line is ever printed. Measured on
+    // the bench at 800x600@60 on `vga`, across a boot and an input round trip.
+    //
+    // So a report has to fall back to the measurement: reading the framed key
+    // named 0 lines at 0 Hz on the information screen, beside a working picture.
+    seedPassThroughSource();
+    g_passThroughSwitches = 0;
+
+    Acquiring unit;
+    unit.acquisition.usePassThroughSwitch(enterPassThrough);
+    unit.acquisition.allowPassThrough(true);
+    unit.start();
+
+    REQUIRE(unit.pollUntilSolved(8));
+    REQUIRE(unit.path.outputMode()->isBypass());
+    REQUIRE_FALSE(unit.path.framedKey().valid());
+
+    CHECK(unit.path.reportedKey().valid());
+    CHECK(unit.path.reportedKey().lines() == 524);
+    CHECK(unit.path.reportedKey().rateHz() == doctest::Approx(60.0f).epsilon(0.01));
+}
+
 // DETECTION TAKES THE ROUTE AWAY WITHOUT TELLING THE ENGINE. Low power
 // detection routes the DACs back to the scaler, and the held output mode still
 // says bypass -- so the switch that claims the route never runs again and the
