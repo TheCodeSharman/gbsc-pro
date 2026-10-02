@@ -106,6 +106,19 @@ At 1858 the card's right-hand frames run off the end of the line; at 1986 its
 one-pixel green border is present on all four edges. 640x480@60, which is
 low-active, takes 1866 on both builds and is unchanged.
 
+**The scaling path gains too, and does not reach a frame.** Its divider is 1438
+on the same source. Frozen, with the source's `MODE` re-issued at each step so
+the engine re-acquires against the hand-set value:
+
+| stop | left black margin | picture width | mean luma |
+|---|---|---|---|
+| 1331, the low-active formula | 313 | 1607 | 60.44 |
+| 1386, `divider - HighActiveStopSamples` | **216** | **1704** | 63.14 |
+| 1331 again | 313 | 1607 | 60.42 |
+
+97 columns recovered, deterministic across the repeat. The 216 that remain are
+the scaling path's own framing question, which this does not answer.
+
 ## Judging a hand-set stop
 
 **A register set by hand in pass-through is judged only after a
