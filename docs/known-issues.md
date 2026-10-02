@@ -89,6 +89,39 @@ orders agree on all five usable modes. What the test reports is the window the
 engine solved.
 
 
+### A black HDMI frame with the acquisition healthy is `DAC_RGBS_S1EN` left at 0
+
+**Measured after a hardware suite run, on `ypbpr` with the source acquired.**
+Everything the "no HDMI with every register perfect" checks ask for reads right:
+`/geometry` says `state: acquired` and `present: true`, `s0_46` is 0x7f so no
+block is held in reset, `s0_49` bit 2 is 0 so HSOUT/VSOUT are driven,
+`DAC_RGBS_PWDNZ` is 1, `DAC_RGBS_BYPS2DAC` and `OUT_SYNC_SEL` are 0 for the
+scaling path, and both scales are sane. The dongle locks and delivers 1920x1080
+frames at **mean luma 0.00**.
+
+**`s0_45` reads 0x01 where a working unit reads 0x11**, and the missing bit is
+`DAC_RGBS_S1EN`. Writing it back restores the picture at once -- mean luma 97.7
+over the full 1439x1080 -- and it then survives an input change:
+
+```sh
+python3 tools/gbsc-pro-hwtest/setfield.py --host <ip> --set DAC_RGBS_S1EN=1
+```
+
+**It is the same byte as the yellow-tint entry and a different bit**, so a unit
+emitting nothing and a unit emitting a yellow picture are one bit apart in one
+register. `DAC_RGBS_S1EN::write(1)` appears once, on the preset-load path, and
+it was NOT restored by `/input` across three inputs nor by `/restart`.
+
+**What separates it from the encoder causes is that the LINK IS UP.** The dongle
+reports 1920x1080 rather than no signal, so the encoder is locked and being fed
+black. A sink reporting no mode, or the old mode, is a different fault and the
+`PAD_SYNC_OUT_ENZ` toggle is its answer, not this.
+
+**It is found by diffing against a known-good dump**, which is the check that
+works: 63 fields differ between a clean `vga` state and this one, and all but
+this are the legitimate consequences of the input and source being different.
+
+
 ### A stored framing from before shapes existed comes up unshaped
 
 **The mechanism is one line and the decision is open.** `FramingLine::read()`
@@ -1246,12 +1279,22 @@ card emitted. **A `ypbpr` -> `vga` round trip on its own does not do it**, which
 is what leaves the freeze as the acting part. The entry condition is not known,
 so the recovery stands on one occasion and is not proven reproducible.
 
-**So freeze before going to the bench.** What this fault shows frozen is the
-source counted exactly, and that is enough on its own: a count that matches the
-source over repeated samples, with `STATUS_SYNC_PROC_HTOTAL` holding the
-divider, says the signal arriving is intact whatever else is true. The HC32
-fault has not been read frozen -- its entry is written from the ladder running --
-so the pair has been separated from this side only.
+**So freeze before going to the bench, because the two separate there and
+nowhere else.** Both have now been read frozen on this unit, on `vga` with the
+RISC PC at 320x256@50:
+
+| frozen | `STATUS_SYNC_PROC_VTOTAL` over ten samples | `STATUS_SYNC_PROC_HTOTAL` |
+|---|---|---|
+| this fault | **311, one distinct value in 14 of 14** | 2200, equal to `PLLAD_MD` |
+| the HC32 fault below | 9, 10, 11, 1257, 1650 | 2, 12, 94, 693, 1127, 1270, 2016 |
+
+**The HC32 row was taken with the sync arrangement FORCED** -- `SP_SOG_MODE` and
+`SP_EXT_SYNC_SEL` both written to 0 -- so the garbage is not the chip sitting on
+the wrong path. Asked to count a separate-sync source as one, it still cannot,
+and a count of nine lines in a field is no horizontal sync rather than a bad
+measurement of it. A count that matches the source says the arriving signal is
+intact; one that cannot be made to settle on the right path says it is not, and
+that is the one that needs power.
 
 ### The HC32 stops following input selections, and only a true power cycle returns it
 
