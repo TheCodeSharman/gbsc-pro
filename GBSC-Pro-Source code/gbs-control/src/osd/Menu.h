@@ -50,6 +50,10 @@ public:
     // From loop(), which is the one place the bus is reached. Closing draws an
     // empty page rather than nothing: a device that keeps what it was given
     // would otherwise hold the last menu over the picture for ever.
+    //
+    // A VALUE ROW IS LIVE STATE and not every value moves on a press: the
+    // engine acts a pass or two after the one that asked it to, so this also
+    // draws again where a value on the page has moved since it was drawn.
     void drawIfNeeded();
 
     const MenuCursor &cursor() const;
@@ -61,6 +65,10 @@ public:
 private:
     MenuCommand adjust(Key key);
 
+    // The visible rows' values, summed so a move is noticed without keeping
+    // them. Compared per pass, which costs the value functions and no bus.
+    uint16_t valueSum() const;
+
     const MenuItem *root_;
     uint8_t count_;
     const MenuRenderer *devices_[Devices];
@@ -70,6 +78,7 @@ private:
     bool open_;
     bool adjusting_;
     bool redraw_;
+    uint16_t valuesDrawn_;
 };
 
 }  // namespace Osd

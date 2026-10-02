@@ -6,7 +6,7 @@ Menu::Menu(const MenuItem *root, uint8_t count, const MenuRenderer &renderer,
            const MenuContext &context)
     : root_(root), count_(count), deviceCount_(1), context_(context),
       cursor_(root, count), open_(false), adjusting_(false),
-      redraw_(false)
+      redraw_(false), valuesDrawn_(0)
 {
     devices_[0] = &renderer;
     for (uint8_t i = 1; i < Devices; ++i)
@@ -40,14 +40,35 @@ void Menu::close()
 
 bool Menu::needsRedraw() const { return redraw_; }
 
+uint16_t Menu::valueSum() const
+{
+    if (!open_)
+        return 0;
+
+    const MenuPage shown = cursor_.page();
+    uint16_t sum = 0;
+    for (uint8_t row = 0; row < shown.rows(); ++row) {
+        const char *text = shown.itemAt(row).valueText(context_);
+        if (text == NULL)
+            continue;
+        sum = (uint16_t)(sum + row + 1);
+        for (const char *c = text; *c != '\0'; ++c)
+            sum = (uint16_t)(sum * 31 + (uint8_t)*c);
+    }
+    return sum;
+}
+
 void Menu::drawIfNeeded()
 {
+    if (!redraw_ && valueSum() != valuesDrawn_)
+        redraw_ = true;
     if (!needsRedraw())
         return;
     redraw_ = false;
     const MenuPage drawn = open_ ? page() : MenuPage();
     for (uint8_t i = 0; i < deviceCount_; ++i)
         devices_[i]->draw(drawn, context_);
+    valuesDrawn_ = valueSum();
 }
 
 const MenuCursor &Menu::cursor() const { return cursor_; }

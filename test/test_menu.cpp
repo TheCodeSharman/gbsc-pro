@@ -424,6 +424,42 @@ TEST_CASE("a closed menu draws nothing and answers no key but Menu")
     CHECK_FALSE(menu.isOpen());
 }
 
+// A row's value function reads live state, which is what Pass Through does.
+static const char *liveValue(const MenuContext &context)
+{
+    return context.options().preferScalingRgbhv ? "ON" : "OFF";
+}
+
+static const MenuItem Live[] = {
+    MenuItem::choice("Live", 'L', liveValue),
+};
+
+TEST_CASE("a value that moves without a press is drawn again")
+{
+    // A VALUE ROW IS LIVE STATE, and the engine acts a pass or two AFTER the
+    // press that asked it to -- so the page drawn on the press shows what was
+    // true before it, and nothing drew again afterwards. Pass Through read OFF
+    // with the source handed over, and ON once it had been given back.
+    Unit unit;
+    unit.options.preferScalingRgbhv = 0;
+
+    Menu menu(Live, 1, Recorder, unit.context);
+    menu.open();
+    menu.drawIfNeeded();
+    REQUIRE(Drawn.size() == 1);
+    REQUIRE(Drawn[0].value == "OFF");
+
+    Drawn.clear();
+    menu.drawIfNeeded();
+    CHECK(Drawn.empty());
+
+    unit.options.preferScalingRgbhv = 1;
+
+    menu.drawIfNeeded();
+    REQUIRE(Drawn.size() == 1);
+    CHECK(Drawn[0].value == "ON");
+}
+
 TEST_CASE("a press marks a redraw rather than drawing, so the bus stays in loop()")
 {
     // The STV9426 is on the ESP's I2C bus, and a press arrives from a network
