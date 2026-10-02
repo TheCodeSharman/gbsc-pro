@@ -433,6 +433,7 @@ void VideoPath::sourceMeasured(const HsyncPulse &reading)
 
 void VideoPath::prepareToMeasure(uint16_t sourceLines)
 {
+    buildUpIfTornDown();
     solveLineDoubling(sourceLines);
 
     // Pass-through solves nothing, so there is no window here to strand and
@@ -574,6 +575,26 @@ void VideoPath::configurePassThrough()
 
     // Bypass has no solved raster, so it has no porch either -- and a porch left
     // from the last scaled mode would size the next one's picture.
+}
+
+// LEAVING LOW POWER IS A FLAG, NOT AN ACT. The power path holds every block in
+// reset and the ADC PLL with it, and detection clears the flag and returns, so
+// the engine is handed a chip that cannot be measured -- the sync processor
+// counts in ADC clocks and the PLL is not running -- and that would emit nothing
+// once it could. Pass-through is not built up here: its own entry configures the
+// channel, and this would hold the bypass block off underneath it.
+//
+// Before solveLineDoubling(), because the bring-up's input formatter writes the
+// scan, and because the doubling is sized against the divider in force, which
+// the reference clock is what puts there.
+// ../../../../docs/investigations/the-ladder-never-restarts-the-adc-pll.md
+void VideoPath::buildUpIfTornDown()
+{
+    if (passedThrough() || !BringUp::armed())
+        return;
+
+    BringUp::init(inputFormatter_);
+    Adc::installReferenceSamplingClock();
 }
 
 void VideoPath::configureScalingPath()
@@ -841,7 +862,6 @@ uint16_t VideoPath::heldDivider() const { return heldDivider_; }
 void VideoPath::restartSamplingClock()
 {
     applySamplingClock(Adc::dividerInForce());
-    Adc::restartPll();
     SyncProcessor::forgetPositions();
 }
 

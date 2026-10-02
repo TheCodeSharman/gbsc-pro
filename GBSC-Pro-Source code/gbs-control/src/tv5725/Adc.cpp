@@ -571,7 +571,7 @@ uint8_t Adc::applySampleRate(uint16_t divider, uint32_t lineRateHz,
         // the caller's own and still goes in; picking a row by arithmetic on a
         // zero would be a guess wearing a calculation's clothes.
         PLLAD_MD::write(divider);
-        latch();
+        restartPll();
         return oversample < 1 ? 1 : oversample;
     }
 
@@ -588,7 +588,7 @@ uint8_t Adc::applySampleRate(uint16_t divider, uint32_t lineRateHz,
 
     uint8_t ratio = applyOversample(postDivider, oversample);
 
-    latch();
+    restartPll();
     return ratio;
 }
 

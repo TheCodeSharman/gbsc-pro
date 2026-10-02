@@ -363,6 +363,11 @@ public:
     // a group assembled across two calls latches whatever the chip was holding
     // for the rest. The sync processor counts in ADC clocks, so a KS left on
     // the wrong crossover row makes every source measurement garbage.
+    //
+    // AND IT RUNS AFTERWARDS. A group applied to a PLL held in reset configures
+    // a clock that is not running, which reads as a dead source with every
+    // register holding the value that was asked for.
+    // ../../../../docs/investigations/the-ladder-never-restarts-the-adc-pll.md
     static uint8_t applySampleRate(uint16_t divider, uint32_t lineRateHz,
                                    uint8_t oversample);
 

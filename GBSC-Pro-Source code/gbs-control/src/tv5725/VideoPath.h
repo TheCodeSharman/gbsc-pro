@@ -194,9 +194,10 @@ public:
     void sourceMeasured(const HsyncPulse &reading);
 
     // Establish the scan mode and the vertical window a measurement is taken
-    // through. Measures nothing itself, and installs no clock: the reset state
-    // is already one that can be measured through, and every divider after it
-    // is sized from a rate that was measured. Adc::BringUpDivider.
+    // through, building the chip up first where the power path left it torn
+    // down. Measures nothing itself; the only clock it installs is the
+    // reference one that build-up needs, and every divider after it is sized
+    // from a rate that was measured. Adc::BringUpDivider.
     //
     // Sync type, then scan mode, and both before the rate is measured. Each one
     // corrupts every measurement below it if left set for the previous source.
@@ -423,6 +424,7 @@ private:
     // Bring the chip back up on the scaling path. Pass-through configured it
     // away from that setup and left the memory blocks, both FIFOs and the VDS in
     // reset, and nothing else on this path claims any of it back.
+    void buildUpIfTornDown();
     void configureScalingPath();
 
     bool fail();

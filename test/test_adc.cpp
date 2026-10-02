@@ -1077,6 +1077,24 @@ TEST_CASE("the divider on its own is latched, and the held value follows it")
 
 // --- restarting the PLL -------------------------------------------------------
 
+// The power path leaves the ADC PLL held in reset with its clock enable off,
+// and the group is written through here on the way back. A group applied to a
+// PLL in reset configures a clock that is not running: the sync processor
+// counts in ADC clocks, so it counts nothing and the source reads absent with
+// every register holding the value that was asked for.
+// docs/investigations/the-ladder-never-restarts-the-adc-pll.md
+TEST_CASE("applying a sample rate leaves the PLL running")
+{
+    Adc::holdPllInReset();
+    REQUIRE(Adc::PLLAD_PDZ::read() == 0);
+
+    Adc::applySampleRate(2200, 15625, Adc::OversampleAsClockAllows);
+
+    CHECK(Adc::PLLAD_VCORST::read() == 0);
+    CHECK(Adc::PLLAD_PDZ::read() == 1);
+    CHECK(Adc::PLLAD_LEN::read() == 1);
+}
+
 // Applying the group is not enough to re-establish lock: the VCO has to be
 // reset under it and the group reloaded afterwards, and without that the PLL
 // stays unlocked at whatever was written -- including at the value it already

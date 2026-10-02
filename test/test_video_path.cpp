@@ -20,6 +20,7 @@ FakeTwoWire Wire;
 
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Adc.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Aspect.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/BringUp.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Chip.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/FrameBuffer.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/videosource/VideoSourceAcquisition.h"
@@ -233,13 +234,15 @@ static void checkBenchGeometry()
     CHECK(SyncProcessor::SP_RT_HS_SP::read() == 2091);
 
     // PLLAD_LAT is the rising edge that loads MD into the PLL, so a divider
-    // written after it leaves the ADC clocking at the old one.
+    // written after it leaves the ADC clocking at the old one. VCORST released,
+    // PDZ powered and LEN enabled is the running PLL a solved source reads --
+    // measured on the bench against a clean picture.
     CHECK(Adc::PLLAD_LAT::read() == 1);
     CHECK(Adc::PLLAD_VCORST::read() == 0);
     CHECK(Adc::PLLAD_LEN::read() == 1);
     CHECK(Adc::PLLAD_TEST::read() == 0);
     CHECK(Adc::PLLAD_TS::read() == 0);
-    CHECK(Adc::PLLAD_PDZ::read() == 0);
+    CHECK(Adc::PLLAD_PDZ::read() == 1);
     CHECK(Adc::PLLAD_FS::read() == 1);
     CHECK(Adc::PLLAD_BPS::read() == 1);
 
@@ -1827,6 +1830,47 @@ TEST_CASE("a source is acquired from the state a chip reset leaves")
 
     CHECK(sampling.sourceLines() == 311);
     CHECK(Adc::PLLAD_MD::read() == Adc::dividerInForce());
+}
+
+TEST_CASE("a chip left torn down is built back up before the source is measured")
+{
+    // LEAVING LOW POWER IS A FLAG, NOT AN ACT. The power path holds every block
+    // in reset and the ADC PLL with it; detection then clears the flag and
+    // returns, and nothing builds the chip back up. The sync processor counts in
+    // ADC clocks, so a chip left that way measures nothing -- and the five
+    // s0_46 blocks still held emit nothing even once it does. Measured on the
+    // bench, 31 s to a picture through the recovery ladder and a black frame
+    // after it, with every configuration register reading correct.
+    // ../docs/investigations/the-ladder-never-restarts-the-adc-pll.md
+    seedBenchSource();
+    BringUp::holdAllBlocks();
+    Adc::holdPllInReset();
+
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+    VideoSourceAcquisition acquisition(sampling, engine);
+    engine.setOutputMode(benchMode());
+    engine.inputTimingsChanged(4);
+
+    // ONE pass, which is the point: the build-up precedes the measurement
+    // rather than arriving with the solve that the measurement would feed.
+    pollOnce(acquisition);
+
+    CHECK(BringUp::armed() == false);
+
+    // The clock the sync processor counts in, running.
+    CHECK(Adc::PLLAD_VCORST::read() == 0);
+    CHECK(Adc::PLLAD_PDZ::read() == 1);
+    CHECK(Adc::PLLAD_LEN::read() == 1);
+
+    // The five blocks the teardown holds and only Chip::init() releases.
+    CHECK(Chip::SFTRST_DEINT_RSTZ::read() == 1);
+    CHECK(Chip::SFTRST_MEM_FF_RSTZ::read() == 1);
+    CHECK(Chip::SFTRST_MEM_RSTZ::read() == 1);
+    CHECK(Chip::SFTRST_FIFO_RSTZ::read() == 1);
+    CHECK(Chip::SFTRST_OSD_RSTZ::read() == 1);
 }
 
 TEST_CASE("a divider from another mode does not stop the source being counted")
