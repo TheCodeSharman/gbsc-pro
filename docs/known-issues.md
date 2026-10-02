@@ -116,7 +116,7 @@ The other three transitions measured in the same run -- into 640x480@60, into
 Measured identically on the low-active and high-active retime stops, 55 against
 54 `UNLOCKED` readings over the same four mode changes, so it is independent of
 `SyncProcessor::retimeStopFor()`.
-`investigations/the-pass-through-left-bar-is-not-the-retime-origin.md`.
+`investigations/the-pass-through-retime-stop-does-not-follow-the-pulse.md`.
 
 ### A declared shape is unreachable where the capture is wider than the narrowed room
 

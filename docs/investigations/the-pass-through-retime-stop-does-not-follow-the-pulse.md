@@ -1,10 +1,10 @@
-# The pass-through left bar is not the retime origin
+# The pass-through retime stop does not follow a high-active sync width
 
 An H-positive RGBHV source in pass-through is emitted with a black bar down the
 left — 150 of 1920 columns at 800x600@60, with the card's right-hand frames run
-off the end of the line. Walking `SP_RT_HS_SP` frames it, which is what made the
-retime origin look like the cause. **It is not, and moving it there breaks the
-scaling path.**
+off the end of the line. The retime stop is what frames it, and **the value that
+does is not the one the scaling path wants for the same source**, so
+`SyncProcessor::retimeStopFor()` takes the route.
 
 ## What is measured
 
@@ -25,8 +25,8 @@ The two high-active ones differ by 104 samples of pulse, where
 them; the measured spread is **10**, and one stop — 1986, the divider less 52 —
 frames both.
 
-**That the stop which frames pass-through does not follow the pulse is a real
-observation. What it is evidence OF is the part that was wrong.**
+**The stop which frames pass-through does not follow the pulse.** That is what
+`HighActiveStopSamples` carries, and it applies on the pass-through route only.
 
 ## What it is not
 
@@ -43,12 +43,12 @@ routes, and `HdBypass::applyChannelSyncEdges()` writes `SP_HS2PLL_INV_REG`
 scaling path with this source: `SP_HS_INV_REG` 1, `SP_HS2PLL_INV_REG` 0,
 `STATUS_SYNC_PROC_HSPOL` 1.
 
-**It is not the shared origin's to fix, and applying it there is a regression.**
-`SyncProcessor::retimeStopFor()` is called from `HdBypass` and from
-`VideoPath::applySamplingClock()`, so a change to it reaches the scaling path,
-where the retime stop is the capture counter's origin. At 800x600@60 scaled into
-1080p, frozen with the source's `MODE` re-issued so the engine re-acquires
-against each value:
+**It is not the SHARED origin's to fix, and applying it to both routes is a
+regression.** `SyncProcessor::retimeStopFor()` is called from `HdBypass` and
+from `VideoPath::applySamplingClock()`, so a change to it reaches the scaling
+path, where the retime stop is the capture counter's origin. At 800x600@60
+scaled into 1080p, frozen with the source's `MODE` re-issued so the engine
+re-acquires against each value:
 
 | stop | the card |
 |---|---|
@@ -63,17 +63,33 @@ wants a different stop for.
 the picture about 97 output columns, so the window is genuinely placed from that
 origin rather than from something that cancels it.
 
-## What it points at instead
+## The HD channel's own horizontal is not an alternative lever
 
-Pass-through places the picture from the HD channel's own horizontal —
-`HD_HS_ST`/`HD_HS_SP`, `HD_HB_ST`/`HD_HB_SP`, `HD_HSYNC_RST` — and those do not
-follow the source's measured sync width. A correction applied through the shared
-origin to compensate for a fixed channel placement is **pulse-independent by
-construction**, which is exactly the shape the table above shows: one stop
-framing two rasters whose pulses differ by 104 samples.
+Pass-through places the picture from `HD_HS_ST`/`HD_HS_SP`,
+`HD_HB_ST`/`HD_HB_SP` and `HD_HSYNC_RST`, which do not follow the measured sync
+width — so a correction through the origin compensating for a fixed channel
+placement would be pulse-independent by construction, which is the shape the
+table above has. **Neither register moves the picture, measured.** Frozen, with
+a `PAD_SYNC_OUT_ENZ` re-lock at each step:
 
-`HD_HS_ST` 40 -> 160 with `HD_HB_ST` 2038 -> 120 and `HD_HB_SP` 247 -> 612 also
-frames it, survives a re-lock, and touches no retiming register.
+| change | left black margin |
+|---|---|
+| `HD_HB_SP` 247 (as solved) | 147 |
+| `HD_HB_SP` 600, 353 samples later | 150 |
+| `HD_HS_ST` 160 | 49 |
+| `HD_HS_ST` 300 | 44 |
+
+353 samples of blanking move the margin three columns, and the sync position
+saturates after the first step — 98 columns then 5 — which is the sink placing
+its window at a re-lock rather than the board moving the picture.
+`the-encoder-tunes-the-left-edge-in-pass-through.md` already refutes both as
+levers, and reaching for them again costs a session.
+
+## Why the two routes differ is not known
+
+Both configure the sync inversions identically on a high-active source, so the
+branch has no mechanism behind it — only the measurement. It is kept because
+every alternative lever is refuted and the picture is the acceptance test.
 
 ## The acceptance test is the border, not the margin
 
