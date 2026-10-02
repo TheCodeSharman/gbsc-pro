@@ -224,14 +224,13 @@ static void checkBenchGeometry()
     CHECK(Tv5725::Tv5725::PLL_4XV::read() == 1);
 
     // The sampling divider in its three registers: IF_HSYNC_RST is PLLAD_MD/2,
-    // and SP_RT_HS_SP is the divider less the sync width the source measured
-    // through it, plus the origin the retiming module adds. The bench source is
-    // high-active, so InvertedPulseWidthSamples comes off the pulse first: 177
-    // samples read, 172 after it, so 2200 - 172 + 63. One quantity, never read
+    // and SP_RT_HS_SP is the stop the retiming module takes. The bench source is
+    // HIGH-ACTIVE, where the stop does not follow the pulse at all and sits
+    // HighActiveStopSamples before the end of the line. One quantity, never read
     // back.
     CHECK(Adc::PLLAD_MD::read() == 2200);
     CHECK(InputFormatter::IF_HSYNC_RST::read() == 1100);
-    CHECK(SyncProcessor::SP_RT_HS_SP::read() == 2091);
+    CHECK(SyncProcessor::SP_RT_HS_SP::read() == 2148);
 
     // PLLAD_LAT is the rising edge that loads MD into the PLL, so a divider
     // written after it leaves the ADC clocking at the old one. VCORST released,

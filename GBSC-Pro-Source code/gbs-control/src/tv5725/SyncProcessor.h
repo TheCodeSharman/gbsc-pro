@@ -217,6 +217,18 @@ public:
     // ../../../docs/investigations/the-capture-origin-varies-by-mode-at-one-line-rate.md
     static const uint16_t UndecimatedOriginSamples = 16;
 
+    // WHERE THE STOP SITS ON A HIGH-ACTIVE SOURCE, in ADC samples before the
+    // end of the line. normaliseHsyncPolarity() inverts the hsync into the
+    // retiming module and leaves the sample clock the original, so the two
+    // reference opposite edges of the pulse and the width the low-active branch
+    // takes off the origin is not a distance this one travels.
+    //
+    // Measured on two rasters whose pulses differ by 104 samples: taking the
+    // pulse off predicts a 104 sample spread in the stop that frames them and
+    // the measured spread is 10, with one stop framing both.
+    // ../../../docs/investigations/the-retime-origin-follows-the-sync-polarity.md
+    static const uint16_t HighActiveStopSamples = 52;
+
     // The retime window's stop, in the ADC samples PLLAD_MD divides the line
     // into. It is the INPUT FORMATTER'S ORIGIN: the counter every capture
     // window is placed in zeroes on the retimed pulse, so this decides where
