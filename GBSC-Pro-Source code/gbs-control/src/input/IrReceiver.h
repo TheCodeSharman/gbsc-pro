@@ -18,9 +18,10 @@ public:
 
     void resume();
 
-    // Deliver `value` as the next frame. It is taken exactly once and cleared
-    // by resume(), as a frame off the air is, because the menus read
-    // `results.value` outside the decode block as well as inside it.
+    // Deliver `value` as the next frame. It stays on the receiver until
+    // resume() clears it, as a frame off the air does, because loop() decodes
+    // three times a pass and a consumer that declines a key leaves it for the
+    // next one. docs/osd-menu.md
     void inject(uint32_t value);
 
     // Frames taken off the receiver since boot. Only ever increases, so a
@@ -32,7 +33,6 @@ private:
     uint32_t decodes_;
     uint32_t injected_;
     bool hasInjected_;
-    bool injectedTaken_;
 };
 
 #endif  // INPUT_IR_RECEIVER_H_
