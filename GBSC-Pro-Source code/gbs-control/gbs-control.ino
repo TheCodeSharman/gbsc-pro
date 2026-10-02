@@ -3814,7 +3814,6 @@ void setup()
 
     irrecv.enableIRIn();
     OSD_clear();
-    OSD();
     Osd::OSD::writeThrough(OSD_parameters);
     Osd::Panel::writeThrough(panelClear, panelLine, panelFlush);
     describedMenu.alsoDrawOn(Osd::Panel::renderer());
@@ -7655,7 +7654,6 @@ void drawOverlayScreens()
                 case IRKeyExit:
                     oled_menuItem = 0;
                     OSD_clear();
-                    OSD();
                     break;
             }
             irrecv.resume();
@@ -7741,7 +7739,6 @@ void drawOverlayScreens()
                     // Info_sate = 0;
                     oled_menuItem = 0;
                     OSD_clear();
-                    OSD();
                     break;
             }
             irrecv.resume();
@@ -7787,7 +7784,6 @@ void drawOverlayScreens()
         oled_menuItem = 0;
         oled_menuItem_last = 0;
         OSD_clear();
-        OSD();
     }
     oled_menuItem_last = oled_menuItem;
 }
@@ -7854,7 +7850,6 @@ static void handleRemoteKey()
             delay(MuteOverlayDwellMs);
             oled_menuItem = 0;
             OSD_clear();
-            OSD();
             break;
         }
         case kRecv2:

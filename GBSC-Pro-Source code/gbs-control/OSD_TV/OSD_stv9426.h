@@ -151,6 +151,14 @@ void OSD_clear() {
   // The part no longer holds what Osd::OSD last sent it, so the next row goes
   // on whole rather than as the cells that moved.
   Osd::OSD::forget();
+
+  // THE SWEEP CLOBBERS THE SETTINGS, so clearing has to put them back. The
+  // plane at B=0x00 carries the eight spacing registers at 0x40..0x47 as well
+  // as characters, and OSD_Cut_0x01() walks every address in it -- leaving
+  // 0xC0 where OSD() wrote 0x00, after which nothing the part is sent appears.
+  // Called here rather than by each caller: two of the seven forgot, and both
+  // were a dismissal that left the television blank for the rest of the boot.
+  OSD();
 }
 
 #endif
