@@ -837,9 +837,9 @@ private:
     }
 };
 
-// The described menu. /menu drives it; OSD_selectOption() is still what the
-// remote drives, so the two share the overlay and the described one draws only
-// while the chain's menu is closed. docs/osd-menu.md
+// The described menu, which is the only menu. /menu and the remote both drive
+// it, and it draws only while the two overlays that are not menu rows -- the
+// volume bar and the information screen -- are closed. docs/osd-menu.md
 static Osd::MenuContext menuContext(geometryControls, uopts, avopts);
 static Osd::Menu describedMenu(Osd::MenuTree::root(), Osd::MenuTree::rootCount(),
                                Osd::OSD::renderer(), menuContext);
@@ -2229,43 +2229,25 @@ void printVideoTimings()
 }
 
 
-// The OSD bar's four controls, and **the only way it may reach the geometry**.
-// Anything here that writes a register directly -- VDS_HB_SP, VDS_HSCALE and
-// the rest -- re-solves nothing and is invisible to the pad tests, so the suite
-// stays green while the picture breaks.
+// One line per IR frame, naming which of loop()'s consumers took it.
 //
-// A size bar reads as "bigger picture", and bigger means cropping harder --
-// which is why zoom in is a NEGATIVE delta, the same convention the 'z' pad
-// uses.
-// One line per IR frame, naming which of loop()'s two consumers took it.
-//
-// Remote buttons behave as though queued, with only the second-to-last press
-// actioned. Two mechanisms are both real and both in the code, and this is the
-// cheapest thing that tells them apart:
-//
-//   - OSD_selectOption() decodes inside whichever oled_menuItem branch matches.
-//     Where no branch matches, OSD_IR() takes the frame instead -- and it acts
-//     on four keys and discards the rest, AFTER overwriting `results` and
-//     resuming. That press is gone, and the next one then looks like it
-//     actioned the previous one. Shows up as OSD_IR:1 on a key that is not
-//     Menu or Save.
-//   - `results` is never cleared, so the top half of most of the 77 branches --
-//     which reads it BEFORE decoding -- re-fires on the stale value every loop
-//     pass, redrawing the bar over I2C at 2 transactions per character. Shows
-//     up as a large `worst loop`.
-//
-// A press that reached the engine also prints an ADJ line, so "decoded but did
-// nothing" is visible as a trace line with no ADJ after it.
+// decode() does not consume a frame -- resume() does -- so a frame the
+// described menu declines is counted again by whichever consumer answers it.
+// The counts say where a press WENT, not how many arrived. A press that reached
+// the engine also prints an ADJ line, so "decoded but did nothing" is a trace
+// line with no ADJ after it, and `worst loop` is what decides whether a press
+// survived at all: a frame arriving while the receiver has not been resumed is
+// dropped. docs/osd-menu.md
 static uint32_t irWorstLoopMs = 0;
 
-static void traceIrFrames(uint32_t bySelectOption, uint32_t byOsdIr,
+static void traceIrFrames(uint32_t byDescribedMenu, uint32_t byOsdIr,
                           int menuBefore)
 {
-    if (bySelectOption == 0 && byOsdIr == 0)
+    if (byDescribedMenu == 0 && byOsdIr == 0)
         return;
-    debugPrintf("IR value:0x%08lX  selectOption:%lu OSD_IR:%lu  menu:%d->%d  "
+    debugPrintf("IR value:0x%08lX  described:%lu OSD_IR:%lu  menu:%d->%d  "
                 "worst loop since last frame:%lums\n",
-                (unsigned long)results.value, (unsigned long)bySelectOption,
+                (unsigned long)results.value, (unsigned long)byDescribedMenu,
                 (unsigned long)byOsdIr, menuBefore, oled_menuItem,
                 (unsigned long)irWorstLoopMs);
     irWorstLoopMs = 0;
