@@ -54,6 +54,37 @@ this as a strict xfail, so it flips the day it is fixed.
 `docs/investigations/the-ladder-never-restarts-the-adc-pll.md` is the teardown
 half, which is fixed and is not this.
 
+### A save does not change `/preferencesv2.txt`, and the file is longer than any save writes
+
+`/preferencesv2.txt` is **51 bytes** on the bench unit. `saveUserPrefs()` makes
+exactly **39 live one-byte `f.write()` calls** -- no loops, no multi-byte writes
+-- and opens with `"w"`. So no save this firmware can make produced that file.
+
+**Two saves left it unchanged.** `/sc?K` toggles the pass-through preference and
+calls `saveUserPrefs()` on the way out; two of them in one session visibly moved
+the route both ways and left the file at 51 bytes, byte for byte, with byte 0 at
+`5`. A warm `/restart` does not change it either.
+
+**The length is not what blocks the read.** The boot gate is
+`f.size() >= PREFS_BYTES`, which 51 passes, and the parser then reads the first
+39 and asks `prefsLookPlausible()`. So the file being long is consistent with the
+read having succeeded.
+
+**Which leaves two candidates, and nothing here separates them.** Either
+`prefsAreSuspect` is set, so `saveUserPrefs()` returns before opening -- its only
+early exit, and it reports through `printf()`, which goes to stdout and never
+reaches the websocket console, so the one line that would say so is missing from
+every capture. Or the open or the truncation is not doing what `"w"` implies.
+**`/bootlog` settles it in one line** and the default build does not keep it:
+reflash with `BOOTLOG_BYTES=2048` and read the `PREFS:` lines.
+
+Live consequence either way: **a preference set on this unit does not survive a
+reboot**, and nothing says so. `test_firmware.py::test_the_reserved_preferences_byte_holds_its_place`
+and `::test_preferences_survive_a_round_trip` both fail on it, asserting
+`PREFS_BYTES` 39 against the 51 they read -- the tests are right and the unit is
+in the state they describe, which is not the stale-constant case the
+capture-origin and head-blanking failures are.
+
 ### A mode change between two rasters sharing a divider loses the lock for seven seconds
 
 `640x480@60 -> 800x600@60` on `vga`, pass-through: the sync processor counts
