@@ -7730,13 +7730,15 @@ void drawOverlayScreens()
                     OSD_clear();
                     describedMenu.open();
                     break;
+                // Info dismisses the screen Info opened, so the key that
+                // shows it is the key that takes it away.
+                case IRKeyInfo:
                 case IRKeyExit:
                     if (Info_sate) {
                         GBS::VDS_DIS_HB_ST::write(St);
                         GBS::VDS_DIS_HB_SP::write(Sp);
                         Info_sate = 0;
                     }
-                    // Info_sate = 0;
                     oled_menuItem = 0;
                     OSD_clear();
                     break;
