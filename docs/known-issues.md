@@ -10,6 +10,52 @@ regardless of which step is in flight.
 
 ## Reaches the picture
 
+### The default framing loses the source's outermost COLUMN on every mode
+
+**`PATTERN CARD`'s one-pixel green frame does not reach the emitted frame at the
+left, on 28 of 28 stock AKF50 modes.** It reaches it at the right, at the top and
+mostly at the bottom. Measured with `card_edges.py` against the USB capture:
+`across` reports "one edge: the window is shifted off the picture" on 26 of the
+28, and `down` reports flush or two columns on most.
+
+The picture IS in memory and our own display blanking is what cuts it. Frozen at
+640x480@60, walking `VDS_DIS_HB_SP` down from the solved 160:
+
+| `VDS_DIS_HB_SP` | green dominance, emitted columns 0..13 |
+|---|---|
+| 160 (solved) | nothing -- black to column 7, then a grey ramp into the white band |
+| 158 | nothing |
+| 156 | 1.2 at column 3, **7.0 at 4..7** |
+| 150, 140 | the same, plus 0.5 at 0..3 |
+
+The right-hand edge reads **114** on the same frames, so the near edge is not
+merely smeared -- `docs/investigations/full-screen-framing-on-the-vesa-modes.md`
+records 43/73/51 across the first six columns at this mode, and it now reads 0.4.
+
+**A frozen poke cannot place the picture on the emitted frame**, and this mode is
+the one that trap was measured on, so the frozen walk says where our blanking
+falls and not where the sink cuts. What stands on its own is the sweep, which
+re-acquires per mode.
+
+**The cheapest candidate is `Axis`'s capture margin, which is 1 horizontally and
+2 vertically.** The vertical 2 was measured for this exact symptom -- the card's
+green frame not reaching the panel from the engine's own window and reaching it
+from one unit earlier -- and the vertical axis is the one that passes. The margin
+is charged twice over, so raising it moves both edges: the capture opens a unit
+earlier and `pictureOffset` puts the aperture a magnification later, which is
+what makes the source's first pixel FULLY written rather than partly.
+
+**What would settle it**: `AxisHorizontal`'s margin at 2, flashed, judged by
+`test_card_framing.py`. If that does not close it, re-measure the write-start
+constants with `measure_origin.py` -- `55 + 25m` is fitted and the aperture is
+floored from it.
+
+**And the measurement's own order is not ruled out.** `card_edges.py` changes the
+mode, which re-acquires and toggles the sync pad, and THEN resets the framing --
+so where a framing was stored for that key, the sink placed its window before the
+framing moved. Reset first, then round-trip the mode, and compare.
+
+
 ### Sync on green does not follow the source until the ladder's SOG rungs run
 
 **Fifteen seconds of a `ypbpr` acquisition are spent with the ADC PLL already
