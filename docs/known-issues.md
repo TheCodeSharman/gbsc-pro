@@ -54,36 +54,30 @@ this as a strict xfail, so it flips the day it is fixed.
 `docs/investigations/the-ladder-never-restarts-the-adc-pll.md` is the teardown
 half, which is fixed and is not this.
 
-### A save does not change `/preferencesv2.txt`, and the file is longer than any save writes
+### `/preferencesv2.txt` keeps a stale tail, because the save does not truncate
 
-`/preferencesv2.txt` is **51 bytes** on the bench unit. `saveUserPrefs()` makes
-exactly **39 live one-byte `f.write()` calls** -- no loops, no multi-byte writes
--- and opens with `"w"`. So no save this firmware can make produced that file.
+The file is **51 bytes** where `saveUserPrefs()` makes exactly **39 live
+one-byte `f.write()` calls** — no loops, no multi-byte writes — through
+`LittleFS.open("/preferencesv2.txt", "w")`.
 
-**Two saves left it unchanged.** `/sc?K` toggles the pass-through preference and
-calls `saveUserPrefs()` on the way out; two of them in one session visibly moved
-the route both ways and left the file at 51 bytes, byte for byte, with byte 0 at
-`5`. A warm `/restart` does not change it either.
+**The save works; the truncation does not.** Toggling `preferScalingRgbhv` with
+`/sc?K` flips byte 10 from `0` to `1` and the preference survives a restart,
+while bytes 39..50 come back byte-identical across the save. So 39 bytes are
+written over a 51-byte file and the 12 beyond them are left from whatever wrote
+it longer.
 
-**The length is not what blocks the read.** The boot gate is
-`f.size() >= PREFS_BYTES`, which 51 passes, and the parser then reads the first
-39 and asks `prefsLookPlausible()`. So the file being long is consistent with the
-read having succeeded.
+**The live cost is small but real.** Nothing reads past byte 38, so the stale
+tail is inert today — until the preference set grows back into it, at which
+point a boot reads another firmware's bytes as settings. And
+`test_firmware.py::test_the_reserved_preferences_byte_holds_its_place` and
+`::test_preferences_survive_a_round_trip` both fail on it, asserting
+`PREFS_BYTES` 39 against the 51 they read.
 
-**Which leaves two candidates, and nothing here separates them.** Either
-`prefsAreSuspect` is set, so `saveUserPrefs()` returns before opening -- its only
-early exit, and it reports through `printf()`, which goes to stdout and never
-reaches the websocket console, so the one line that would say so is missing from
-every capture. Or the open or the truncation is not doing what `"w"` implies.
-**`/bootlog` settles it in one line** and the default build does not keep it:
-reflash with `BOOTLOG_BYTES=2048` and read the `PREFS:` lines.
-
-Live consequence either way: **a preference set on this unit does not survive a
-reboot**, and nothing says so. `test_firmware.py::test_the_reserved_preferences_byte_holds_its_place`
-and `::test_preferences_survive_a_round_trip` both fail on it, asserting
-`PREFS_BYTES` 39 against the 51 they read -- the tests are right and the unit is
-in the state they describe, which is not the stale-constant case the
-capture-origin and head-blanking failures are.
+**What is not established** is why `"w"` leaves the tail. The boot gate is
+`f.size() >= PREFS_BYTES`, which 51 passes, so nothing refuses the read, and
+`prefsAreSuspect` is not involved — a suspect boot would have refused the write
+that byte 10 proves happened. Truncating explicitly, or writing the length the
+reader expects, is the obvious repair and neither is tried.
 
 ### A mode change between two rasters sharing a divider loses the lock for seven seconds
 
