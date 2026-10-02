@@ -217,6 +217,21 @@ public:
     // ../../../docs/investigations/the-capture-origin-varies-by-mode-at-one-line-rate.md
     static const uint16_t UndecimatedOriginSamples = 16;
 
+    // WHERE THE STOP SITS ON A HIGH-ACTIVE SOURCE IN PASS-THROUGH, in ADC
+    // samples before the end of the line.
+    //
+    // Measured on two rasters whose pulses differ by 104 samples: taking the
+    // pulse off predicts a 104 sample spread in the stop that frames them, the
+    // measured spread is 10, and one stop frames both.
+    //
+    // **THE SCALING ROUTE DOES NOT WANT IT.** The same source scaled frames on
+    // the pulse-following arithmetic and is panned off the left by this one, so
+    // the branch is the route rather than the polarity. Why the two differ is
+    // NOT known: both configure SP_HS_INV_REG and SP_HS2PLL_INV_REG identically
+    // on a high-active source.
+    // ../../../docs/investigations/the-pass-through-left-bar-is-not-the-retime-origin.md
+    static const uint16_t HighActiveStopSamples = 52;
+
     // The retime window's stop, in the ADC samples PLLAD_MD divides the line
     // into. It is the INPUT FORMATTER'S ORIGIN: the counter every capture
     // window is placed in zeroes on the retimed pulse, so this decides where
@@ -230,8 +245,12 @@ public:
     // this register is the capture counter's ORIGIN, so a value invented from
     // the divider alone places every window the solve makes against an origin
     // nothing observed.
+    //
+    // `passThrough` is the route asking. The two place the picture through
+    // different machinery and want different origins for the same source --
+    // see HighActiveStopSamples.
     static uint16_t retimeStopFor(uint16_t divider, const HsyncPulse &pulse,
-                                  uint8_t oversample);
+                                  uint8_t oversample, bool passThrough);
 
     // Whether ANY sync is reaching this block, counted off its own output stage
     // on the test bus rather than read off a status bit. STATUS_SYNC_PROC_HSACT

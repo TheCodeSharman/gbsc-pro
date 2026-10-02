@@ -247,7 +247,8 @@ void HdBypass::applyPassThroughSampling(uint16_t divider, uint32_t lineRateHz,
     // that fraction, and an unmeasured source gets nothing written rather than
     // a window placed from the divider alone.
     SyncProcessor::writeRetimeStop(
-        SyncProcessor::retimeStopFor(divider, pulse, Adc::oversampleInForce()));
+        SyncProcessor::retimeStopFor(divider, pulse, Adc::oversampleInForce(),
+                                     true));
 
     holdHsyncPulse(ChannelSyncStart, ChannelSyncStart + SyncPulseWidth);
     holdVsyncPulse(ChannelVsyncStart, ChannelVsyncStop);
