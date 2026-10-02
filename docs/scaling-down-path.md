@@ -1,12 +1,18 @@
-# The scaling-down path, which the firmware does not use
+# The scaling-down path, which the engine can drive and does not choose
 
 The part has a non-linear scaling-down engine on both axes, upstream of the
-frame buffer and entirely separate from the VDS. The firmware initialises every
-one of its rate registers to zero and bypasses the vertical half, so nothing on
-the bench has ever run through it.
+frame buffer and entirely separate from the VDS. The horizontal half is now
+reachable: `Tv5725::InputScale` states the ratio, `InputFormatter::applyScan()`
+writes it with the scan, and the line counter shortens with it so every window
+placed in IF units follows. `/inputscale` asks for one.
+
+**Nothing chooses a ratio.** The solve still runs at unity, which is what the
+bring-up wrote and what the block has always held. Making it automatic needs the
+capture window, both scales and both output windows to come from one decision
+with the ratio, and what the block does to the count has to be measured first.
 
 This page is what it is, what it would buy, and what has to be measured before
-any of that is believed. Nothing here is measured yet.
+any of that is believed. The vertical half is untouched.
 
 ## Why it matters that it exists
 
@@ -73,10 +79,27 @@ definition** and has not been measured.
 ## What the firmware does today
 
 `InputFormatter::init()` writes every `IF_HS_RATE_SEG` and `IF_HS_RATE_LOW` to
-0, and `IF_SEL_HSCALE` to **1**. So the scaled-down path is selected with a
-null rate, which is a pass-through — not a defect, but not obviously deliberate
-either. `Deinterlacer::init()` writes the vertical rates to 0 and sets both
-`MADPT_*_VSCALE_BYPS`.
+0, and `IF_SEL_HSCALE` to **1**: the scaled-down path is selected with a null
+rate, which is a pass-through. `applyScan()` owns the eight segments from there
+on and writes the held ratio with every scan, so the block and the counter
+cannot disagree. `Deinterlacer::init()` writes the vertical rates to 0 and sets
+both `MADPT_*_VSCALE_BYPS`; nothing reaches the vertical half.
+
+**`Tv5725::InputScale` is the ratio.** `forRatio(wanted, have)` gives the
+increment that shows `have` units of line in `wanted` of them, truncated so the
+ratio lands at or above the one asked for — a larger increment is a narrower
+picture, and a black bar is worse than an overrun. `unitsFor()` is what a count
+in IF units becomes, which is how the counter follows.
+
+**The coarse factor is NOT part of it.** `IF_HS_DEC_FACTOR` is the line
+doubler's halving, and one field cannot carry two meanings — so the reachable
+range is the twelve-bit DDA alone, 1.0x down to 0.5x.
+
+```sh
+curl 'http://<ip>/inputscale?rate=1365'          # the increment directly
+curl 'http://<ip>/inputscale?wanted=3&have=4'    # or the ratio
+curl 'http://<ip>/inputscale?rate=0'             # back to unity
+```
 
 ## What it would buy, in the order the evidence should be taken
 
