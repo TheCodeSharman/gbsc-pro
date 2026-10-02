@@ -335,7 +335,18 @@ cannot see a transient at all. `Tv5725::SamplingLog` samples from inside
 make -C build flash-ota HOST=… GBS_SAMPLING_LOG=1     # off in the default build
 curl 'http://<ip>/samplinglog?ms=25&for=30000'        # follow the source
 curl 'http://<ip>/samplinglog?low=1600&high=2900&step=100&dwell=400'   # walk the divider
+curl 'http://<ip>/samplinglog?rates=120'              # time the field rate, N times
 ```
+
+**`rates=` IS WHAT ASKS WHETHER A MEASUREMENT IS STEADY WITHOUT THE ENGINE IN
+THE WAY.** It times the source's field rate off `DEBUG_IN_PIN` exactly as
+`SourceMeasurement` does and prints `rate,ms,sp_vtotal,field_rate_mhz`, and it
+runs from `loop()` rather than from the acquisition tick — so it still answers
+with automation FROZEN. That is the only way to ask whether a register a solve
+writes disturbs what the solve then measures: frozen, nothing rewrites the
+register, and a spread belongs to the register rather than to a loop closed
+through the engine. 120 readings returning one value at sd 0.000 is what a
+steady source looks like.
 
 **`flash-ota` REBUILDS, so the flag has to be on THAT line.** A `GBS_SAMPLING_LOG=1`
 passed to a bare `make -C build` does not reach the unit — the `flash-ota` target
