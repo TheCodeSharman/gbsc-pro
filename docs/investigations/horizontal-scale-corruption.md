@@ -1055,6 +1055,48 @@ Flashed to the unit, RiscPC at 320x256@50 on `vga`:
 The marks are under `tools/gbsc-pro-hwtest/sessions/`, each carrying the sixteen
 registers it was taken at and the prediction made before it.
 
+### The artefact does not reproduce with the bias disabled
+
+**Measured off the USB capture, RiscPC at 320x256@50 on `vga`.** The capture is
+exact where the camera was not: two clips of one unchanged state place 1077 of
+1077 rows at a displacement of zero, so a control costs one clip and any spread
+above it is the picture.
+
+**A hand-set even width is not the fault, and cannot be.** Freezing automation
+and adding one to `VDS_HB_ST` moves that register and nothing else, where the
+solve that set it also set the scale, the aperture and the playback fetch -- a
+hand-set subset of an interdependent solve. Over ten consecutive granules it
+displaces 0 rows of 1077 at every step. `picture_shear` separates it from its own
+clean state at 3 of those 10, on values the clean states already span: `displaced`
+0.0000..0.0029 clean, every reading a multiple of one pair in 1047. That
+separation is quantisation rather than sight, and it is why the guard's own proof
+passes alone and fails in sequence.
+
+**Driven through the whole solve it still does not appear.** A build with the
+bias disabled lands on both parities as the zoom walks -- 24 consecutive
+granules, **14 even widths and 10 odd**, every register the engine's own and
+nothing frozen:
+
+| | steps | `displaced` | `rough` |
+|---|---|---|---|
+| even width | 14 | 0.0000 | 0.0069..0.0072 |
+| odd width | 10 | 0.0000 | 0.0068..0.0071 |
+
+The two parities are indistinguishable, and neither shears.
+
+**So the bias cannot be regression tested while this is the bench.** A guard
+needs a state that fails without it, and none is reachable here. The scope is one
+source at one mode over `VDS_HSCALE` 523..560, which does not establish that no
+source shears -- it establishes that this one does not, with the bias gone. What
+the readings do give is the clean envelope: `displaced` 0.0000 and `rough`
+0.0068..0.0074 over 34 solved steps.
+
+**Removing the bias does not close the default framing defect.** That is the
+obvious suspicion, the bias being documented as the one pixel a full-screen
+picture gives away and the defect being the loss of the outermost column:
+`test_card_framing.py` fails 6 of 6 with the bias disabled, the horizontal
+reading exactly as it does with the bias in. `known-issues.md`.
+
 ### Measuring this again
 
 The artefact is visible in a photograph, but only against a control. A camera

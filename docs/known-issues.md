@@ -89,6 +89,36 @@ orders agree on all five usable modes. What the test reports is the window the
 engine solved.
 
 
+### The zoom-shear guard cannot be proven, and its self-proof is a coin flip
+
+**`test_zoom_shear.py::test_an_even_memory_window_is_what_the_score_can_see`
+passes alone and fails in sequence**, because the fault it injects is not the
+fault. It freezes automation and adds one to `VDS_HB_ST`, which is a hand-set
+subset of a solve that also set the scale, the aperture and the playback fetch,
+and measured off the USB capture that injection displaces **0 rows of 1077 at
+every one of ten consecutive granules**. What `picture_shear` reports as a
+separation at 3 of those 10 is quantisation: the clean states themselves span
+`displaced` 0.0000..0.0029, every reading a multiple of one pair in 1047.
+
+**The artefact does not reproduce with the bias removed either.** A build with
+the odd-width bias disabled solves 14 even widths and 10 odd over 24 consecutive
+granules, nothing frozen, and `displaced` is 0.0000 at all 24.
+`investigations/horizontal-scale-corruption.md` has the readings.
+
+So the guard has nothing to be credited against on this bench, and the suite
+carries a test that fails about seven runs in ten for no defect. **The thresholds
+are not the problem and must not be loosened** -- `CLEAN_DISPLACED` and
+`CLEAN_ROUGH` are placeholders over a measured clean envelope of `displaced`
+0.0000 and `rough` 0.0068..0.0074, and no faulted state exists to set them
+against.
+
+**What would settle it**: a source or magnification where an engine-solved even
+width does shear, which is what the guard needs and what 24 granules at
+320x256@50 over `VDS_HSCALE` 523..560 do not provide. Failing that, the decision
+is whether the bias stays unguarded -- it costs the outermost column, and
+removing it does not close the framing defect above.
+
+
 ### Sync on green does not follow the source until the ladder's SOG rungs run
 
 **Fifteen seconds of a `ypbpr` acquisition are spent with the ADC PLL already
