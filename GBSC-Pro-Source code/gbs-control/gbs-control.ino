@@ -4889,7 +4889,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     break;
                 case 'k':
                     if (!bypassCanBeDisplayed()) {
-                        printf("bypass refused: source line rate too low\n");
+                        debugPrintf("bypass refused: source line rate too low\n");
                         break;
                     }
                     Tv5725::RgbhvOutput::chooseBypass();
@@ -4897,18 +4897,21 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     break;
                 case 'K':
                     if (!bypassCanBeDisplayed()) {
-                        printf("pass refused: source line rate too low to bypass\n");
+                        debugPrintf("pass refused: source line rate too low to bypass\n");
                         break;
                     }
                     // The RESOLUTION is not touched. Handing the source over is a
                     // different fact about the same output, so it is stored on
                     // its own and leaving returns to the resolution the user
                     // chose. docs/video-source-acquisition.md
-                    uopt->preferScalingRgbhv = 0;
+                    //
+                    // A TOGGLE, and the engine switches the route both ways: the
+                    // preference is the permission, and the pass that follows
+                    // acts on it. Entering from here as well left the row with
+                    // no way to say OFF.
+                    uopt->preferScalingRgbhv = uopt->preferScalingRgbhv ? 0 : 1;
                     applyPassThroughPreference();
                     saveUserPrefs();
-                    enterHdBypass();
-                    printf("pass \n");
                     break;
                 case 'T':; // SerialMprint(F("auto gain "));
                     if (uopt->enableAutoGain == 0) {

@@ -816,6 +816,49 @@ TEST_CASE("a pass-through source is not dropped because a measurement failed")
     CHECK(unit.path.outputMode()->isBypass());
 }
 
+TEST_CASE("withdrawing the permission leaves pass-through without the source moving")
+{
+    // THE PERMISSION MOVES WHILE THE SOURCE STANDS STILL, which is the whole of
+    // what the menu's Pass Through row and a resolution choice both do -- and
+    // the route is re-answered only on a pass that re-resolves the source. With
+    // nothing arming one, the picture stayed handed over until the source next
+    // moved: selecting a resolution appeared to do nothing, and the row went on
+    // reading ON however often it was pressed.
+    seedPassThroughSource();
+    g_passThroughSwitches = 0;
+
+    Acquiring unit;
+    unit.acquisition.usePassThroughSwitch(enterPassThrough);
+    unit.acquisition.allowPassThrough(true);
+    unit.start();
+    REQUIRE(unit.pollUntilSolved(8));
+    REQUIRE(unit.path.outputMode()->isBypass());
+
+    unit.acquisition.allowPassThrough(false);
+
+    REQUIRE(unit.pollUntilSolved(8));
+    CHECK_FALSE(unit.path.outputMode()->isBypass());
+}
+
+TEST_CASE("granting the permission hands a suitable source over without it moving")
+{
+    seedPassThroughSource();
+    g_passThroughSwitches = 0;
+
+    Acquiring unit;
+    unit.acquisition.usePassThroughSwitch(enterPassThrough);
+    unit.acquisition.allowPassThrough(false);
+    unit.start();
+    REQUIRE(unit.pollUntilSolved(8));
+    REQUIRE_FALSE(unit.path.outputMode()->isBypass());
+
+    unit.acquisition.allowPassThrough(true);
+
+    REQUIRE(unit.pollUntilSolved(8));
+    CHECK(unit.path.outputMode()->isBypass());
+    CHECK(g_passThroughSwitches == 1);
+}
+
 TEST_CASE("pass-through refused leaves the same source scaled")
 {
     // The interim stand-in for a per-source override. It cannot express one, so

@@ -107,7 +107,18 @@ bool VideoSourceAcquisition::acquireSamplingPhase()
     return found;
 }
 
-void VideoSourceAcquisition::allowPassThrough(bool allowed) { passThroughAllowed_ = allowed; }
+// THE PERMISSION MOVES WHILE THE SOURCE STANDS STILL. The route is re-answered
+// only on a pass that re-resolves the source, so without an arm here the
+// picture stays handed over -- or stays scaled -- until the source next moves:
+// the menu's Pass Through row read ON however often it was pressed, and
+// choosing a resolution appeared to do nothing.
+void VideoSourceAcquisition::allowPassThrough(bool allowed)
+{
+    if (passThroughAllowed_ == allowed)
+        return;
+    passThroughAllowed_ = allowed;
+    videoPath_.inputTimingsChanged();
+}
 
 bool VideoSourceAcquisition::setOutputResolution(const Tv5725::OutputMode *mode)
 {
