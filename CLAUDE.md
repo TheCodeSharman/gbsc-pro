@@ -211,6 +211,17 @@ make -C build flash-ota HOST=192.168.88.108     # arms the unit itself
 python3 tools/gbsc-pro-hwtest/ota_probe.py --host <ip>   # when an upload hangs
 ```
 
+**AN UPLOAD THAT DIES PART WAY IS USUALLY TRANSIENT, AND RETRYING IS THE FIRST
+MOVE.** Measured in one session: eleven attempts, five of which carried the
+image, the failures stopping at 6%, 26% and 38% with the unit acquired, the
+network at 0% loss and heap unchanged either side. espota times out after 10 s
+without an ack, so anything that holds `loop()` that long drops the transfer and
+nothing says which. **That is a different signature from the firewall below** —
+a blocked handshake sits at `Uploading` and never advances, where this one
+advances and stops. Retry two or three times before diagnosing; a stale
+`FIN-WAIT-1` on port 8266 from the previous attempt also makes `ota_probe.py`
+fail to bind, which reads as something holding the port.
+
 **What blocks OTA is the HOST firewall, not the unit.** espota opens a TCP
 listener on this machine and the unit **connects back** to it, so the image
 arrives over an unsolicited inbound connection that a default-drop firewall
