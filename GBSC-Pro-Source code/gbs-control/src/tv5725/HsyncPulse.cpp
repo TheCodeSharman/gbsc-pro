@@ -2,16 +2,11 @@
 
 namespace Tv5725 {
 
-HsyncPulse::HsyncPulse() : syncDuty_(0.0f), positive_(false) {}
+HsyncPulse::HsyncPulse() : syncDuty_(0.0f) {}
 
-HsyncPulse::HsyncPulse(float syncDuty, bool positive)
-    : syncDuty_(syncDuty), positive_(positive)
-{
-}
+HsyncPulse::HsyncPulse(float syncDuty) : syncDuty_(syncDuty) {}
 
 float HsyncPulse::syncDuty() const { return syncDuty_; }
-
-bool HsyncPulse::positive() const { return positive_; }
 
 bool HsyncPulse::isPulse() const
 {

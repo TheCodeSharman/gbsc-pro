@@ -524,37 +524,6 @@ TEST_CASE("the retime window's stop follows the source's sync width")
     }
 }
 
-TEST_CASE("a high-active source's retime stop does not follow its sync width")
-{
-    // The retiming module is fed the inverted hsync where the sample clock is
-    // fed the original, so its reference edge sits a whole pulse away from the
-    // one the counter zeroes on and the measured width must not come off the
-    // origin. Measured in pass-through at divider 2038, walking SP_RT_HS_SP
-    // until the card's border framed at both ends of the line:
-    //
-    //   source        HLOW_LEN  stop that framed the raster
-    //   800x600@56         139                        1991
-    //   800x600@60         243                        1981
-    //
-    // The pulses differ by 104 samples and the stops by 10, where taking the
-    // pulse off predicts 104 -- and one stop, 1986, frames both.
-    // docs/investigations/the-retime-origin-follows-the-sync-polarity.md
-    const HsyncPulse narrow(139.0f / 2038.0f, true);
-    const HsyncPulse wide(243.0f / 2038.0f, true);
-    CHECK(SyncProcessor::retimeStopFor(2038, narrow, 2)
-          == SyncProcessor::retimeStopFor(2038, wide, 2));
-
-    SUBCASE("sitting a fixed distance before the line's end") {
-        CHECK(SyncProcessor::retimeStopFor(2038, wide, 2) == 2038 - 52);
-    }
-
-    SUBCASE("where a LOW-active pulse of the same width still comes off it") {
-        CHECK(SyncProcessor::retimeStopFor(2038, HsyncPulse(243.0f / 2038.0f), 2)
-              == 2038 - 243 + 63);
-    }
-}
-
-
 // --- the divider as STATE, not as a register read back -------------------
 //
 // The registers cannot be the source of truth here: PLLAD_MD is loaded into the

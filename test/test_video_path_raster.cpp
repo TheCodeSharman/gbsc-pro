@@ -269,10 +269,10 @@ TEST_CASE("an unmeasurable line rate is retried, not settled for")
         // and the divider sits hard against that row's ceiling.
         CHECK(Wire.field(5, 0x12, 0, 12) == 2200);
         CHECK(Wire.field(1, 0x0E, 0, 11) == 1100);   // IF_HSYNC_RST, divider / 2
-        // SP_RT_HS_SP: the source is high-active, so the stop does not follow
-        // its sync width -- it sits HighActiveStopSamples before the line's end,
-        // which is the same stop whatever the pulse measures.
-        CHECK(Wire.field(5, 0x4B, 0, 12) == 2148);
+        // SP_RT_HS_SP: the divider less the source's sync width, plus the
+        // origin the retiming module adds. 181/2553 through 2200 is 156, and
+        // the source being high-active takes InvertedPulseWidthSamples off it.
+        CHECK(Wire.field(5, 0x4B, 0, 12) == 2112);
     }
 }
 
