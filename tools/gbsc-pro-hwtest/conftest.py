@@ -88,6 +88,16 @@ def pytest_addoption(parser):
         "the input.",
     )
     group.addoption(
+        "--all-modes",
+        action="store_true",
+        default=False,
+        help="judge the framing on every mode the monitor definition offers, "
+        "rather than the one mode per solve behaviour the default set covers. A "
+        "MODE IS NOT A PATH -- the engine sees a SourceKey, so most of a full "
+        "sweep re-runs a solve another mode already took. Minutes rather than "
+        "seconds.",
+    )
+    group.addoption(
         "--pllad-hostile",
         action="store_true",
         default=False,

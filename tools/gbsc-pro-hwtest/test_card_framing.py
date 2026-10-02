@@ -72,15 +72,6 @@ COVERS = {
 NARROW = {}
 
 
-def pytest_addoption(parser):
-    parser.getgroup("gbsc-pro").addoption(
-        "--all-modes", action="store_true", default=False,
-        help="judge the framing on every mode the monitor definition offers, "
-             "rather than the one mode per solve behaviour the default set "
-             "covers. Minutes rather than seconds, and most of it re-runs a "
-             "path another mode already took.")
-
-
 def pytest_generate_tests(metafunc):
     """One case per mode under test.
 
