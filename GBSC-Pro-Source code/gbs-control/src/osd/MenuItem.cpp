@@ -30,4 +30,9 @@ const char *MenuItem::valueText(const MenuContext &context) const
     return valueText_ != NULL ? valueText_(context) : NULL;
 }
 
+bool MenuItem::isAvailable(const MenuContext &context) const
+{
+    return available_ == NULL || available_(context);
+}
+
 }  // namespace Osd

@@ -28,6 +28,10 @@ public:
     void numberPage(uint8_t number, bool previous, bool next);
     void markAdjusting();
 
+    // Resolved by Menu, which has the context a page does not: a row the engine
+    // cannot serve now. Every row of a page nobody resolved is available.
+    void markUnavailable(uint8_t row);
+
     // The item this level was descended from, or NULL at the root. A renderer
     // composes its own breadcrumb from it.
     const char *title() const;
@@ -43,6 +47,10 @@ public:
     // Whether Ok on the row descends a level. A pad leads somewhere too and
     // is not marked: Ok hands it the arrows rather than changing level.
     bool descendsAt(uint8_t row) const;
+
+    // Whether a press on the row would reach anything. A device draws an
+    // unavailable row greyed; the menu refuses Ok, Left and Right on it.
+    bool availableAt(uint8_t row) const;
 
     uint8_t selected() const;
 
@@ -65,6 +73,7 @@ private:
     bool previous_;
     bool next_;
     bool adjusting_;
+    bool available_[Rows];
 };
 
 }  // namespace Osd

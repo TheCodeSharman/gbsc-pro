@@ -32,6 +32,10 @@ public:
     // was descended from and the root having none.
     static const char *const RootLevel;
 
+    // What an unavailable row reads as here, the panel having no colour to grey
+    // it with.
+    static const char *const UnavailableValue;
+
     static void writeThrough(Frame clear, WriteLine line, Frame flush);
 
     static const MenuRenderer &renderer();

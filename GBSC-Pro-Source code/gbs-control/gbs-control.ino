@@ -6739,6 +6739,11 @@ void startWebserver()
             }
             body += ",\"selected\":";
             body += row == page.selected() ? "true" : "false";
+            // Whether a press on the row would reach anything. The overlay
+            // greys it and the panel says N/A; over here it is a field, since
+            // neither drawing is readable from a test.
+            body += ",\"available\":";
+            body += page.availableAt(row) ? "true" : "false";
             body += "}";
         }
         body += "]}";

@@ -78,6 +78,9 @@ MenuPage Menu::page() const
     MenuPage drawn = cursor_.page();
     if (adjusting_)
         drawn.markAdjusting();
+    for (uint8_t row = 0; row < drawn.rows(); ++row)
+        if (!drawn.itemAt(row).isAvailable(context_))
+            drawn.markUnavailable(row);
     return drawn;
 }
 
@@ -117,6 +120,10 @@ MenuCommand Menu::press(Key key)
     if (adjusting_)
         return adjust(key);
 
+    // A row the engine cannot serve takes the cursor but no action. Splicing it
+    // out instead would renumber the level under the user as the path changed.
+    const bool available = cursor_.current().isAvailable(context_);
+
     switch (key) {
     case KeyUp:
         cursor_.up();
@@ -126,19 +133,19 @@ MenuCommand Menu::press(Key key)
         break;
     case KeyLeft:
         redraw_ = true;
-        return cursor_.current().previousCommand();
+        return available ? cursor_.current().previousCommand() : MenuCommand();
     case KeyRight:
         redraw_ = true;
-        return cursor_.current().nextCommand();
+        return available ? cursor_.current().nextCommand() : MenuCommand();
     case KeyOk:
         if (cursor_.current().isPad()) {
-            adjusting_ = true;
+            adjusting_ = available;
             break;
         }
         if (cursor_.descend())
             break;
         redraw_ = true;
-        return cursor_.current().okCommand();
+        return available ? cursor_.current().okCommand() : MenuCommand();
     case KeyMenu:
         if (!cursor_.ascend()) {
             close();

@@ -51,6 +51,11 @@ public:
     static const char Unselected = 0x17;
     static const char Clear = (char)0xc0;
 
+    // A row the engine cannot serve, drawn rather than hidden so the level
+    // keeps its shape. The low three bits are the glyph's colour, so this is a
+    // dark glyph on the bar where the other two are yellow and white.
+    static const char Unavailable = 0x10;
+
     // The last column's strip is the level's, not the row's, so it keeps one
     // colour whichever row is selected.
     static const char Indicator = 0x12;

@@ -16,6 +16,7 @@ class Print {};
 
 #include "../GBSC-Pro-Source code/gbs-control/options.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Controls.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/HdBypass.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Nudge.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/osd/Menu.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/osd/MenuCommand.h"
@@ -1069,6 +1070,154 @@ TEST_CASE("the aspect sits with the pads, all three being the picture's shape")
 }
 
 
+// --- Rows the engine cannot serve
+//
+// PASS-THROUGH TAKES THE SCALER OUT OF THE PATH, so pan, zoom and the shape have
+// nothing to act on: the engine refuses all three and no register distinguishes
+// the refusal from the press never having happened. A row that stays live
+// therefore reads as a broken control rather than as an unavailable one.
+
+// A source bypass can carry, since the bench 15 kHz one cannot reach the sink.
+// 800x600@60: 628 lines at 60.3 Hz, its pulse counted at the divider that line
+// lands on.
+struct PassedThrough {
+    SolvedEngine solved;
+    Print console;
+    Tv5725::Controls controls;
+    userOptions options;
+    avOptions av;
+    MenuContext context;
+
+    PassedThrough()
+        : solved(628, 60.3f, 171, &Tv5725::Mode1080p, true, 1438),
+          controls(solved.engine, console), options(), av(),
+          context(controls, options, av)
+    {
+        REQUIRE(Tv5725::HdBypass::suitsLineRate(solved.sampling.lineRateHz()));
+        solved.engine.setOutputMode(&Tv5725::ModeBypass);
+        REQUIRE(solved.engine.outputMode()->isBypass());
+    }
+};
+
+TEST_CASE("an item with nothing to say about itself is available")
+{
+    Unit unit;
+
+    CHECK(item("Reset Settings").isAvailable(unit.context));
+    CHECK(item("Input").isAvailable(unit.context));
+}
+
+TEST_CASE("the three picture transforms are unavailable while the scaler is out")
+{
+    const MenuItem &screen = item("Screen Settings");
+    REQUIRE(screen.childCount() == 4);
+
+    {
+        Unit scaling;
+        for (uint8_t i = 0; i < screen.childCount(); ++i)
+            CHECK(screen.children()[i].isAvailable(scaling.context));
+    }
+
+    PassedThrough passed;
+    CHECK_FALSE(screen.children()[0].isAvailable(passed.context));   // Move
+    CHECK_FALSE(screen.children()[1].isAvailable(passed.context));   // Scale
+    CHECK_FALSE(screen.children()[2].isAvailable(passed.context));   // Aspect
+
+    // Reset puts the stored framing and shape back, which outlive the path the
+    // picture is currently taking.
+    CHECK(screen.children()[3].isAvailable(passed.context));
+}
+
+TEST_CASE("a page says which of its rows the engine cannot serve")
+{
+    PassedThrough passed;
+    Menu menu(MenuTree::root(), MenuTree::rootCount(), OSD::renderer(),
+              passed.context);
+    menu.open();
+    while (std::string(menu.cursor().current().label()) != "Screen Settings")
+        menu.press(Menu::KeyDown);
+    menu.press(Menu::KeyOk);
+
+    const MenuPage page = menu.page();
+    REQUIRE(std::string(page.labelAt(0)) == "Move");
+    CHECK_FALSE(page.availableAt(0));
+    CHECK_FALSE(page.availableAt(1));
+    CHECK_FALSE(page.availableAt(2));
+}
+
+TEST_CASE("the cursor still reaches an unavailable row")
+{
+    // Greyed out rather than spliced out: a row that vanished would renumber
+    // the level under the user as the path changed.
+    PassedThrough passed;
+    Menu menu(MenuTree::root(), MenuTree::rootCount(), OSD::renderer(),
+              passed.context);
+    menu.open();
+    while (std::string(menu.cursor().current().label()) != "Screen Settings")
+        menu.press(Menu::KeyDown);
+    menu.press(Menu::KeyOk);
+
+    CHECK(std::string(menu.cursor().current().label()) == "Move");
+    menu.press(Menu::KeyDown);
+    CHECK(std::string(menu.cursor().current().label()) == "Scale");
+    menu.press(Menu::KeyDown);
+    CHECK(std::string(menu.cursor().current().label()) == "Aspect");
+}
+
+TEST_CASE("Ok, Left and Right on an unavailable row ask for nothing")
+{
+    PassedThrough passed;
+    Menu menu(MenuTree::root(), MenuTree::rootCount(), OSD::renderer(),
+              passed.context);
+    menu.open();
+    while (std::string(menu.cursor().current().label()) != "Screen Settings")
+        menu.press(Menu::KeyDown);
+    menu.press(Menu::KeyOk);
+    menu.press(Menu::KeyDown);
+    menu.press(Menu::KeyDown);
+    REQUIRE(std::string(menu.cursor().current().label()) == "Aspect");
+
+    CHECK_FALSE(menu.press(Menu::KeyOk).asked());
+    CHECK_FALSE(menu.press(Menu::KeyRight).asked());
+    CHECK_FALSE(menu.press(Menu::KeyLeft).asked());
+}
+
+TEST_CASE("Ok on an unavailable pad does not hand it the arrows")
+{
+    // Handing them over would leave Up and Down reaching a picture that cannot
+    // move, with the cursor stuck until Menu takes them back.
+    PassedThrough passed;
+    Menu menu(MenuTree::root(), MenuTree::rootCount(), OSD::renderer(),
+              passed.context);
+    menu.open();
+    while (std::string(menu.cursor().current().label()) != "Screen Settings")
+        menu.press(Menu::KeyDown);
+    menu.press(Menu::KeyOk);
+    REQUIRE(std::string(menu.cursor().current().label()) == "Move");
+
+    menu.press(Menu::KeyOk);
+    CHECK_FALSE(menu.isAdjusting());
+    CHECK_FALSE(menu.press(Menu::KeyUp).asked());
+    CHECK(std::string(menu.cursor().current().label()) == "Move");
+}
+
+TEST_CASE("an available pad still takes the arrows")
+{
+    Unit unit;
+    Menu menu(MenuTree::root(), MenuTree::rootCount(), OSD::renderer(),
+              unit.context);
+    menu.open();
+    while (std::string(menu.cursor().current().label()) != "Screen Settings")
+        menu.press(Menu::KeyDown);
+    menu.press(Menu::KeyOk);
+    REQUIRE(std::string(menu.cursor().current().label()) == "Move");
+
+    menu.press(Menu::KeyOk);
+    CHECK(menu.isAdjusting());
+    CHECK(menu.press(Menu::KeyUp).queue() == MenuCommand::GeometryNudge);
+}
+
+
 // --- The two options the doc records as dead
 
 // --- Sv-Av InPutSet
@@ -1419,6 +1568,55 @@ TEST_CASE("a rule of hyphens leads from the label to the value")
     CHECK(rowText(cursor.page().selected()) == ">Line filter------------ON v");
 }
 
+// The page a MENU would draw, which is where availability is resolved: a cursor
+// has no context and reports every row available.
+static MenuPage pageOn(Menu &menu, const char *level, const char *label)
+{
+    menu.open();
+    while (std::string(menu.cursor().current().label()) != level)
+        menu.press(Menu::KeyDown);
+    menu.press(Menu::KeyOk);
+    while (std::string(menu.cursor().current().label()) != label)
+        menu.press(Menu::KeyDown);
+    return menu.page();
+}
+
+TEST_CASE("an unavailable row is drawn greyed rather than in the row colours")
+{
+    PassedThrough passed;
+    Menu menu(MenuTree::root(), MenuTree::rootCount(), OSD::renderer(),
+              passed.context);
+    const MenuPage page = pageOn(menu, "Screen Settings", "Move");
+    REQUIRE(page.selected() == 0);
+
+    Cells.clear();
+    OSD::forget();
+    drawOnTelevision(page, passed.context);
+
+    // The selected row too: the cursor says where the user is, the colour says
+    // the row is dead.
+    CHECK(colourAt(0, OSD::LabelColumn) == OSD::Unavailable);
+    CHECK(colourAt(1, OSD::LabelColumn) == OSD::Unavailable);
+    CHECK(colourAt(2, OSD::LabelColumn) == OSD::Unavailable);
+    CHECK(colourAt(0, 0) == OSD::Cursor);
+}
+
+TEST_CASE("an available row keeps the selected and unselected colours")
+{
+    Unit unit;
+    Menu menu(MenuTree::root(), MenuTree::rootCount(), OSD::renderer(),
+              unit.context);
+    const MenuPage page = pageOn(menu, "Screen Settings", "Move");
+
+    Cells.clear();
+    OSD::forget();
+    drawOnTelevision(page, unit.context);
+
+    CHECK(colourAt(0, OSD::LabelColumn) == OSD::Selected);
+    CHECK(colourAt(1, OSD::LabelColumn) == OSD::Unselected);
+    CHECK(colourAt(2, OSD::LabelColumn) == OSD::Unselected);
+}
+
 TEST_CASE("a row is written whole, so a shorter label leaves no tail behind")
 {
     Unit unit;
@@ -1629,6 +1827,21 @@ TEST_CASE("the panel draws the level, the selected row and what it is set to")
     CHECK(lineAt(Panel::LevelRow) == "Picture Settings");
     CHECK(lineAt(Panel::LabelRow) == "Peaking");
     CHECK(lineAt(Panel::ValueRow) == "ON");
+}
+
+TEST_CASE("the panel says N/A where the overlay greys the row")
+{
+    // A 128x64 mono panel has no colour, so the one thing it can do is say so.
+    PassedThrough passed;
+    Menu menu(MenuTree::root(), MenuTree::rootCount(), OSD::renderer(),
+              passed.context);
+    const MenuPage page = pageOn(menu, "Screen Settings", "Aspect");
+
+    drawOnPanel(page, passed.context);
+
+    CHECK(lineAt(Panel::LevelRow) == "Screen Settings");
+    CHECK(lineAt(Panel::LabelRow) == "Aspect");
+    CHECK(lineAt(Panel::ValueRow) == std::string(Panel::UnavailableValue));
 }
 
 TEST_CASE("a row with no value is drawn where the chain drew a submenu")

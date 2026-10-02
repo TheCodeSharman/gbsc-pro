@@ -20,6 +20,7 @@ const char OSD::Background;
 const char OSD::Selected;
 const char OSD::Unselected;
 const char OSD::Clear;
+const char OSD::Unavailable;
 const char OSD::Indicator;
 const char OSD::Cursor;
 
@@ -108,7 +109,9 @@ void OSD::row(const MenuPage &page, uint8_t index, const char *value)
     Row line(Background, Background);
 
     const bool selected = index == page.selected();
-    const char colour = selected ? Selected : Unselected;
+    const char colour = !page.availableAt(index) ? Unavailable
+                        : selected               ? Selected
+                                                 : Unselected;
     const char *const label = page.labelAt(index);
 
     // The root ring carries its position, which is the level with nothing above

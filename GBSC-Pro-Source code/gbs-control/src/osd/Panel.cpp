@@ -13,6 +13,7 @@ const uint8_t Panel::AloneRow;
 const uint8_t Panel::ValueRow;
 
 const char *const Panel::RootLevel = "Menu";
+const char *const Panel::UnavailableValue = "N/A";
 
 Panel::Frame Panel::clear_ = NULL;
 Panel::WriteLine Panel::line_ = NULL;
@@ -40,6 +41,12 @@ void Panel::row(const MenuPage &page, uint8_t index, const char *value)
     const char *const level = page.title();
     line_(LevelRow, level != NULL ? level : RootLevel);
     const MenuItem &item = page.itemAt(index);
+    // The panel has no colour, so it says in words what the overlay greys.
+    if (!page.availableAt(index)) {
+        line_(LabelRow, item.label());
+        line_(ValueRow, UnavailableValue);
+        return;
+    }
     line_(item.hasValue() ? LabelRow : AloneRow, item.label());
     if (item.hasValue() && value != NULL)
         line_(ValueRow, value);

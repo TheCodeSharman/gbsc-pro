@@ -223,6 +223,17 @@ const MenuItem Resolution[] = {
     MenuItem::serialChoice("Pass Through", 'K', passThroughState),
 };
 
+// Pan, zoom and the shape are all transforms the SCALER performs, and
+// pass-through hands the source to the encoder without it. The engine refuses
+// all three there and no register distinguishes the refusal from the press
+// never arriving. docs/rgbhv-bypass-trap.md
+bool scalerInPath(const MenuContext &context)
+{
+    const Tv5725::OutputMode *const mode =
+        context.controls().engine().outputMode();
+    return mode == NULL || !mode->isBypass();
+}
+
 // A pad asks for a control and the way it goes, which the remote's hold ramp
 // multiplies -- the /sc? geometry letters are stated in output pixels, where one
 // tap asks for one capture granule. The key follows the edge that moves: the
@@ -237,10 +248,12 @@ const MenuPad ScalePad(MenuCommand::nudge(Tv5725::Nudge::VerticalZoom, -1),
                        MenuCommand::nudge(Tv5725::Nudge::HorizontalZoom, -1),
                        MenuCommand::nudge(Tv5725::Nudge::HorizontalZoom, +1));
 
+// Reset is live in both paths: it puts the stored framing and shape back, and
+// both outlive the path the picture is currently taking.
 const MenuItem Screen[] = {
-    MenuItem::pad("Move", MovePad),
-    MenuItem::pad("Scale", ScalePad),
-    MenuItem::choice("Aspect", 'G', aspectText),
+    MenuItem::pad("Move", MovePad).onlyWhen(scalerInPath),
+    MenuItem::pad("Scale", ScalePad).onlyWhen(scalerInPath),
+    MenuItem::choice("Aspect", 'G', aspectText).onlyWhen(scalerInPath),
     MenuItem::serialAction("Reset", 'B'),
 };
 

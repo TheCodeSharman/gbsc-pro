@@ -20,6 +20,10 @@ class MenuItem {
 public:
     typedef const char *(*ValueText)(const MenuContext &);
 
+    // Whether the engine can serve this row at all right now. An item with none
+    // is always available. docs/osd-menu.md
+    typedef bool (*Availability)(const MenuContext &);
+
     // Built through these rather than through a constructor, so a described tree
     // reads as a table of intent and each row says which of the four shapes it
     // is. constexpr throughout: a running constructor would put every item in
@@ -29,47 +33,47 @@ public:
                                       const MenuItem *children, uint8_t count)
     {
         return MenuItem(label, MenuCommand(), MenuCommand(), MenuCommand(),
-                        children, count, NULL, NULL);
+                        children, count, NULL, NULL, NULL);
     }
 
     // Ok hands the four arrows to the picture, and Menu takes them back.
     static constexpr MenuItem pad(const char *label, const MenuPad &directions)
     {
         return MenuItem(label, MenuCommand(), MenuCommand(), MenuCommand(),
-                        NULL, 0, NULL, &directions);
+                        NULL, 0, NULL, &directions, NULL);
     }
 
     static constexpr MenuItem action(const char *label, char letter)
     {
         return MenuItem(label, MenuCommand::user(letter), MenuCommand(),
-                        MenuCommand(), NULL, 0, NULL, NULL);
+                        MenuCommand(), NULL, 0, NULL, NULL, NULL);
     }
 
     static constexpr MenuItem inputAction(const char *label,
                                           VideoSourceSelection::Id source)
     {
         return MenuItem(label, MenuCommand::input(source), MenuCommand(),
-                        MenuCommand(), NULL, 0, NULL, NULL);
+                        MenuCommand(), NULL, 0, NULL, NULL, NULL);
     }
 
     static constexpr MenuItem serialAction(const char *label, char letter)
     {
         return MenuItem(label, MenuCommand::serial(letter), MenuCommand(),
-                        MenuCommand(), NULL, 0, NULL, NULL);
+                        MenuCommand(), NULL, 0, NULL, NULL, NULL);
     }
 
     static constexpr MenuItem choice(const char *label, char letter,
                                      ValueText value)
     {
         return MenuItem(label, MenuCommand::user(letter), MenuCommand(),
-                        MenuCommand(), NULL, 0, value, NULL);
+                        MenuCommand(), NULL, 0, value, NULL, NULL);
     }
 
     static constexpr MenuItem serialChoice(const char *label, char letter,
                                            ValueText value)
     {
         return MenuItem(label, MenuCommand::serial(letter), MenuCommand(),
-                        MenuCommand(), NULL, 0, value, NULL);
+                        MenuCommand(), NULL, 0, value, NULL, NULL);
     }
 
     // Left and Right step the value. `ok` may be absent, and the three letters
@@ -79,7 +83,14 @@ public:
                                      MenuCommand next, MenuCommand previous,
                                      ValueText value)
     {
-        return MenuItem(label, ok, next, previous, NULL, 0, value, NULL);
+        return MenuItem(label, ok, next, previous, NULL, 0, value, NULL, NULL);
+    }
+
+    // The same row, live only while `available` says the engine can serve it.
+    constexpr MenuItem onlyWhen(Availability available) const
+    {
+        return MenuItem(label_, ok_, next_, previous_, children_, childCount_,
+                        valueText_, pad_, available);
     }
 
     const char *label() const;
@@ -102,14 +113,18 @@ public:
     bool hasValue() const;
     const char *valueText(const MenuContext &context) const;
 
+    // Whether the engine can serve the row now. An unavailable one is drawn
+    // greyed and every press on it is refused. docs/osd-menu.md
+    bool isAvailable(const MenuContext &context) const;
+
 private:
     constexpr MenuItem(const char *label, MenuCommand ok, MenuCommand next,
                        MenuCommand previous, const MenuItem *children,
                        uint8_t childCount, ValueText valueText,
-                       const MenuPad *pad)
+                       const MenuPad *pad, Availability available)
         : label_(label), ok_(ok), next_(next), previous_(previous),
           children_(children), childCount_(childCount), valueText_(valueText),
-          pad_(pad)
+          pad_(pad), available_(available)
     {
     }
 
@@ -121,6 +136,7 @@ private:
     uint8_t childCount_;
     ValueText valueText_;
     const MenuPad *pad_;
+    Availability available_;
 };
 
 }  // namespace Osd

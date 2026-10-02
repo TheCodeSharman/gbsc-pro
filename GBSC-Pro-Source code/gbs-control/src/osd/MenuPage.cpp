@@ -12,8 +12,10 @@ MenuPage::MenuPage()
     : title_(NULL), rows_(0), selected_(0), number_(0), previous_(false),
       next_(false), adjusting_(false)
 {
-    for (uint8_t i = 0; i < Rows; ++i)
+    for (uint8_t i = 0; i < Rows; ++i) {
         items_[i] = NULL;
+        available_[i] = true;
+    }
 }
 
 void MenuPage::nameLevel(const char *title) { title_ = title; }
@@ -37,6 +39,12 @@ void MenuPage::numberPage(uint8_t number, bool previous, bool next)
 
 void MenuPage::markAdjusting() { adjusting_ = true; }
 
+void MenuPage::markUnavailable(uint8_t row)
+{
+    if (row < Rows)
+        available_[row] = false;
+}
+
 const char *MenuPage::title() const { return title_; }
 
 uint8_t MenuPage::rows() const { return rows_; }
@@ -57,6 +65,11 @@ bool MenuPage::descendsAt(uint8_t row) const
 {
     return row < rows_ && items_[row]->leadsSomewhere()
            && !items_[row]->isPad();
+}
+
+bool MenuPage::availableAt(uint8_t row) const
+{
+    return row >= Rows || available_[row];
 }
 
 uint8_t MenuPage::selected() const { return selected_; }
