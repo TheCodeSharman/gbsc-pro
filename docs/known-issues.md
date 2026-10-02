@@ -1126,6 +1126,45 @@ scales with the divider cannot be told apart -- the same degeneracy that made
 `0.93 x PLLAD_MD` look right.
 `investigations/the-source-raster-measured-against-the-mode-file.md`.
 
+### A perfect signal can sit at `state: absent`, and freezing is what tells it from the HC32 fault
+
+**Measured on `vga` with the RISC PC at 320x256@50, separate sync.** The console
+reads `sampling: 1235 lines x 20.7 Hz -> line rate 0` against the 311 that mode
+gives, the recovery ladder cycles its whole length -- SOG separator, SOG floor,
+coast window, sync processor dynamic, capture release, clamp, mode detect, sync
+type reprobe, hsync overflow, sampling clock restart, full reset, input toggle --
+about every 28 s for ever, and `PAD_SYNC_OUT_ENZ` stays 1, so nothing is emitted
+and the television says no signal. `own V sync: yes` probes to separate H/V,
+`SP_SOG_MODE` 0, `SP_EXT_SYNC_SEL` 0, `SP_H_PULSE_IGNOR` 255. **That is the HC32
+signature below, and it is not the HC32.**
+
+**Freeze, and the registers read the source exactly.** `/freeze?on=1` stops the
+ladder, and `STATUS_SYNC_PROC_VTOTAL` then reads **311 in 14 of 14 samples, one
+distinct value**, with `STATUS_SYNC_PROC_HTOTAL` 2200 equal to `PLLAD_MD` 2200 on
+every one. A signal that counts the source exactly and holds the PLL against its
+divider is not half a signal, and no reading taken with the ladder running can
+show that -- every one of those is taken through a configuration a recovery step
+has just moved.
+
+**The measurement and the recovery are a closed loop.** A reading taken during a
+rewrite fails, the failure escalates the ladder, and the next reading is taken
+during the next rewrite. Freezing opens the loop. **The divider is not the
+discriminator**: 1400 is the reference divider a clean detection counts through
+and it gives 311, so a divider equal to the failing state's is not evidence of
+anything.
+
+**The recovery is remote and costs no bench trip**: `/freeze?on=1`,
+`/freeze?on=0`, then `/input?src=vga`. It acquires in 6 s -- `DETECT` reporting
+`VT=311 HT=1400`, `sampling: 311 lines x 50.08 Hz -> line rate 15625`,
+`sync pad: driven`, `frame time lock: running` -- and holds `acquired` with the
+card emitted. **A `ypbpr` -> `vga` round trip on its own does not do it**, which
+is what leaves the freeze as the acting part. The entry condition is not known,
+so the recovery stands on one occasion and is not proven reproducible.
+
+**So freeze before going to the bench.** The two faults differ in that one
+reading and in no other: frozen, the HC32 fault still has no horizontal edges,
+and this one counts the source perfectly.
+
 ### The HC32 stops following input selections, and only a true power cycle returns it
 
 **Measured on `vga` with the RISC PC at 800x600@60.** The sync processor reports
@@ -1166,6 +1205,11 @@ what it is measuring is half a signal.
 the same moment -- 525 lines at 31468 Hz, held over five samples -- is what
 separates a board fault from a signal-path one, and it costs one `/input`
 request. Reach for it before any firmware hypothesis.
+
+**It does not separate this from the livelock above, and `/freeze?on=1` does.**
+`ypbpr` acquires in both, so a board proven good still leaves the two open.
+Frozen, this fault has no horizontal edges and the livelock counts the source
+exactly -- so take that reading before concluding the HC32 needs power.
 
 
 ### About half of boots shake, and the rate was only part of it
