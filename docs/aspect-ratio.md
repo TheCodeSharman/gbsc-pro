@@ -167,6 +167,13 @@ malformed are different: a record that ends after the fourth number is an older
 one, and a record whose fifth field is rubbish is skipped like any other
 malformed line.
 
+**An absent field reads as `Fill`, which is not what a fresh source gets.**
+`FramingLine::read()` starts the shape at `Aspect::Fill` and leaves it there when
+the record ends after the fourth number, so a source carrying a framing written
+before shapes existed comes up unshaped, where the same source with no stored
+framing is defaulted from the raster it matched. Whether that is right is open:
+`known-issues.md`.
+
 ## Control
 
 `/uc?G` cycles 4:3, 16:9, 5:4 and round — `Aspect::next()`, which the menu row

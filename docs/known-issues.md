@@ -89,6 +89,28 @@ orders agree on all five usable modes. What the test reports is the window the
 engine solved.
 
 
+### A stored framing from before shapes existed comes up unshaped
+
+**The mechanism is one line and the decision is open.** `FramingLine::read()`
+starts the shape at `Aspect::Fill` and leaves it there when a record ends after
+the fourth number, which is every record written before the shape existed. So a
+source carrying one comes up `aspect: 0` where the same source with no record at
+all is defaulted from the raster it matched -- 13333 on the bench RISC PC -- and
+nothing on screen says why two sources with the same timings differ.
+
+**Both readings are defensible**, which is what makes it a decision rather than a
+defect. Replaying `Fill` reproduces the picture the record was tuned against,
+because filling is what the engine did when it was written. Defaulting from the
+raster makes a stored framing describe the window alone and leaves the shape to
+the source, so two units running one source agree whatever their file history.
+
+**What each costs**: defaulting from the raster re-shapes every stored framing on
+every unit at once, and the window stored beside it was tuned against the
+unshaped picture. Keeping `Fill` leaves a shape the remote can reach but nothing
+explains, `Aspect::next()` stepping an unrecognised shape onto the first of the
+ring rather than reporting it.
+
+
 ### The zoom-shear guard cannot be proven, and its self-proof is a coin flip
 
 **`test_zoom_shear.py::test_an_even_memory_window_is_what_the_score_can_see`
