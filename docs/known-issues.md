@@ -54,6 +54,39 @@ this as a strict xfail, so it flips the day it is fixed.
 `docs/investigations/the-ladder-never-restarts-the-adc-pll.md` is the teardown
 half, which is fixed and is not this.
 
+### A mode change between two rasters sharing a divider loses the lock for seven seconds
+
+`640x480@60 -> 800x600@60` on `vga`, pass-through: the sync processor counts
+**1970..1973 against a divider of 2038** and holds there, so
+`Adc::dividerLatched()` is false and `SourceMeasurement::takeDuty()` refuses
+every reading as `UNLOCKED`. The engine re-measures at 10 Hz for about seven
+seconds until the recovery ladder reaches `restart sampling clock` at pass 60,
+which clears it in one step: `htotal 2038`, `duty: 243`, solved.
+
+**The source is never in question.** `sampling:` reads a steady
+`627 lines x 60.31 Hz -> line rate 37879` on every one of those passes, and
+`STATUS_SYNC_PROC_VTOTAL` is 627 throughout. It is the horizontal count alone
+that is short, by about 3.3%.
+
+**The count is steady while it is wrong**, which is the trap: 1971 held across
+dozens of samples reads like a small latch error rather than an unlocked PLL,
+and the usual discriminator -- asking whether `SP_VTOTAL` is counting -- passes.
+
+**Both rasters ask for the same divider**, 2038, so nothing about the sampling
+clock has to change; what moves is the line rate under it, 31500 to 37879 Hz.
+The ladder's own fix is to restart the sampling clock, which suggests the PLL is
+simply never told to re-lock when the divider it would write is the one already
+in force.
+
+The other three transitions measured in the same run -- into 640x480@60, into
+800x600@56, and 800x600@56 back to @60 -- acquire on the first pass with
+`htotal 2038` and never enter the state.
+
+Measured identically on the low-active and high-active retime stops, 55 against
+54 `UNLOCKED` readings over the same four mode changes, so it is independent of
+`SyncProcessor::retimeStopFor()`.
+`investigations/the-retime-origin-follows-the-sync-polarity.md`.
+
 ### A declared shape is unreachable where the capture is wider than the narrowed room
 
 `VDS_?SCALE` cannot minify, so the produced picture is never narrower than the
