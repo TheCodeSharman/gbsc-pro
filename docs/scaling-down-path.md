@@ -139,6 +139,52 @@ right-hand edge — goes.
 than build on it**, and it only earns that if the mechanism is understood. A
 parity satisfied by construction that still shears has explained nothing.
 
+## What the bench says: the block breaks the picture at every ratio
+
+**Driven through the solve, every ratio tried breaks the frame.** `/inputscale`
+re-solves from one decision, so this is the whole solve rather than a hand-set
+subset of one. Measured off the USB capture, RiscPC on `vga` at 320x256@50:
+
+| ratio | increment | picture |
+|---|---|---|
+| 1.00 | 0 | clean |
+| 0.98 | 83 | broken |
+| 0.95 | 215 | broken |
+| 0.90 | 455 | broken |
+| 0.80 | 1023 | broken |
+| 0.75 | 1365 | broken |
+
+**The geometry is not what is wrong.** A full snapshot diff across unity and
+0.75 moves 17 fields and every one is the ratio applied: `IF_HSYNC_RST`
+1100 -> 825, `IF_HB_SP2`/`IF_HB_ST2` 236..926 -> 177..695, `IF_LINE_SP`
+1165 -> 890, `PB_CAP_OFFSET` 276 -> 207, `PB_FETCH_NUM` 173 -> 130, `VDS_HSCALE`
+563 -> 422, and the eight segments at 85 with the shared low nibble 5, which is
+0x555 = 1365. `IF_SEL_HSCALE` is already 1, so the scaling-down data path is
+selected, and `IF_HS_DEC_FACTOR` 0 is right for a ratio above a half.
+
+**It is reversible, and the control is clean.** Unity taken either side of a run
+restores the picture exactly, the emitted extents and the frame's detail
+returning to the same numbers.
+
+**It is not a soft picture.** The upper part of the frame is roughly the card and
+the lower part is noise, with a green cast over the middle. On a PROGRESSIVE
+source, 800x600@60, the card is instead duplicated across the line with black
+between the copies -- **so the line doubler is not the cause, both scan types
+break**. On that source `VDS_HSCALE` also stays where it was, at 803, where the
+doubled source's followed the ratio, which is a second thing to account for.
+
+**The picture is the instrument, and automated frame metrics mis-read this three
+ways.** A mean column-to-column difference reports a destroyed frame as 40% less
+detail. A count of dark gaps inside the lit span calls every ratio intact,
+because the noise fills the columns. A per-row noise threshold fires on the
+card's own frequency wedge in a frame that is clean. Judge by eye, or build a
+metric against a frame already known to be broken.
+
+**So the solve must not choose a ratio yet**, and the question below about what
+the DDA does to the count is answered in the only sense that matters: whatever
+it does to the count, the frame does not survive it.
+
+
 ## What has to be established first
 
 - **What the DDA actually does to the count.** Write a known ratio against a
