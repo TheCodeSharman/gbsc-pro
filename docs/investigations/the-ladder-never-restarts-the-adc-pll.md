@@ -67,11 +67,43 @@ pokes registers past it indefinitely.
 
 ## What is in the firmware now
 
-Two rungs, both before `FullReset` because that one is measured not to help:
+**THE ENGINE BUILDS THE CHIP UP ITSELF, AND THE RUNGS ARE NO LONGER WHAT
+RECOVERS IT.** Two owners carry it:
+
+| owner | what it does |
+|---|---|
+| `Adc::applySampleRate()` | ends by restarting the PLL rather than latching. A sampling clock that is applied is one that runs |
+| `VideoPath::prepareToMeasure()` | asks `BringUp::armed()` and, when it is, runs `BringUp::init()` and installs the reference sampling clock |
+
+The order inside `prepareToMeasure()` is load-bearing: the build-up precedes
+`solveLineDoubling()`, because the bring-up's input formatter writes the scan,
+and because the doubling is sized against the divider in force -- which the
+reference clock is what puts there. `Chip::init()` releases the five `s0_46`
+block resets, so the black output is repaired by the same call.
+
+Measured across `/input?src=ypbpr`, which is the selection whose first detection
+finds nothing:
+
+| | before | after |
+|---|---|---|
+| 0.8 - 16.6 s | `VCORST=1 PDZ=0 LEN=0`, `HTOTAL` 0, `VTOTAL` 0 | -- |
+| 1.6 s | -- | `VCORST=0 PDZ=1 LEN=1`, `HTOTAL` 1400 = `PLLAD_MD`, all five blocks released |
+
+Acquisition on `vga`, four legs of a round trip: 5.2 s and 20.5 s before, 2.9 s
+and 6.2 s after.
+
+**What the build-up does NOT fix is `ypbpr`**, which stays at ~29 s. The ADC PLL
+locks at the reference divider inside two seconds and
+`STATUS_SYNC_PROC_VTOTAL` then sits at 97 until the ladder's sync-on-green rungs
+run. That is a different fault and `docs/known-issues.md` carries it.
+
+The rungs stay, as the recovery they were written to be rather than as the
+normal path. Two, both before `FullReset` because that one is measured not to
+help:
 
 | pass | rung | what it does |
 |---|---|---|
-| 60 | `RestartSamplingClock` | puts the divider in force back on the chip and restarts the PLL under it, enable included |
+| 60 | `RestartSamplingClock` | puts the divider in force back on the chip, which restarts the PLL under it, enable included |
 | 70 | `RemeasureSource` | arms `inputTimingsChanged()`, so a spent arm cannot deadlock the engine |
 
 `Adc::restartPll()` is the primitive: reset the VCO, reload the group, restart

@@ -10,6 +10,50 @@ regardless of which step is in flight.
 
 ## Reaches the picture
 
+### Sync on green does not follow the source until the ladder's SOG rungs run
+
+**Fifteen seconds of a `ypbpr` acquisition are spent with the ADC PLL already
+locked and the sync processor counting 97 lines.** The teardown repair means the
+chip is measurable 1.6 s after the selection -- `STATUS_SYNC_PROC_HTOTAL` equals
+`PLLAD_MD` at the reference divider of 1400 and every block reset is released --
+and `STATUS_SYNC_PROC_VTOTAL` still reads 97, which is the value it holds when
+it is not following the source at all.
+
+Measured on the bench, Wii in 576i on `ypbpr`, with the repair in:
+
+| t | console |
+|---|---|
+| 0.73 s | `DETECT: 22ms, syncFound 2` |
+| 9.58 s | `recovery: lift SOG floor at pass 2` |
+| 15.11 s | `recovery: coast window at pass 8` |
+| 15.24 s | `recovery: sync processor dynamic at pass 27` |
+| 15.64 s | the first `sampling:` line, and it is garbage -- `300 lines x 88.27 Hz` |
+| 19.93 s | `recovery: restart sampling clock at pass 60` |
+| ~29 s | acquired |
+
+**Nothing between 0.73 s and 9.58 s prints**, because the count is not steady
+and the engine pays for no rate measurement. Only two passes complete in those
+nine seconds.
+
+**The rungs that help are all gated behind `FirstAcquisitionGraceMs`**, which is
+15 s, so the SOG floor and the coast window -- the two settings that decide
+whether the sync processor follows a sync-on-green source -- cannot be reached
+any earlier however wrong they are. The engine is waiting for a recovery to do
+what the selection should have configured.
+
+**The second half is the held rate.** The garbage readings taken while the
+source cannot be followed are accepted, a divider is installed from one of them,
+and `rateFollowsCount()` then rejects every correct reading against the bad held
+one -- `sampling: 319 lines x 50.00 Hz -> line rate 0`, repeatedly, with
+`duty: 241 pulse / 2200 divider, htotal 3274, negative, UNLOCKED` beside it. The
+divider is another source's and the PLL free-runs under it until
+`HeldRateRejectionLimit` lets go.
+
+`tools/gbsc-pro-hwtest/test_acquisition_time.py` carries the wall-clock gate for
+this as a strict xfail, so it flips the day it is fixed.
+`docs/investigations/the-ladder-never-restarts-the-adc-pll.md` is the teardown
+half, which is fixed and is not this.
+
 ### A declared shape is unreachable where the capture is wider than the narrowed room
 
 `VDS_?SCALE` cannot minify, so the produced picture is never narrower than the
@@ -3359,6 +3403,34 @@ entries resolve the raster match in time is open.
 
 ## Costs time rather than correctness
 
+### An input is identified by a hardcoded line rate, so the bench mode skips three tests
+
+`gbs_unit.SOURCES` pins one line rate per input -- `vga` 37879, `ypbpr` 31468 --
+and `acquired_rate()` returns None for anything more than `RATE_TOLERANCE_HZ`
+from it. Those are 800x600@60 on the RiscPC and 480p on the Wii, neither of
+which is what the bench runs: the everyday source is 320x256@50, which measures
+**15625**, and the Wii is currently in 576i, which measures **15549**.
+
+Two consequences, and the second is the expensive one.
+
+**`wait_for_acquisition()` can never return on the bench source**, so the
+`on_vga` fixture takes its `pytest.skip("vga does not acquire: check the source
+is on")` branch on a unit with a perfect picture. Three test modules depend on
+it -- `test_input_selection_prepares.py`,
+`test_input_selection_recovers.py`, `test_selection_measures_one_line.py` -- and
+a skip reads as green.
+
+**And the two sources cannot be told apart at all** while both run at 50 Hz and
+~15.6 kHz: 76 Hz separates them, well inside the 900 Hz tolerance, so no rate
+test can say which input is acquired. A stalled selection keeps the previous
+source's solve and still reports `state: acquired`, so the rate is the only
+discriminator there is.
+
+The workaround in `test_acquisition_time.py` is to drive the RiscPC to
+800x600@60 for the run -- making the `SOURCES` entry right by construction
+rather than by hope -- and to LEARN the Wii's rate, whose output mode is a bench
+setting with no readback. The fixture has not been changed; doing it properly
+means the expected rate being measured rather than declared.
 ### `test_reset_puts_the_framing_and_the_shape_back` is intermittent in a suite run
 
 It passes alone every time and fails perhaps one battery run in three, always on
