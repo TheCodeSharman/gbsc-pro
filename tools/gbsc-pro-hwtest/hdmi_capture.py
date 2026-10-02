@@ -79,15 +79,38 @@ def luma(rgb):
     return rgb.astype(np.float32) @ np.array([0.299, 0.587, 0.114], np.float32)
 
 
+# A line or column is content when this fraction of it clears `BLACK`. One hot
+# pixel is sensor noise; a tenth of the frame is picture.
+LIT_FRACTION = 0.01
+
+# And the picture starts where that SUSTAINS for this many lines or columns. The
+# dongle puts a narrow bright column at the very edge of some frames, so taking
+# the first lit one reported a 313 px bar as a 3 px one -- a break measured as a
+# fill, which is the direction that costs a diagnosis.
+RUN = 8
+
+
+def _edge(lit, run=RUN):
+    """First index where `run` consecutive entries are lit, else len(lit)."""
+    if run <= 1:
+        return int(np.argmax(lit)) if lit.any() else len(lit)
+    held = np.convolve(lit.astype(np.int32), np.ones(run, np.int32), "valid")
+    found = np.flatnonzero(held == run)
+    return int(found[0]) if found.size else len(lit)
+
+
 def borders(frame, threshold=BLACK):
     """Rows and columns at each edge carrying nothing above `threshold`."""
     height, width = frame.shape
-    lit_rows = (frame > threshold).any(axis=1)
-    lit_cols = (frame > threshold).any(axis=0)
-    if not lit_rows.any():
+    above = frame > threshold
+    lit_rows = above.mean(axis=1) > LIT_FRACTION
+    lit_cols = above.mean(axis=0) > LIT_FRACTION
+    if not lit_rows.any() or not lit_cols.any():
         return dict(left=width, right=0, top=height, bottom=0, width=0, height=0)
-    top, bottom = int(np.argmax(lit_rows)), int(np.argmax(lit_rows[::-1]))
-    left, right = int(np.argmax(lit_cols)), int(np.argmax(lit_cols[::-1]))
+    top, bottom = _edge(lit_rows), _edge(lit_rows[::-1])
+    left, right = _edge(lit_cols), _edge(lit_cols[::-1])
+    if left + right >= width or top + bottom >= height:
+        return dict(left=width, right=0, top=height, bottom=0, width=0, height=0)
     return dict(left=left, right=right, top=top, bottom=bottom,
                 width=width - left - right, height=height - top - bottom)
 
