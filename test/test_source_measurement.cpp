@@ -480,12 +480,12 @@ TEST_CASE("the retime window's stop follows the source's sync width")
     //   640x480@60         1444       169                       1338.5
     //
     // docs/investigations/the-retime-stop-is-the-counters-origin.md
-    CHECK(SyncProcessor::retimeStopFor(1440, HsyncPulse(141.0f / 1440.0f), 2, false) == 1362);
-    CHECK(SyncProcessor::retimeStopFor(1444, HsyncPulse(169.0f / 1444.0f), 2, false) == 1338);
+    CHECK(SyncProcessor::retimeStopFor(1440, HsyncPulse(141.0f / 1440.0f), 2) == 1362);
+    CHECK(SyncProcessor::retimeStopFor(1444, HsyncPulse(169.0f / 1444.0f), 2) == 1338);
 
     SUBCASE("and it follows the divider at one sync width") {
-        CHECK(SyncProcessor::retimeStopFor(1200, HsyncPulse(118.0f / 1200.0f), 2, false) == 1145);
-        CHECK(SyncProcessor::retimeStopFor(960, HsyncPulse(94.0f / 960.0f), 2, false) == 929);
+        CHECK(SyncProcessor::retimeStopFor(1200, HsyncPulse(118.0f / 1200.0f), 2) == 1145);
+        CHECK(SyncProcessor::retimeStopFor(960, HsyncPulse(94.0f / 960.0f), 2) == 929);
     }
 
     SUBCASE("oversampling ratio one puts the origin 16 samples earlier") {
@@ -497,14 +497,14 @@ TEST_CASE("the retime window's stop follows the source's sync width")
         // modes and 79..92 MHz mean 16.83 against 0.90 for four ratio-two ones.
         // docs/investigations/the-capture-origin-varies-by-mode-at-one-line-rate.md
         const HsyncPulse pulse(141.0f / 1440.0f);
-        CHECK(SyncProcessor::retimeStopFor(1440, pulse, 1, false)
-              == SyncProcessor::retimeStopFor(1440, pulse, 2, false) + 16);
+        CHECK(SyncProcessor::retimeStopFor(1440, pulse, 1)
+              == SyncProcessor::retimeStopFor(1440, pulse, 2) + 16);
 
         // Four times is not a second step of the same kind: 320x480@60 held at
         // PLLAD_MD 800 runs ratio four and sits 0.4 samples off the ratio-two
         // family's own line, not 8.
-        CHECK(SyncProcessor::retimeStopFor(1440, pulse, 4, false)
-              == SyncProcessor::retimeStopFor(1440, pulse, 2, false));
+        CHECK(SyncProcessor::retimeStopFor(1440, pulse, 4)
+              == SyncProcessor::retimeStopFor(1440, pulse, 2));
     }
 
     SUBCASE("a pulse narrower than the origin has no answer") {
@@ -512,7 +512,7 @@ TEST_CASE("the retime window's stop follows the source's sync width")
         // sits behind the stop.
         // Carried through the subtraction it lands beyond the end of the line,
         // where the register does nothing at all, so there is no stop to write.
-        CHECK(SyncProcessor::retimeStopFor(1440, HsyncPulse(0.041f), 2, false) == 0);
+        CHECK(SyncProcessor::retimeStopFor(1440, HsyncPulse(0.041f), 2) == 0);
     }
 
     SUBCASE("a reading that is not a pulse has no answer") {
@@ -520,50 +520,7 @@ TEST_CASE("the retime window's stop follows the source's sync width")
         // from the source's own sync places every window the solve makes
         // against an origin nothing observed, so nothing is written and the
         // stop in force stays where the last measurement put it.
-        CHECK(SyncProcessor::retimeStopFor(1200, HsyncPulse(0.0f), 2, false) == 0);
-    }
-}
-
-TEST_CASE("the pass-through route's stop does not follow a high-active sync width")
-{
-    // Pass-through places the picture through the HD channel, whose horizontal
-    // does not follow the measured pulse, so the stop that frames it is
-    // pulse-independent. Measured at divider 2038, walking SP_RT_HS_SP until
-    // the card's one-pixel green border framed at both ends of the line:
-    //
-    //   800x600@56   pulse 139   stop 1991
-    //   800x600@60   pulse 243   stop 1981
-    //
-    // The pulses differ by 104 samples and the stops by 10, where taking the
-    // pulse off predicts 104 -- and one stop, 1986, frames both.
-    // docs/investigations/the-pass-through-left-bar-is-not-the-retime-origin.md
-    const HsyncPulse narrow(139.0f / 2038.0f, true);
-    const HsyncPulse wide(243.0f / 2038.0f, true);
-
-    CHECK(SyncProcessor::retimeStopFor(2038, narrow, 2, true)
-          == SyncProcessor::retimeStopFor(2038, wide, 2, true));
-
-    SUBCASE("sitting a fixed distance before the line's end") {
-        CHECK(SyncProcessor::retimeStopFor(2038, wide, 2, true) == 2038 - 52);
-    }
-}
-
-TEST_CASE("the scaling route's stop follows the sync width at either polarity")
-{
-    // On the scaling path the stop is the capture counter's origin and the
-    // engine places the capture window in it from the published raster, so the
-    // low-active arithmetic is right for a high-active source too. Measured at
-    // 800x600@60 into 1080p: the card's green border is flush on all four sides
-    // at 1330 and off the left and the bottom at 1386.
-    const HsyncPulse high(171.0f / 1438.0f, true);
-    const HsyncPulse low(171.0f / 1438.0f, false);
-
-    CHECK(SyncProcessor::retimeStopFor(1438, high, 2, false)
-          == SyncProcessor::retimeStopFor(1438, low, 2, false));
-
-    SUBCASE("which is the divider less the pulse, plus the origin") {
-        CHECK(SyncProcessor::retimeStopFor(1438, high, 2, false)
-              == 1438 - 171 + 63);
+        CHECK(SyncProcessor::retimeStopFor(1200, HsyncPulse(0.0f), 2) == 0);
     }
 }
 

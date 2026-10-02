@@ -15,21 +15,15 @@ namespace Tv5725 {
 const uint16_t SyncProcessor::RetimeOriginSamples;
 const uint16_t SyncProcessor::UndecimatedOriginSamples;
 const uint16_t SyncProcessor::InvertedPulseWidthSamples;
-const uint16_t SyncProcessor::HighActiveStopSamples;
 
 uint16_t SyncProcessor::retimeStopFor(uint16_t divider, const HsyncPulse &pulse,
-                                     uint8_t oversample, bool passThrough)
+                                     uint8_t oversample)
 {
     if (!pulse.isPulse())
         return 0;
 
-    const uint16_t undecimated =
-        oversample <= 1 ? UndecimatedOriginSamples : 0;
-
-    if (passThrough && pulse.positive())
-        return (uint16_t)(divider - HighActiveStopSamples + undecimated);
-
-    const uint16_t origin = RetimeOriginSamples + undecimated;
+    const uint16_t origin =
+        RetimeOriginSamples + (oversample <= 1 ? UndecimatedOriginSamples : 0);
     const uint32_t sync = (uint32_t)lrintf((float)divider * pulse.syncDuty());
     if (sync < origin)
         return 0;

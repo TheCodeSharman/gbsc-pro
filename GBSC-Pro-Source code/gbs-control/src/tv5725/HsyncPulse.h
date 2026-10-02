@@ -22,13 +22,9 @@ namespace Tv5725 {
 class HsyncPulse {
 public:
     HsyncPulse();
-    explicit HsyncPulse(float syncDuty, bool positive = false);
+    explicit HsyncPulse(float syncDuty);
 
     float syncDuty() const;
-
-    // Which way the source drives the pulse. A reading whose sense was not
-    // measured is treated as low-active.
-    bool positive() const;
 
     // Whether this duty is a sync pulse at all.
     //
@@ -58,7 +54,6 @@ public:
 
 private:
     float syncDuty_;
-    bool positive_;
 };
 
 }  // namespace Tv5725
