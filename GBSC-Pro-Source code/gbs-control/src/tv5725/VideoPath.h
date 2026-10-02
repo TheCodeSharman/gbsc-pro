@@ -16,6 +16,7 @@
 #include "OutputTiming.h"
 #include "PanAndZoom.h"
 #include "Aspect.h"
+#include "InputScale.h"
 #include "ColourBalance.h"
 #include "OutputWindow.h"
 #include "FramingTable.h"
@@ -130,6 +131,19 @@ public:
     // framing back.
     void forceFullFraming(bool on);
     bool fullFramingForced() const;
+
+    // How far the input formatter's scaling-down block compresses the line,
+    // which is the only minification the part has -- VDS_?SCALE divides 1024
+    // and tops out at 1023, so the display scaler never produces a picture
+    // narrower than its capture. HELD, so the next scan carries it and every
+    // window placed in IF units follows. docs/scaling-down-path.md
+    //
+    // Nothing chooses it yet: the capture window, both scales and both output
+    // windows have to come from ONE decision with it, and what the block does
+    // to the count is measured rather than derived.
+    // docs/investigations/the-input-formatter-can-scale-down.md
+    bool setInputScale(InputScale wanted);
+    InputScale inputScale() const;
 
     // Supplies the probe. Without one the engine leaves the sync path alone.
     //
@@ -500,6 +514,7 @@ private:
     InputFormatter &inputFormatter_;
     PanAndZoom framing_;
     Aspect aspect_;
+    InputScale inputScale_;
     ColourBalance colour_;
     // The capturable region the last solve ran against, per axis: the
     // denominator a press converts its units into a proportion with.

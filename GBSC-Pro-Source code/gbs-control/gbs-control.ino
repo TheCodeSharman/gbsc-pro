@@ -203,6 +203,11 @@ volatile uint8_t pendingSampleClockOversample = 0;
 volatile bool pendingDividerHold = false;
 volatile uint16_t pendingHeldDivider = 0;
 
+// What /inputscale queued. The scaling-down block is ahead of the capture
+// window, so a ratio re-solves every window placed in IF units.
+volatile bool pendingInputScale = false;
+volatile uint16_t pendingInputScaleRate = 0;
+
 // What /framing/full queued, for the same reason.
 volatile bool pendingFullFramingChange = false;
 volatile bool pendingFullFraming = false;
@@ -5450,6 +5455,12 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
             pendingDividerHold = false;
             holdSampleClock(pendingHeldDivider);
         }
+        if (pendingInputScale) {
+            pendingInputScale = false;
+            const Tv5725::InputScale wanted(pendingInputScaleRate);
+            debugPrintf("input scale: %u %s\n", (unsigned)wanted.increment(),
+                        geometry.setInputScale(wanted) ? "applied" : "refused");
+        }
         if (pendingFullFramingChange) {
             pendingFullFramingChange = false;
             geometry.forceFullFraming(pendingFullFraming);
@@ -6465,6 +6476,36 @@ void startWebserver()
         pendingSampleClockOversample = (uint8_t)number("os");
         pendingSampleClock = true;
         request->send(200, "application/json", "{\"queued\":\"sampleclock\"}");
+    });
+
+    // The input formatter's scaling-down block, which is the only minification
+    // the part has. `rate` is the twelve-bit DDA increment the datasheet's own
+    // formula states -- 0 is unity, 1365 is three quarters, 4095 is a half --
+    // and `wanted`/`have` ask for a ratio instead.
+    //
+    // THE SOLVE DOES NOT CHOOSE IT YET. The capture window, both scales and
+    // both output windows have to come from one decision with the ratio, and
+    // what the block does to the count is measured rather than derived, so this
+    // is how the bench asks. docs/scaling-down-path.md
+    server.on("/inputscale", HTTP_GET, [](AsyncWebServerRequest *request) {
+        auto number = [request](const char *name) -> int {
+            return request->hasParam(name)
+                ? request->getParam(name)->value().toInt() : 0;
+        };
+        char body[96];
+        if (request->hasParam("wanted") || request->hasParam("have")) {
+            pendingInputScaleRate =
+                Tv5725::InputScale::forRatio((uint16_t)number("wanted"),
+                                             (uint16_t)number("have")).increment();
+        } else {
+            pendingInputScaleRate = (uint16_t)number("rate");
+        }
+        pendingInputScale = true;
+        snprintf_P(body, sizeof(body),
+                   PSTR("{\"queued\":\"inputscale\",\"rate\":%u,\"held\":%u}"),
+                   (unsigned)pendingInputScaleRate,
+                   (unsigned)geometry.inputScale().increment());
+        request->send(200, "application/json", body);
     });
 #endif
 

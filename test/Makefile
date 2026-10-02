@@ -50,7 +50,7 @@ SAMPLING_SRC = src/tv5725/SourceMeasurement.cpp src/tv5725/HsyncPulse.cpp \
 	src/tv5725/TestBusRateMeasurement.cpp src/tv5725/SyncMeasurement.cpp \
 	src/tv5725/Interrupts.cpp src/tv5725/TestBus.cpp src/tv5725/SamplingClock.cpp \
 	src/tv5725/SteadyRun.cpp src/tv5725/Adc.cpp \
-	src/tv5725/InputFormatter.cpp src/tv5725/SyncProcessor.cpp \
+	src/tv5725/InputFormatter.cpp src/tv5725/InputScale.cpp src/tv5725/SyncProcessor.cpp \
 	src/tv5725/VideoSourceLine.cpp \
 	src/tv5725/ModeDetect.cpp
 
@@ -213,6 +213,18 @@ osd-screens:
 	  src/osd/MenuPage.cpp src/osd/MenuItem.cpp src/osd/MenuRenderer.cpp \
 	  src/osd/MenuPad.cpp src/osd/MenuCommand.cpp
 	@"$(OUT)/test_osd_screens"
+
+## input-scale: host unit tests for Tv5725::InputScale
+#
+# The input formatter's scaling-down block, which is the only minification the
+# part has. Pure arithmetic over the datasheet's own rate formula, so it reaches
+# no bus.
+input-scale:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
+	  -o "$(OUT)/test_input_scale" \
+	  "$(HERE)/test_input_scale.cpp" src/tv5725/InputScale.cpp
+	@"$(OUT)/test_input_scale"
 
 ## menu: host unit tests for the described OSD menu
 #
@@ -633,6 +645,7 @@ input-formatter:
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_input_formatter" \
 	  "$(HERE)/test_input_formatter.cpp" src/tv5725/InputFormatter.cpp \
+	  src/tv5725/InputScale.cpp \
 	  src/tv5725/Axis.cpp src/tv5725/Scale.cpp src/tv5725/Aspect.cpp \
 	  src/tv5725/OutputMapping.cpp \
 	  src/tv5725/RasterFit.cpp src/tv5725/PictureOrigin.cpp \
@@ -763,7 +776,7 @@ colour-space:
 	  -o "$(OUT)/test_colour_space" \
 	  "$(HERE)/test_colour_space.cpp" src/tv5725/ColourSpace.cpp \
 	  src/tv5725/ColourBalance.cpp \
-	  src/tv5725/Adc.cpp src/tv5725/InputFormatter.cpp src/tv5725/VideoProcessor.cpp \
+	  src/tv5725/Adc.cpp src/tv5725/InputFormatter.cpp src/tv5725/InputScale.cpp src/tv5725/VideoProcessor.cpp \
 	  src/tv5725/VideoSourceLine.cpp src/tv5725/HsyncPulse.cpp
 	@"$(OUT)/test_colour_space"
 
@@ -925,7 +938,7 @@ write-trace:
 	@"$(OUT)/test_write_trace"
 
 ## test: every host unit test
-test: ir-receiver osd-row osd-screens menu aspect video-signal test-bus test-bus-rate-measurement steady-run source-absence detection-entry sync-measurement colour-space colour-balance framing-save-timer sync-on-green axis source-key source-timing framing-table framing-text slot-table slot-text scale sync-processor video-processor video-source-line capture-window output-window video-path source-measurement memory-window display-clock frame-sync frame-time-lock output-mode output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc sampling-log video-route rgbhv-output write-trace
+test: input-scale ir-receiver osd-row osd-screens menu aspect video-signal test-bus test-bus-rate-measurement steady-run source-absence detection-entry sync-measurement colour-space colour-balance framing-save-timer sync-on-green axis source-key source-timing framing-table framing-text slot-table slot-text scale sync-processor video-processor video-source-line capture-window output-window video-path source-measurement memory-window display-clock frame-sync frame-time-lock output-mode output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc sampling-log video-route rgbhv-output write-trace
 all: test
 
 ## clean: remove the compiled test binaries

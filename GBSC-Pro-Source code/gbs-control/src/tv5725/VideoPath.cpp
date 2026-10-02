@@ -808,7 +808,7 @@ bool VideoPath::applyScan(uint16_t divider, bool doubled)
     // truth.
     // ../../../../docs/investigations/the-field-rate-reads-exactly-double-after-a-sync-reset.md
     const bool component = Adc::inputIsComponent();
-    if (!inputFormatter_.applyScan(divider, doubled, component))
+    if (!inputFormatter_.applyScan(divider, doubled, component, inputScale_))
         return false;
 
     VideoProcessor::applyLineDoubling(doubled, component);
@@ -1223,6 +1223,33 @@ bool VideoPath::step(const PanAndZoom &wanted)
 }
 
 Aspect VideoPath::aspect() const { return aspect_; }
+
+InputScale VideoPath::inputScale() const { return inputScale_; }
+
+// Not through step(): the block is ahead of the capture window, so what it
+// moves is how much source an IF unit holds rather than which units the window
+// spans -- the registers the press comparison watches do not move.
+bool VideoPath::setInputScale(InputScale wanted)
+{
+    if (wanted == inputScale_)
+        return false;
+
+    const InputScale before = inputScale_;
+    inputScale_ = wanted;
+    if (!applyScan(Adc::dividerInForce(), lineDoubled_) || !solveWindows()) {
+        inputScale_ = before;
+        applyScan(Adc::dividerInForce(), lineDoubled_);
+        solveWindows();
+        return false;
+    }
+
+    char line[64];
+    snprintf(line, sizeof(line), "input scale: %u, line %u units",
+             (unsigned)inputScale_.increment(),
+             (unsigned)inputFormatter_.lineUnits());
+    tv5725Log(line);
+    return true;
+}
 
 ColourBalance &VideoPath::colour() { return colour_; }
 

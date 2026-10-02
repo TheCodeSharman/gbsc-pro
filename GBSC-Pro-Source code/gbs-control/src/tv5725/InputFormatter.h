@@ -1,6 +1,7 @@
 #ifndef TV5725_INPUT_FORMATTER_H
 #define TV5725_INPUT_FORMATTER_H
 
+#include "InputScale.h"
 #include "Tv5725.h"
 #include "VideoSourceLine.h"
 
@@ -316,7 +317,13 @@ public:
     // False where the line does not fit the counter, having written nothing --
     // so the divider it was derived for must not be installed either.
     // ../../../docs/investigations/the-field-rate-reads-exactly-double-after-a-sync-reset.md
-    bool applyScan(uint16_t divider, bool lineDoubled, bool component);
+    //
+    // `scale` is the scaling-down block ahead of the doubler, which compresses
+    // the source into fewer IF units and so belongs to the same fact: it is
+    // written here, and the counter it leaves is what every window placed in
+    // those units is measured in. docs/scaling-down-path.md
+    bool applyScan(uint16_t divider, bool lineDoubled, bool component,
+                   InputScale scale = InputScale());
 
     // Below this many total source lines the capture is line-doubled, so the
     // rest of the chain has enough lines to reach the output resolution.
@@ -373,15 +380,21 @@ public:
     // it** -- applyScan() applies it once and holds the result, because between a
     // divider write and PLLAD_LAT the ADC runs one value while the register
     // reports another.
-    static uint16_t lineCounterFor(uint16_t divider, bool lineDoubled);
+    static uint16_t lineCounterFor(uint16_t divider, bool lineDoubled,
+                                   InputScale scale = InputScale());
 
     // Which scan the block is in, as the last applyScan() left it. What an IF
     // unit is, so the capture window's counters come off it.
     bool scanIsDoubled() const;
 
+    // How far the scaling-down block is compressing the line, as the last
+    // applyScan() left it. The other half of what an IF unit is.
+    InputScale scanScale() const;
+
 private:
     uint16_t lineUnits_;
     bool doubled_;
+    InputScale scale_;
 
 public:
 

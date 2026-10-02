@@ -12,9 +12,10 @@ const uint16_t InputFormatter::LineCounterMax;
 const uint16_t InputFormatter::DoubleBelowLines;
 const uint16_t InputFormatter::DoubledTailBlanking;
 
-uint16_t InputFormatter::lineCounterFor(uint16_t divider, bool lineDoubled)
+uint16_t InputFormatter::lineCounterFor(uint16_t divider, bool lineDoubled,
+                                       InputScale scale)
 {
-    return lineDoubled ? (uint16_t)(divider / 2) : divider;
+    return scale.unitsFor(lineDoubled ? (uint16_t)(divider / 2) : divider);
 }
 
 VideoSourceLine InputFormatter::capturableLine(const HsyncPulse &pulse,
@@ -152,6 +153,8 @@ uint16_t InputFormatter::lineUnits() const { return lineUnits_; }
 
 bool InputFormatter::scanIsDoubled() const { return doubled_; }
 
+InputScale InputFormatter::scanScale() const { return scale_; }
+
 // Inside every frame any source presents, so it cannot be the window that
 // stops the block measuring.
 void InputFormatter::writeReferenceVerticalBlank()
@@ -177,9 +180,10 @@ void InputFormatter::writeLineCounterStart(uint16_t pixels)
 // does not fit arrives as a different one and reads back as one. Nothing is
 // written then, which keeps the five describing the line they already did.
 // ../../../docs/investigations/the-field-rate-reads-exactly-double-after-a-sync-reset.md
-bool InputFormatter::applyScan(uint16_t divider, bool lineDoubled, bool component)
+bool InputFormatter::applyScan(uint16_t divider, bool lineDoubled,
+                               bool component, InputScale scale)
 {
-    const uint16_t counter = lineCounterFor(divider, lineDoubled);
+    const uint16_t counter = lineCounterFor(divider, lineDoubled, scale);
     if (counter > LineCounterMax) {
         char line[72];
         snprintf(line, sizeof(line),
@@ -203,10 +207,25 @@ bool InputFormatter::applyScan(uint16_t divider, bool lineDoubled, bool componen
     IF_HSYNC_RST::write(counter);
     IF_HS_DEC_FACTOR::write(lineDoubled ? 1 : 0);
 
+    // One increment on all eight segments is the LINEAR case. The block is
+    // non-linear by design -- an eighth of the line each, for an anamorphic
+    // stretch -- and how it divides the line is stated nowhere and has not been
+    // measured, so the engine asks for nothing that depends on it.
+    IF_HS_RATE_SEG0::write(scale.segment());
+    IF_HS_RATE_SEG1::write(scale.segment());
+    IF_HS_RATE_SEG2::write(scale.segment());
+    IF_HS_RATE_SEG3::write(scale.segment());
+    IF_HS_RATE_SEG4::write(scale.segment());
+    IF_HS_RATE_SEG5::write(scale.segment());
+    IF_HS_RATE_SEG6::write(scale.segment());
+    IF_HS_RATE_SEG7::write(scale.segment());
+    IF_HS_RATE_LOW::write(scale.low());
+
     // The counter wraps one past its last value, so the span is the register
     // plus one.
     lineUnits_ = (uint16_t)(counter + 1);
     doubled_ = lineDoubled;
+    scale_ = scale;
     return true;
 }
 

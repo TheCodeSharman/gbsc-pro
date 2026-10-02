@@ -374,8 +374,11 @@ static void checkBenchGeometry()
     // PLLAD_ICP, which goes in with the group the latch loads. s0_4f is
     // OUT_SYNC_CNTRL and s0_44 the DAC power, asserted whenever the output is
     // shown because the power path takes both down and neither has an owner
-    // that would put them back.
-    CHECK(registersWritten() == 84);
+    // that would put them back. s1_03..s1_0a are the scaling-down block's eight
+    // segment increments, written with the scan because what an IF unit IS is
+    // one fact with how the line is counted -- idle at a unity ratio, and
+    // written anyway rather than cached against what was last sent.
+    CHECK(registersWritten() == 92);
     CHECK(Wire.touched[0][0x49]);   // PAD_SYNC_OUT_ENZ
 
     // Three of those are the measurement rather than the geometry: timing the

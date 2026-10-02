@@ -14,6 +14,7 @@ FakeTwoWire Wire;
 
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/OutputWindow.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/InputFormatter.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/InputScale.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Axis.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/VideoSourceLine.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Adc.h"
@@ -68,6 +69,85 @@ TEST_CASE("the bring-up line counter fits the register it is written to")
         CHECK(counter == (doubled ? (uint16_t)(divider / 2) : divider));
         CHECK(counter != 0x3FF);
     }
+}
+
+// --- The scaling-down block
+//
+// It sits ahead of the line doubler and is the ONLY minification the part has:
+// VDS_?SCALE divides 1024 and tops out at 1023. The block compresses the source
+// into fewer IF units, so what an IF unit IS changes with it -- exactly as it
+// changes with the doubler -- and the counter and every window placed in those
+// units follow. docs/scaling-down-path.md
+
+TEST_CASE("the line counter is in the units the scaling-down block leaves")
+{
+    // Three quarters of the line, which is the increment the datasheet's own
+    // formula gives as 1365.
+    const Tv5725::InputScale threeQuarters = Tv5725::InputScale::forRatio(3, 4);
+
+    CHECK(InputFormatter::lineCounterFor(1444, false) == 1444);
+    CHECK(InputFormatter::lineCounterFor(1444, false, threeQuarters) == 1083);
+
+    // The doubler halves first, the block compressing what it is given.
+    CHECK(InputFormatter::lineCounterFor(2888, true, threeQuarters) == 1083);
+}
+
+TEST_CASE("every segment takes the increment, which is the linear case")
+{
+    FreshChip fresh;
+    const Tv5725::InputScale threeQuarters = Tv5725::InputScale::forRatio(3, 4);
+
+    REQUIRE(inputFormatter.applyScan(1444, false, false, threeQuarters));
+
+    // s1_03..s1_0a, the eight segment increments, and the nibble they share at
+    // s1_0b[3:0].
+    for (uint8_t reg = 0x03; reg <= 0x0A; ++reg)
+        CHECK(Wire.field(1, reg, 0, 8) == threeQuarters.segment());
+    CHECK(Wire.field(1, 0x0B, 0, 4) == threeQuarters.low());
+
+    CHECK(Wire.field(1, 0x0E, 0, 11) == 1083);
+    CHECK(inputFormatter.lineUnits() == 1084);
+}
+
+TEST_CASE("a scan asked for no scaling leaves the block idle")
+{
+    FreshChip fresh;
+
+    REQUIRE(inputFormatter.applyScan(1444, false, false));
+
+    for (uint8_t reg = 0x03; reg <= 0x0A; ++reg)
+        CHECK(Wire.field(1, reg, 0, 8) == 0);
+    CHECK(Wire.field(1, 0x0B, 0, 4) == 0);
+    CHECK(Wire.field(1, 0x0E, 0, 11) == 1444);
+}
+
+// The selector and the coarse factor share s1_0b with the rate's low nibble, so
+// writing one must not take the others with it. The coarse factor is the
+// doubler's and carries no part of the ratio: its three steps are halves, and
+// the twelve-bit rate beside it is finer.
+TEST_CASE("the rate nibble leaves the selector and the coarse factor alone")
+{
+    FreshChip fresh;
+
+    REQUIRE(inputFormatter.applyScan(2888, true, false,
+                                     Tv5725::InputScale::forRatio(3, 4)));
+
+    CHECK(Wire.field(1, 0x0B, 6, 1) == 1);   // IF_SEL_HSCALE, the scaled path
+    CHECK(Wire.field(1, 0x0B, 4, 2) == 1);   // IF_HS_DEC_FACTOR, the doubler's
+}
+
+// A line too long for the eleven-bit counter is refused, and compressing it is
+// what makes it fit -- which is the whole of what the block buys the sampling
+// density. docs/scaling-down-path.md
+TEST_CASE("a line the counter cannot hold fits once it is scaled down")
+{
+    FreshChip fresh;
+
+    CHECK_FALSE(inputFormatter.applyScan(2506, false, false));
+
+    CHECK(inputFormatter.applyScan(2506, false, false,
+                                   Tv5725::InputScale::forRatio(1, 2)));
+    CHECK(Wire.field(1, 0x0E, 0, 11) == 1253);
 }
 
 // IF_HSYNC_RST is eleven bits and the register takes the low bits of whatever

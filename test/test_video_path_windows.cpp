@@ -1062,3 +1062,63 @@ TEST_CASE("a solve does not write the raster's bound into the stored framing")
         CHECK(solved.engine.framing().extentOn(AxisHorizontal) == doctest::Approx(first));
     }
 }
+
+
+// --- The scaling-down block
+//
+// It is the only minification the part has, and it sits AHEAD of the capture
+// window: the window is placed in IF units and the block decides how much
+// source an IF unit holds, so compressing the line moves neither
+// IF_HB_SP2 nor IF_HB_ST2 by itself. What it moves is the counter they are
+// placed in. docs/scaling-down-path.md,
+// docs/investigations/the-input-formatter-can-scale-down.md
+
+TEST_CASE("the engine holds no scaling down until it is asked for one")
+{
+    SolvedEngine solved;
+
+    CHECK_FALSE(solved.engine.inputScale().minifies());
+    CHECK(GBS::IF_HS_RATE_SEG0::read() == 0);
+    CHECK(GBS::IF_HS_RATE_LOW::read() == 0);
+}
+
+TEST_CASE("a scaling ratio shortens the counter the capture window is placed in")
+{
+    SolvedEngine solved;
+    const uint16_t before = GBS::IF_HSYNC_RST::read();
+    REQUIRE(before != 0);
+
+    REQUIRE(solved.engine.setInputScale(Tv5725::InputScale::forRatio(3, 4)));
+
+    CHECK(GBS::IF_HSYNC_RST::read() == Tv5725::InputScale::forRatio(3, 4)
+                                           .unitsFor(before));
+    CHECK(GBS::IF_HS_RATE_SEG0::read()
+          == Tv5725::InputScale::forRatio(3, 4).segment());
+    CHECK(GBS::IF_HS_RATE_SEG7::read()
+          == Tv5725::InputScale::forRatio(3, 4).segment());
+    CHECK(GBS::IF_SEL_HSCALE::read() == 1);
+}
+
+TEST_CASE("asking for the ratio already held changes nothing")
+{
+    SolvedEngine solved;
+
+    CHECK_FALSE(solved.engine.setInputScale(Tv5725::InputScale()));
+}
+
+TEST_CASE("a ratio the scan cannot carry leaves the line it already had")
+{
+    // The counter is eleven bits, so a line that fits at unity fits at every
+    // ratio -- what cannot be carried is a scan the clock in force refuses, and
+    // the engine puts the block back rather than leaving the two disagreeing.
+    SolvedEngine solved;
+    const uint16_t counter = GBS::IF_HSYNC_RST::read();
+    const uint16_t capture = GBS::IF_HB_ST2::read();
+
+    REQUIRE(solved.engine.setInputScale(Tv5725::InputScale::forRatio(3, 4)));
+    REQUIRE(solved.engine.setInputScale(Tv5725::InputScale()));
+
+    CHECK(GBS::IF_HSYNC_RST::read() == counter);
+    CHECK(GBS::IF_HB_ST2::read() == capture);
+    CHECK(GBS::IF_HS_RATE_SEG0::read() == 0);
+}
