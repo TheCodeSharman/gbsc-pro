@@ -45,15 +45,48 @@ is charged twice over, so raising it moves both edges: the capture opens a unit
 earlier and `pictureOffset` puts the aperture a magnification later, which is
 what makes the source's first pixel FULLY written rather than partly.
 
-**What would settle it**: `AxisHorizontal`'s margin at 2, flashed, judged by
-`test_card_framing.py`. If that does not close it, re-measure the write-start
-constants with `measure_origin.py` -- `55 + 25m` is fitted and the aperture is
-floored from it.
+**The capture margin at 2 does not close it, and improves two modes.**
+`AxisHorizontal`'s margin raised from 1 to 2, built, flashed and judged by
+`test_card_framing.py`: still 6 of 6. Both columns are read on a FLASHED unit,
+because a reflash is a reboot and a reading taken before one does not compare
+with a reading taken after it:
 
-**And the measurement's own order is not ruled out.** `card_edges.py` changes the
-mode, which re-acquires and toggles the sync pad, and THEN resets the framing --
-so where a framing was stored for that key, the sink placed its window before the
-framing moved. Reset first, then round-trip the mode, and compare.
+| mode | margin 1 | margin 2 |
+|---|---|---|
+| X240 Y352 F70 | across -, down (2,2) | across -, down (2,2) |
+| X640 Y480 F60 | across -, down - | across -, down - |
+| X640 Y512 F50 | across -, down (0,0) | across (227,254), down (0,0) |
+| X800 Y600 F60 | across -, down (0,0) | across (2,0), down (0,0) |
+| X1600 Y600 F60 | across -, down (0,0) | across -, down (0,0) |
+
+A dash is `card_edges` reporting the window off the picture rather than a margin
+it could measure. **The effect is horizontal only**, which is the axis the margin
+names: two modes go from an edge of the card missing from the emitted frame to
+the whole card on it, and `X800 Y600 F60` lands at 2 against an allowance of 1 --
+one unit short. Nothing vertical moves.
+
+**The margin is left at 1 pending that one unit.** It closes no mode, and it
+costs a dozen host expectations that encode the window arithmetic -- among them
+`test_capture_window.cpp`'s tripwire on the constant and concrete `IF_HB_SP2`,
+`VDS_HB_ST` and scale-register values. Raising it is a change to make with those
+re-derived, not alongside them.
+
+**`X320 Y256 F50` is not a usable case for this test.** It reports "neither edge:
+the window is narrower than the picture" on one run and a measured margin on the
+next, on identical firmware, where the other five repeat exactly. Judge a framing
+change on the other five.
+
+**What is left**: re-measure the write-start constants with `measure_origin.py`
+-- `55 + 25m` is fitted and the aperture is floored from it.
+
+
+**The measurement's own order is ruled out.** The concern was that
+`card_edges.py` changes the mode, which re-acquires, and THEN resets the framing,
+so where a framing was stored for that key the sink placed its window before the
+framing moved. Resetting first and re-locking with `gbs_unit.mode_round_trip()`
+does not move the verdict: each order repeats exactly over two runs, and the two
+orders agree on all five usable modes. What the test reports is the window the
+engine solved.
 
 
 ### Sync on green does not follow the source until the ladder's SOG rungs run
