@@ -426,16 +426,37 @@ affordable on every press.
 was given has no other way to be told: measured before this, Exit left the bar
 and all three rows over the picture for ever.
 
-## Info reports two things that are not what they look like
+**`OSD_clear()` TAKES THE PART'S SETTINGS WITH IT, AND PUTS THEM BACK ITSELF.**
+`OSD_Cut_0x01()` writes `0xc0` to every address in the plane at `B=0x00`, and
+that plane carries the eight spacing registers at `0x40..0x47` as well as
+characters -- so a clear leaves `0xc0` where `OSD()` wrote `0x00`, and nothing
+sent to the part appears afterwards. `OSD_clear()` therefore ends by calling
+`OSD()`, so no caller has to know. A dismissal that cleared without
+reconfiguring left the television blank for the rest of the boot **while the
+remote kept answering**: `/menu` reports the rows and the selection stepping
+down with nothing drawn, so a dead overlay reads as a dead remote.
 
-**`Err` is an unhandled class, not a fault.** The resolution line classifies the
-input into six standard-definition classes — 240p, 480i, 480p, 288p, 576i,
-576p — and falls through to `Err` for anything else. Every VGA-class source
-prints it, permanently and by construction.
+## Info measures nothing, and the key that opens it closes it
 
-**The frame rate is invalid in bypass**, because `getOutputFrameRate()` measures
-on the VDS test bus. See
-[rgbhv-bypass-trap.md](rgbhv-bypass-trap.md), "What bypass makes unreadable".
+Every number on the screen is state the engine already holds: the output mode,
+the source it reports and the scan type `SourceMeasurement` last reached. A
+screen is drawn from `loop()`, so a measurement here is paid for at the redraw
+cadence -- reading the output frame rate TIMES PULSES on the debug pin, and
+pass-through has no VDS pulse to time, which took a register read from 0.03 s to
+5.2 s and starved OTA to the point of reading as a wedged firmware.
+
+**The rate and the line count come from `VideoPath::reportedKey()`, not from
+`framedKey()`.** Pass-through spends the mode change the arm took --
+`setOutputMode()` configures the channel and returns -- so `solveFromMeasurement()`
+never runs, `adoptSourceKey()` with it, and no `source key:` line is ever
+printed. The framed key is invalid for the whole life of a bypassed boot, and
+reading it named 0 lines at 0 Hz beside a working picture. `reportedKey()`
+prefers the framed key where a solve framed one, because it is quantised and so
+does not move in its last digit at the redraw cadence, and falls back to the
+arriving measurement where there is none.
+
+**Info is a toggle**, so the screen comes away on the key that showed it as well
+as on Exit, on Menu and on the timeout.
 
 ## The output resolution preference is live, and it overrides itself
 
