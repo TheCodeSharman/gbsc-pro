@@ -93,18 +93,21 @@ TEST_CASE("down moves to the next item and up moves back")
     CHECK(std::string(cursor.current().label()) == "Input");
 }
 
-TEST_CASE("a level is a ring, so the ends join rather than stopping")
+TEST_CASE("the ends of a level stop rather than joining")
 {
-    // The root is described as a ring, and every Up/Down target used to be a
-    // literal -- which is how 94's Down came to reach 103 rather than the
-    // branch it arrived from.
+    // A ring makes the last row's Down jump to the first, which reads as the
+    // menu losing the user's place rather than as having reached the end.
     MenuCursor cursor(Root, RootCount);
 
     cursor.up();
+    CHECK(std::string(cursor.current().label()) == "Input");
+
+    for (uint8_t i = 0; i < RootCount + 2; ++i)
+        cursor.down();
     CHECK(std::string(cursor.current().label()) == "System");
 
     cursor.down();
-    CHECK(std::string(cursor.current().label()) == "Input");
+    CHECK(std::string(cursor.current().label()) == "System");
 }
 
 TEST_CASE("descending a submenu lands on its first child")
@@ -204,10 +207,11 @@ TEST_CASE("the window turns a page rather than scrolling by a row")
     CHECK(cursor.page().selected() == 0);
 }
 
-TEST_CASE("wrapping to the end lands on the last page")
+TEST_CASE("walking to the end lands on the last page")
 {
     MenuCursor cursor(System, 5);
-    cursor.up();
+    for (uint8_t i = 0; i < 6; ++i)
+        cursor.down();
 
     CHECK(std::string(cursor.page().labelAt(1)) == "Info");
     CHECK(cursor.page().selected() == 1);
@@ -678,11 +682,11 @@ TEST_CASE("an item says what its option is currently set to")
 }
 
 
-// --- The root ring
+// --- The root level
 //
-// The chain's root was not a ring: Input had no Up and Reset Settings no Down,
-// so the two ends were dead. A level that joins is the described form's
-// navigation rather than a target written out per branch.
+// Every Up/Down target used to be a literal, which is how one branch's Down
+// came to reach another rather than the branch it arrived from. The cursor
+// walks the level instead, and STOPS at both ends.
 
 TEST_CASE("the root names every top-level page, in the order the remote walks them")
 {
@@ -696,12 +700,16 @@ TEST_CASE("the root names every top-level page, in the order the remote walks th
         CHECK(std::string(MenuTree::root()[i].label()) == expected[i]);
 }
 
-TEST_CASE("the root's ends join, which the chain's did not")
+TEST_CASE("the root's ends stop, so a press past one keeps the user's place")
 {
     MenuCursor cursor(MenuTree::root(), MenuTree::rootCount());
     REQUIRE(std::string(cursor.current().label()) == "Input");
 
     cursor.up();
+    CHECK(std::string(cursor.current().label()) == "Input");
+
+    for (uint8_t i = 0; i < MenuTree::rootCount() + 2; ++i)
+        cursor.down();
     CHECK(std::string(cursor.current().label()) == "Reset Settings");
 }
 
@@ -1348,7 +1356,8 @@ TEST_CASE("an item that leads nowhere is not marked")
     Unit unit;
 
     MenuCursor cursor(MenuTree::root(), MenuTree::rootCount());
-    cursor.up();
+    for (uint8_t i = 0; i < MenuTree::rootCount(); ++i)
+        cursor.down();
     REQUIRE(std::string(cursor.current().label()) == "Reset Settings");
 
     Cells.clear();

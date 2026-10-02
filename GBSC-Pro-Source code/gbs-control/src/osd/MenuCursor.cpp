@@ -23,21 +23,21 @@ uint8_t MenuCursor::index() const { return levels_[depth_ - 1].index; }
 
 uint8_t MenuCursor::depth() const { return depth_; }
 
+// A LEVEL STOPS AT ITS ENDS. A ring makes the last row's Down jump to the
+// first, which reads as the menu losing the user's place rather than as having
+// reached the end.
 void MenuCursor::up()
 {
     Level &level = levels_[depth_ - 1];
-    if (level.count == 0)
-        return;
-    level.index = level.index == 0 ? (uint8_t)(level.count - 1)
-                                   : (uint8_t)(level.index - 1);
+    if (level.index > 0)
+        --level.index;
 }
 
 void MenuCursor::down()
 {
     Level &level = levels_[depth_ - 1];
-    if (level.count == 0)
-        return;
-    level.index = (uint8_t)((level.index + 1) % level.count);
+    if (level.index + 1 < level.count)
+        ++level.index;
 }
 
 bool MenuCursor::descend()
