@@ -133,6 +133,31 @@ the arrows and asks for capture granules, which only the solve can size; a tune
 row keeps the cursor and asks for counts of a value somebody holds. Both take
 their number of steps from the remote's hold ramp.
 
+**A ROW THE ENGINE CANNOT SERVE IS GREYED, NOT HIDDEN.** `MenuItem::onlyWhen()`
+takes a predicate over the context, and `Osd::MenuTree`'s `scalerInPath()` is
+the only one so far: pass-through hands the source's own timing to the encoder,
+so Move, Scale and Aspect have nothing to transform. The engine already refuses
+all three there -- `VideoPath::solveWindows()` has no raster to fit -- and no
+register distinguishes that refusal from the press never arriving, which is what
+made them read as broken controls rather than as unavailable ones.
+
+`Menu::page()` resolves it, having the context a page does not, and `Menu::press()`
+refuses Ok, Left and Right on an unavailable row -- including the hand-over of
+the arrows, since a pad holding them would leave Up and Down asking a picture
+that cannot move, with the cursor stuck until Menu took them back. The cursor
+still reaches the row: splicing one out would renumber the level under the user
+as the path changed.
+
+Each device says it its own way. The overlay draws the row in `OSD::Unavailable`,
+**0x10** -- the low three bits being the glyph's colour, so a dark glyph on the
+bar where a live row is yellow or white -- and the panel, which has no colour,
+puts `N/A` where the value goes. `/menu` carries `available` per row, because
+neither drawing is readable from a test. It costs one pointer per item, 224
+bytes of globals over the whole tree.
+
+`Reset` is live in both paths: it puts the stored framing and shape back, and
+both outlive the route the picture is currently taking.
+
 **A page carries its items rather than their text**, because a row's current
 value is only knowable from a context and neither the cursor nor the page has
 one. The renderer resolves it at draw time and hands the device the page and
@@ -194,10 +219,12 @@ the frame's low nibble, where `InputSV()` and `InputAV()` send the bare `0x10`
 and `0x20`; that is `/input?src=`'s behaviour as much as the menu's, and the
 option lives on the Sv-Av level, which is where the described tree shows it.
 
-`Pass Through` is deliberately absent rather than pending: it is not a
-resolution, `Tv5725::OutputChoice` says so in as many words, and the option
-behind it is the upscaling preference under System Settings. A second label for
-one option is a divergence with no reason.
+`Pass Through` sits with the resolutions, because that is where a user looks
+for it: it is the other destination the picture can have. It is not a resolution
+-- `Tv5725::OutputChoice` says so in as many words -- so it carries the `/sc?`
+letter that enters and leaves rather than a `/uc?` one, and choosing any
+resolution above leaves it. The row reports `ON`, `OFF`, or `N/A` where the
+source's line rate is one the sink would refuse.
 
 ### Sharpness is the peaking band gains, and it is held rather than read back
 
