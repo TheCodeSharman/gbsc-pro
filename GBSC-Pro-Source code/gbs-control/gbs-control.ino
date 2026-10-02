@@ -255,6 +255,10 @@ static const unsigned long MuteOverlayDwellMs = 1200;
 // times pulses rather than reading a register, so this is a cost ceiling rather
 // than a refresh preference.
 static const unsigned long InfoScreenRefreshMs = 1000;
+
+// The volume last put on screen, or -1 for "nothing is". Invalidated when the
+// overlay opens so that reopening at an unchanged level still draws.
+static int volumeShown = -1;
 #define OSD_RESOLUTION_UP_TIME 1000     // 1 sec
 #define OSD_RESOLUTION_CLOSE_TIME 20000 // 20 sec
 #include "OSD_TV/remote.h"
@@ -914,6 +918,14 @@ static void handleRemoteKey();
 static void pressDescribedMenuFromRemote()
 {
     if (!irrecv.decode(&results))
+        return;
+
+    // WHICHEVER IS ON THE SCREEN OWNS THE REMOTE. The described menu answers
+    // Exit whether it is open or not, so with an overlay up it ate the one key
+    // that dismisses one and left no way out but the sixteen-second timeout.
+    // Returned without resume(), so the overlay's own handler decodes the same
+    // frame -- decode() answers it again until something resumes.
+    if (oled_menuItem != 0)
         return;
 
     // A held key sends repeat frames rather than the code, and only a pad acts
@@ -5692,6 +5704,14 @@ void handleType2Command(char argument)
                 uopt->presetPreference = Output1080P; // 1920x1080
             // if (argument == 'L')
 
+            // A RESOLUTION IS A COMMAND TO SCALE. Pass-through is the one thing
+            // that can hold a source off the resolution just chosen -- it hands
+            // the source's own timing to the encoder and the engine's raster
+            // reaches nothing -- so choosing one leaves it. Before the change,
+            // or the next pass routes the source straight back.
+            uopt->preferScalingRgbhv = 1;
+            applyPassThroughPreference();
+
             changeOutputResolution();
             saveUserPrefs();
         } break;
@@ -7593,11 +7613,11 @@ void drawOverlayScreens()
     if (oled_menuItem == 1) {
         // Only when the level moved: display() pushes the whole panel
         // framebuffer over the bus the acquisition shares, and this branch runs
-        // on every pass the overlay is up.
-        static int shown = -1;
+        // on every pass the overlay is up. Invalidated when the overlay opens,
+        // or reopening at an unchanged level would draw nothing.
         adl = 50 - Volume;
-        if (adl != shown) {
-            shown = adl;
+        if (adl != volumeShown) {
+            volumeShown = adl;
             if (OLED_clear_flag)
                 display.clear();
             OLED_clear_flag = ~0;
@@ -7668,28 +7688,39 @@ void drawOverlayScreens()
         // the source again through STATUS_IF_INP_*, the input formatter's SD
         // classifier, and printed Err for everything it did not recognise --
         // which on an RGB computer source is every frame.
+        // NOTHING HERE MEASURES. Every number is state the engine already
+        // holds: the output mode, the source key it solved for and the scan
+        // type SourceMeasurement last reached. The rate is the key's, which is
+        // also the output's, because the raster is solved for it.
         Osd::InfoScreen::Report report;
         const Tv5725::OutputMode *const out = geometry.outputMode();
         report.bypass = out == NULL || out->isBypass();
         report.outputPx = report.bypass ? 0 : out->activePx();
         report.outputLines = report.bypass ? 0 : out->activeLines();
-        // NOT IN PASS-THROUGH. The rate is timed off the VDS bus, which the
-        // video does not go through there, so the measurement waits out its
-        // timeout -- seconds of a blocked loop() for a number that does not
-        // exist. The screen shows no rate rather than a zero.
-        report.outputRateHz =
-            report.bypass
-                ? 0
-                : (uint8_t)(Tv5725::TestBusRateMeasurement::outputFrameRateHz()
-                            + 0.5f);
-        report.input = VideoSourceSelection::name(VideoSourceSelection::selected());
+
+        const VideoSourceSelection::Id selected = VideoSourceSelection::selected();
+        report.input = VideoSourceSelection::shownName(selected);
+        report.separateSync = !geometry.syncTypeIsCsync();
         report.present = inputAcquisition.sourceIsPresent()
                          && Tv5725::Chip::hasPower() && Info_sate != 1;
-        report.lines = sourceSampling.sourceLines();
+
+        if (!report.present)
+            report.kind = Osd::InfoScreen::NoInput;
+        else if (selected == VideoSourceSelection::Ypbpr)
+            report.kind = Osd::InfoScreen::Component;
+        else if (selected == VideoSourceSelection::SVideo)
+            report.kind = Osd::InfoScreen::SVideo;
+        else if (selected == VideoSourceSelection::Composite)
+            report.kind = Osd::InfoScreen::Composite;
+        else
+            report.kind = Osd::InfoScreen::Rgb;
+
+        const Tv5725::SourceKey &key = geometry.framedKey();
+        report.lines = key.lines();
+        report.rateHz = (uint8_t)(key.rateHz() + 0.5f);
         report.interlaced =
             sourceSampling.scanType() == Tv5725::SourceMeasurement::ScanInterlaced;
-        report.fieldRateHz = (uint8_t)(sourceSampling.fieldRateHz() + 0.5f);
-        report.lineRateHz = sourceSampling.lineRateHz();
+        report.lineRateHz = geometry.sourceLineRateHz();
         Osd::InfoScreen::draw(report);
         }
 
@@ -7830,6 +7861,7 @@ static void handleRemoteKey()
         case kRecv3:
             Tim_menuItem = millis();
             NEW_OLED_MENU = false;
+            volumeShown = -1;
             oled_menuItem = 1;
             break;
     }

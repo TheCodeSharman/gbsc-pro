@@ -21,7 +21,7 @@ const uint8_t LevelDigits = 2;
 void VolumeOverlay::draw(uint8_t level)
 {
     Row row(Bar, Bar);
-    row.text(LabelColumn, "Line input volume", Title);
+    row.text(LabelColumn, "Volume", Title);
     row.number(LevelColumn, level, LevelDigits, Body);
     OSD::send(0, row);
 }

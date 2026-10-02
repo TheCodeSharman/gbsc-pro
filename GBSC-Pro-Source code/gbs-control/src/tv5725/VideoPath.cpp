@@ -859,6 +859,10 @@ void VideoPath::holdDivider(uint16_t divider)
 
 uint16_t VideoPath::heldDivider() const { return heldDivider_; }
 
+uint32_t VideoPath::sourceLineRateHz() const { return sampling_.lineRateHz(); }
+
+bool VideoPath::syncTypeIsCsync() const { return syncTypeInForce_; }
+
 void VideoPath::restartSamplingClock()
 {
     applySamplingClock(Adc::dividerInForce());

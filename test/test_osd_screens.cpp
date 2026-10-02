@@ -79,12 +79,13 @@ InfoScreen::Report bench()
     report.bypass = false;
     report.outputPx = 1920;
     report.outputLines = 1080;
-    report.outputRateHz = 50;
-    report.input = "vga";
+    report.input = "VGA";
+    report.kind = InfoScreen::Rgb;
+    report.separateSync = true;
     report.present = true;
     report.lines = 311;
     report.interlaced = false;
-    report.fieldRateHz = 50;
+    report.rateHz = 50;
     report.lineRateHz = 15625;
     return report;
 }
@@ -97,7 +98,7 @@ TEST_CASE("the volume overlay names what is being changed and shows the level")
 
     VolumeOverlay::draw(37);
 
-    CHECK(textOf(0) == " Line input volume  37");
+    CHECK(textOf(0) == " Volume             37");
 }
 
 TEST_CASE("a level of zero is shown rather than left blank")
@@ -106,7 +107,7 @@ TEST_CASE("a level of zero is shown rather than left blank")
 
     VolumeOverlay::draw(0);
 
-    CHECK(textOf(0) == " Line input volume   0");
+    CHECK(textOf(0) == " Volume              0");
 }
 
 TEST_CASE("the mute overlay says which way it went")
@@ -128,8 +129,9 @@ TEST_CASE("the info screen says what is going out and what is coming in")
 
     InfoScreen::draw(bench());
 
-    CHECK(textOf(0) == "Out: 1920x1080 vga   50Hz");
-    CHECK(textOf(1) == "In: 311p 50Hz 15.6kHz");
+    CHECK(textOf(0) == "Info: 1920x1080   VGA   50Hz");
+    CHECK(textOf(1) == "Current: RGB HV      311p");
+    CHECK(textOf(2) == "                     15.6kHz");
 }
 
 // THE OUTPUT IS A RESOLUTION OR IT IS PASS-THROUGH, and the two are not the
@@ -146,21 +148,42 @@ TEST_CASE("pass-through is named rather than reported as a resolution of zero")
 
     InfoScreen::draw(report);
 
-    CHECK(textOf(0) == "Out: Bypass    vga   50Hz");
+    CHECK(textOf(0) == "Info: Bypass      VGA   50Hz");
 }
 
 // Nothing of ours is timing the output in pass-through: the frame rate is read
 // off the VDS, which the video does not go through there. A rate of zero is the
 // absence of a measurement rather than a measurement of zero.
-TEST_CASE("an output nothing is timing shows no rate rather than zero")
+// THE RATE IS THE SOURCE KEY'S, AND IT IS ALSO THE OUTPUT'S: the raster is
+// solved for that rate, so there are not two numbers here and neither of them
+// is measured at the draw.
+TEST_CASE("each connector is named the way the chain named it")
 {
     start();
     InfoScreen::Report report = bench();
-    report.outputRateHz = 0;
+
+    report.kind = InfoScreen::Component;
+    InfoScreen::draw(report);
+    CHECK(textOf(1) == "Current:   YPBPR     311p");
+
+    report.kind = InfoScreen::SVideo;
+    InfoScreen::draw(report);
+    CHECK(textOf(1) == "Current:    SV       311p");
+
+    report.kind = InfoScreen::Composite;
+    InfoScreen::draw(report);
+    CHECK(textOf(1) == "Current:    AV       311p");
+}
+
+TEST_CASE("an RGB source carrying composite sync is not called HV")
+{
+    start();
+    InfoScreen::Report report = bench();
+    report.separateSync = false;
 
     InfoScreen::draw(report);
 
-    CHECK(textOf(0) == "Out: 1920x1080 vga");
+    CHECK(textOf(1) == "Current: RGB         311p");
 }
 
 // THE SCAN TYPE IS REPORTED FROM THE MEASUREMENT, NOT CLASSIFIED AGAIN. The
@@ -173,13 +196,10 @@ TEST_CASE("an interlaced source is reported as interlaced")
     InfoScreen::Report report = bench();
     report.lines = 524;
     report.interlaced = true;
-    report.fieldRateHz = 60;
-
-    report.lineRateHz = 31469;
 
     InfoScreen::draw(report);
 
-    CHECK(textOf(1) == "In: 524i 60Hz 31.5kHz");
+    CHECK(textOf(1) == "Current: RGB HV      524i");
 }
 
 TEST_CASE("a source nothing is measuring says so instead of reporting zeroes")
@@ -187,10 +207,12 @@ TEST_CASE("a source nothing is measuring says so instead of reporting zeroes")
     start();
     InfoScreen::Report report = bench();
     report.present = false;
+    report.kind = InfoScreen::NoInput;
 
     InfoScreen::draw(report);
 
-    CHECK(textOf(1) == "In:   no signal");
+    CHECK(textOf(0) == "Info: 1920x1080   VGA");
+    CHECK(textOf(1) == "Current: No Input");
 }
 
 TEST_CASE("the row titles are drawn in the title colour and the rest in the body's")
@@ -201,7 +223,7 @@ TEST_CASE("the row titles are drawn in the title colour and the rest in the body
 
     CHECK(colourAt(0, 0) == InfoScreen::Title);
     CHECK(colourAt(1, 0) == InfoScreen::Title);
-    CHECK(colourAt(0, 6) == InfoScreen::Body);
+    CHECK(colourAt(0, 7) == InfoScreen::Body);
 }
 
 // A REDRAW THAT CHANGES NOTHING COSTS THE LOOP A SECOND. Both rows are 112

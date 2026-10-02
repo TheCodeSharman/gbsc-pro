@@ -266,6 +266,16 @@ public:
     // no probe. False where no sync type has been applied yet.
     bool reapplySyncTypeInForce();
 
+    // The line rate the measurement holds, for a caller deciding what an output
+    // can carry. Held, not measured.
+    uint32_t sourceLineRateHz() const;
+
+    // Whether the source in force carries composite sync, as the engine decided
+    // it. Held rather than read back: STATUS_SYNC_PROC_VSACT reports the sync
+    // path already chosen, so it answers this question with its own input.
+    // docs/sync-type-selection.md
+    bool syncTypeIsCsync() const;
+
     bool reset();
 
     // True where the press MOVED the capture window. Neither zoom stop shows in

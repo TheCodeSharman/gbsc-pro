@@ -788,10 +788,9 @@ TEST_CASE("an input selection is something asked for, as a letter is")
 
 // --- Output Resolution
 //
-// Six resolutions, each already a /uc? letter. Pass Through is deliberately not
-// a seventh: it is not a resolution -- OutputChoice cannot express it -- and the
-// option behind it is the upscaling preference under System Settings, so a
-// second label for one option is a divergence with no reason.
+// Six resolutions, each already a /uc? letter, and Pass Through as the seventh
+// destination the picture can have. That one is a /sc? letter rather than a
+// /uc? one, because it is the entry rather than a preference.
 
 TEST_CASE("each resolution asks for the letter the web and the console send")
 {
@@ -802,12 +801,30 @@ TEST_CASE("each resolution asks for the letter the web and the console send")
     };
 
     const MenuItem &page = item("Output Resolution");
-    REQUIRE(page.childCount() == sizeof(expected) / sizeof(expected[0]));
-    for (uint8_t i = 0; i < page.childCount(); ++i) {
+    REQUIRE(page.childCount() == sizeof(expected) / sizeof(expected[0]) + 1);
+    for (uint8_t i = 0; i < sizeof(expected) / sizeof(expected[0]); ++i) {
         CHECK(std::string(page.children()[i].label()) == expected[i].label);
         CHECK(page.children()[i].okCommand().letter() == expected[i].letter);
         CHECK(page.children()[i].okCommand().queue() == MenuCommand::UserCommand);
     }
+}
+
+// A SOURCE THE DISPLAY COULD NOT SHOW IS SAID TO BE UNAVAILABLE RATHER THAN
+// LEFT LOOKING LIKE ANY OTHER CHOICE. Bypass hands the source's own timing to
+// the encoder, so a 15 kHz source reaches a television that refuses the mode and
+// the user sees nothing at all -- which reads as the scaler having failed.
+TEST_CASE("pass through says whether it is on, off, or out of reach")
+{
+    Unit unit;
+    const MenuItem &page = item("Output Resolution");
+    const MenuItem &passThrough = page.children()[page.childCount() - 1];
+
+    REQUIRE(std::string(passThrough.label()) == "Pass Through");
+    CHECK(passThrough.okCommand().letter() == 'K');
+    CHECK(passThrough.okCommand().queue() == MenuCommand::SerialCommand);
+
+    // The solved engine carries the bench source, which bypass cannot reach.
+    CHECK(std::string(passThrough.valueText(unit.context)) == "N/A");
 }
 
 

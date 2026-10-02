@@ -5,18 +5,19 @@ namespace {
 struct Row {
     VideoSourceSelection::Id id;
     const char *name;
+    const char *shown;
     VideoSourceSelection::Settings settings;
 };
 
 // frame, legacySource, brightnessSet, adcInputSel, adcSogEn,
 // extSyncSel, clearsLowPower
 const Row Rows[] = {
-    {VideoSourceSelection::Rgbs,      "rgbs",  {0x40, 1, 0, 1, 1, 1, false}},
-    {VideoSourceSelection::RgsB,      "rgsb",  {0x50, 1, 0, 1, 1, 1, false}},
-    {VideoSourceSelection::Vga,       "vga",   {0x61, 2, 0, 1, 1, 0, false}},
-    {VideoSourceSelection::Ypbpr,     "ypbpr", {0x70, 3, 1, 0, 0, 1, false}},
-    {VideoSourceSelection::SVideo,    "sv",    {0x10, 3, 2, 0, 0, 1, true}},
-    {VideoSourceSelection::Composite, "av",    {0x20, 3, 2, 0, 0, 1, true}},
+    {VideoSourceSelection::Rgbs,      "rgbs",  "RGBs",  {0x40, 1, 0, 1, 1, 1, false}},
+    {VideoSourceSelection::RgsB,      "rgsb",  "RGsB",  {0x50, 1, 0, 1, 1, 1, false}},
+    {VideoSourceSelection::Vga,       "vga",   "VGA",   {0x61, 2, 0, 1, 1, 0, false}},
+    {VideoSourceSelection::Ypbpr,     "ypbpr", "YPBPR", {0x70, 3, 1, 0, 0, 1, false}},
+    {VideoSourceSelection::SVideo,    "sv",    "SV",    {0x10, 3, 2, 0, 0, 1, true}},
+    {VideoSourceSelection::Composite, "av",    "AV",    {0x20, 3, 2, 0, 0, 1, true}},
 };
 
 const uint8_t RowCount = sizeof(Rows) / sizeof(Rows[0]);
@@ -92,6 +93,14 @@ const char *VideoSourceSelection::name(Id id)
     for (uint8_t i = 0; i < RowCount; ++i)
         if (Rows[i].id == id)
             return Rows[i].name;
+    return "";
+}
+
+const char *VideoSourceSelection::shownName(Id id)
+{
+    for (uint8_t i = 0; i < RowCount; ++i)
+        if (Rows[i].id == id)
+            return Rows[i].shown;
     return "";
 }
 

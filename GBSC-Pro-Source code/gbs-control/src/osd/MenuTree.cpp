@@ -3,6 +3,8 @@
 #include "../../options.h"
 #include "../tv5725/Aspect.h"
 #include "../tv5725/Controls.h"
+#include "../tv5725/HdBypass.h"
+#include "../tv5725/OutputMode.h"
 #include "../tv5725/Nudge.h"
 #include "../tv5725/VideoPath.h"
 #include "MenuContext.h"
@@ -193,9 +195,24 @@ const MenuItem Input[] = {
     MenuItem::inputAction("AV", VideoSourceSelection::Composite),
 };
 
-// Pass Through is absent deliberately: it is not a resolution -- OutputChoice
-// cannot express it -- and the option behind it is the upscaling preference
-// under System Settings.
+// Whether the source can be handed to the encoder at all, and whether it is
+// being. Bypass passes the source's own timing through, so a rate the display
+// refuses puts torn content on the panel -- the entry refuses it for that
+// reason, and the row says so before the user presses Ok.
+// docs/rgbhv-bypass-trap.md
+const char *passThroughState(const MenuContext &context)
+{
+    const Tv5725::VideoPath &engine = context.controls().engine();
+    if (!Tv5725::HdBypass::suitsLineRate(engine.sourceLineRateHz()))
+        return "N/A";
+    const Tv5725::OutputMode *const mode = engine.outputMode();
+    return mode != NULL && mode->isBypass() ? "ON" : "OFF";
+}
+
+// Pass Through sits with the resolutions because that is where a user looks for
+// it: it is the other destination the picture can have, even though
+// OutputChoice cannot express it and the preference behind it lives under
+// System Settings. Choosing any resolution above LEAVES it.
 const MenuItem Resolution[] = {
     MenuItem::action("1920x1080", 's'),
     MenuItem::action("1280x1024", 'p'),
@@ -203,6 +220,7 @@ const MenuItem Resolution[] = {
     MenuItem::action("1280x720", 'g'),
     MenuItem::action("768x576", 'j'),
     MenuItem::action("720x480", 'h'),
+    MenuItem::serialChoice("Pass Through", 'K', passThroughState),
 };
 
 // A pad asks for a control and the way it goes, which the remote's hold ramp
