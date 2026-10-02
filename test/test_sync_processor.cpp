@@ -991,6 +991,27 @@ TEST_CASE("normalising the polarity clears the inversion into the ADC PLL")
 // it by hand gives 627 and a full acquisition within 3 s.
 // docs/investigations/sp-sog-mode-had-two-owners.md
 
+TEST_CASE("entering pass-through leaves the SOG polarity auto-correct off")
+{
+    // The polarity is normalised ONCE, by normaliseHsyncPolarity(), so that
+    // nothing downstream takes it as an input. The chip's own auto-correct is a
+    // second owner of that fact, and measured it displaces where the sync
+    // processor starts counting by a whole pulse.
+    //
+    // Measured in pass-through at 800x600@60, divider 2038, high-active:
+    // with it SET the low-active retime stop of 1858 leaves a 150 column black
+    // bar down the left; CLEARED, the same 1858 frames the card's green border
+    // on all four edges. It is also what a pass-through round trip left behind
+    // to displace the scaled picture 310 columns.
+    // docs/investigations/the-sog-polarity-auto-correct-displaced-pass-through.md
+    Wire.reset();
+    SyncProcessor::SP_SOG_P_ATO::write(1);
+
+    SyncProcessor::applyForPassThrough();
+
+    CHECK(SyncProcessor::SP_SOG_P_ATO::read() == 0u);
+}
+
 TEST_CASE("the per-load setup leaves the sync mode the sync type chose")
 {
     Wire.reset();

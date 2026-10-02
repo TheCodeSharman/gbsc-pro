@@ -249,7 +249,13 @@ void SyncProcessor::applyForPassThrough()
 {
     setCoastInvert(false);
     setSubCoast(false);
-    SP_SOG_P_ATO::write(1);
+
+    // The chip's own polarity auto-correct stays OFF, as it is on the scaling
+    // path. normaliseHsyncPolarity() already makes the polarity one shape, so
+    // this is a second owner of it -- and it displaces where the sync processor
+    // starts counting by a whole pulse.
+    // ../../../docs/investigations/the-sog-polarity-auto-correct-displaced-pass-through.md
+    SP_SOG_P_ATO::write(0);
 
     SP_HS_PROC_INV_REG::write(0);
     SP_VS_PROC_INV_REG::write(0);
