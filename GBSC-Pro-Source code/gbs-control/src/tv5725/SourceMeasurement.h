@@ -105,6 +105,13 @@ public:
     // ../../../../docs/investigations/interlaced-source-measurement.md
     ScanType measureScanType();
 
+    // The answer measureScanType() last reached, taken rather than retaken.
+    // A consumer that needs the scan -- a screen reporting the source, say --
+    // asks for it here: measuring feeds a steadiness run of its own and a
+    // second caller at its own cadence moves the answer the steering sees.
+    // Progressive until something has measured, for the same asymmetry.
+    ScanType scanType() const;
+
     // Measure the source's line count, corrected for a divider the ADC PLL
     // could not lock to. The ONE way the count is read, here and inside every
     // half of the measurement: a divider far from the source's line puts the

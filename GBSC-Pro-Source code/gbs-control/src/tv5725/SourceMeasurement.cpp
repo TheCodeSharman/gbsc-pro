@@ -128,6 +128,12 @@ SourceMeasurement::ScanType SourceMeasurement::measureScanType()
     return scan;
 }
 
+SourceMeasurement::ScanType SourceMeasurement::scanType() const
+{
+    return scanReported_ == (int8_t)ScanInterlaced ? ScanInterlaced
+                                                   : ScanProgressive;
+}
+
 uint16_t SourceMeasurement::verticalPeriod() const { return verticalPeriod_; }
 
 uint16_t SourceMeasurement::countNow() const

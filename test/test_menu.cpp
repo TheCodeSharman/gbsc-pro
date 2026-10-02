@@ -1200,19 +1200,19 @@ static char symbolAt(uint8_t row, uint8_t column);
 static std::string rowText(uint8_t row)
 {
     static const char Pages[] = { 0x00, 0x02, 0x03 };
-    std::string text(OSD::Columns, ' ');
+    std::string text(Row::Columns, ' ');
     for (size_t i = 0; i < Cells.size(); ++i) {
         if (Cells[i].page != Pages[row] || (Cells[i].address & 1) == 0)
             continue;
         const uint8_t column = (uint8_t)((Cells[i].address - 1) / 2);
-        if (column >= OSD::Columns)
+        if (column >= Row::Columns)
             continue;
         const char symbol = Cells[i].value;
         text[column] = symbol == OSD::Background || symbol == OSD::Clear ? ' '
                        : symbol == OSD::Arrow                           ? '>'
                        : symbol == OSD::PreviousPage                    ? '^'
                        : symbol == OSD::NextPage                        ? 'v'
-                       : symbol == OSD::Hyphen                          ? '-'
+                       : symbol == Row::Hyphen                          ? '-'
                        : symbol == OSD::PadLeft                         ? '<'
                        : symbol == OSD::PadUp                           ? '^'
                        : symbol == OSD::PadDown                         ? 'v'
@@ -1260,6 +1260,7 @@ TEST_CASE("the last column counts the pages of the level")
     REQUIRE(cursor.page().number() == 1);
 
     Cells.clear();
+    OSD::forget();
     drawOnTelevision(cursor.page(), unit.context);
     CHECK(symbolAt(0, OSD::IndicatorColumn) == ' ');
     CHECK(symbolAt(1, OSD::IndicatorColumn) == '1');
@@ -1271,6 +1272,7 @@ TEST_CASE("the last column counts the pages of the level")
     REQUIRE(cursor.page().number() == 2);
 
     Cells.clear();
+    OSD::forget();
     drawOnTelevision(cursor.page(), unit.context);
     CHECK(symbolAt(0, OSD::IndicatorColumn) == '^');
     CHECK(symbolAt(1, OSD::IndicatorColumn) == '2');
@@ -1285,6 +1287,7 @@ TEST_CASE("a level that fits on one page leaves the last column alone")
     MenuCursor cursor(Colour, 2);
 
     Cells.clear();
+    OSD::forget();
     drawOnTelevision(cursor.page(), unit.context);
 
     CHECK(symbolAt(0, OSD::IndicatorColumn) == ' ');
@@ -1299,6 +1302,7 @@ TEST_CASE("the selected row carries a cursor at the first column, the label besi
 
     MenuCursor cursor(MenuTree::root(), MenuTree::rootCount());
     Cells.clear();
+    OSD::forget();
     drawOnTelevision(cursor.page(), unit.context);
 
     CHECK(rowText(0).substr(0, 8) == ">1 Input");
@@ -1315,6 +1319,7 @@ TEST_CASE("the selected row marks an item that leads somewhere, just after its l
     REQUIRE(std::string(cursor.current().label()) == "Input");
 
     Cells.clear();
+    OSD::forget();
     drawOnTelevision(cursor.page(), unit.context);
 
     CHECK(rowText(0) == ">1 Input>");
@@ -1330,6 +1335,7 @@ TEST_CASE("an item that leads nowhere is not marked")
     REQUIRE(std::string(cursor.current().label()) == "Reset Settings");
 
     Cells.clear();
+    OSD::forget();
     drawOnTelevision(cursor.page(), unit.context);
 
     CHECK(rowText(0) == " 4 System Settings         ^");
@@ -1345,6 +1351,7 @@ TEST_CASE("a rule of hyphens leads from the label to the value")
     MenuCursor cursor = cursorOn("Picture Settings", "Line filter");
 
     Cells.clear();
+    OSD::forget();
     drawOnTelevision(cursor.page(), unit.context);
 
     CHECK(rowText(cursor.page().selected()) == ">Line filter------------ON v");
@@ -1358,6 +1365,7 @@ TEST_CASE("a row is written whole, so a shorter label leaves no tail behind")
     const uint8_t row = cursor.page().selected();
 
     Cells.clear();
+    OSD::forget();
     drawOnTelevision(cursor.page(), unit.context);
     REQUIRE(rowText(row) == ">Frame Time Lock-------OFF ^");
 
@@ -1377,6 +1385,7 @@ TEST_CASE("a space inside a label is the font's blank, not its 0x20")
 
     MenuCursor cursor(MenuTree::root(), MenuTree::rootCount());
     Cells.clear();
+    OSD::forget();
     drawOnTelevision(cursor.page(), unit.context);
 
     for (size_t i = 0; i < Cells.size(); ++i)
@@ -1393,6 +1402,7 @@ TEST_CASE("a row the page does not fill is cleared rather than painted")
     const MenuItem *pair = item("System Settings").children();
     MenuCursor cursor(pair, 2);
     Cells.clear();
+    OSD::forget();
     drawOnTelevision(cursor.page(), unit.context);
 
     bool cleared = true;
@@ -1410,6 +1420,7 @@ TEST_CASE("the selected row is the only one in the highlight colour")
     MenuCursor cursor(MenuTree::root(), MenuTree::rootCount());
     cursor.down();
     Cells.clear();
+    OSD::forget();
     drawOnTelevision(cursor.page(), unit.context);
 
     // The colour of a row is the even address below each symbol.
@@ -1433,6 +1444,7 @@ TEST_CASE("a page with fewer rows than the overlay blanks the rest")
     Unit unit;
 
     Cells.clear();
+    OSD::forget();
     const MenuItem &picture = item("Picture Settings");
     MenuCursor full = cursorInside("Picture Settings");
     drawOnTelevision(full.page(), unit.context);
@@ -1453,6 +1465,7 @@ TEST_CASE("a pad draws its four arrows where a value would go")
     REQUIRE_FALSE(menu.press(Menu::KeyOk).asked());
 
     Cells.clear();
+    OSD::forget();
     drawOnTelevision(menu.page(), unit.context);
 
     // The chain marks a submenu and leaves a pad unmarked: Ok descends one and
@@ -1468,6 +1481,7 @@ TEST_CASE("the root ring is numbered, as the chain numbered it")
     MenuCursor cursor(MenuTree::root(), MenuTree::rootCount());
 
     Cells.clear();
+    OSD::forget();
     drawOnTelevision(cursor.page(), unit.context);
 
     CHECK(rowText(0) == ">1 Input>");
@@ -1477,6 +1491,7 @@ TEST_CASE("the root ring is numbered, as the chain numbered it")
     cursor.down();
     cursor.down();
     Cells.clear();
+    OSD::forget();
     drawOnTelevision(cursor.page(), unit.context);
     CHECK(rowText(0) == ">4 System Settings>        ^");
 }
@@ -1490,6 +1505,7 @@ TEST_CASE("a level below the root is not numbered")
     REQUIRE(cursor.current().label() == input.children()[0].label());
 
     Cells.clear();
+    OSD::forget();
     drawOnTelevision(cursor.page(), unit.context);
 
     CHECK(rowText(0) == ">RGBs");
@@ -1610,6 +1626,7 @@ TEST_CASE("a redraw reaches every device the menu draws on")
     OSD::writeThrough(recordCell);
     Panel::writeThrough(recordClear, recordLine, recordFlush);
     Cells.clear();
+    OSD::forget();
     menu.open();
 
     menu.drawIfNeeded();
@@ -1639,6 +1656,7 @@ TEST_CASE("the cursor's cell is filled, where the rest of the row is written ove
     cursor.down();
 
     Cells.clear();
+    OSD::forget();
     drawOnTelevision(cursor.page(), unit.context);
 
     const uint8_t row = cursor.page().selected();
@@ -1667,12 +1685,13 @@ TEST_CASE("a cell is written once per draw, so nothing blanks before it repaints
     MenuCursor cursor = cursorInside("Picture Settings");
 
     Cells.clear();
+    OSD::forget();
     drawOnTelevision(cursor.page(), unit.context);
 
     static const char Pages[] = { 0x00, 0x02, 0x03 };
-    uint8_t written[MenuPage::Rows][OSD::Columns];
+    uint8_t written[MenuPage::Rows][Row::Columns];
     for (uint8_t row = 0; row < MenuPage::Rows; ++row)
-        for (uint8_t column = 0; column < OSD::Columns; ++column)
+        for (uint8_t column = 0; column < Row::Columns; ++column)
             written[row][column] = 0;
 
     for (size_t i = 0; i < Cells.size(); ++i) {
@@ -1680,13 +1699,13 @@ TEST_CASE("a cell is written once per draw, so nothing blanks before it repaints
             continue;
         const uint8_t column = (uint8_t)((Cells[i].address - 1) / 2);
         for (uint8_t row = 0; row < MenuPage::Rows; ++row)
-            if (Cells[i].page == Pages[row] && column < OSD::Columns)
+            if (Cells[i].page == Pages[row] && column < Row::Columns)
                 ++written[row][column];
     }
 
     uint8_t twice = 0;
     for (uint8_t row = 0; row < MenuPage::Rows; ++row)
-        for (uint8_t column = 0; column < OSD::Columns; ++column)
+        for (uint8_t column = 0; column < Row::Columns; ++column)
             if (written[row][column] != 1)
                 ++twice;
     CHECK(twice == 0);

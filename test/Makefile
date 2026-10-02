@@ -72,7 +72,9 @@ OSD_SRC = src/osd/Menu.cpp src/osd/MenuCommand.cpp src/osd/MenuContext.cpp \
 	src/osd/MenuCursor.cpp src/osd/MenuItem.cpp src/osd/MenuPad.cpp \
 	src/osd/MenuPage.cpp \
 	src/osd/MenuRenderer.cpp src/osd/MenuTree.cpp src/osd/OSD.cpp \
-	src/osd/Panel.cpp \
+	src/osd/InfoScreen.cpp src/osd/MuteOverlay.cpp src/osd/Panel.cpp \
+	src/osd/Row.cpp \
+	src/osd/VolumeOverlay.cpp \
 	src/osd/Tune.cpp
 
 GEOMETRY_RASTER_SRC = $$(ls src/tv5725/*.cpp | grep -vE '^src/tv5725/(Controls)\.cpp$$') \
@@ -185,6 +187,32 @@ ir-receiver:
 	  -o "$(OUT)/test_ir_receiver" \
 	  "$(HERE)/test_ir_receiver.cpp" src/input/IrReceiver.cpp
 	@"$(OUT)/test_ir_receiver"
+
+## osd-row: host unit tests for Osd::Row
+#
+# One composed row of the television overlay. Pure -- no bus, no Wire -- so the
+# text placement, the hyphen substitution and the right-aligned number are
+# checked by reading the cells back.
+osd-row:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
+	  -o "$(OUT)/test_osd_row" \
+	  "$(HERE)/test_osd_row.cpp" src/osd/Row.cpp
+	@"$(OUT)/test_osd_row"
+
+## osd-screens: host unit tests for the two overlay screens
+#
+# Neither is a menu, so neither goes through MenuRenderer. Every case records
+# the cells Osd::OSD writes and reads the row back as text.
+osd-screens:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
+	  -o "$(OUT)/test_osd_screens" \
+	  "$(HERE)/test_osd_screens.cpp" src/osd/InfoScreen.cpp \
+	  src/osd/MuteOverlay.cpp src/osd/VolumeOverlay.cpp src/osd/OSD.cpp src/osd/Row.cpp \
+	  src/osd/MenuPage.cpp src/osd/MenuItem.cpp src/osd/MenuRenderer.cpp \
+	  src/osd/MenuPad.cpp src/osd/MenuCommand.cpp
+	@"$(OUT)/test_osd_screens"
 
 ## menu: host unit tests for the described OSD menu
 #
@@ -897,7 +925,7 @@ write-trace:
 	@"$(OUT)/test_write_trace"
 
 ## test: every host unit test
-test: ir-receiver menu aspect video-signal test-bus test-bus-rate-measurement steady-run source-absence detection-entry sync-measurement colour-space colour-balance framing-save-timer sync-on-green axis source-key source-timing framing-table framing-text slot-table slot-text scale sync-processor video-processor video-source-line capture-window output-window video-path source-measurement memory-window display-clock frame-sync frame-time-lock output-mode output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc sampling-log video-route rgbhv-output write-trace
+test: ir-receiver osd-row osd-screens menu aspect video-signal test-bus test-bus-rate-measurement steady-run source-absence detection-entry sync-measurement colour-space colour-balance framing-save-timer sync-on-green axis source-key source-timing framing-table framing-text slot-table slot-text scale sync-processor video-processor video-source-line capture-window output-window video-path source-measurement memory-window display-clock frame-sync frame-time-lock output-mode output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc sampling-log video-route rgbhv-output write-trace
 all: test
 
 ## clean: remove the compiled test binaries

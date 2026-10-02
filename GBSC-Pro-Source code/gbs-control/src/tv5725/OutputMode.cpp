@@ -166,6 +166,8 @@ bool OutputMode::encoderCanTransmit(float fieldRateHz) const
 
 uint16_t OutputMode::activeLines() const { return activeLines_; }
 
+uint16_t OutputMode::activePx() const { return activePx_; }
+
 bool OutputMode::isBypass() const { return this == &ModeBypass; }
 
 uint16_t OutputMode::frameLines() const

@@ -1356,6 +1356,33 @@ TEST_CASE("a settled count that never alternates is progressive whatever the per
     CHECK(measurement.measureScanType() == SourceMeasurement::ScanProgressive);
 }
 
+// A DRAW MUST NOT BECOME A SECOND OWNER OF A MEASURED FACT.
+// measureScanType() feeds its own steadiness run and logs a change, so a screen
+// calling it would put samples in at the redraw cadence and move the answer the
+// acquisition layer is steering on. The held answer is what a consumer asks
+// for.
+TEST_CASE("the scan type can be read back without taking a measurement")
+{
+    SourceMeasurement measurement(inputFormatter);
+    REQUIRE(settleAlternating(measurement, 311, 8));
+    REQUIRE(measurement.measureScanType() == SourceMeasurement::ScanInterlaced);
+
+    const uint16_t steady = measurement.steadyLines();
+
+    CHECK(measurement.scanType() == SourceMeasurement::ScanInterlaced);
+    CHECK(measurement.scanType() == SourceMeasurement::ScanInterlaced);
+    CHECK(measurement.steadyLines() == steady);
+}
+
+// Nothing has been measured, and the answer is the same one the steering takes
+// when a source cannot be shown to be interlaced: the costs are not symmetric.
+TEST_CASE("a source nothing has measured reads as progressive")
+{
+    SourceMeasurement measurement(inputFormatter);
+
+    CHECK(measurement.scanType() == SourceMeasurement::ScanProgressive);
+}
+
 TEST_CASE("a count that moves by more than one still starts the run again")
 {
     seedSourceLines(311);

@@ -208,6 +208,11 @@ public:
 
     uint16_t activeLines() const;
 
+    // The standard's active pixel count, which with activeLines() is what the
+    // mode is called. Not what this board emits on the line -- the part
+    // resamples our raster into it. OutputMode.cpp's table.
+    uint16_t activePx() const;
+
     // What a source's own shape is narrowed against: PanelShape, or Fill for
     // pass-through, which has no raster and so no shape to narrow into.
     Aspect displayAspect() const;

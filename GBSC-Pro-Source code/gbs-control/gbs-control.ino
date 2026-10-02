@@ -101,8 +101,11 @@ static unsigned long Tim_Resolution = 0, Tim_Resolution_Start = 0;
 #include "src/osd/Menu.h"
 #include "src/osd/MenuContext.h"
 #include "src/osd/MenuTree.h"
+#include "src/osd/InfoScreen.h"
+#include "src/osd/MuteOverlay.h"
 #include "src/osd/OSD.h"
 #include "src/osd/Panel.h"
+#include "src/osd/VolumeOverlay.h"
 #include "src/clock/ClockGen.h"
 #include "src/input/HoldRamp.h"
 #include "src/input/IrReceiver.h"
@@ -243,6 +246,15 @@ const char *final_version = full_version.c_str();
 
 #define STEP 1
 #define OSD_CLOSE_TIME 16000// *100            // 16 sec
+
+// How long MUTE ON / MUTE OFF stays up. It is an acknowledgement rather than a
+// screen, so it does not wait out OSD_CLOSE_TIME.
+static const unsigned long MuteOverlayDwellMs = 1200;
+
+// How often the info screen rebuilds. It reads the output frame rate, which
+// times pulses rather than reading a register, so this is a cost ceiling rather
+// than a refresh preference.
+static const unsigned long InfoScreenRefreshMs = 1000;
 #define OSD_RESOLUTION_UP_TIME 1000     // 1 sec
 #define OSD_RESOLUTION_CLOSE_TIME 20000 // 20 sec
 #include "OSD_TV/remote.h"
@@ -292,7 +304,6 @@ typedef enum {
 } OSD_Menu;
 char adl = 0;
 boolean IR = 0;
-int COl_L = 1;
 int Volume = 0;
 boolean MUTE_R = 0;
 static int oled_menuItem = 0;
@@ -303,39 +314,13 @@ boolean NEW_OLED_MENU = true;
 static uint8_t SvModeOptionChanged, AvModeOptionChanged;
 static bool SettingLineOptionChanged, SettingSmoothOptionChanged;
 
-uint8_t Keep_S = 0;
 static uint8_t tentative = 0xfe;
 // uint8_t RGBs_CompatibilityChanged;
 // uint8_t RGsB_CompatibilityChanged;
 // uint8_t VGA_CompatibilityChanged;
 
-int A1_yellow;
-int A2_main0;
-int A3_main0;
 
 
-void handle_0(void);
-void handle_4(void);
-void handle_8(void);
-
-
-typedef struct
-{
-    int key;               
-    void (*handler)(void); 
-} MenuEntry;
-
-static const MenuEntry menuTable[] = {
-
-
-    {'0', handle_0}, // ASCII 48
-    {'4', handle_4}, // ASCII 52
-    {'8', handle_8}, // ASCII 56
-
-
-
-
-};
 
 
 
@@ -618,12 +603,6 @@ void Mode_Option(void)
     }
 }
 
-void OSD_DISPLAY(const int T, const char C);
-void OSD_DISPLAY(const int T, const char C)
-{
-    __(T, (C * 2) + 1);
-}
-
 void ChangeSvModeOption(uint8_t num);
 void ChangeSvModeOption(uint8_t num)
 {
@@ -636,78 +615,6 @@ void ChangeAvModeOption(uint8_t num)
     avo->avMode = num;
     saveUserPrefs();
 }
-void Osd_Display(uint8_t start, const char str[]);
-void Osd_Display(uint8_t start, const char str[])
-{
-    static uint8_t start_last = 0;
-    if (str == NULL) {
-        return;
-    }
-    if (start == 0XFF)
-        start = start_last;
-    else
-        start_last = start;
-
-    for (uint8_t count = 0; str[count] != '\0'; count++) {
-        start_last = count + start + 1;
-
-        if (str[count] == ' ') //
-            continue;
-        else if (str[count] == '=')
-            OSD_DISPLAY(0x3D, count + start);
-        else if (str[count] == '.')
-            OSD_DISPLAY(0x2E, count + start);
-        else if (str[count] == '\'')
-            OSD_DISPLAY(0x27, count + start);
-        else if (str[count] == '-')
-            OSD_DISPLAY(0x3E, count + start);
-        else if (str[count] == '/')
-            OSD_DISPLAY(0x2F, count + start);
-        else if (str[count] == ':')
-            OSD_DISPLAY(0x3A, count + start);
-        else
-            OSD_DISPLAY(str[count], count + start);
-    }
-}
-typedef void (*OSD_cx_Ptr)(volatile int, volatile int, volatile int);
-OSD_cx_Ptr osd_cx_ptr;
-void OSD_writeString(int startPos, int row, const char *str);
-void OSD_writeString(int startPos, int row, const char *str)
-{
-    int pos = startPos;
-    while (*str != '\0') {
-
-        if (row == 1)
-            osd_cx_ptr = OSD_c1;
-        else if (row == 2)
-            osd_cx_ptr = OSD_c2;
-        else if (row == 3)
-            osd_cx_ptr = OSD_c3;
-
-        if (*str == ' ')
-            osd_cx_ptr(*str, 1 + pos * 2, blue_fill);
-        else if (*str == '=')
-            osd_cx_ptr(0x3D, 1 + pos * 2, main0);
-        else if (*str == '.')
-            osd_cx_ptr(0x2E, 1 + pos * 2, main0);
-        else if (*str == '\'')
-            osd_cx_ptr(0x27, 1 + pos * 2, main0);
-        else if (*str == '-')
-            osd_cx_ptr(0x3E, 1 + pos * 2, main0);
-        else if (*str == '/')
-            osd_cx_ptr(0x2F, 1 + pos * 2, main0);
-        else if (*str == ':')
-            osd_cx_ptr(0x3A, 1 + pos * 2, main0);
-        else
-            osd_cx_ptr(*str, 1 + pos * 2, main0);
-
-        pos++;
-        str++;
-    }
-}
-
-
-
 uint8_t getMovingAverage(uint8_t item);
 uint8_t getMovingAverage(uint8_t item)
 {
@@ -7684,38 +7591,23 @@ void drawOverlayScreens()
 
 
     if (oled_menuItem == 1) {
-        if (OLED_clear_flag)
-            display.clear();
-        OLED_clear_flag = ~0;
-        display.setColor(OLEDDISPLAY_COLOR::WHITE);
-        display.setTextAlignment(TEXT_ALIGN_LEFT);
-        display.setFont(ArialMT_Plain_16);
-        display.drawString(8, 15, "Volume - / + dB");
-        display.display();
-
+        // Only when the level moved: display() pushes the whole panel
+        // framebuffer over the bus the acquisition shares, and this branch runs
+        // on every pass the overlay is up.
+        static int shown = -1;
         adl = 50 - Volume;
-        colour1 = yellowT;
-        number_stroca = stroca1;
-        Osd_Display(1, "Line input volume");
-        colour1 = main0;
-        sequence_number1 = _21;
-        sequence_number2 = _20;
-        sequence_number3 = 0x3D;
-        // __(d, _23), __(B, _24);
-        OSD_c1(o, _19, blue_fill);
-
-        OSD_c1(o, _22, blue_fill);
-        OSD_c1(o, _23, blue_fill);
-        OSD_c1(o, _24, blue_fill);
-        Typ(adl);
-        // if (Volume <= 0)
-        // {
-        //   OSD_c1(o, _19, blue_fill);
-        // }
-        // else if (Volume > 0)
-        // {
-        //   __(0x3E, _19);
-        // }
+        if (adl != shown) {
+            shown = adl;
+            if (OLED_clear_flag)
+                display.clear();
+            OLED_clear_flag = ~0;
+            display.setColor(OLEDDISPLAY_COLOR::WHITE);
+            display.setTextAlignment(TEXT_ALIGN_LEFT);
+            display.setFont(ArialMT_Plain_16);
+            display.drawString(8, 15, "Volume - / + dB");
+            display.display();
+            Osd::VolumeOverlay::draw(adl);
+        }
 
         if (irrecv.decode(&results)) {
             decode_flag = 1;
@@ -7731,21 +7623,13 @@ void drawOverlayScreens()
                     PT_2257(Volume + 12);
                     break;
                 case IRKeyMenu:
-                    COl_L = 1;
-                    OSD_menu_F('0');
-                    oled_menuItem = 62;
+                    oled_menuItem = 0;
+                    OSD_clear();
+                    describedMenu.open();
                     break;
 
                 case IRKeyOk:
                     saveUserPrefs();
-                    for (int z = 0; z <= 800; z++) {
-                        OSD_c1(s, _19, 0x14);
-                        OSD_c1(a, _20, 0x14);
-                        OSD_c1(v, _21, 0x14);
-                        OSD_c1(i, _22, 0x14);
-                        OSD_c1(n, _23, 0x14);
-                        OSD_c1(g, _24, 0x14);
-                    }
                     break;
 
                 case IRKeyExit:
@@ -7759,6 +7643,14 @@ void drawOverlayScreens()
     }
 
     else if (oled_menuItem == 152) {
+        // ONCE A SECOND, NOT ONCE A PASS. Reading the output frame rate TIMES
+        // PULSES on the debug pin, and in pass-through there is no VDS pulse to
+        // time, so it waits out its timeout -- measured, that took a register
+        // read from 0.03 s to 1.2..5.2 s and starved OTA to the point of
+        // reading as a wedged firmware. The remote still answers every pass.
+        static unsigned long drawnAt = 0;
+        if (millis() - drawnAt >= InfoScreenRefreshMs) {
+        drawnAt = millis();
         if (OLED_clear_flag)
             display.clear();
         OLED_clear_flag = ~0;
@@ -7769,264 +7661,38 @@ void drawOverlayScreens()
         display.drawString(1, 28, "Info");
         display.display();
 
-        boolean vsyncActive = 0;
-        boolean hsyncActive = 0;
-        float ofr = Tv5725::TestBusRateMeasurement::outputFrameRateHz();
-        uint8_t currentInput = GBS::ADC_INPUT_SEL::read();
-
-        colour1 = yellow;
-        number_stroca = stroca1;
-        Osd_Display(0, "Info:");
-        colour1 = main0;
-        Osd_Display(26, "Hz");
-
-        if (rto->presetID == 0x01 || rto->presetID == 0x11) {
-            // OSD_writeString(6,1,"1280x960 ");
-
-            OSD_c1(n1, P6, main0);
-            OSD_c1(n2, P7, main0);
-            OSD_c1(n8, P8, main0);
-            OSD_c1(n0, P9, main0);
-            OSD_c1(x, P10, main0);
-            OSD_c1(n9, P11, main0);
-            OSD_c1(n6, P12, main0);
-            OSD_c1(n0, P13, main0);
-            OSD_c1(n4, P14, blue_fill);
-        } else if (rto->presetID == 0x02 || rto->presetID == 0x12) {
-            // OSD_writeString(6,1,"1280x1024");
-            OSD_c1(n1, P6, main0);
-            OSD_c1(n2, P7, main0);
-            OSD_c1(n8, P8, main0);
-            OSD_c1(n0, P9, main0);
-            OSD_c1(x, P10, main0);
-            OSD_c1(n1, P11, main0);
-            OSD_c1(n0, P12, main0);
-            OSD_c1(n2, P13, main0);
-            OSD_c1(n4, P14, main0);
-        } else if (rto->presetID == 0x03 || rto->presetID == 0x13) {
-            // OSD_writeString(6,1,"1280x720 ");
-            OSD_c1(n1, P6, main0);
-            OSD_c1(n2, P7, main0);
-            OSD_c1(n8, P8, main0);
-            OSD_c1(n0, P9, main0);
-            OSD_c1(x, P10, main0);
-            OSD_c1(n7, P11, main0);
-            OSD_c1(n2, P12, main0);
-            OSD_c1(n0, P13, main0);
-            OSD_c1(n4, P14, blue_fill);
-        } else if (rto->presetID == 0x05 || rto->presetID == 0x15) {
-            // OSD_writeString(6,1,"1920x1080");
-            OSD_c1(n1, P6, main0);
-            OSD_c1(n9, P7, main0);
-            OSD_c1(n2, P8, main0);
-            OSD_c1(n0, P9, main0);
-            OSD_c1(x, P10, main0);
-            OSD_c1(n1, P11, main0);
-            OSD_c1(n0, P12, main0);
-            OSD_c1(n8, P13, main0);
-            OSD_c1(n0, P14, main0);
-        } else if (rto->presetID == 0x04) {
-            // OSD_writeString(6,1,"720x480  ");
-            OSD_c1(n7, P6, main0);
-            OSD_c1(n2, P7, main0);
-            OSD_c1(n0, P8, main0);
-            OSD_c1(x, P9, main0);
-            OSD_c1(n4, P10, main0);
-            OSD_c1(n8, P11, main0);
-            OSD_c1(n0, P12, main0);
-            OSD_c1(n8, P13, blue_fill);
-            OSD_c1(n0, P14, blue_fill);
-        } else if (rto->presetID == 0x14) {
-            // OSD_writeString(6,1,"768x576  ");
-            OSD_c1(n7, P6, main0);
-            OSD_c1(n6, P7, main0);
-            OSD_c1(n8, P8, main0);
-            OSD_c1(x, P9, main0);
-            OSD_c1(n5, P10, main0);
-            OSD_c1(n7, P11, main0);
-            OSD_c1(n6, P12, main0);
-            OSD_c1(n8, P13, blue_fill);
-            OSD_c1(n0, P14, blue_fill);
-        } else {
-            // OSD_writeString(6,1,"Bypass   ");
-            OSD_c1(B, P6, main0);
-            OSD_c1(y, P7, main0);
-            OSD_c1(p, P8, main0);
-            OSD_c1(a, P9, main0);
-            OSD_c1(s, P10, main0);
-            OSD_c1(s, P11, main0);
-            OSD_c1(n6, P12, blue_fill);
-            OSD_c1(n8, P13, blue_fill);
-            OSD_c1(n0, P14, blue_fill);
+        // EVERY NUMBER IS ASKED FOR, NONE MEASURED HERE. The scan type comes
+        // from the answer SourceMeasurement already reached: measuring it feeds
+        // a steadiness run the acquisition layer steers on, and a draw at the
+        // redraw cadence would be a second owner of it. The chain classified
+        // the source again through STATUS_IF_INP_*, the input formatter's SD
+        // classifier, and printed Err for everything it did not recognise --
+        // which on an RGB computer source is every frame.
+        Osd::InfoScreen::Report report;
+        const Tv5725::OutputMode *const out = geometry.outputMode();
+        report.bypass = out == NULL || out->isBypass();
+        report.outputPx = report.bypass ? 0 : out->activePx();
+        report.outputLines = report.bypass ? 0 : out->activeLines();
+        // NOT IN PASS-THROUGH. The rate is timed off the VDS bus, which the
+        // video does not go through there, so the measurement waits out its
+        // timeout -- seconds of a blocked loop() for a number that does not
+        // exist. The screen shows no rate rather than a zero.
+        report.outputRateHz =
+            report.bypass
+                ? 0
+                : (uint8_t)(Tv5725::TestBusRateMeasurement::outputFrameRateHz()
+                            + 0.5f);
+        report.input = VideoSourceSelection::name(VideoSourceSelection::selected());
+        report.present = inputAcquisition.sourceIsPresent()
+                         && Tv5725::Chip::hasPower() && Info_sate != 1;
+        report.lines = sourceSampling.sourceLines();
+        report.interlaced =
+            sourceSampling.scanType() == Tv5725::SourceMeasurement::ScanInterlaced;
+        report.fieldRateHz = (uint8_t)(sourceSampling.fieldRateHz() + 0.5f);
+        report.lineRateHz = sourceSampling.lineRateHz();
+        Osd::InfoScreen::draw(report);
         }
 
-        if (VideoSourceSelection::selected() == InfoRGBs) {
-            // OSD_writeString(17,1," RGBs");
-            OSD_c1(r, P17, blue_fill);
-            OSD_c1(R, P18, main0);
-            OSD_c1(G, P19, main0);
-            OSD_c1(B, P20, main0);
-            OSD_c1(s, P21, main0);
-        } else if (VideoSourceSelection::selected() == InfoRGsB) {
-            // OSD_writeString(17,1," RGsB ");
-            OSD_c1(r, P17, blue_fill);
-            OSD_c1(R, P18, main0);
-            OSD_c1(G, P19, main0);
-            OSD_c1(s, P20, main0);
-            OSD_c1(B, P21, main0);
-            OSD_c1(B, P22, blue_fill);
-        } else if (VideoSourceSelection::selected() == InfoVGA) {
-            // OSD_writeString(17,1," VGA  ");
-            OSD_c1(r, P17, blue_fill);
-            OSD_c1(V, P18, main0);
-            OSD_c1(G, P19, main0);
-            OSD_c1(A, P20, main0);
-            OSD_c1(B, P21, blue_fill);
-            OSD_c1(B, P22, blue_fill);
-        } else if (VideoSourceSelection::selected() == InfoYUV) {
-            OSD_c1(r, P17, blue_fill);
-            OSD_c1(Y, P18, main0);
-            OSD_c1(P, P19, main0);
-            OSD_c1(B, P20, main0);
-            OSD_c1(P, P21, main0);
-            OSD_c1(R, P22, main0);
-        } else if (VideoSourceSelection::selected() == InfoSV) {
-            OSD_c1(r, P17, blue_fill);
-            OSD_c1(Y, P18, blue_fill);
-            OSD_c1(S, P19, main0);
-            OSD_c1(V, P20, main0);
-            OSD_c1(B, P21, blue_fill);
-            OSD_c1(B, P22, blue_fill);
-        } else if (VideoSourceSelection::selected() == InfoAV) {
-            OSD_c1(r, P17, blue_fill);
-            OSD_c1(Y, P18, blue_fill);
-            OSD_c1(A, P19, main0);
-            OSD_c1(V, P20, main0);
-            OSD_c1(B, P21, blue_fill);
-            OSD_c1(B, P22, blue_fill);
-        } else {
-            OSD_c1(Y, P17, blue_fill);
-            OSD_c1(P, P18, blue_fill);
-            OSD_c1(b, P19, blue_fill);
-            OSD_c1(P, P20, blue_fill);
-            OSD_c1(r, P21, blue_fill);
-            OSD_c1(B, P22, blue_fill);
-        }
-
-        adl = ofr;
-        colour1 = main0;
-        number_stroca = stroca1;
-        sequence_number1 = _25;
-        sequence_number2 = _24; //_24
-        sequence_number3 = 0x3D;
-        Typ(adl);
-
-        clean_up(stroca2, 31, 0); // 17  31
-
-        colour1 = yellow;
-        number_stroca = stroca2;
-
-        Osd_Display(0, "Current:");
-
-        colour1 = main0;
-        number_stroca = stroca2;
-
-        Osd_Display(0xFF, " ");
-        if ((rto->sourceDisconnected || !Tv5725::Chip::hasPower() || Info_sate == 1)) {
-            Osd_Display(0xFF, "No Input");
-        } else if (((currentInput == 1) || (VideoSourceSelection::selected() == InfoRGBs || VideoSourceSelection::selected() == InfoRGsB || VideoSourceSelection::selected() == InfoVGA))) {
-            OSD_c2(B, P16, blue_fill);
-            Osd_Display(0xFF, "RGB ");
-            vsyncActive = GBS::STATUS_SYNC_PROC_VSACT::read();
-            if (vsyncActive) {
-                // Osd_Display(0xFF,"H");
-                hsyncActive = GBS::STATUS_SYNC_PROC_HSACT::read();
-                if (hsyncActive) {
-                    Osd_Display(0xFF, "HV   ");
-                }
-            } else if ((VideoSourceSelection::selected() == InfoVGA) && ((!vsyncActive || !hsyncActive))) {
-                OSD_c2(B, P11, blue_fill);
-                Osd_Display(0x09, "No Input");
-            }
-        } else if ((inputAcquisition.acquiredPasses() > 35 || currentInput != 1) || (VideoSourceSelection::selected() == InfoYUV || VideoSourceSelection::selected() == InfoSV || VideoSourceSelection::selected() == InfoAV)) {
-            OSD_c2(B, P16, blue_fill);
-            if (VideoSourceSelection::selected() == InfoYUV)
-                Osd_Display(0xFF, "  YPBPR  ");
-            else if (VideoSourceSelection::selected() == InfoSV)
-                Osd_Display(0xFF, "   SV    ");
-            else if (VideoSourceSelection::selected() == InfoAV)
-                Osd_Display(0xFF, "   AV    ");
-        } else {
-            Osd_Display(0xFF, "No Input");
-        }
-#if 1
-        static GBS::STATUS_IF_INP_SD::Value inputIsSd;
-        static GBS::STATUS_IF_INP_PAL_PRG::Value inputIsPalPrg;
-        static GBS::STATUS_IF_INP_PAL_INT::Value inputIsPalInt;
-        static GBS::STATUS_IF_INP_NTSC_PRG::Value inputIsNtscPrg;
-        static GBS::STATUS_IF_INP_NTSC_INT::Value inputIsNtscInt;
-        static unsigned long Tim_info = 0;
-        if ((millis() - Tim_info) >= 1000) {
-            // One transaction, so the five describe the same instant.
-            GBS::Tie<GBS::STATUS_IF_INP_SD,
-                     GBS::STATUS_IF_INP_PAL_PRG,
-                     GBS::STATUS_IF_INP_PAL_INT,
-                     GBS::STATUS_IF_INP_NTSC_PRG,
-                     GBS::STATUS_IF_INP_NTSC_INT>::read(
-                inputIsSd, inputIsPalPrg, inputIsPalInt, inputIsNtscPrg, inputIsNtscInt);
-
-            // GBS::IF_LD_RAM_BYPS::write(1);
-            // printf( "Scanning method: %d\n",GBS::STATUS_SYNC_PROC_VTOTAL::read() );   // 0x%02x
-            // printf( "Scanning method: %d\n",GBS::STATUS_VDS_VERT_COUNT::read() );
-            // printf( "H_TOTAL: %d      ", GBS::HPERIOD_IF::read() * 4 );
-            // printf( "V_TOTAL: %d\n", GBS::VPERIOD_IF::read() );
-
-            Tim_info = millis();
-        }
-
-        if (inputIsSd)
-        {
-            if (inputIsPalPrg)
-            {
-                Osd_Display(0xFF, "   576p");
-            } 
-            else if (inputIsPalInt)
-            {
-                if( abs(GBS::STATUS_SYNC_PROC_VTOTAL::read() - 312) <= 10)
-                  Osd_Display(0xFF, "   288p");
-                else  
-                  Osd_Display(0xFF, "   576i");
-            } 
-            else if (inputIsNtscPrg)
-            {
-                Osd_Display(0xFF, "   480p");
-            } 
-            else if (inputIsNtscInt)
-            {
-                if( abs(GBS::STATUS_SYNC_PROC_VTOTAL::read() - 262) <= 10)
-                  Osd_Display(0xFF, "   240p");
-                else
-                  Osd_Display(0xFF, "   480i");
-            } 
-            else 
-                Osd_Display(0xFF, "   Err");
-        } 
-        else
-            Osd_Display(0xFF, "   Err");
-
-
-
-
-        // clean_up(stroca3, 17, 0); // 17  31
-        // colour1 = yellow;
-        // number_stroca = stroca3;
-        // Osd_Display(0, "version:");
-        // colour1 = main0;
-        // number_stroca = stroca3;
-        // Osd_Display(0xFF, "   ");
-        // Osd_Display(0xFF, final_version);
-        
-#endif
         if (irrecv.decode(&results)) {
             decode_flag = 1;
             switch (results.value) {
@@ -8073,47 +7739,6 @@ void drawOverlayScreens()
         OledUpdataTime = 1;
     }
 
-    if ((millis() - Tim_Resolution) >= OSD_RESOLUTION_UP_TIME && oled_menuItem == OSD_Resolution_RetainedSettings) {
-        Tim_menuItem = millis(); // updata osd close
-        Tim_Resolution = millis();
-        // printf(" %02x \n",GBS::STATUS_MISC::read());
-        uint8_t T_tim = OSD_RESOLUTION_CLOSE_TIME / 1000 - ((Tim_Resolution - Tim_Resolution_Start) / 1000);
-        // colour1 = A2_main0;
-        number_stroca = stroca2;
-        if (T_tim >= 10) {
-            OSD_c2((T_tim / 10) + '0', P11, main0);
-            OSD_c2((T_tim % 10) + '0', P12, main0);
-
-            Osd_Display(14, " s ");
-        } else {
-            OSD_c2('0', P12, blue_fill);
-            OSD_c2(T_tim + '0', P11, main0); //
-
-            Osd_Display(13, " s ");
-        }
-        // printf(" TIM :%d \n",(uint8_t)((Tim_Resolution - Tim_Resolution_Start)/10));
-
-        if ((Tim_Resolution - Tim_Resolution_Start) >= OSD_RESOLUTION_CLOSE_TIME) {
-
-            // uopt->preferScalingRgbhv = true;
-            if (tentative == Output960P) // 1280x960
-                userCommand = 'f';
-            else if (tentative == Output720P) // 1280x720
-                userCommand = 'g';
-            else if (tentative == Output1024P) // 1280x1024
-                userCommand = 'p';
-            else if (tentative == Output1080P) // 1920x1080
-                userCommand = 's';
-            else
-                userCommand = 'g';
-            // printf("%c \n",userCommand);
-
-            OSD_menu_F(OSD_CROSS_MID);
-            OSD_menu_F('4');
-            oled_menuItem = OSD_Resolution_pass;
-        }
-    }
-
     if (oled_menuItem_last != oled_menuItem && oled_menuItem != 0) {
         Tim_menuItem = millis();
         OLED_clear_flag = 1;
@@ -8136,23 +7761,6 @@ void drawOverlayScreens()
     oled_menuItem_last = oled_menuItem;
 }
 
-void OSD_menu_F(char incomingByte)
-{
-    const size_t tableSize = sizeof(menuTable) / sizeof(menuTable[0]);
-    const unsigned char key = (unsigned char)incomingByte;
-
-    // 线性查找实�?
-    for (size_t i = 0; i < tableSize; i++) {
-        if (menuTable[i].key == key) {
-            menuTable[i].handler();
-            return;
-        }
-    }
-
-
-    // OSD_default_F();
-}
-
 // What a remote key does outside the menu: the volume overlay, Mute and the
 // Info screen. Takes a frame already decoded rather than reading one, because
 // decode() is one-shot -- whichever caller reads it first is the only one that
@@ -8166,9 +7774,6 @@ static void handleRemoteKey()
         {
 
             NEW_OLED_MENU = false;
-            background_up(stroca1, _27, blue_fill);
-            background_up(stroca2, _27, blue_fill);
-            
             oled_menuItem = 152;
 
             // InputINFO();
@@ -8188,107 +7793,43 @@ static void handleRemoteKey()
                                             // GBS::VDS_U_OFST::write(GBS::VDS_U_OFST::read() + 100);
         } else {
             NEW_OLED_MENU = false;
-            COl_L = 1;
-            OSD_menu_F('0');
-            oled_menuItem = 154;
+            oled_menuItem = 0;
+            describedMenu.open();
             display.clear();
-            // display.init();
-            // display.flipScreenVertically();   
-            // printf("Oled Init\n");
         }
     }
-
-    // if (results.value == kRecv14)
-    // {
-    //     NEW_OLED_MENU = false;
-    //     background_up(stroca1, _10, blue_fill);
-    //     for (int i = 0; i <= 800; i++)
-    //     {
-    //         colour1 = yellowT;
-    //         number_stroca = stroca1;
-    //         __(R, _2), __(e, _3), __(s, _4), __(t, _5), __(a, _6), __(r, _7), __(t, _8);
-    //         display.clear();
-    //         display.setTextAlignment(TEXT_ALIGN_LEFT);
-    //         display.setFont(ArialMT_Plain_16);
-    //         display.drawString(8, 15, "Resetting GBS");
-    //         display.drawString(8, 35, "Please Wait...");
-    //         display.display();
-    //     }
-    //     webSocket.close();
-    //     delay(60);
-    //     ESP.reset();
-    //     oled_menuItem = 0;
-    //     PT_MUTE(0x79);
-    // }
-
 
     if (results.value == IRKeyInfo) {
         Tim_menuItem = millis();
         NEW_OLED_MENU = false;
-        background_up(stroca1, _27, blue_fill);
-        background_up(stroca2, _27, blue_fill);
         oled_menuItem = 152;
     }
 
     switch (results.value) {
-        case IRKeyMute:
+        case IRKeyMute: {
+            // The chain drew the row 800 times over to hold it on screen, which
+            // blocked loop() for seconds and painted the panel 800 times with
+            // it. One draw and one dwell says the same thing.
             Tim_menuItem = millis();
-            if (MUTE_R == 0) {
-                PT_MUTE(0x79);
-                NEW_OLED_MENU = false;
-                background_up(stroca1, _9, blue_fill);
-                for (int i = 0; i <= 800; i++) {
-                    colour1 = yellowT;
-                    number_stroca = stroca1;
-                    __(M, _1), __(U, _2), __(T, _3), __(E, _4);
-                    colour1 = main0;
-                    __(O, _6), __(N, _7);
-                    display.clear();
-                    display.flipScreenVertically();
-                    display.setTextAlignment(TEXT_ALIGN_LEFT);
-                    display.setFont(ArialMT_Plain_16);
-                    display.drawString(8, 15, "MUTE ON");
-                    display.display();
-                }
-                oled_menuItem = 0;
-                background_up(stroca1, _9, blue_fill);
-                OSD_Cut_0x01();
-                OSD();
-                MUTE_R = 1;
-            } else if (MUTE_R == 1) {
-
-                PT_MUTE(0x78);
-                NEW_OLED_MENU = false;
-                background_up(stroca1, _9, blue_fill);
-                for (int i = 0; i <= 800; i++) {
-                    colour1 = yellowT;
-                    number_stroca = stroca1;
-                    __(M, _1), __(U, _2), __(T, _3), __(E, _4);
-                    colour1 = main0;
-                    __(O, _6), __(F, _7), __(F, _8);
-                    display.clear();
-                    display.setTextAlignment(TEXT_ALIGN_LEFT);
-                    display.setFont(ArialMT_Plain_16);
-                    display.drawString(8, 15, "MUTE OFF");
-                    display.display();
-                }
-                oled_menuItem = 0;
-                background_up(stroca1, _9, blue_fill);
-                OSD_Cut_0x01();
-                OSD();
-                MUTE_R = 0;
-            }
-            break;
-        case kRecv2:
-            Tim_menuItem = millis();
+            MUTE_R = MUTE_R == 0 ? 1 : 0;
+            PT_MUTE(MUTE_R ? 0x79 : 0x78);
             NEW_OLED_MENU = false;
-            background_up(stroca1, _25, blue_fill);
-            oled_menuItem = 1;
+            Osd::MuteOverlay::draw(MUTE_R != 0);
+            display.clear();
+            display.setTextAlignment(TEXT_ALIGN_LEFT);
+            display.setFont(ArialMT_Plain_16);
+            display.drawString(8, 15, MUTE_R ? "MUTE ON" : "MUTE OFF");
+            display.display();
+            delay(MuteOverlayDwellMs);
+            oled_menuItem = 0;
+            OSD_clear();
+            OSD();
             break;
+        }
+        case kRecv2:
         case kRecv3:
             Tim_menuItem = millis();
             NEW_OLED_MENU = false;
-            background_up(stroca1, _25, blue_fill);
             oled_menuItem = 1;
             break;
     }
@@ -8304,103 +7845,3 @@ void OSD_IR()
     }
 }
 
-
-void handle_0(void)
-{
-    if (COl_L == 1) {
-        A1_yellow = yellowT;
-        A2_main0 = main0;
-        A3_main0 = main0;
-    } else if (COl_L == 2) {
-        A1_yellow = main0;
-        A2_main0 = yellowT;
-        A3_main0 = main0;
-    } else if (COl_L == 3) {
-        A1_yellow = main0;
-        A2_main0 = main0;
-        A3_main0 = yellowT;
-    }
-
-    // OSD_c2(0x15, P9 , blue_fill);
-    // OSD_c3(0x15, P18, blue_fill);
-
-    OSD_background();
-    colour1 = blue_fill;
-    number_stroca = stroca2;
-    __(icon4, _0);
-    number_stroca = stroca3;
-    __(icon4, _0);
-    colour1 = yellow;
-    number_stroca = stroca1;
-    __(icon4, _0);
-
-    colour1 = blue;
-
-    // number_stroca = stroca1;
-    // __(icon5, _27);
-    number_stroca = stroca2;
-    __('1', _27);
-    number_stroca = stroca3;
-    __(icon6, _27);
-
-    colour1 = A1_yellow;
-    number_stroca = stroca1;
-    Osd_Display(1, "1 Input");
-    OSD_c1(0x15, P8, yellowT);
-
-    colour1 = A2_main0;
-    number_stroca = stroca2;
-    Osd_Display(1, "2 Output Resolution");
-
-    colour1 = A3_main0;
-    number_stroca = stroca3;
-    Osd_Display(1, "3 Screen Settings");
-};
-void handle_4(void)
-{
-    if (COl_L == 1) {
-        A1_yellow = yellowT;
-        A2_main0 = main0;
-        A3_main0 = main0;
-    }
-    else if (COl_L == 2) {
-        A1_yellow = main0;
-        A2_main0 = yellowT;
-        A3_main0 = main0;
-    }
-    else if (COl_L == 3) {
-        A1_yellow = main0;
-        A2_main0 = main0;
-        A3_main0 = yellowT;
-    }
-
-    colour1 = blue;
-
-    number_stroca = stroca1;
-    __(icon5, _27);
-
-    number_stroca = stroca2;
-    __('2', _27);
-
-    // number_stroca = stroca3;
-    // __(icon6, _27);
-
-    colour1 = A1_yellow;
-    number_stroca = stroca1;
-    Osd_Display(1, "1280x720");
-
-    colour1 = A2_main0;
-    number_stroca = stroca2;
-    Osd_Display(1, "768x576");
-    colour1 = A3_main0;
-    number_stroca = stroca3;
-    Osd_Display(1, "720x480");
-};
-void handle_8(void)
-{
-    OSD_background();
-    OSD_c1(icon4, P0, blue_fill);
-    OSD_c2(icon4, P0, yellow);
-    OSD_c3(icon4, P0, blue_fill);
-    COl_L = 2;
-};

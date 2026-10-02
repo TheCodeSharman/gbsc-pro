@@ -8,7 +8,9 @@
 
 #include <stdint.h>
 
+#include "MenuPage.h"
 #include "MenuRenderer.h"
+#include "Row.h"
 
 namespace Osd {
 
@@ -19,19 +21,12 @@ public:
     // OSD_parameters() is what supplies this on the board.
     typedef void (*WriteCell)(char address, char page, char value);
 
-    static const uint8_t Columns = 28;
-
     // Where a row's four fields sit. The cursor takes the first column, so a
     // label is inset by one; the value ends two columns short, leaving the last
     // to the page indicator and the one before it as a gutter.
     static const uint8_t LabelColumn = 1;
     static const uint8_t ValueLastColumn = 25;
     static const uint8_t IndicatorColumn = 27;
-
-    // The font is ASCII from 0x21 up, so a label needs no translation. Two
-    // characters are not where ASCII puts it: 0x20 is an accented letter rather
-    // than a space, and the hyphen is at 0x3e.
-    static const char Hyphen = 0x3e;
 
     // The cursor on the selected row and, after a label, the mark that the item
     // leads somewhere -- one glyph for both, as the chain draws it. The other
@@ -48,9 +43,9 @@ public:
 
     // A cell is written twice, and the same value means different things at the
     // two addresses: at the even one it is the colour, at the odd one a glyph.
-    // Background is both -- a filled block in the bar's colour, which is how
-    // background_up() paints a row. Clear turns a cell off altogether, which is
-    // what OSD_Cut_0x01() writes to erase the overlay.
+    // Background is both -- a filled block in the bar's colour, which is what a
+    // row is filled with. Clear turns a cell off altogether, which is what
+    // OSD_Cut_0x01() writes to erase the overlay.
     static const char Background = 0x11;
     static const char Selected = 0x16;
     static const char Unselected = 0x17;
@@ -67,30 +62,33 @@ public:
     // The one STV9426 on the board, or a recorder in a host test.
     static void writeThrough(WriteCell write);
 
+    // A composed row onto the part. The one writer of the overlay, so every
+    // screen composes a Row and hands it here.
+    //
+    // ONLY THE CELLS THAT MOVED. These screens are drawn from loop() on every
+    // pass they are up, and a row is 56 writes on the bus the acquisition
+    // shares: measured, redrawing two unchanged rows took a register read from
+    // 0.03 s to 1.2..5.2 s and starved OTA. The part has no back buffer, so a
+    // cell rewritten with what it already holds is a flicker as well as a cost.
+    static void send(uint8_t index, const Row &row);
+
+    // Whatever is on the part is no longer what was last sent -- after a clear,
+    // or a bring-up. The next send writes every cell again.
+    static void forget();
+
     static const MenuRenderer &renderer();
 
 private:
-    // One row composed before any of it is sent. The part has no back buffer,
-    // so a cell written twice shows the first value: composing here is what
-    // makes a redraw go straight from the old row to the new one.
-    struct Line {
-        char symbol[Columns];
-        char colour[Columns];
-    };
-
     static void row(const MenuPage &page, uint8_t index, const char *value);
     static void end(const MenuPage &page);
 
-    static void fill(Line &line, char symbol, char colour);
-    static void putValue(Line &line, uint8_t from, const char *value,
+    static void putValue(Row &line, uint8_t from, const char *value,
                          char colour);
-    static void putIndicator(Line &line, const MenuPage &page, uint8_t index);
-
-    static void putCell(Line &line, uint8_t column, char symbol, char colour);
-    static void putText(Line &line, uint8_t at, const char *text, char colour);
-    static void send(uint8_t index, const Line &line);
+    static void putIndicator(Row &line, const MenuPage &page, uint8_t index);
 
     static WriteCell write_;
+    static Row sent_[MenuPage::Rows];
+    static bool known_[MenuPage::Rows];
 };
 
 }  // namespace Osd
