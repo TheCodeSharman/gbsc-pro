@@ -2680,9 +2680,6 @@ void doPostPresetLoadSteps()
         Tv5725::SyncProcessor::applyDefaultClampWindow();
 
         GBS::DAC_RGBS_PWDNZ::write(1); 
-        GBS::DAC_RGBS_SPD::write(0);
-        GBS::DAC_RGBS_S0ENZ::write(0); //
-        GBS::DAC_RGBS_S1EN::write(1);
 
 
         Tv5725::SyncProcessor::setHsyncOverflowProtect(false);

@@ -166,8 +166,12 @@ void Chip::init()
     //
     // Per channel: *PD is power-down (0 = powered), *0ENZ selects whether the
     // DAC follows its input data, *1EN the second input. The MS9288A samples
-    // this analog output, so all three channels are live -- and a cleared B0ENZ
+    // this analog output, so all four channels are live -- and a cleared B0ENZ
     // is the yellow-tint fault, which only the bypass switches ever wrote.
+    //
+    // The sync channel takes the opposite pair to the colour three: S1EN 1 is
+    // what a unit emitting a picture reads, and 0 is a black frame with the
+    // HDMI link up. docs/known-issues.md.
     DAC_RGBS_RPD::write(0x0);                    // s0_44[1:1]
     DAC_RGBS_R0ENZ::write(0x1);                  // s0_44[2:2]
     DAC_RGBS_R1EN::write(0x0);                   // s0_44[3:3]
@@ -177,6 +181,9 @@ void Chip::init()
     DAC_RGBS_BPD::write(0x0);                    // s0_44[7:7]
     DAC_RGBS_B0ENZ::write(0x1);                  // s0_45[0:0]
     DAC_RGBS_B1EN::write(0x0);                   // s0_45[1:1]
+    DAC_RGBS_SPD::write(0x0);                    // s0_45[2:2]
+    DAC_RGBS_S0ENZ::write(0x0);                  // s0_45[3:3]
+    DAC_RGBS_S1EN::write(0x1);                   // s0_45[4:4]
     GBS::CKT_FF_CNTRL::write(0x0);                    // s0_45[7:6]
 
     // --- block resets, RELEASED, and before anything they hold ------------

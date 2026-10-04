@@ -32,6 +32,7 @@ FakeTwoWire Wire;
 
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Adc.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/BringUp.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Chip.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/InputFormatter.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SyncProcessor.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/VideoProcessor.h"
@@ -234,9 +235,22 @@ TEST_CASE("the DAC channel enables survive a preset load")
     // it and it survived as whatever the last table left.
     runBringUp();
 
-    CHECK(Wire.field(0, 0x44, 2, 1) == 1u);
-    CHECK(Wire.field(0, 0x44, 5, 1) == 1u);
-    CHECK(Wire.field(0, 0x45, 0, 1) == 1u);
+    CHECK(WRITTEN(Tv5725::Chip::DAC_RGBS_R0ENZ) == 1u);
+    CHECK(WRITTEN(Tv5725::Chip::DAC_RGBS_G0ENZ) == 1u);
+    CHECK(WRITTEN(Tv5725::Chip::DAC_RGBS_B0ENZ) == 1u);
+}
+
+TEST_CASE("the sync DAC is configured by the bring-up, not by the first solve")
+{
+    // s0_45 reads 0x11 on a unit emitting a picture and 0x01 on one emitting a
+    // black frame with the HDMI link up, and the missing bit is S1EN. Set only
+    // once a source has been acquired, it leaves a boot whose first acquisition
+    // fails with the output DAC half configured. docs/known-issues.md.
+    runBringUp();
+
+    CHECK(WRITTEN(Tv5725::Chip::DAC_RGBS_SPD) == 0u);
+    CHECK(WRITTEN(Tv5725::Chip::DAC_RGBS_S0ENZ) == 0u);
+    CHECK(WRITTEN(Tv5725::Chip::DAC_RGBS_S1EN) == 1u);
 }
 
 TEST_CASE("block resets are released after nothing that configures those blocks")
