@@ -156,6 +156,8 @@ char userCommand;
 volatile uint8_t pendingInputSelection = VideoSourceSelection::None;
 // -1 is nothing asked for; any other value is a PresetPreference.
 volatile int8_t pendingOutputPreference = -1;
+// 0 is nothing asked for; any other value is the slot character.
+volatile uint8_t pendingSlotSelection = 0;
 
 #if GBS_SAMPLING_LOG
 Tv5725::SamplingLog samplingLog;
@@ -5394,6 +5396,15 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
             geometryControls.nudge(pendingNudge, steps);
         }
 
+        if (pendingSlotSelection != 0) {
+            const uint8_t wanted = pendingSlotSelection;
+            pendingSlotSelection = 0;
+
+            uopt->presetSlot = wanted;
+            saveUserPrefs();
+            applySelectedSlot();
+        }
+
         if (pendingOutputPreference >= 0) {
             const Tv5725::PresetPreference wanted =
                 (Tv5725::PresetPreference)pendingOutputPreference;
@@ -5491,8 +5502,8 @@ void handleType2Command(char argument)
         //
         // Both say what they did: a silent no-op leaves someone pressing save
         // and believing it worked.
-        case '3': // load custom preset
-            SerialM.println(recallSlotFraming(currentSlotIndex())
+        case '3': // load the selected slot
+            SerialM.println(applySelectedSlot()
                 ? F("slot load: framing restored")
                 : F("slot load: nothing stored for this source"));
             break;
@@ -6911,11 +6922,7 @@ void startWebserver()
         String slotParamValue = slotParam->value();
         char slotValue[2];
         slotParamValue.toCharArray(slotValue, sizeof(slotValue));
-        // The slot is still recorded -- it is what the replacement mechanism
-        // keys off -- but it no longer means "load a register dump", so the
-        // preference is left alone. docs/chip-initialisation.md step 7.
-        uopt->presetSlot = (uint8_t)slotValue[0];
-        saveUserPrefs();
+        pendingSlotSelection = (uint8_t)slotValue[0];
         result = true;
       }
     }
@@ -7482,6 +7489,41 @@ bool recallSlotFraming(int16_t slot)
     if (slot < 0 || !slotFramings.find((uint8_t)slot, geometry.framedKey(), &framing))
         return false;
     return geometry.applyFraming(framing);
+}
+
+// Choosing a slot IS loading it: a slot holds what the user stored for every
+// source, so arriving on one puts the picture where that slot left it for the
+// source in front of the chip. A slot holding nothing for it leaves the
+// picture alone. docs/framing-presets.md
+bool applySelectedSlot()
+{
+    const int16_t slot = currentSlotIndex();
+    if (slot < 0)
+        return false;
+
+    SlotMetaArray slotsObject;
+    File f = LittleFS.open(SLOTS_FILE, "r");
+    if (f && f.size() == sizeof(SlotMetaArray)) {
+        f.read((byte *)&slotsObject, sizeof(slotsObject));
+        f.close();
+
+        const SlotMeta &meta = slotsObject.slot[slot];
+        uopt->wantScanlines = meta.scanlines;
+        uopt->scanlineStrength = meta.scanlinesStrength;
+        uopt->wantVdsLineFilter = meta.wantVdsLineFilter;
+        uopt->wantStepResponse = meta.wantStepResponse;
+        uopt->wantPeaking = meta.wantPeaking;
+
+        if (!uopt->wantScanlines)
+            disableScanlines();
+        Tv5725::VideoProcessor::setLineFilter(uopt->wantVdsLineFilter);
+        Tv5725::VideoProcessor::setPeaking(uopt->wantPeaking);
+        Tv5725::VideoProcessor::setStepResponse(uopt->wantStepResponse);
+    } else if (f) {
+        f.close();
+    }
+
+    return recallSlotFraming(slot);
 }
 
 // Called every loop. Nothing is written until the table has held still.
