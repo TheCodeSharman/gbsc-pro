@@ -1303,82 +1303,59 @@ measurement of it. A count that matches the source says the arriving signal is
 intact; one that cannot be made to settle on the right path says it is not, and
 that is the one that needs power.
 
-### A boot that lands on `ypbpr` comes up solid green, and the cause is not on the TV5725
+### A boot that lands on `ypbpr` skips the preset load and comes up green
 
-**Reproduced on demand, across a true mains-and-USB power cycle.** Which input
-the settings file names at power-up decides it: stored as `ypbpr` the picture is
-solid green with faint vertical bars; stored as `vga` it is clean, and selecting
-`ypbpr` afterwards is clean too. Same input, same cable, same source.
+**Reproduced on demand, 4 of 4 boots.** Which input the settings file names at
+power-up decides it: stored as `ypbpr` the picture is a dark, flat or banded
+green field; stored as `vga` it is clean, and selecting `ypbpr` afterwards is
+clean too. Same input, same cable, same source.
 
-**The register file is excluded, in both directions.** The whole 1536-register
-difference between a green state and a clean one resolves to fifteen fields
-outside the geometry solve. Writing them to their clean values on a green unit
-leaves it green; writing them to their green values on a clean unit leaves it
-clean and in colour. **A register dump cannot reach this fault**, which is why
-every pass over one finds nothing.
+**Detection's YPbPr branch claims the source and returns without a preset
+load.** `detectAndSwitchToActiveInput()`'s RGB branch calls `applyPresets()`
+before it returns and the YPbPr branch does not, so `doPostPresetLoadSteps()`
+never runs on a boot that lands there. Nothing else on the boot path loads one.
 
-**The HC32's analog switches are in the causal path.** `/avframe?src=<name>`
-sends the AV module frame and nothing else. Against a green boot, `vga` then
-`ypbpr` takes the output from saturated green to a neutral field with
-`ADC_INPUT_SEL` at 0 throughout and no register written.
+**Every instrument reads healthy, which is why a dump finds nothing.** The
+engine acquires the source and solves every geometry register from the
+measurement, so the sync front end, `PLLAD_MD`, `STATUS_SYNC_PROC_HTOTAL` and
+the framing are all correct. What is missing is `applyClockGroup()`,
+`applyFrameBufferRequests()` and `applyPictureFilters()` — sixteen fields left
+at reset defaults, `DEC_TEST_ENABLE` among them, which `calibrateAdcOffset()`
+sets and only `applyStoredAdcGain()` clears.
 
-**A signal is missing that the registers do not explain.** `TEST_BUS_SEL` 14 and
-16 carry a line-rate signal whenever the picture is good and read 0 whenever it
-is green -- including with every register made identical to a clean unit's --
-and return when the picture does. The sync front end reads the same in both
-states.
-
-**The boot it appears on does not exist on the vendor firmware.** Tag `1.3`
-loads the saved input and spends it on three gates inside
-`detectAndSwitchToActiveInput()`; the two writes that would restore the
-hardware, `ADC_INPUT_SEL` and `SP_EXT_SYNC_SEL`, are commented out directly
-beneath the load, and no AV module frame is sent at boot. This fork writes the
-register and sends the frame before anything has been measured. Whether a
-vendor boot onto `ypbpr` is clean is still untested -- reaching that input there
-needs the remote or the panel, there being no web or serial route.
-
-**The fault is a family, and a fourth member is a flat neutral WHITE field** at
-luma 236 with the three channels equal, the sync path perfect beneath it at
-`VTOTAL` 260 and `HTOTAL` 2200 against `PLLAD_MD` 2200. On that state the four
-RGB-family AV frames move the output by less than a tenth of a grey level while
-`sv` and `av` take it to black, so the part answers two of six and the RGB
-family addresses nothing.
+**`/sc?#` cures it**, force-calling `applyPresets()` and touching nothing else —
+no input, no output, no AV module frame, no hand-written register. So does an
+output resolution change. So does `/input?src=vga` and back, because `vga` fails
+detection's first pass and reaches the RGB branch's preset load.
 
 | tried | reaches | clears it |
 |---|---|---|
+| `/sc?#`, a bare `applyPresets()` | scaler only | **yes** |
+| output resolution 1080p -> 720p | scaler only | **yes** |
+| `/input?src=vga` then back | HC32 and scaler | **yes**, 3 of 3 |
+| `/input?src=rgbs` then back, which bounces `ADC_INPUT_SEL` | HC32 and scaler | no |
+| `/input?src=sv` then back | HC32 and scaler | no |
+| `/avframe` `vga` then `ypbpr` | HC32 only | no |
 | `/input?src=ypbpr`, the input already selected | HC32 and scaler | no |
 | `/sc?~`, a full detection pass | scaler | no |
-| the fifteen fields written to their clean values | scaler | no |
-| `/avframe` `vga` then `ypbpr` | HC32 only | partly -- green to neutral |
-| `ADC_INPUT_SEL` bounced 0 -> 1 -> 0 | scaler | no |
-| `/input?src=av` excursion, then back | HC32 and scaler | no |
-| `/input?src=vga` then back | HC32 and scaler | **usually** |
+| the sixteen fields written to their cured values | scaler | no |
 
-**MEASURED OVER FIVE BOOTS.** Every one faulted, none was cured by a detection
-pass, and every one was cured by the round trip:
+**THE HC32 IS EXCLUDED, AND `rgbs` IS WHAT EXCLUDES IT.** `rgbs` shares the RGB
+connector with `vga`, so it moves `ADC_INPUT_SEL` 0 -> 1 and back exactly as
+`vga` does, and it carries no sync a separate-sync source can be claimed on, so
+it never acquires — and it does not cure. Neither the frame, nor the switch
+state it sets, nor the ADC input transition is the cure.
 
-| | |
-|---|---|
-| boots that came up faulted | 5 of 5 |
-| cured by `/sc?~` | 0 of 5 |
-| cured by the round trip | 5 of 5 |
-| round trips needed | 1, 1, 1, 3, 1 |
+**A write-back is negative because the setup is a sequence**, not a set of final
+values: the phases run block resets and re-seed the display clock. That negative
+is what kept the sixteen fields filed as a defect of their own; they are the
+symptom.
 
-**WHAT IS UNRELIABLE IS `vga`'S ACQUISITION, NOT THE CURE.** The trial needing
-three attempts spent the first two with `vga` not acquiring at all, and the
-picture came good on the attempt where it did. Across every trial the round trip
-cured it whenever `vga` acquired and never when it did not, so the cure is
-deterministic given an acquisition on the other input -- and needing one is what
-points back at the HC32 rather than at anything the round trip writes.
-
-A boot lands on a bright green field, a dim one or no output at all with the
-source untouched, so the fault is a family of wrong analog states rather than
-one.
-
-**Open:** which switch state the HC32 holds, and why a boot reaches it.
-`/avframe` makes both sweepable, the frames being enumerable and the emitted
-frame readable off the USB capture.
-`docs/investigations/the-green-ypbpr-boot-is-outside-the-register-file.md`.
+**Open:** where the setup belongs. The phases are `Tv5725::VideoPath` methods
+already and the engine resets the video blocks without re-configuring them, so
+collapsing the two branches' difference is one answer and moving the phases onto
+the engine's own mode change is the other.
+`docs/investigations/the-ypbpr-detection-branch-skips-the-preset-load.md`.
 
 ### The boot selects an input differently from every other caller
 

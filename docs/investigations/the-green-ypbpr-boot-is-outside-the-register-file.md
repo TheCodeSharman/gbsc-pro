@@ -1,10 +1,19 @@
 # The green YPbPr boot is outside the register file
 
-A boot that lands on `ypbpr` emits solid green with faint vertical bars while
-every TV5725 register reads correct. The fault is not expressed anywhere in the
-chip's 1536 registers, and the HC32's analog switches are in its causal path.
+**THE TITLE CLAIM IS REFUTED, AND SO IS THE HC32 ATTRIBUTION.** The fault is on
+the TV5725: detection's YPbPr branch claims the source without a preset load, so
+`doPostPresetLoadSteps()` never runs. `/sc?#` cures it without reaching the HC32
+at all, and selecting `rgbs` bounces `ADC_INPUT_SEL` without curing anything.
+`the-ypbpr-detection-branch-skips-the-preset-load.md` is the current page.
 
-This page is the evidence. The open defect is `known-issues.md`.
+This one is kept for the measurements that stand and for why they read the way
+they did. The fifteen fields below are the sixteen the missing phases write;
+they sit at reset defaults because nothing wrote them, which is why a write-back
+of final values is negative in both directions — the setup is a sequence with
+block resets in it, and a value cannot carry an edge.
+
+A boot that lands on `ypbpr` emits solid green with faint vertical bars while
+every TV5725 register reads correct.
 
 ## The register file is excluded, in both directions
 
