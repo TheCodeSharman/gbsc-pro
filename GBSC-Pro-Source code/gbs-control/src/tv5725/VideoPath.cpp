@@ -14,6 +14,7 @@
 #include "ColourSpace.h"
 #include "CaptureWindow.h"
 #include "Deinterlacer.h"
+#include "FrameBuffer.h"
 #include "FramingLine.h"
 #include "HdBypass.h"
 #include "InputFormatter.h"
@@ -49,6 +50,30 @@ VideoPath::VideoPath(DisplayClock &displayClock, SourceMeasurement &sampling,
       syncOut_(false), syncOutEver_(false),
       encoderLinePx_(0), encoderFrameLines_(0), encoderFieldRateHz_(0),
       encoderKnown_(false) {}
+
+void VideoPath::forgetPreviousSource()
+{
+    SyncProcessor::forgetPositions();
+    Adc::forgetPhase();
+    Deinterlacer::disableMotionAdapt();
+    Deinterlacer::forgetScanlines();
+    Deinterlacer::forgetSteering();
+}
+
+void VideoPath::applyClockGroup()
+{
+    Adc::enablePll();
+    VideoProcessor::clockInputOnFallingEdge();
+    Adc::applyPllLoopFilter();
+    DisplayClock::applyPllSkew();
+    Adc::applyDecimatorModes();
+}
+
+void VideoPath::applyFrameBufferRequests()
+{
+    FrameBuffer::applyRequestModes();
+    FrameBuffer::writeFifoLineOffset(0);
+}
 
 const PanAndZoom &VideoPath::framing() const { return framing_; }
 

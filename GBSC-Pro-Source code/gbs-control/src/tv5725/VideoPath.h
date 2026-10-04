@@ -60,6 +60,23 @@ public:
 
     const PanAndZoom &framing() const;
 
+    // Phases of putting a source on screen. Each is a step of a mode change
+    // rather than a solve, which is why they live here: deciding what a change
+    // consists of, and in what order, is this class's.
+
+    // Everything the PREVIOUS source left in a block that measures. Carried
+    // over, a stale position or phase is read as this source's.
+    void forgetPreviousSource();
+
+    // The clock group's static half, after the ADC PLL has been restarted:
+    // lock enable, both loop filters, which edge the input is clocked on, and
+    // the decimator modes. The divider and the oversampling are not here --
+    // those move with the source and are SourceMeasurement's.
+    void applyClockGroup();
+
+    // How the capture and playback stages ask for memory.
+    void applyFrameBufferRequests();
+
     // The shape the picture is shown in. Defaulted from the raster the source
     // matched, replaced by whatever the user last chose for that source, and
     // stored beside the framing. An OUTPUT transform: setting it moves no part

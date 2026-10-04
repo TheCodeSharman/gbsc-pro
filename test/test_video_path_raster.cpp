@@ -678,3 +678,42 @@ TEST_CASE("the picture fills the active region, the porch carrying the write ori
         CHECK(lines <= wanted);
     }
 }
+
+// A phase of a mode change is a list, and a list loses a line silently. The
+// individual writes are each owned and tested by their own subsystem; what is
+// asserted here is that the phase still asks for all of them.
+
+TEST_CASE("the clock group phase puts every one of its settings in force")
+{
+    Wire.reset();
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+
+    engine.applyClockGroup();
+
+    CHECK(Tv5725::Adc::PLLAD_LEN::read() == 1);
+    CHECK(Tv5725::Adc::PLLAD_R::read() == 3);
+    CHECK(Tv5725::Adc::PLLAD_S::read() == 3);
+    CHECK(Tv5725::Adc::DEC_IDREG_EN::read() == 1);
+    CHECK(Tv5725::Adc::DEC_WEN_MODE::read() == 1);
+    CHECK(GBS::PLL_R::read() == 1);
+    CHECK(GBS::PLL_S::read() == 2);
+}
+
+TEST_CASE("the frame buffer phase puts every one of its request modes in force")
+{
+    Wire.reset();
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+
+    engine.applyFrameBufferRequests();
+
+    CHECK(Tv5725::FrameBuffer::PB_CUT_REFRESH::read() == 1);
+    CHECK(Tv5725::FrameBuffer::CAP_STATUS_SEL::read() == 1);
+    CHECK(Tv5725::FrameBuffer::PB_REQ_SEL::read() == 3);
+    CHECK(Tv5725::FrameBuffer::RFF_WFF_OFFSET::read() == 0);
+}

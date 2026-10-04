@@ -2471,11 +2471,7 @@ void doPostPresetLoadSteps()
         setAdcParametersGainAndOffset();
 
         Tv5725::Gpio::init();
-        Tv5725::SyncProcessor::forgetPositions();
-        Tv5725::Adc::forgetPhase();
-        Tv5725::Deinterlacer::disableMotionAdapt();
-        Tv5725::Deinterlacer::forgetScanlines();
-        Tv5725::Deinterlacer::forgetSteering();
+        geometry.forgetPreviousSource();
         rto->sourceDisconnected = false;
         Tv5725::Chip::holdPower(true);
 
@@ -2542,12 +2538,7 @@ void doPostPresetLoadSteps()
         Tv5725::Chip::resetVideoBlocks();
 
         resetPLLAD();
-        Tv5725::Adc::enablePll();
-
-        Tv5725::VideoProcessor::clockInputOnFallingEdge();
-        Tv5725::Adc::applyPllLoopFilter();
-        Tv5725::DisplayClock::applyPllSkew();
-        Tv5725::Adc::applyDecimatorModes();
+        geometry.applyClockGroup();
 
         // **DO NOT DISABLE CAP_SAFE_GUARD_EN HERE.** Tv5725::FrameBuffer
         // owns that bit and switches it ON; a write here runs later in this
@@ -2559,9 +2550,7 @@ void doPostPresetLoadSteps()
         // the top of the address space with the engine clamping the capture
         // below it, so nothing but a real overrun reaches it.
 
-        Tv5725::FrameBuffer::applyRequestModes();
-
-        Tv5725::FrameBuffer::writeFifoLineOffset(0);
+        geometry.applyFrameBufferRequests();
         // PB_CAP_OFFSET = PB_FETCH_NUM + 4 was here for standards 3 and 4.
         // Both halves of that pair are Tv5725::Memory's: the offset is
         // MemoryWindow::strideFor(the output line) and the fetch is computed
