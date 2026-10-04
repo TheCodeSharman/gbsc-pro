@@ -183,6 +183,10 @@ volatile bool pendingWriteReplayGaps = false;
 #endif
 
 #if GBS_DEBUG
+// What /avframe queued: the AV module frame byte, or -1 for none. The UART
+// write belongs to loop() for the same reason the bus does.
+volatile int16_t pendingAvFrame = -1;
+
 // What /testbus queued, for loop() to start. The route answers from a network
 // callback, which must not touch the bus.
 volatile bool pendingTestBusSweep = false;
@@ -5088,6 +5092,16 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
         }
 
 #if GBS_DEBUG
+        if (pendingAvFrame >= 0) {
+            const uint8_t frame = (uint8_t)pendingAvFrame;
+            pendingAvFrame = -1;
+            sendInputFrame(frame);
+            char line[48];
+            snprintf_P(line, sizeof(line), PSTR("av frame: 0x%02x sent"),
+                       (unsigned)frame);
+            tv5725Log(line);
+        }
+
         if (pendingTestBusSweep) {
             pendingTestBusSweep = false;
             sweepTestBus(pendingTestBusMs, pendingTestBusSp, pendingTestBusSig,
@@ -6069,6 +6083,37 @@ void startWebserver()
     // handlers had two callers between them, the menu and one IR key. A unit
     // that came up on the wrong one needed someone standing at it.
 #if GBS_DEBUG
+    // The AV module frame on its own, so the HC32's half of the input path can
+    // be asked for without moving the scaler's half in the same breath.
+    //
+    //   /avframe?src=ypbpr           send the frame that selects YPbPr
+    //
+    // Queued for loop(), which owns the UART. The reply carries the byte
+    // because the HC32 acknowledges nothing and no readback reaches the ESP.
+    server.on("/avframe", HTTP_GET, [](AsyncWebServerRequest *request) {
+        if (!request->hasParam("src")) {
+            request->send(400, "application/json",
+                "{\"error\":\"src required: rgbs rgsb vga ypbpr sv av\"}");
+            return;
+        }
+
+        const String value = request->getParam("src")->value();
+        const VideoSourceSelection::Id wanted = VideoSourceSelection::fromName(value.c_str());
+        if (wanted == VideoSourceSelection::None) {
+            request->send(400, "application/json",
+                "{\"error\":\"unknown src: rgbs rgsb vga ypbpr sv av\"}");
+            return;
+        }
+
+        const uint8_t frame = VideoSourceSelection::settingsFor(wanted).frame;
+        pendingAvFrame = (int16_t)frame;
+        char body[72];
+        snprintf_P(body, sizeof(body),
+            PSTR("{\"queued\":\"%s\",\"frame\":\"0x%02x\"}"),
+            VideoSourceSelection::name(wanted), (unsigned)frame);
+        request->send(200, "application/json", body);
+    });
+
     // Which block still carries a signal, sampled on the device because the
     // rate is the answer and an HTTP read cannot see one.
     //
