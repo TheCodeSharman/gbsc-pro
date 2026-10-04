@@ -1303,6 +1303,58 @@ measurement of it. A count that matches the source says the arriving signal is
 intact; one that cannot be made to settle on the right path says it is not, and
 that is the one that needs power.
 
+### A cold boot with `input = ypbpr` stored comes up solid green, and nothing at runtime clears it
+
+**Reproduced twice, on command.** The discriminator is which input the settings
+file names when the unit powers up:
+
+| cold boot, `input` stored as | picture |
+|---|---|
+| `ypbpr` | **solid green with faint vertical bars**, twice |
+| `vga` | clean; and selecting `ypbpr` afterwards is clean too |
+
+So it is not a property of the YPbPr path or of the Wii -- the same input, the
+same cable and the same source give a correct picture when the boot came up on
+`vga` first. It is the boot that lands on `ypbpr`.
+
+**Everything a dump can ask reads correct.** `state: acquired`,
+`STATUS_SYNC_PROC_VTOTAL` 259/260 (the Wii in 480i, alternating as it should),
+`STATUS_SYNC_PROC_HTOTAL` 2200 against `PLLAD_MD` 2200 -- so the divider is
+latched -- `SP_SOG_MODE` 1 and `ADC_INPUT_SEL` 0, both right for component.
+`s0_46` 0x7f with every block released, `s0_45` 0x11, `s0_49` 0x0a with
+`PAD_SYNC_OUT_ENZ` 0, DACs powered, `DAC_RGBS_BYPS2DAC` 0 and `OUT_SYNC_SEL` 0
+on the scaling path. ADC gains 51/51/51 and offsets 64/64/64, identical in the
+green state and in a clean one.
+
+**BOTH DOCUMENTED CAUSES OF A GREEN SCREEN ARE RULED OUT.** The divider written
+after the latch is excluded by `HTOTAL` equalling `PLLAD_MD` exactly, which is
+the only witness there is that the latch happened. The `PLLAD_CKOS`-against-the-
+decimators mismatch is excluded by reading all five together: `PLLAD_CKOS` 0,
+`ADC_CLK_ICLK1X` 1, `ADC_CLK_ICLK2X` 1, `DEC1_BYPS` 0, `DEC2_BYPS` 0 -- mutually
+consistent for oversample 4, which is one `Adc::applyOversample()` call.
+
+**No runtime action recovers it**, which is what separates it from the green
+screen a detection pass repairs:
+
+| tried | result |
+|---|---|
+| `/input?src=ypbpr`, re-selecting the input it is already on | still green |
+| `/input?src=vga` then back to `ypbpr` | still green, and `vga` did not re-acquire |
+| a cold boot with `vga` stored, then selecting `ypbpr` | **clean** |
+
+**The boot log shows the measurement starting wrong and settling.** On the green
+boot, `DETECT: 25ms, syncFound 2` against 2543 ms for a healthy `vga` boot, and
+the first samples read `270 lines x 121.42 Hz` where a healthy Wii in 480i reads
+259/260 at ~60 Hz. It reaches 2200 as its divider either way, and `VTOTAL` reads
+260 once settled -- so the early counts are wrong and the end state is not.
+Whether that matters is not established.
+
+**The next move is a diff, not another hypothesis.** Two self-consistent states
+exist, one green and one clean, so take `snapdiff.py --save` in each --
+the green one from a cold boot on `ypbpr`, the clean one from a cold boot on
+`vga` followed by selecting `ypbpr` -- and the cause is in the difference. A
+1536-register dump of the green state is what the first half costs.
+
 ### The HC32 stops following input selections, and only a true power cycle returns it
 
 **Measured on `vga` with the RISC PC at 800x600@60.** The sync processor reports
