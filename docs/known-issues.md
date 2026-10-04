@@ -1334,10 +1334,40 @@ USB backfeeds the rails, so mains alone leaves the HC32 powered and is not a
 power cycle.
 
 **Nothing in a register dump distinguishes it.** The sync processor, the clock
-group and the sync-type decision all read exactly what a healthy unit reads --
-`SP_SOG_MODE` 0, coast 0/0, `SP_H_PULSE_IGNOR` 255, divider correct and latched,
-`own V sync: yes` probing to separate H/V. The engine is measuring faithfully;
-what it is measuring is half a signal.
+group and the sync-type decision read what a healthy unit reads --
+`SP_SOG_MODE` 0, coast 0/0, `SP_H_PULSE_IGNOR` 255, divider correct and latched.
+The engine is measuring faithfully; what it is measuring is half a signal.
+
+**THE SYNC-TYPE PROBE DOES NOT ALWAYS STAY HEALTHY THROUGH IT, AND THAT MISLEADS
+BADLY.** The reading above of `own V sync: yes` probing to separate H/V is one
+outcome, not the rule. Measured with `BOOTLOG_BYTES=2048` on the same board, the
+same input and the same RISC PC in `SYNC 0`, the probe answers differently on a
+cold boot and on a warm one -- at the identical point in the sequence, right
+after `INPUT:` and before `DETECT: enter`:
+
+| | cold boot (`External System`) | warm restart (`Software/System restart`) |
+|---|---|---|
+| `INPUT: vga frame=0x61` | t=3896ms | t=9110ms |
+| the probe | `own V sync: yes after 2ms` | `own V sync: no after 1000ms` |
+| what it chose | `separate for input 3` | `composite or SOG for input 3` |
+| `DETECT: enter` | `S16=0x0f HPERIOD=66` | `S16=0x04 HPERIOD=465` |
+| outcome | `VT=311 SOG=0`, acquired in 2543 ms | the recovery ladder, indefinitely |
+
+**The probe is not wrong and its timing is not the bug.** With no horizontal
+reaching the sync processor there is no V to find, so the timeout is the honest
+answer to the question asked. But `SyncMeasurement::probe()` sets `set_`
+unconditionally, so the answer latches; `SyncOnGreen::inSyncPath()` is
+`isCsync()`, so the whole sync-on-green recovery ladder then goes live on a
+source that has none and walks a control nothing is reading.
+
+**So `SP_SOG_MODE` 1 on a separate-sync source is a SYMPTOM of this fault, not a
+second fault.** Chasing the probe from that reading costs a session: the
+discriminating measurement is whether the sync processor is counting at all, and
+the recovery is still a mains and USB power cycle.
+
+Measured over 170 s in the stuck state, the probe answered three times positive
+and five times negative on an unmoving source, each positive overturned by a
+timeout 11.1 s later.
 
 **What puts it in is the low-power teardown, measured once.**
 `test_acquisition_time.py::test_a_torn_down_chip_is_built_back_up_by_the_next_pass`
@@ -1364,6 +1394,32 @@ request. Reach for it before any firmware hypothesis.
 Frozen, this fault has no horizontal edges and the livelock counts the source
 exactly -- so take that reading before concluding the HC32 needs power.
 
+
+### A positive `own V sync` can be thrown away by one read of a flickering bit
+
+`SyncMeasurement::hasOwnVsync()` polls `STATUS_SYNC_PROC_VSACT` up to 500 times
+over `OwnVsyncWindowMs`, and then re-confirms with a SINGLE read 10 ms later:
+
+```cpp
+if (active) { // confirm it: the bit flickers while the processor settles
+    delay(10);
+    active = GBS::STATUS_SYNC_PROC_VSACT::read() == 1;
+}
+```
+
+`rose` is already recorded by then, so a discarded detection prints as
+**`own V sync: no after 2ms`** -- a line that says the bit rose at 2 ms and the
+answer is no. Observed once in eight probes.
+
+**The confirm is weaker evidence than the detection it overturns.** The comment
+states the bit flickers, and this page already carries `STATUS_SYNC_PROC_VSACT`
+among the three status bits that read like verdicts and are none of them a
+verdict. One sample of a flickering bit cannot overrule 500.
+
+Not fixed, and NOT the cause of the sync-type flip above -- that one's negatives
+are genuine, the bit never rising at all in the full window. A duty cycle over
+the confirm window, as `Tv5725::SamplingLog` reports for the ADC PLL lock, is
+what would settle it.
 
 ### About half of boots shake, and the rate was only part of it
 
