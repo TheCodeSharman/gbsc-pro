@@ -524,7 +524,6 @@ static void resetRunTimeDefaults()
     Tv5725::Chip::holdPower(true);
     Tv5725::SyncMeasurement::forget();
     rto->isValidForScalingRGBHV = false;
-    rto->osr = 0;
 }
 
 static void LoadDefault()
@@ -1110,7 +1109,6 @@ void loadComputedPreset(const Tv5725::OutputMode *chosen)
 
   // Which connector is live is held rather than read back: Adc::selectInput()
   // records what it wrote and is the only writer of ADC_INPUT_SEL.
-  rto->inputIsYpBpR = Tv5725::Adc::inputIsComponent();
 
   if (rto->isValidForScalingRGBHV)
   {
@@ -1158,7 +1156,6 @@ void setResetParameters()
     Tv5725::Deinterlacer::forgetScanlines();
     Tv5725::Deinterlacer::forgetSteering();
     rto->isValidForScalingRGBHV = false;          
-    rto->osr = 0;                  
 
     adco->r_gain = 0;
     adco->g_gain = 0;
@@ -1261,11 +1258,9 @@ void setResetParameters()
 
 //   if (!isCustomPreset)
 //   {
-//     if (rto->inputIsYpBpR && SeleInputSource == S_YUV && Info_sate == 0 )
 //     {
 //       applyYuvPatches();
 //     }
-//     else if (rto->inputIsYpBpR == false && (SeleInputSource == S_VGA || SeleInputSource == S_RGBs) && Info_sate == 0 )
 //     {
 //       applyRGBPatches();
 //     }
@@ -1577,7 +1572,6 @@ uint8_t detectAndSwitchToActiveInput()
             {                                                                                                     // RGBS or RGBHV
                 SYNC_EVENT("det rgb branch", SeleInputSource);
                 boolean vsyncActive = 0;
-                rto->inputIsYpBpR = false; // declare for MD
                 Tv5725::SyncOnGreen::choose(13); //
                 Tv5725::SyncOnGreen::putInForce();
 
@@ -1744,7 +1738,6 @@ uint8_t detectAndSwitchToActiveInput()
                 // PLL, and it walks down from ComponentLevel for a source whose
                 // sync on green is weaker than this bench's.
                 SYNC_EVENT("det ypbpr branch", currentInput);
-                rto->inputIsYpBpR = true;
                 GBS::MD_SEL_VGA60::write(0);
                 Tv5725::SyncOnGreen::choose(Tv5725::SyncOnGreen::ComponentLevel);
                 Tv5725::SyncOnGreen::putInForce();
@@ -1808,7 +1801,6 @@ uint8_t inputAndSyncDetect()
         return 0;
     } else if (syncFound == 1 && Info_sate == 0) //&& SeleInputSource == S_RGBs)
     {
-        rto->inputIsYpBpR = false;
         rto->sourceDisconnected = false;
         rto->isInLowPowerMode = false; 
         applyRGBPatches();
@@ -1819,7 +1811,6 @@ uint8_t inputAndSyncDetect()
     } else if (syncFound == 2 && Info_sate == 0) //&& SeleInputSource == S_YUV)
     {
         rto->isInLowPowerMode = false; 
-        rto->inputIsYpBpR = true;
         rto->sourceDisconnected = false;
         applyYuvPatches();
         // GBS::VDS_CONVT_BYPS::write(0);
@@ -1831,7 +1822,6 @@ uint8_t inputAndSyncDetect()
     } else if (syncFound == 3 && Info_sate == 0) //&& SeleInputSource == S_VGA)
     {
         rto->isInLowPowerMode = false; 
-        rto->inputIsYpBpR = false;
         rto->sourceDisconnected = false;
         Tv5725::RgbhvOutput::chooseBypass();
 
@@ -2447,11 +2437,9 @@ void doPostPresetLoadSteps()
         Tv5725::SyncProcessor::holdClamp();
         Tv5725::Chip::enableOutputSync();
 
-        if (rto->inputIsYpBpR == true) //&& Info_sate == 0 )//&& SeleInputSource == S_YUV)
-        {
+        if (Tv5725::Adc::inputIsComponent()) {
             applyYuvPatches();
-        } else if (rto->inputIsYpBpR == false) //&& Info_sate == 0 )//&& (SeleInputSource == S_VGA || SeleInputSource == S_RGBs) )
-        {
+        } else {
             applyRGBPatches();
         }
 
@@ -2475,11 +2463,6 @@ void doPostPresetLoadSteps()
         rto->sourceDisconnected = false;
         Tv5725::Chip::holdPower(true);
 
-        // The most the clock can carry, for every source: the decimators undo
-        // the faster tap so the same samples a line reach the pipeline either
-        // way, and they filter. applySampleRate() clamps it to the crossover
-        // row. docs/investigations/the-decimators-filter.md
-        rto->osr = Tv5725::Adc::OversampleAsClockAllows;
 
 
         if (Tv5725::SyncMeasurement::isCsync()) {
@@ -2497,15 +2480,16 @@ void doPostPresetLoadSteps()
         // single owner of all three. Tv5725::Adc writes the divider and latches
         // it, so the write-before-latch ordering is no longer this caller's.
         //
-        // AFTER the oversampling above has settled rto->osr, because the
-        // sample clock is the product of the divider and the oversampling.
-
         // The source is about to change mode, and nothing measurable about it
         // is true yet. Everything the solve needs that cannot be re-derived
         // later goes with the message; loop() drives the rest once the source
-        // has settled into the new mode. AFTER the block above, which settles
-        // rto->osr.
-        geometry.inputTimingsChanged(rto->osr);
+        // has settled into the new mode.
+        //
+        // The most the clock can carry, for every source: the decimators undo
+        // the faster tap so the same samples a line reach the pipeline either
+        // way, and they filter. applySampleRate() clamps it to the crossover
+        // row. docs/investigations/the-decimators-filter.md
+        geometry.inputTimingsChanged(Tv5725::Adc::OversampleAsClockAllows);
 
         Tv5725::Adc::applyReferenceTrim();
 
@@ -2658,7 +2642,6 @@ void applyPresets()
     // source passed through never had its sync type established here at all.
     if (sourceIsRgbhv()) {
         if (Tv5725::SyncProcessor::hsyncActive()) {
-            rto->inputIsYpBpR = 0;
 
             // **DO NOT DECIDE THE SYNC TYPE FROM STATUS_SYNC_PROC_VSACT.** That
             // is circular -- VSACT only reports correctly once the sync type is
@@ -2730,7 +2713,6 @@ void applyPresets()
             Tv5725::Adc::selectInput(1);
         delay(100);
         if (GBS::STATUS_SYNC_PROC_HSACT::read() == 1) {
-            rto->inputIsYpBpR = 0;
             rto->syncWatcherEnabled = 1;
 
             // HERE the probe IS worth its ~500 ms, and the bare VSACT read is
@@ -2744,7 +2726,6 @@ void applyPresets()
                 Tv5725::Adc::selectInput(0);
             delay(100);
             if (GBS::STATUS_SYNC_PROC_HSACT::read() == 1) {
-                rto->inputIsYpBpR = 1;
                 Tv5725::SyncMeasurement::set(1);
                 rto->syncWatcherEnabled = 1;
             } else // 
@@ -2883,13 +2864,13 @@ void enterHdBypass()
     // The ADC's sense of what arrives on R, G and B, which the preset load used
     // to choose. applyColourPath() runs after it and wins on the matrix bits;
     // applyStoredAdcGain() below puts back the gain applyYuv() overwrites.
-    if (rto->inputIsYpBpR) {
+    if (Tv5725::Adc::inputIsComponent()) {
         applyYuvPatches();
     } else {
         applyRGBPatches();
     }
 
-    Tv5725::HdBypass::enterFor(rto->inputIsYpBpR,
+    Tv5725::HdBypass::enterFor(Tv5725::Adc::inputIsComponent(),
                                Tv5725::SyncMeasurement::isCsync(),
                                sourceSampling.lineRateHz(),
                                geometry.sourceTiming(),
@@ -3699,7 +3680,6 @@ void setup()
     rto->enableDebugPings = false;     
     resetRunTimeDefaults();
 
-    rto->inputIsYpBpR = false;   
     Tv5725::VideoRoute::toScaler();
     if (!rto->webServerEnabled)
         rto->webServerStarted = false;
@@ -4498,7 +4478,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                         GBS::ADC_UNUSED_62::write(1);
                         GBS::VDS_Y_OFST::write(GBS::VDS_Y_OFST::read() + 0x24);
                         GBS::HD_Y_OFFSET::write(GBS::HD_Y_OFFSET::read() + 0x24);
-                        if (!rto->inputIsYpBpR) {
+                        if (!Tv5725::Adc::inputIsComponent()) {
 
                             GBS::HD_DYN_BYPS::write(0);
                             GBS::HD_U_OFFSET::write(GBS::HD_U_OFFSET::read() + 0x24);
@@ -4511,7 +4491,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                         // asks it rather than putting back a saved copy.
                         applyColourBalance();
                         GBS::HD_Y_OFFSET::write(GBS::ADC_UNUSED_61::read());
-                        if (!rto->inputIsYpBpR) {
+                        if (!Tv5725::Adc::inputIsComponent()) {
 
                             GBS::HD_DYN_BYPS::write(1);
                             GBS::HD_U_OFFSET::write(0);
@@ -4783,13 +4763,13 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
 
                     break;
                 case 'o': {
-                    const uint8_t wanted = rto->osr == 1 ? 2 : (rto->osr == 2 ? 4 : 1);
-                    rto->osr = Tv5725::Adc::applyOversample(GBS::PLLAD_KS::read(), wanted);
+                    const uint8_t inForce = Tv5725::Adc::oversampleInForce();
+                    const uint8_t wanted = inForce == 1 ? 2 : (inForce == 2 ? 4 : 1);
+                    Tv5725::Adc::applyOversample(GBS::PLLAD_KS::read(), wanted);
                     latchPLLAD();
                     delay(4);
                     inputAcquisition.acquireSamplingPhase();
                     ; // SerialMprint("OSR ");
-                    ; // SerialMprint(rto->osr);
                     ; // SerialMprintln("x");
                     Tv5725::Adc::forgetPhase();
                 } break;
@@ -5142,7 +5122,8 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
             pendingSamplingSweep = false;
             samplingLog.sweep(millis(), pendingSamplingA, pendingSamplingB,
                               pendingSamplingC, (uint16_t)pendingSamplingD,
-                              rto->osr, inputAcquisition.sourceLineRateHz());
+                              Tv5725::Adc::oversampleInForce(),
+                              inputAcquisition.sourceLineRateHz());
         }
 #endif
         if (pendingTuneSteps != 0) {

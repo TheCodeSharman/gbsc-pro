@@ -91,7 +91,6 @@ struct runTimeOptions
     // here because both reach it; Tv5725::VideoPath is handed a reference.
     Tv5725::DisplayClock displayClock;
     uint8_t applyPresetDoneStage;//应用预置完成阶段
-    uint8_t osr;
     bool isInLowPowerMode;
 
     // Whether the composite-vs-separate sync choice has been made for THIS
@@ -105,7 +104,6 @@ struct runTimeOptions
     // is what stops a mode change paying for it again. Cleared wherever the
     // other two are, which is every path that means "the source may have
     // changed".
-    bool inputIsYpBpR;
     bool syncWatcherEnabled;
     bool freezeAutomation;
     bool printInfos;

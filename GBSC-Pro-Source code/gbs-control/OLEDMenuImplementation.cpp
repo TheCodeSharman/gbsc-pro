@@ -506,7 +506,6 @@ static void LoadDefault()
     // file, so this is the change-of-source edge. docs/sync-type-selection.md
     Tv5725::SyncMeasurement::forget();
     rto->isValidForScalingRGBHV = false;          // 有效缩放
-    rto->osr = 0;                                 //
 
     Tv5725::VideoRoute::toScaler();   //
     rto->sourceDisconnected = true; //
