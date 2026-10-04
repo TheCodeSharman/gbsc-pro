@@ -3704,6 +3704,34 @@ entries resolve the raster match in time is open.
 
 ## Costs time rather than correctness
 
+### `locked_steadily()` cannot be satisfied by an interlaced source, so six tests ERROR
+
+`gbs_unit.locked_steadily()` requires `STATUS_SYNC_PROC_VTOTAL` to read the
+**same** value `LOCK_SAMPLES` times running. An interlaced source alternates its
+count by one, so the predicate is unsatisfiable on one however healthy it is.
+
+Measured with the Wii in 480i on `ypbpr`, 40 consecutive reads: **260 twenty-three
+times and 259 seventeen times**, interleaved, while the unit read
+`STATUS_SYNC_PROC_HTOTAL` 2200 against `PLLAD_MD` 2200, `STATUS_SYNC_PROC_HSACT`
+1 and `/geometry` `state: acquired`. `locked_steadily()` answered False
+throughout.
+
+**The firmware's own definition is looser, and it is the right one.**
+`SteadyRun::agree()` treats a pair alternating by one as agreeing, which is why
+480i acquires at all. The tooling asserts something stricter than the engine, so
+it reports a fault on a unit that is working.
+
+**The cost is six fixture ERRORs that read as firmware faults** --
+`test_capture_origin.py` (two), `test_if_head_blanking.py` (three) and
+`test_memory_window_parity.py` (one), each stopping at "no locked source after
+90 s". They pass with the Wii in 480p or 576i, which hold a steady count, so
+which mode the bench happens to be in decides whether the suite looks clean.
+
+**The fix is for the predicate to mirror `SteadyRun::agree()`**: accept a pair
+of adjacent counts. Not done -- what the tooling should call a lock is a
+decision, not a transcription, and an interlaced source is the case that makes
+the two definitions differ.
+
 ### An input is identified by a hardcoded line rate, so the bench mode skips three tests
 
 `gbs_unit.SOURCES` pins one line rate per input -- `vga` 37879, `ypbpr` 31468 --
