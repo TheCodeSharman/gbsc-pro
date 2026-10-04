@@ -256,9 +256,6 @@ const createWebSocket = () => {
                             toggleMethod(button, (optionByte0 & 0x20) == 0x20);
                             break;
                         /** 1 */
-                        case "matched":
-                            toggleMethod(button, (optionByte1 & 0x01) == 0x01);
-                            break;
                         case "frameTimeLock":
                             toggleMethod(button, (optionByte1 & 0x02) == 0x02);
                             break;

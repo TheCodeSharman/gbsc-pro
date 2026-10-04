@@ -373,11 +373,12 @@ uint8_t BriorCon = 0;
 // uint8_t InputChanged = 0;
 uint8_t SeleInputSource = 0;
 
-// saveUserPrefs() writes exactly this many bytes -- 39 live f.write() calls,
-// not the 42 you get by counting the commented-out ones too. A shorter file
-// cannot be a whole one, whatever the filesystem says about the open. Verified against
-// the unit: /preferencesv2.txt is 39 bytes.
-#define PREFS_BYTES 39
+// saveUserPrefs() writes exactly this many bytes, one live f.write() call each
+// -- counting the commented-out calls too gives a larger and wrong figure. A
+// shorter file cannot be a whole one, whatever the filesystem says about the
+// open, so a file written by a build with a different field set is rejected and
+// the defaults stand.
+#define PREFS_BYTES 38
 
 // Set when this boot could not read the preferences file. Everything running
 // afterwards is on defaults that were never the user's, so nothing may write
@@ -3485,7 +3486,6 @@ void loadDefaultUserOptions()
     applyPassThroughPreference();
     uopt->wantTap6 = 1;
     uopt->PalForce60 = 0;
-    uopt->matchPresetSource = 1; 
     uopt->wantStepResponse = 1;
     uopt->enableCalibrationADC = 1;
     uopt->scanlineStrength = 0x30;
@@ -3616,9 +3616,6 @@ void updateWebSocketData()
 
             toSend[1] = webResolutionCode(geometry.outputMode());
 
-            if (uopt->matchPresetSource) {
-                toSend[4] |= (1 << 0);
-            }
             if (uopt->enableFrameTimeLock) {
                 toSend[4] |= (1 << 1);
             }
@@ -3992,9 +3989,6 @@ void setup()
             if (uopt->PalForce60 > 1)
                 uopt->PalForce60 = 1;
 
-            uopt->matchPresetSource = (uint8_t)(f.read() - '0'); 
-            if (uopt->matchPresetSource > 1)
-                uopt->matchPresetSource = 1;
 
             uopt->wantStepResponse = (uint8_t)(f.read() - '0');
             if (uopt->wantStepResponse > 1)
@@ -4977,12 +4971,6 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                 case 'l':;
                     Tv5725::SyncProcessor::reset();
                     break;
-                case 'Z': {
-                    // Nothing on the video path reads matchPresetSource, so
-                    // there is nothing to re-apply for.
-                    uopt->matchPresetSource = !uopt->matchPresetSource;
-                    saveUserPrefs();
-                } break;
                 case 'W':
                     toggleFrameTimeLock(false);
                     break;
@@ -7556,7 +7544,6 @@ void saveUserPrefs()
     f.write(uopt->preferScalingRgbhv + '0');
     f.write(uopt->wantTap6 + '0');
     f.write(uopt->PalForce60 + '0');
-    f.write(uopt->matchPresetSource + '0');
     f.write(uopt->wantStepResponse + '0');
     // Byte 15 held wantFullHeight, which was written as a constant and
     // discarded once that option went: the file is positional and unversioned,

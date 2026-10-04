@@ -791,24 +791,6 @@
             <table class="gbs-preferences">
               <tr>
                 <td>
-                  Matched Presets
-                  <ul class="gbs-help">
-                    <!-- prettier-ignore -->
-                    <li>If enabled, default to 1280x960 for NTSC 60 and 1280x1024 for PAL 50 (does not apply for 720p / 1080p presets).</li>
-                  </ul>
-                </td>
-                <td
-                  gbs-message="Z"
-                  gbs-message-type="action"
-                  gbs-click="normal"
-                  class="gbs-icon"
-                  gbs-toggle-switch="matched"
-                >
-                  toggle_off
-                </td>
-              </tr>
-              <tr>
-                <td>
                   Low Res: Use Upscaling
                   <!-- prettier-ignore -->
                   <ul class="gbs-help">

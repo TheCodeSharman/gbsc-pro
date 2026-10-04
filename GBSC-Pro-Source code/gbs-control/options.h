@@ -84,7 +84,6 @@ struct userOptions
     uint8_t preferScalingRgbhv;
     uint8_t PalForce60;
     uint8_t disableExternalClockGenerator;  //禁用外部时钟生成器
-    uint8_t matchPresetSource;  //匹配预置源
     uint8_t wantStepResponse;
     uint8_t enableCalibrationADC;  //启用校准 ADC
     uint8_t scanlineStrength;   //扫描线强度
