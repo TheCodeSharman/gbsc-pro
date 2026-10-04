@@ -33,6 +33,17 @@ which is why every earlier pass over one found nothing.
 
 The fifteen are a separate defect and are described in `known-issues.md`.
 
+**A write-back tests a STATE, and a transition is not one.** Writing a field to
+the value a clean unit holds cannot reproduce something whose effect is in the
+act of changing it, and `ADC_INPUT_SEL` is on record as clearing this class of
+fault sometimes and causing it others. The round trip that cures the green
+bounces it 0 to 1 and back, so the transition was the gap the write-back left.
+
+Bounced on its own against a faulted unit, it cures nothing. The byte is being
+rewritten by the engine's recovery ladder throughout -- `s5_02` read `0x5d` and
+then `0x5b` between two writes a few seconds apart -- so what is excluded is the
+bounce reaching the picture, not the register being quiet.
+
 ## A signal is missing, and the registers do not explain it
 
 `/testbus` counts transitions on each `TEST_BUS_SEL` over one window.
@@ -81,7 +92,9 @@ halves of the input path.
 | `/sc?~`, a full detection pass | scaler | no |
 | the fifteen fields written to their clean values | scaler | no |
 | `/avframe` `vga` then `ypbpr` | HC32 only | **partly** — green to neutral |
-| `/input?src=vga` then `/input?src=ypbpr` | HC32 and scaler | **yes** |
+| `ADC_INPUT_SEL` bounced 0 -> 1 -> 0 | scaler | no |
+| `/input?src=av` excursion, then back | HC32 and scaler | no, and `av` never acquired |
+| `/input?src=vga` then `/input?src=ypbpr` | HC32 and scaler | **usually** -- see below |
 
 The ESP re-sends the frame unconditionally on every selection — `InputYUV()`
 calls `sendInputFrame()` before anything else — so a repeat selection that
@@ -143,6 +156,23 @@ Collapsing the two is what the conventions call for, and it is the candidate the
 remaining evidence points at. It is not yet proven to be the green: `/sc?~`
 resets the sync processor without curing it, so the reference clock and the
 frame together are the part not yet tried.
+
+## The cure is not deterministic, and that weakens every negative
+
+The `vga` round trip cured the green first time, repeatedly, and then did not:
+one attempt left the picture a dim green field with `vga` failing to acquire at
+all, and a second attempt immediately afterwards cured it. Nothing was different
+between them.
+
+**So a single failed attempt does not distinguish "does not cure" from "did not
+cure this time".** Every row of the table above rests on one or two trials, and
+the ones carrying the most weight -- the detection pass, the bounce, the `av`
+excursion -- are the ones most worth repeating before being relied on.
+
+It also accounts for the family of wrong states. A boot onto `ypbpr` produces a
+bright green field, a dim one or no output at all, with the source untouched
+throughout, which is what a settling race looks like and is not what a
+deterministic difference in configuration looks like.
 
 ## Open
 

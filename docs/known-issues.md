@@ -1334,7 +1334,17 @@ states.
 | `/sc?~`, a full detection pass | scaler | no |
 | the fifteen fields written to their clean values | scaler | no |
 | `/avframe` `vga` then `ypbpr` | HC32 only | partly -- green to neutral |
-| `/input?src=vga` then back | HC32 and scaler | **yes** |
+| `ADC_INPUT_SEL` bounced 0 -> 1 -> 0 | scaler | no |
+| `/input?src=av` excursion, then back | HC32 and scaler | no |
+| `/input?src=vga` then back | HC32 and scaler | **usually** |
+
+**THE CURE IS NOT DETERMINISTIC, SO ONE FAILED ATTEMPT PROVES NOTHING.** The
+round trip cured it first time and repeatedly, then failed once with `vga` not
+acquiring at all and succeeded on the next attempt with nothing changed between.
+A boot likewise lands on a bright green field, a dim one or no output, with the
+source untouched -- a family of wrong states rather than one, which is what a
+settling race looks like. Every "does not clear it" row above rests on one or
+two trials and is worth repeating before being leaned on.
 
 **Open:** which switch state the HC32 holds, and why a boot reaches it.
 `/avframe` makes both sweepable, the frames being enumerable and the emitted
