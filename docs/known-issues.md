@@ -109,8 +109,15 @@ python3 tools/gbsc-pro-hwtest/setfield.py --host <ip> --set DAC_RGBS_S1EN=1
 
 **It is the same byte as the yellow-tint entry and a different bit**, so a unit
 emitting nothing and a unit emitting a yellow picture are one bit apart in one
-register. `DAC_RGBS_S1EN::write(1)` appears once, on the preset-load path, and
-it was NOT restored by `/input` across three inputs nor by `/restart`.
+register.
+
+**It is the COLD BOOT state, not something a run leaves behind.** Measured on a
+unit unplugged for 24 hours with no USB attached: `s0_45` comes up 0x01, and it
+returns to 0x01 after a `/restart` as well. `DAC_RGBS_S1EN::write(1)` appears
+once, in `doPostPresetLoadSteps()`, so the bit is only set once a source has
+been acquired and a preset applied -- **a boot whose first acquisition fails
+leaves the output DAC half configured**, and the state cannot be read as
+evidence that anything cleared it.
 
 **What separates it from the encoder causes is that the LINK IS UP.** The dongle
 reports 1920x1080 rather than no signal, so the encoder is locked and being fed
