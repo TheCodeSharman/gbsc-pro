@@ -211,24 +211,45 @@ switches answer `sv` and `av` -- and nothing in the RGB family moves the analog
 path while the fault is in force. `vga` in particular should have routed a RISC
 PC sending a test card and did not.
 
-## The vendor firmware has no saved-input restore at all
+## The vendor steers detection with the saved input and restores no hardware
 
 Read out of tag `1.3`, the vendor's own V1.3 for this board, which builds
-against this toolchain unchanged. `SeleInputSource` is read out of the
-preferences file at one site and written back at one site, and **every place
-that would act on it is commented out** -- the eight branches naming `S_YUV`,
-`S_VGA` and `S_RGBs` among them. The variable is initialised to 0, assigned
-only by that read, and consulted nowhere.
+against this toolchain unchanged -- 824288 bytes of flash against this fork's
+800724, and 43808 bytes of globals against 53832.
 
-So the vendor boots and DETECTS. It never points `ADC_INPUT_SEL` at a stored
-input and never transmits an AV module frame before detection has run.
+`SeleInputSource` is loaded from the preferences file, and the two writes that
+would put the hardware into the state it names sit directly beneath the load,
+**commented out**:
 
-**The fault is therefore in a path the vendor baseline does not have.**
-`applySavedInputSource()` and what became `VideoSourceSelector::restore()` are
-this fork's, and they are what makes a boot land on an input nothing has
-measured yet. That does not say which part of the restore is wrong, and it is
-not on its own a measurement -- but it does say the comparison has an answer:
-there is no vendor behaviour to regress FROM, because the vendor never restores.
+```
+SeleInputSource = (uint8_t)(f.read() - '0');
+
+// GBS::SP_EXT_SYNC_SEL::write((uint8_t)(f.read() - '0'));
+// GBS::ADC_INPUT_SEL::write((uint8_t)(f.read() - '0'));
+```
+
+What the value does reach is three gates inside `detectAndSwitchToActiveInput()`,
+each of the form `SeleInputSource == S_VGA || SeleInputSource == S_RGBs`. So it
+STEERS DETECTION and restores nothing. `S_YUV` is 3 and appears in no live gate,
+so a saved YPbPr does not even steer.
+
+And no AV module frame is sent at boot. Every send -- `Checksum_Sendmode()` for
+the four RGB-family frames and `sender.send()` for `Ypbpr` -- is inside an OLED
+menu action handler, and there is no web or serial route to any of them: on the
+vendor firmware the input is changed by a person at the panel or the remote, and
+by nothing else.
+
+**So the boot this fault appears on does not exist on the vendor firmware.**
+`applySavedInputSource()` and what became `VideoSourceSelector::restore()` write
+`ADC_INPUT_SEL` and transmit the frame before anything has been measured, which
+is the behaviour whose two register writes the vendor author commented out.
+That does not say which part of the restore is wrong. It does say the comparison
+has an answer, and that the answer is not "the vendor did this and it worked".
+
+**The empirical half is not done and needs the bench.** Driving the vendor
+firmware onto `ypbpr` takes the remote or the OLED menu, there being no route,
+so whether a vendor boot with the Wii attached comes up clean is untested. The
+reading above is source, not measurement.
 
 ## Open
 
