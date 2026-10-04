@@ -181,11 +181,58 @@ part that decides whether a signal arrives at all.
 A boot lands on a bright green field, a dim one or no output, with the source
 untouched throughout -- a family of wrong analog states rather than one.
 
+## The RGB-family frames move nothing, and `sv`/`av` do
+
+A `/restart` onto `ypbpr` reproduced the fault as a FLAT NEUTRAL WHITE field --
+a fourth variant beside the bright green, the dim one and the black output.
+Scored inside the picture rather than over the whole frame, so the pillarbox
+does not count: luma 236.1, standard deviation 5.3, and R, G and B equal to a
+tenth of a level. The sync path was perfect throughout --
+`STATUS_SYNC_PROC_VTOTAL` 260, the Wii's 480i count, with
+`STATUS_SYNC_PROC_HTOTAL` 2200 against `PLLAD_MD` 2200.
+
+**The scaler is locked to the source while the video under it is a flat field**,
+which places the fault in what arrives at the ADC rather than in anything timing.
+
+Sweeping every AV module frame on that state, with no register written:
+
+| frame | luma | spread | verdict |
+|---|---|---|---|
+| `rgbs` 0x40 | 236.17 | 5.28 | unchanged |
+| `rgsb` 0x50 | 236.14 | 5.29 | unchanged |
+| `vga` 0x61 | 236.14 | 5.28 | unchanged |
+| `ypbpr` 0x70 | 236.08 | 5.29 | unchanged |
+| `sv` 0x10 | 0.00 | 0.00 | black |
+| `av` 0x20 | 0.00 | 0.00 | black |
+
+**The four RGB-family frames change the output by less than a tenth of a grey
+level and the other two take it to black.** So the HC32 is listening -- the
+switches answer `sv` and `av` -- and nothing in the RGB family moves the analog
+path while the fault is in force. `vga` in particular should have routed a RISC
+PC sending a test card and did not.
+
+## The vendor firmware has no saved-input restore at all
+
+Read out of tag `1.3`, the vendor's own V1.3 for this board, which builds
+against this toolchain unchanged. `SeleInputSource` is read out of the
+preferences file at one site and written back at one site, and **every place
+that would act on it is commented out** -- the eight branches naming `S_YUV`,
+`S_VGA` and `S_RGBs` among them. The variable is initialised to 0, assigned
+only by that read, and consulted nowhere.
+
+So the vendor boots and DETECTS. It never points `ADC_INPUT_SEL` at a stored
+input and never transmits an AV module frame before detection has run.
+
+**The fault is therefore in a path the vendor baseline does not have.**
+`applySavedInputSource()` and what became `VideoSourceSelector::restore()` are
+this fork's, and they are what makes a boot land on an input nothing has
+measured yet. That does not say which part of the restore is wrong, and it is
+not on its own a measurement -- but it does say the comparison has an answer:
+there is no vendor behaviour to regress FROM, because the vendor never restores.
+
 ## Open
 
-Which switch state the HC32 holds is not established. A `/restart` reproduces a
-fault state without a bench trip, but **not the same one each time** -- a bright
-green field, a dim one and an all-black output have each followed a boot onto
-`ypbpr` with the source unchanged throughout, confirmed by a round trip
-restoring the picture after each. The fault is a family of wrong analog states
-rather than one.
+Which switch state the HC32 holds is still not established, and the sweep above
+narrows rather than settles it: the part answers two of the six frames and
+ignores four, which is a state the frames cannot address rather than a state
+they set wrongly.
