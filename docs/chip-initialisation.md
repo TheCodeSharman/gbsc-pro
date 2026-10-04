@@ -294,9 +294,7 @@ therefore invisible to any check that compares names.
    goes through `Geometry::applyFraming()` so every register is solved afresh.
    `docs/framing-presets.md`.
 
-   `OutputCustomized` keeps its enum value reserved so `/preferencesv2.txt`
-   keeps its layout, and nothing selects it: the output resolution is a
-   preference of its own and a slot carries none.
+   The output resolution is a setting of its own and a slot carries none.
 
    What is left is `/slot/remove`, which shuffles the names in `/slots.bin` down
    by one — one entry, then it stops — without shuffling the framings with them.

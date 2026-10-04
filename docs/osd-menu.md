@@ -277,9 +277,9 @@ now.
 **Left and Right step, Ok keeps.** Each row's Left and Right name the value they
 move, on the tune surface above; `Y` writes the preferences. Those are held keys,
 so a save per step would write flash a hundred times for one adjustment; the
-balance is four three-digit decimals appended to `/preferencesv2.txt`, in the
-form the BCSH values there already use. A file written before that ends early and
-reads as neutral.
+balance is four keys in `/preferences.txt` -- `colour-red`, `colour-green`,
+`colour-blue` and `luma-gain` -- and a file carrying none of them reads as
+neutral. `docs/preferences-file.md`.
 
 The eight letters these rows briefly used -- `Z`/`T`, `N`/`M`, `Q`/`H` and
 `P`/`S`, which before that stepped the raw offsets -- are free again.
@@ -520,7 +520,7 @@ all of which survive.
 
 Frame time lock being off is worth checking after any accidental press: a
 FrameSync that never runs is one of this project's recurring misdiagnoses.
-`/uc?5` toggles it, and byte 1 of `/preferencesv2.txt` is the value.
+`/uc?5` toggles it, and `frame-time-lock` in `/preferences.txt` is the value.
 
 ## Related
 

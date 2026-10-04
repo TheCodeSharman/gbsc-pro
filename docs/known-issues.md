@@ -234,30 +234,22 @@ this as a strict xfail, so it flips the day it is fixed.
 `docs/investigations/the-ladder-never-restarts-the-adc-pll.md` is the teardown
 half, which is fixed and is not this.
 
-### `/preferencesv2.txt` keeps a stale tail, because the save does not truncate
+### FIXED, not yet confirmed at the bench: the settings save left a stale tail
 
-The file is **51 bytes** where `saveUserPrefs()` makes exactly **39 live
-one-byte `f.write()` calls** — no loops, no multi-byte writes — through
-`LittleFS.open("/preferencesv2.txt", "w")`.
+`LittleFS.open(path, "w")` was measured leaving the bytes past what the save
+wrote. The file read **51 bytes** where the save made exactly **39 live one-byte
+`f.write()` calls**, and bytes 39..50 came back byte-identical across a save
+that demonstrably happened -- toggling `preferScalingRgbhv` flipped byte 10 and
+the preference survived a restart.
 
-**The save works; the truncation does not.** Toggling `preferScalingRgbhv` with
-`/sc?K` flips byte 10 from `0` to `1` and the preference survives a restart,
-while bytes 39..50 come back byte-identical across the save. So 39 bytes are
-written over a 51-byte file and the 12 beyond them are left from whatever wrote
-it longer.
+**Why `"w"` left the tail is still not established.** What closes it is not an
+explanation: `saveUserPrefs()` calls `f.truncate(0)` after the open, and the
+settings file ends with `end`, so a reader stops at the terminator and a tail
+beyond it is inert whatever its length. The length no longer carries any
+meaning, which is what made a stale tail dangerous in the first place.
 
-**The live cost is small but real.** Nothing reads past byte 38, so the stale
-tail is inert today — until the preference set grows back into it, at which
-point a boot reads another firmware's bytes as settings. And
-`test_firmware.py::test_the_reserved_preferences_byte_holds_its_place` and
-`::test_preferences_survive_a_round_trip` both fail on it, asserting
-`PREFS_BYTES` 39 against the 51 they read.
-
-**What is not established** is why `"w"` leaves the tail. The boot gate is
-`f.size() >= PREFS_BYTES`, which 51 passes, so nothing refuses the read, and
-`prefsAreSuspect` is not involved — a suspect boot would have refused the write
-that byte 10 proves happened. Truncating explicitly, or writing the length the
-reader expects, is the obvious repair and neither is tried.
+**Confirm by reading `/preferences.txt` after a save** and checking nothing
+follows the `end` line. `docs/preferences-file.md`.
 
 ### A mode change between two rasters sharing a divider loses the lock for seven seconds
 
@@ -435,8 +427,7 @@ a preset, and the flag is left reading bypass on a unit that is scaling,
 which is the state the coast-window fault was traced to.
 
 Observed twice by the framing sweep at its 1080p-to-720p transition, the
-raster left at 1125 lines with `/preferencesv2.txt` byte 0 already `'3'`
-(720p): the console printed nothing for the request where an honoured one
+raster left at 1125 lines with the stored output resolution already 720p: the console printed nothing for the request where an honoured one
 prints its new divider within half a second, and the next request landed. It
 does not reproduce from a settled unit -- a request that lands leaves the
 flag false and every later one lands too -- and a full re-detect (`/sc?~`)
@@ -3857,39 +3848,27 @@ The pin is not used for `VPERIOD_IF`, which is a plain register read. It carries
 the FIELD RATE, and FrameSync's input and output vsync sampling, which needs a
 phase and an output period that no register reports.
 
-### The OSD and the web status report Bypass at 576p
+### FIXED, not yet confirmed at the bench: Bypass reported at 576p
 
-`presetIdFor()` gives `Mode576p` the code `0x07`. The OSD's resolution display
-tests `0x04` for 720x480 and `0x14` for 768x576 and falls through to an `else`
-that draws **Bypass**; the websocket status switch has no `0x07` either and
-sends `'0'`, the default the web UI renders the same way. So a unit scaling
-correctly to 576p says it is passing through, while the registers say
-`DAC_RGBS_BYPS2DAC` 0, `OUT_SYNC_SEL` 0 and a solved raster of 2070 x 625.
+A unit scaling correctly to 576p said it was passing through. Two display sites
+switched on a table-shaped preset id -- the OSD's resolution display tested
+`0x04` and `0x14` and fell through to an `else` drawing **Bypass**, and the
+websocket status had no case either and sent the default the web UI renders the
+same way -- while the registers said `DAC_RGBS_BYPS2DAC` 0, `OUT_SYNC_SEL` 0 and
+a solved raster of 2070 x 625.
 
 **It reads as a fault in the video path and sends a session after one.** The
 board is the only instrument that reports which route is in circuit, so a wrong
 answer there costs whatever is spent before the registers are read directly.
 
-Two encodings for one fact are live: `loadComputedPreset()` is called with the
-old table id `0x14`, and `changeOutputResolution()` overwrites it with
-`presetIdFor()`'s `0x07`. The id's high nibble used to be the source standard,
-which is why 480p and 576p have both `0x04`/`0x14` and `0x07` in circulation.
+`presetID`, `presetIdFor()` and the id itself are deleted. An output mode names
+itself and both sites ask it, so there is no second encoding left to disagree.
+**Confirm by selecting 768x576 and reading the OLED**, which must draw
+`768x576`, and the web UI's 576p button must light.
 
-`RgbhvOutput` reports bypass on a unit that is scaling, below, is a second
-route to the same wrong answer by a different mechanism -- that one is
-`printInfo()`'s `m:15` from `RgbhvOutput::isScaling()`, this one is the id the
-two display sites switch on. They are independent and both have to go.
-
-**The fix is for the OSD and the status to ask `VideoPath::outputMode()`**,
-which is the single owner of what resolution is being emitted, and for
-`presetIdFor()` and the table-shaped id to go with it.
-
-**`rto->presetID` cannot be retired on its own.** `/preferencesv2.txt` is
-positional, so the field's meaning is pinned by the file layout, and the bypass
-sentinels `PresetHdBypass` and `PresetBypassRGBHV` share the field with the
-resolution. **TODO: replace `/preferencesv2.txt` with a named-key preferences
-file, then retire `presetID`.** Until then the reporting can be corrected
-without the id going, by reading the output mode at the two display sites.
+`RgbhvOutput` reports bypass on a unit that is scaling, below, is a second route
+to the same wrong answer by a different mechanism -- `printInfo()`'s `m:15` from
+`RgbhvOutput::isScaling()`. It is independent and is NOT fixed by this.
 
 ### `src/tv5725/` reaches registers through `GBS::`
 
@@ -3954,9 +3933,12 @@ option was enabled in RAM -- and the boot log says it was not:
     BOOT: reason='External System'
 
 **The read was clean**, so the power-up race on the SPI flash is refuted here:
-39 bytes asked for and 39 got, plausible, not suspect. `/preferencesv2.txt`
-reads `50A000000111` and index 1 is `enableFrameTimeLock`, verified against the
-WRITE order in `saveUserPrefs()` rather than assumed.
+39 bytes asked for and 39 got, plausible, not suspect. The file was positional
+then, reading `50A000000111` with index 1 as `enableFrameTimeLock` -- verified
+against the WRITE order rather than assumed. It is keyed text now, so the trace
+reads `applied=` and `end=` in place of `got=`/`plausible=` and the setting is
+`frame-time-lock`; repeating the measurement means reading those instead.
+`docs/preferences-file.md`.
 
 Nothing else can turn it on. `FrameSync::init()` is reachable from exactly one
 place, `FrameTimeLock::unarmedBecause()`, which `blockedBy()` only reaches after
@@ -4404,7 +4386,8 @@ what is intermittent is the first solve rather than the restore.
 The table is read from flash at boot behind the same guard as the preferences,
 so a first solve that runs before the read has nothing to restore from. Not
 established: whether that is the mechanism, and whether a short read of
-`/framing.txt` is silent the way a short `/preferencesv2.txt` read is.
+`/framing.txt` is silent -- the settings file is not, since `end` is what says
+it arrived whole. `docs/preferences-file.md`.
 
 ### The search configuration writes a threshold the sync type owns
 

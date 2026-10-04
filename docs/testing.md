@@ -294,6 +294,21 @@ was checked against three mutations — a dropped register write, a hardcoded
 clock replacing the derivation, and a write aimed at the wrong bank — and each
 was caught, the last by two separate assertions.
 
+### A suite is named in THREE places, and a missing rule passes silently
+
+`test/Makefile` names each target in `.PHONY`, in its own rule, and in the
+`test:` dependency list. **A `.PHONY` target with no rule succeeds**, so a suite
+listed in two of the three and lacking its rule reports a pass for a binary that
+was never built.
+
+So when a suite is added or removed, change all three and **check the SUCCESS
+count moves by one**:
+
+```sh
+nix develop -c make -C test >/tmp/test.log 2>&1; echo "make: $?"
+grep -c "Status: SUCCESS" /tmp/test.log
+```
+
 ### Test behaviour, not implementation
 
 - **No source-parsing tests.** Assert what the chip or the caller ends up with.

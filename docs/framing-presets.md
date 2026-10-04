@@ -191,32 +191,12 @@ definition that changed the borders for one of a pair would break it. The fix
 belongs on the source side — keep the blanking consistent, as the era's displays
 already required — rather than in a key this hardware cannot make more specific.
 
-## The preferences file is replaced, not migrated
+## The settings live in their own file
 
-`/preferencesv2.txt` is positional, unversioned and one character per field — its
-own writer carries a comment explaining that dropping a single byte shifts
-volume, input selection and every value after it. A short read of it yields a
-full set of defaults silently, which has produced at least three separate
-misdiagnoses.
-
-The replacement is **text, keyed and human-readable at the filesystem**, so that
-reading it over `/fs/download` answers what is stored without decoding positions
-against the writer. Requirements:
-
-- **One `key = value` per line**, unknown keys ignored on read and preserved
-  where practical, so adding a setting cannot shift another.
-- **A missing key takes its default; a malformed line is skipped, not fatal.**
-  A partial file must degrade to defaults *for the fields it lacks only* — never
-  to a full set of defaults for the whole file, which is the present failure.
-- **A short or unreadable file must still refuse to save over itself**, keeping
-  the existing `prefsAreSuspect` guard: a silent bad read followed by an ordinary
-  save is how the loss actually happened.
-- **The framing table lives in its own file**, not this one. It is variable
-  length and keyed, and mixing it with scalar settings recreates the fragility
-  being removed.
-- **No migration.** Existing files are abandoned and defaults are taken once.
-  This is agreed, and it is worth stating in the commit so it does not read as an
-  oversight.
+`/preferences.txt` holds everything the user chose that is not a framing, as
+`key = value` text. The framing table is separate because it is variable length
+and keyed on the source, and mixing the two recreates the fragility the keyed
+format removes. `docs/preferences-file.md`.
 
 ## Behaviour
 

@@ -1545,7 +1545,7 @@ component rather than RGBHV: 524 lines at 59.8 Hz clears `bypassSuitsCount()`
 (not line-doubled, 31335 Hz against `BypassMinLineRateHz` 26000) and clears
 `rateCanBypass()` at a held 31395 -- and it is scaled, because the boolean is
 stored as 1. `loadDefaultUserOptions()` writes 0, so a unit that has never been
-toggled behaves the other way; byte 10 of `/preferencesv2.txt` is which.
+toggled behaves the other way; `scale-rgbhv` in `/preferences.txt` is which.
 
 **The reason is not preference, it is what the capture can carry.** The write
 limit bounds a window at about 1024 IF units however it is placed, so a source

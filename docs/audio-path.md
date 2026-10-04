@@ -29,7 +29,7 @@ mute (`0111100M`, M=0).
 
 `setup()` unmutes and writes `PT_2257(70)`. `loop()` then writes
 `PT_2257(Volume + 12)` every 400 ms, where `Volume` is 0..50 from the OSD's
-"Line input volume" page, the IR remote's volume keys, or `/preferencesv2.txt`.
+"Line input volume" page, the IR remote's volume keys, or the `volume` setting.
 The OSD displays `50 - Volume`, so a larger number on screen is louder.
 
 ## Level budget
@@ -54,8 +54,10 @@ The two firmware causes:
   the 400 ms write in `loop()` moves it, so a firmware stalled below the loop
   gives a picture with no sound — the same signature as the HTTP-answers-while-
   `loop()`-is-stalled case in CLAUDE.md.
-- **`Volume` is read from preferences without a clamp**, unlike the fields
-  around it. A readable but short file returns −1 from `f.read()`, giving
-  `Volume` 207 and an attenuation argument of 219: the 10 dB command byte goes
-  out of range and the register keeps whatever `setup()` left in it. Read byte 0
-  of `/preferencesv2.txt` before diagnosing quiet audio.
+- **`Volume` is bounded at 50 like everything else in the settings file**, so a
+  value out of range reads as 0 rather than reaching `PT_2257()`. The positional
+  file read it with no clamp at all: a readable but short file returned −1 from
+  `f.read()`, giving `Volume` 207 and an attenuation argument of 219, where the
+  10 dB command byte goes out of range and the register keeps whatever `setup()`
+  left in it. Read `volume` in `/preferences.txt` before diagnosing quiet audio.
+  `docs/preferences-file.md`.
