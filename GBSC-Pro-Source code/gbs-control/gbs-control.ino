@@ -62,6 +62,7 @@ static unsigned long Tim_Resolution = 0, Tim_Resolution_Start = 0;
 #include "options.h"
 #include "slot.h"
 #include "src/net/RegisterQueue.h"
+#include "src/prefs/Settings.h"
 #include "gbs_types.h"   // typedef Tv5725::Tv5725 GBS, in one place
 #include "src/tv5725/WriteTrace.h"
 #include "src/tv5725/FramingText.h"
@@ -314,7 +315,7 @@ typedef enum {
 } OSD_Menu;
 char adl = 0;
 boolean IR = 0;
-int Volume = 0;
+uint8_t Volume = 0;
 boolean MUTE_R = 0;
 static int oled_menuItem = 0;
 static int oled_menuItem_last = 0;
@@ -373,14 +374,7 @@ uint8_t BriorCon = 0;
 // uint8_t InputChanged = 0;
 uint8_t SeleInputSource = 0;
 
-// saveUserPrefs() writes exactly this many bytes, one live f.write() call each
-// -- counting the commented-out calls too gives a larger and wrong figure. A
-// shorter file cannot be a whole one, whatever the filesystem says about the
-// open, so a file written by a build with a different field set is rejected and
-// the defaults stand.
-#define PREFS_BYTES 46
-
-// Set when this boot could not read the preferences file. Everything running
+// Set when this boot could not read the settings file. Everything running
 // afterwards is on defaults that were never the user's, so nothing may write
 // them back over the copy that is still on flash.
 bool prefsAreSuspect = false;
@@ -441,31 +435,6 @@ static void bootLogAppend(const char *data, size_t len)
     memcpy(bootLog + bootLogLen, data, len);
     bootLogLen += len;
 #endif
-}
-
-// Does a buffer that came back from /preferencesv2.txt look like content?
-//
-// The count is checked by the caller; this catches a read that returned the
-// right number of bytes but not the right bytes. Deliberately weak, because
-// only some fields are digit-encoded -- presetSlot and the BCSH values are
-// written raw -- so byte 0 is the one position that can be asserted on, and
-// "not all bytes identical" rules out erased flash and zero fill.
-//
-// Byte 0 is the first character of the chosen output mode's name, and every
-// mode names itself with a leading digit. A rejected file is what stops
-// saveUserPrefs() writing at all, including the save behind "restore
-// defaults", so the bound admits anything a mode could be called.
-static bool prefsLookPlausible(const uint8_t *buf)
-{
-    if (buf[0] < '0' || buf[0] > '9') {
-        return false;
-    }
-    for (uint8_t i = 1; i < PREFS_BYTES; i++) {
-        if (buf[i] != buf[0]) {
-            return true;
-        }
-    }
-    return false;
 }
 
 /*
@@ -763,9 +732,19 @@ Tv5725::FramingTable sourceFramings;
 Tv5725::VideoPath geometry(rtos.displayClock, sourceSampling, sourceFramings,
                            inputFormatter);
 
-// The framing table, in its own file. Separate from /preferencesv2.txt because
-// it is variable length and keyed, and mixing it with the scalar settings
-// recreates the fragility that file is known for. docs/framing-presets.md
+// The user's settings, as `key = value` text. docs/preferences-file.md
+static const char SettingsFilePath[] = "/preferences.txt";
+
+// The positional file this replaces. Deleted on the first save, so a listing
+// does not show two settings files and leave the live one in doubt.
+static const char LegacySettingsPath[] = "/preferencesv2.txt";
+
+Prefs::Settings settings(uopts, avopts, geometry.colour(), Volume,
+                         SeleInputSource, BriorCon);
+
+// The framing table, in its own file. Separate from the settings because it is
+// variable length and keyed, and mixing the two recreates the fragility the
+// positional settings file was known for. docs/framing-presets.md
 static const char FramingFilePath[] = "/framing.txt";
 
 // A press must not write flash, so a write waits for the framing to stop
@@ -790,53 +769,6 @@ static bool framingIsSuspect = true;
 // nothing to debounce -- only the same read guard.
 
 Tv5725::Controls geometryControls(geometry, SerialM);
-
-// The colour balance in the preferences file, three digits per value, appended
-// in the form the BCSH values already use. A class because a sketch's free
-// functions get their prototypes hoisted above the includes, where File is not
-// declared yet.
-class ColourBalanceFile {
-public:
-    static void load(File &f, Tv5725::ColourBalance &balance)
-    {
-        const uint16_t red = digits(f);
-        const uint16_t green = digits(f);
-        const uint16_t blue = digits(f);
-        const uint16_t lumaGain = digits(f);
-        balance.adopt(kept(red), kept(green), kept(blue), kept(lumaGain));
-    }
-
-    static void save(File &f, const Tv5725::ColourBalance &balance)
-    {
-        write(f, balance.red());
-        write(f, balance.green());
-        write(f, balance.blue());
-        write(f, balance.lumaGain());
-    }
-
-private:
-    static uint16_t digits(File &f)
-    {
-        return (uint8_t)(f.read() - '0') * 100 + (uint8_t)(f.read() - '0') * 10
-               + (uint8_t)(f.read() - '0');
-    }
-
-    // A file written before the balance was appended ends early, and f.read()
-    // then gives -1: three of those read as 23077, which is out of range.
-    static uint8_t kept(uint16_t value)
-    {
-        return value > Tv5725::ColourBalance::Limit
-                   ? (uint8_t)Tv5725::ColourBalance::Neutral
-                   : (uint8_t)value;
-    }
-
-    static void write(File &f, uint8_t value)
-    {
-        f.write(value / 100 + '0');
-        f.write((value % 100) / 10 + '0');
-        f.write(value % 10 + '0');
-    }
-};
 
 // The described menu, which is the only menu. /menu and the remote both drive
 // it, and it draws only while the two overlays that are not menu rows -- the
@@ -3475,27 +3407,20 @@ void calibrateAdcOffset()
     Tv5725::Adc::applyOffset(adco->r_off, adco->g_off, adco->b_off);
 }
 
+// What a stored output mode and pass-through preference have to tell the
+// engine. Which modes exist is OutputMode's, so a name the file carried and no
+// mode answers to is repaired here rather than defended in the file.
+static void applyStoredSettings()
+{
+    if (Tv5725::OutputMode::fromName(uopt->outputResolution) == NULL)
+        chooseOutputMode(&Tv5725::Mode1080p);
+    applyPassThroughPreference();
+}
+
 void loadDefaultUserOptions()
 {
-    chooseOutputMode(&Tv5725::Mode1080p);
-    uopt->enableFrameTimeLock = 0;
-    uopt->presetSlot = 'A';        //
-    uopt->frameTimeLockMethod = 0; 
-    uopt->enableAutoGain = 0;      
-    uopt->wantScanlines = 0;       
-    uopt->wantOutputComponent = 0; 
-    uopt->deintMode = 0;           
-    uopt->wantVdsLineFilter = 0;
-    uopt->wantPeaking = 1;
-    uopt->wantSharpness = 0;
-    uopt->preferScalingRgbhv = 0;
-    applyPassThroughPreference();
-    uopt->wantTap6 = 1;
-    uopt->PalForce60 = 0;
-    uopt->wantStepResponse = 1;
-    uopt->enableCalibrationADC = 1;
-    uopt->scanlineStrength = 0x30;
-    uopt->disableExternalClockGenerator = 0;
+    settings.resetScalerSettings();
+    applyStoredSettings();
 }
 
 #if USE_NEW_OLED_MENU
@@ -3851,213 +3776,86 @@ void setup()
     } else {
         // Wait for the file to be READABLE, not merely openable.
         //
-        // The parser below reads a byte at a time and clamps anything out of
-        // range to a default. File::read() returns -1 once there is nothing
-        // left, and (uint8_t)(-1 - '0') is 207 -- out of range for every one of
-        // those checks. So an empty or truncated read does not fail the load: it
-        // silently yields a complete set of defaults, which the next
-        // saveUserPrefs() writes to flash for good. presetPreference 5 with
-        // enableFrameTimeLock 0 is that signature.
-        //
-        // **RETRY THE READ, NOT THE OPEN OR THE SIZE.** A flash awake enough to
-        // serve metadata and not yet awake enough to serve content satisfies
-        // both of those on the first attempt and hands the parser a file it
-        // cannot read.
+        // A flash awake enough to serve metadata and not yet awake enough to
+        // serve content satisfies the open and the size on the first attempt
+        // and hands the parser nothing. What says the file arrived whole is its
+        // last line, so the retry is on reaching the terminator -- which works
+        // at any length, where a byte count only worked while every build wrote
+        // the same number of them.
         //
         // Ten attempts at 100 ms is a second of patience before giving up, and
         // costs nothing on a healthy boot where the first attempt succeeds.
-        File f;
-        bool prefsReadable = false;
-        uint8_t probe[PREFS_BYTES];
+        bool settingsReadable = false;
 
         bootLogPrintf("PREFS: exists=%d t=%lums\n",
-            LittleFS.exists("/preferencesv2.txt") ? 1 : 0, (unsigned long)millis());
+            LittleFS.exists(SettingsFilePath) ? 1 : 0, (unsigned long)millis());
 
-        for (uint8_t attempt = 0; attempt < 10; attempt++) {
+        for (uint8_t attempt = 0; attempt < 10 && !settingsReadable; attempt++) {
             const uint32_t attemptStart = millis();
-            f = LittleFS.open("/preferencesv2.txt", "r");
+            File f = LittleFS.open(SettingsFilePath, "r");
+            if (!f) {
+                bootLogPrintf("PREFS: attempt %u t=%lums open=0\n",
+                    (unsigned)attempt + 1, (unsigned long)attemptStart);
+                delay(100);
+                continue;
+            }
 
-            if (f && f.size() >= PREFS_BYTES) {
-                const size_t got = f.read(probe, PREFS_BYTES);
-                const bool plausible = (got == PREFS_BYTES) && prefsLookPlausible(probe);
+            // Every attempt starts from the defaults, so a part-applied read is
+            // never what the next one builds on.
+            settings.defaults();
 
-                // One call, not three. Split across separate printfs the tail of
-                // this line reached the serial cable but not the buffer, which
-                // dropped the first= bytes and the newline from /bootlog -- and
-                // those bytes are the evidence that distinguishes a file holding
-                // defaults from a read that failed.
-                bootLogPrintf(
-                    "PREFS: attempt %u t=%lums open=1 size=%u got=%u plausible=%d "
-                    "first=[%02x %02x %02x %02x]\n",
-                    (unsigned)attempt + 1, (unsigned long)attemptStart,
-                    (unsigned)f.size(), (unsigned)got, plausible ? 1 : 0,
-                    got > 0 ? probe[0] : 0, got > 1 ? probe[1] : 0,
-                    got > 2 ? probe[2] : 0, got > 3 ? probe[3] : 0);
-
-                if (plausible) {
-                    f.seek(0, SeekSet);
-                    prefsReadable = true;
-                    break;
+            uint16_t applied = 0;
+            char line[80];
+            while (f.available() && !settingsReadable) {
+                const String next = f.readStringUntil('\n');
+                strncpy(line, next.c_str(), sizeof(line) - 1);
+                line[sizeof(line) - 1] = '\0';
+                switch (settings.readLine(line)) {
+                    case Prefs::Settings::Applied:
+                        ++applied;
+                        break;
+                    case Prefs::Settings::End:
+                        settingsReadable = true;
+                        break;
+                    default:
+                        break;
                 }
-            } else {
-                bootLogPrintf("PREFS: attempt %u t=%lums open=%d size=%u\n",
-                    (unsigned)attempt + 1, (unsigned long)attemptStart,
-                    f ? 1 : 0, f ? (unsigned)f.size() : 0u);
             }
 
-            if (f) {
-                f.close();
-            }
-            delay(100);
+            // One call, not three. Split across separate printfs the tail of
+            // this line reached the serial cable but not the buffer, which
+            // dropped the evidence that distinguishes a file holding defaults
+            // from a read that failed.
+            bootLogPrintf("PREFS: attempt %u t=%lums size=%u applied=%u end=%d\n",
+                (unsigned)attempt + 1, (unsigned long)attemptStart,
+                (unsigned)f.size(), (unsigned)applied,
+                settingsReadable ? 1 : 0);
+            f.close();
+
+            if (!settingsReadable)
+                delay(100);
         }
 
-        if (!prefsReadable && LittleFS.exists("/preferencesv2.txt")) {
+        if (!settingsReadable && LittleFS.exists(SettingsFilePath)) {
             // The file is there but will not come back whole. Defaults would be
             // wrong, and writing them destroys the settings still on flash. Run
-            // on whatever loadDefaultUserOptions() left in RAM and touch
-            // nothing: a bad boot the user can power cycle out of beats a good
-            // boot with their settings gone.
+            // on the defaults and touch nothing: a bad boot the user can power
+            // cycle out of beats a good boot with their settings gone.
             bootLogPrintf("PREFS: UNREADABLE after 10 attempts; NOT overwriting them\n");
+            settings.defaults();
             prefsAreSuspect = true;
-        } else if (!prefsReadable) {
+        } else if (!settingsReadable) {
             bootLogPrintf("PREFS: no file yet, creating\n");
-            loadDefaultUserOptions();
+            settings.defaults();
+        }
+
+        // Nothing to read is not a failed read: the defaults are written out so
+        // the next boot has a file, and the save a user's first change makes is
+        // not refused.
+        const bool creating = !settingsReadable && !prefsAreSuspect;
+        applyStoredSettings();
+        if (creating)
             saveUserPrefs();
-        }
-
-        if (f && prefsReadable) {
-            for (uint8_t i = 0; i < OutputResolutionBytes - 1; ++i)
-                uopt->outputResolution[i] = (char)f.read();
-            uopt->outputResolution[OutputResolutionBytes - 1] = '\0';
-            if (Tv5725::OutputMode::fromName(uopt->outputResolution) == NULL)
-                chooseOutputMode(&Tv5725::Mode1080p);
-
-            uopt->enableFrameTimeLock = (uint8_t)(f.read() - '0');
-            if (uopt->enableFrameTimeLock > 1)
-                uopt->enableFrameTimeLock = 0;
-
-            uopt->presetSlot = lowByte(f.read());
-
-            uopt->frameTimeLockMethod = (uint8_t)(f.read() - '0'); 
-            if (uopt->frameTimeLockMethod > 1)
-                uopt->frameTimeLockMethod = 0;
-
-            uopt->enableAutoGain = (uint8_t)(f.read() - '0'); 
-            if (uopt->enableAutoGain > 1)
-                uopt->enableAutoGain = 0;
-
-            uopt->wantScanlines = (uint8_t)(f.read() - '0'); 
-            if (uopt->wantScanlines > 1)
-                uopt->wantScanlines = 0;
-
-            uopt->wantOutputComponent = (uint8_t)(f.read() - '0'); 
-            if (uopt->wantOutputComponent > 1)
-                uopt->wantOutputComponent = 0;
-
-            uopt->deintMode = (uint8_t)(f.read() - '0'); 
-            if (uopt->deintMode > 2)
-                uopt->deintMode = 0;
-
-            uopt->wantVdsLineFilter = (uint8_t)(f.read() - '0'); 
-            if (uopt->wantVdsLineFilter > 1)
-                uopt->wantVdsLineFilter = 0;
-
-            uopt->wantPeaking = (uint8_t)(f.read() - '0'); 
-            if (uopt->wantPeaking > 1)
-                uopt->wantPeaking = 1;
-
-            uopt->preferScalingRgbhv = (uint8_t)(f.read() - '0'); 
-            if (uopt->preferScalingRgbhv > 1)
-                uopt->preferScalingRgbhv = 1;
-            applyPassThroughPreference();
-
-            uopt->wantTap6 = (uint8_t)(f.read() - '0');
-            if (uopt->wantTap6 > 1)
-                uopt->wantTap6 = 1;
-
-            uopt->PalForce60 = (uint8_t)(f.read() - '0'); 
-            if (uopt->PalForce60 > 1)
-                uopt->PalForce60 = 1;
-
-
-            uopt->wantStepResponse = (uint8_t)(f.read() - '0');
-            if (uopt->wantStepResponse > 1)
-                uopt->wantStepResponse = 1;
-
-            uopt->wantSharpness = (uint8_t)(f.read() - '0');
-            if (uopt->wantSharpness > 1)
-                uopt->wantSharpness = 0;
-
-            uopt->enableCalibrationADC = (uint8_t)(f.read() - '0');
-            if (uopt->enableCalibrationADC > 1)
-                uopt->enableCalibrationADC = 1;
-
-            uopt->scanlineStrength = (uint8_t)(f.read() - '0');
-            if (uopt->scanlineStrength > 0x60)
-                uopt->enableCalibrationADC = 0x30;
-
-            uopt->disableExternalClockGenerator = (uint8_t)(f.read() - '0');
-            if (uopt->disableExternalClockGenerator > 1)
-                uopt->disableExternalClockGenerator = 0;
-
-            Volume = (uint8_t)(f.read() - '0');
-            // InCurrent = (uint8_t)(f.read() - '0');
-            SeleInputSource = (uint8_t)(f.read() - '0');
-
-            // GBS::SP_EXT_SYNC_SEL::write((uint8_t)(f.read() - '0'));
-            // GBS::ADC_INPUT_SEL::write((uint8_t)(f.read() - '0'));
-
-            avo->svMode = (uint8_t)(f.read() - '0') * 10 + (uint8_t)(f.read() - '0');
-            if (avo->svMode > MODEOPTION_MAX - 1)
-                avo->svMode = 0;
-            avo->avMode = (uint8_t)(f.read() - '0') * 10 + (uint8_t)(f.read() - '0');
-            if (avo->avMode > MODEOPTION_MAX - 1)
-                avo->avMode = 0;
-
-            // printf(" SV AV: %d  %d \n",avo->svMode,avo->avMode);
-            avo->smooth = (uint8_t)(f.read() - '0');
-            if (avo->smooth > 1)
-                avo->smooth = 0;
-
-            avo->lineDouble = (uint8_t)(f.read() - '0');
-            // avo->lineDouble = 1;
-            if (avo->lineDouble > 1)
-                avo->lineDouble = 1;
-
-            BriorCon = (uint8_t)(f.read() - '0');
-            if (BriorCon > 2)
-                BriorCon = 1;
-
-            VideoSourceSelection::selectStored((uint8_t)(f.read() - '0'));
-
-            avo->rgbCompatible = (uint8_t)(f.read() - '0');
-            if (avo->rgbCompatible > 1)
-                avo->rgbCompatible = 0;
-
-
-            avo->bright = (uint8_t)(f.read() - '0') * 100 + (uint8_t)(f.read() - '0') * 10 + (uint8_t)(f.read() - '0');
-            if ((avo->bright > 0xFF - 1) || (avo->bright == 0))
-                avo->bright = 0x80;
-
-            avo->contrast = (uint8_t)(f.read() - '0') * 100 + (uint8_t)(f.read() - '0') * 10 + (uint8_t)(f.read() - '0');
-            if ((avo->contrast > 0xFF - 1) || (avo->contrast == 0))
-                avo->contrast = 0x80;
-
-            avo->saturation = (uint8_t)(f.read() - '0') * 100 + (uint8_t)(f.read() - '0') * 10 + (uint8_t)(f.read() - '0');
-            if ((avo->saturation > 0xFF - 1) || (avo->saturation == 0))
-                avo->saturation = 0x80;
-
-            // The colour balance, appended in the three-digit form the BCSH
-            // values above use. A file written before this one ends here, and
-            // f.read() past the end gives -1 -- which lands out of range and so
-            // reads as neutral rather than as a colour nobody chose.
-            ColourBalanceFile::load(f, geometry.colour());
-            // RGBs_Com = (uint8_t)(f.read() - '0');
-            // RGsB_Com = (uint8_t)(f.read() - '0');
-            // VGA_Com = (uint8_t)(f.read() - '0');
-
-            f.close();
-        }
 
         // The one line worth reading on a cold boot. 1920x1080 with
         // frameTimeLock 0 is the defaults signature -- if it shows up here while
@@ -5516,45 +5314,6 @@ void handleType2Command(char argument)
                 delay(1); // wifi stack
             }
             ////
-            File f = LittleFS.open("/preferencesv2.txt", "r");
-            if (!f) {
-                ; // SerialMprintln(F("failed opening preferences file"));
-            } else {
-                ; // SerialMprint(F("preset preference = "));
-                ; // SerialMprintln((uint8_t)(f.read() - '0'));
-                ; // SerialMprint(F("frame time lock = "));
-                ; // SerialMprintln((uint8_t)(f.read() - '0'));
-                ; // SerialMprint(F("preset slot = "));
-                ; // SerialMprintln((uint8_t)(f.read()));
-                ; // SerialMprint(F("frame lock method = "));
-                ; // SerialMprintln((uint8_t)(f.read() - '0'));
-                ; // SerialMprint(F("auto gain = "));
-                ; // SerialMprintln((uint8_t)(f.read() - '0'));
-                ; // SerialMprint(F("scanlines = "));
-                ; // SerialMprintln((uint8_t)(f.read() - '0'));
-                ; // SerialMprint(F("component output = "));
-                ; // SerialMprintln((uint8_t)(f.read() - '0'));
-                ; // SerialMprint(F("deinterlacer mode = "));
-                ; // SerialMprintln((uint8_t)(f.read() - '0'));
-                ; // SerialMprint(F("line filter = "));
-                ; // SerialMprintln((uint8_t)(f.read() - '0'));
-                ; // SerialMprint(F("peaking = "));
-                ; // SerialMprintln((uint8_t)(f.read() - '0'));
-                ; // SerialMprint(F("preferScalingRgbhv = "));
-                ; // SerialMprintln((uint8_t)(f.read() - '0'));
-                ; // SerialMprint(F("6-tap = "));
-                ; // SerialMprintln((uint8_t)(f.read() - '0'));
-                ; // SerialMprint(F("pal force60 = "));
-                ; // SerialMprintln((uint8_t)(f.read() - '0'));
-                ; // SerialMprint(F("matched = "));
-                ; // SerialMprintln((uint8_t)(f.read() - '0'));
-                ; // SerialMprint(F("step response = "));
-                ; // SerialMprintln((uint8_t)(f.read() - '0'));
-                ; // SerialMprint(F("disable external clock generator = "));
-                ; // SerialMprintln((uint8_t)(f.read() - '0'));
-
-                f.close();
-            }
         } break;
         case 'f':
         case 'g':
@@ -7156,7 +6915,7 @@ fail:
     } });
 
     // Remove ONE file. /fs/format was the only way to delete anything and it
-    // takes /preferencesv2.txt and /slots.bin with it -- and /fs/upload is a
+    // takes /preferences.txt and /slots.bin with it -- and /fs/upload is a
     // stub that writes nothing, so a format cannot be undone.
     //
     // Deliberately general: it will delete the preferences too. Losing those
@@ -7503,77 +7262,42 @@ void pollFramingSave(uint32_t now)
 void saveUserPrefs()
 {
     // Refuse if this boot never managed to read the file. Otherwise the first
-    // option the user touches -- or any of the several paths that save as a
+    // setting the user touches -- or any of the several paths that save as a
     // side effect -- persists a full set of defaults over settings that are
     // still perfectly good on flash. That is how the loss actually happened:
     // not one bad write, but a silent bad read followed by an ordinary save.
     if (prefsAreSuspect) {
-        printf("not saving preferences: this boot could not read them\n");
+        debugPrintf("not saving settings: this boot could not read them\n");
         return;
     }
 
-    File f = LittleFS.open("/preferencesv2.txt", "w");
+    File f = LittleFS.open(SettingsFilePath, "w");
     if (!f) {
         return;
     }
-    for (uint8_t i = 0; i < OutputResolutionBytes - 1; ++i)
-        f.write((uint8_t)uopt->outputResolution[i]);
-    f.write(uopt->enableFrameTimeLock + '0');
-    f.write(uopt->presetSlot);
-    f.write(uopt->frameTimeLockMethod + '0');
-    f.write(uopt->enableAutoGain + '0');
-    f.write(uopt->wantScanlines + '0');
-    f.write(uopt->wantOutputComponent + '0');
-    f.write(uopt->deintMode + '0');
-    f.write(uopt->wantVdsLineFilter + '0');
-    f.write(uopt->wantPeaking + '0');
-    f.write(uopt->preferScalingRgbhv + '0');
-    f.write(uopt->wantTap6 + '0');
-    f.write(uopt->PalForce60 + '0');
-    f.write(uopt->wantStepResponse + '0');
-    // Byte 15 held wantFullHeight, which was written as a constant and
-    // discarded once that option went: the file is positional and unversioned,
-    // so dropping the byte would shift volume, input selection and the BCSH
-    // values by one on every file already on flash. Sharpness takes it, and a
-    // file written before this reads 0 -- the resting gain, which is what those
-    // units are showing.
-    f.write(uopt->wantSharpness + '0');
-    f.write(uopt->enableCalibrationADC + '0');
-    f.write(uopt->scanlineStrength + '0');
-    f.write(uopt->disableExternalClockGenerator + '0');
-    f.write(Volume + '0');
 
-    // f.write(InCurrent + '0');
-    f.write(SeleInputSource + '0');
+    // "w" alone has been measured leaving a tail from whatever wrote the file
+    // longer. The terminator makes one inert, but a settings file is read by
+    // people as well as by this firmware. docs/known-issues.md
+    f.truncate(0);
 
-    // f.write(GBS::SP_EXT_SYNC_SEL::read() + '0');
-    // f.write(GBS::ADC_INPUT_SEL::read() + '0');
+    f.print(F("# GBSC-Pro settings, one key = value a line. A missing key takes\n"
+              "# its default and an unknown one is ignored, so adding or removing\n"
+              "# a setting cannot shift another. The last line is what says the\n"
+              "# file was written whole. docs/preferences-file.md\n"));
 
-    f.write(avo->svMode / 10 + '0');
-    f.write(avo->svMode % 10 + '0');
-    f.write(avo->avMode / 10 + '0');
-    f.write(avo->avMode % 10 + '0');
-    // printf(" SV AV: %d  %d \n",avo->svMode,avo->avMode);
-    f.write(avo->smooth + '0');
-    f.write(avo->lineDouble + '0');
-    f.write(BriorCon + '0'); // 27
-    f.write(VideoSourceSelection::selected() + '0');     // 28
-    f.write(avo->rgbCompatible + '0');
-
-    f.write((avo->bright / 100) + '0');
-    f.write((avo->bright % 100) / 10 + '0');
-    f.write(avo->bright % 10 + '0');
-
-    f.write((avo->contrast / 100) + '0');
-    f.write((avo->contrast % 100) / 10 + '0');
-    f.write(avo->contrast % 10 + '0');
-
-    f.write((avo->saturation / 100) + '0');
-    f.write((avo->saturation % 100) / 10 + '0');
-    f.write(avo->saturation % 10 + '0');
-
-    ColourBalanceFile::save(f, geometry.colour());
+    char line[80];
+    for (uint16_t i = 0; settings.writeLine(i, line, sizeof(line)); ++i) {
+        f.print(line);
+        f.print('\n');
+    }
+    f.print(Prefs::Settings::terminator());
+    f.print('\n');
     f.close();
+
+    if (LittleFS.exists(LegacySettingsPath)) {
+        LittleFS.remove(LegacySettingsPath);
+    }
 }
 
 // The two screens the remote reaches that are not menu rows: the volume overlay

@@ -16,7 +16,7 @@ CXXFLAGS ?= -std=c++11 -O1 -Wall -Wextra
 # embarrassingly parallel: measured 3m26s serial against 34s here.
 MAKEFLAGS += -j$(shell nproc)
 
-.PHONY: all test ir-receiver menu aspect video-signal test-bus test-bus-rate-measurement steady-run sync-on-green sampling-log axis source-key source-timing framing-table framing-text scale video-source-line capture-window output-window video-path source-measurement memory-window display-clock frame-sync frame-time-lock output-mode clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc video-route rgbhv-output write-trace clean help
+.PHONY: all test ir-receiver menu aspect video-signal test-bus test-bus-rate-measurement steady-run sync-on-green sampling-log axis source-key source-timing framing-table framing-text scale video-source-line capture-window output-window video-path source-measurement memory-window display-clock frame-sync frame-time-lock output-mode clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc video-route rgbhv-output write-trace settings clean help
 .DEFAULT_GOAL := test
 
 ## help: list the targets
@@ -269,6 +269,20 @@ framing-table:
 	  src/tv5725/OutputMapping.cpp src/tv5725/RasterFit.cpp \
 	  src/tv5725/PictureOrigin.cpp
 	@"$(OUT)/test_framing_table"
+
+## settings: host unit tests for Prefs::Settings
+#
+# The settings file as `key = value` lines, and what a partial, hand-edited or
+# truncated file does. docs/preferences-file.md.
+settings:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
+	  -o "$(OUT)/test_settings" \
+	  "$(HERE)/test_settings.cpp" src/prefs/Settings.cpp \
+	  src/prefs/SettingVisitor.cpp \
+	  src/tv5725/ColourBalance.cpp src/tv5725/VideoProcessor.cpp \
+	  src/videosource/VideoSourceSelection.cpp
+	@"$(OUT)/test_settings"
 
 ## framing-text: host unit tests for Tv5725::FramingText
 #
@@ -890,7 +904,7 @@ write-trace:
 	@"$(OUT)/test_write_trace"
 
 ## test: every host unit test
-test: input-scale ir-receiver osd-row osd-screens menu aspect video-signal test-bus test-bus-rate-measurement steady-run source-absence detection-entry sync-measurement colour-space colour-balance framing-save-timer sync-on-green axis source-key source-timing framing-table framing-text scale sync-processor video-processor video-source-line capture-window output-window video-path source-measurement memory-window display-clock frame-sync frame-time-lock output-mode clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc sampling-log video-route rgbhv-output write-trace
+test: input-scale ir-receiver osd-row osd-screens menu aspect video-signal test-bus test-bus-rate-measurement steady-run source-absence detection-entry sync-measurement colour-space colour-balance framing-save-timer sync-on-green axis source-key source-timing framing-table framing-text scale sync-processor video-processor video-source-line capture-window output-window video-path source-measurement memory-window display-clock frame-sync frame-time-lock output-mode clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc sampling-log video-route rgbhv-output write-trace settings
 all: test
 
 ## clean: remove the compiled test binaries

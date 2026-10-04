@@ -135,11 +135,11 @@ struct avOptions
     uint8_t contrast;
     uint8_t saturation;
 
-    bool lineDouble;
-    bool smooth;
+    uint8_t lineDouble;
+    uint8_t smooth;
 
     // The persisted compatibility preference the RGB inputs also write.
-    bool rgbCompatible;
+    uint8_t rgbCompatible;
 };
 
 // remember adc options across presets
