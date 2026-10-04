@@ -31,9 +31,12 @@ from gbs_unit import (
     read_segment,
     recover_lock,
     reset_framing,
-    restore_preset_preference,
+    restore_output_mode,
+    read_settings,
+    setting,
+    SETTINGS_PATH,
+    SETTINGS_TERMINATOR,
     fs_dir,
-    fs_read,
     wait_for,
     write_reg,
 )
@@ -758,7 +761,7 @@ def test_fs_rm_refuses_what_it_will_not_delete(host):
     """/fs/rm answers false and changes nothing for a path it will not touch.
 
     The route exists because /fs/format was the only way to remove anything and
-    it takes /preferencesv2.txt and /slots.bin with it -- and /fs/upload is a
+    it takes /preferences.txt and /slots.bin with it -- and /fs/upload is a
     stub that returns true and writes nothing, so there is no way to put them
     back.
 
@@ -1050,42 +1053,34 @@ def test_unit_survives_a_hostile_pllad(host, source):
 
 # --- the boot log ------------------------------------------------------------
 
-PREFS_PATH = "/preferencesv2.txt"
-PREFS_BYTES = 39
-
-# Byte 15 held wantFullHeight, an option nothing acted on. The file is
-# positional and unversioned and the load path admits any file of at least
-# PREFS_BYTES, so the byte could not be dropped without shifting volume, input
-# selection and the BCSH values on every file already on flash. It is written as
-# a constant and discarded on read.
-PREFS_RESERVED = 15
-PREFS_RESERVED_VALUE = "0"
-
-
 def _toggle_frame_time_lock(host):
     """/uc?5 toggles frame time lock and saves the whole file as a side effect."""
     get(host, "/uc?5")
     time.sleep(2.5)
 
 
-def test_the_reserved_preferences_byte_holds_its_place(host):
-    """A save must write the reserved byte, keeping the file PREFS_BYTES long.
+def test_a_save_writes_a_settings_file_the_next_boot_will_accept(host):
+    """A save must produce a file that reaches its terminator.
 
-    Dropping it is the silent failure: an existing 39-byte file still passes the
-    loader's size check while every field after byte 15 reads shifted by one.
+    That is the whole of the integrity check, and it is what makes the failure
+    recoverable: a boot that cannot read the file refuses every save from then
+    on, including the one behind "restore defaults", so a save writing a file
+    its own loader rejects is unrecoverable from the UI.
     """
     _toggle_frame_time_lock(host)
     _toggle_frame_time_lock(host)
 
-    prefs = fs_read(host, PREFS_PATH)
-    assert prefs and len(prefs) == PREFS_BYTES, (
-        f"{PREFS_PATH} is {len(prefs) if prefs else 0} bytes after a save, "
-        f"expected {PREFS_BYTES}"
+    values = read_settings(host)
+    assert values is not None, (
+        f"{SETTINGS_PATH} does not read whole after a save -- either it is "
+        f"missing or it never reaches {SETTINGS_TERMINATOR!r}, which is the "
+        "state a boot refuses and cannot be saved out of"
     )
-    assert prefs[PREFS_RESERVED] == PREFS_RESERVED_VALUE, (
-        f"byte {PREFS_RESERVED} reads {prefs[PREFS_RESERVED]!r}, expected "
-        f"{PREFS_RESERVED_VALUE!r}. Every field after it is now shifted"
-    )
+    for key in ("output", "frame-time-lock", "input", "slot"):
+        assert key in values, (
+            f"{key!r} is not in the saved file, so the setting it names cannot "
+            f"survive a boot. Got {sorted(values)}"
+        )
 
 
 def test_bootlog_reports_the_preferences_read(host):
@@ -1139,50 +1134,43 @@ def test_bootlog_reports_the_preferences_read(host):
         )
 
 
-def test_preferences_survive_a_round_trip(host):
+def test_settings_survive_a_round_trip(host):
     """Toggling one setting must not disturb the rest of the file.
 
     The failure this guards is not a wrong value, it is collateral: a save path
     that rebuilds the whole file from RAM persists whatever else was reset on the
-    way past, which is how selecting an input takes presetPreference and
-    enableFrameTimeLock with it.
+    way past, which is how selecting an input takes the output mode and the
+    frame time lock with it.
 
     /uc?5 toggles frame time lock and saves, so toggling twice should land
-    exactly where it started, byte for byte.
-
-    Primed with a toggle pair first so the baseline is a file THIS firmware
-    wrote. Otherwise a file left by a build with a different field set differs at
-    those positions on the first save, and the collateral this test looks for is
-    indistinguishable from that one-off migration.
+    exactly where it started -- and the setting it changed is named rather than
+    counted, so adding a setting cannot make this test about a different one.
     """
     _toggle_frame_time_lock(host)
     _toggle_frame_time_lock(host)
 
-    before = fs_read(host, PREFS_PATH)
-    assert before and len(before) == PREFS_BYTES, (
-        f"{PREFS_PATH} is {len(before) if before else 0} bytes, expected "
-        f"{PREFS_BYTES}"
-    )
+    before = read_settings(host)
+    assert before is not None, f"{SETTINGS_PATH} does not read whole"
 
     try:
         _toggle_frame_time_lock(host)
-        middle = fs_read(host, PREFS_PATH)
-        assert middle and len(middle) == PREFS_BYTES, "file went malformed mid-toggle"
-        assert middle[1] != before[1], (
-            f"/uc?5 did not change frame time lock (byte 1 stayed {before[1]!r}); "
-            "this test is not exercising a save"
+        middle = read_settings(host)
+        assert middle is not None, "the file went malformed mid-toggle"
+        assert middle["frame-time-lock"] != before["frame-time-lock"], (
+            "/uc?5 did not change frame-time-lock (it stayed "
+            f"{before['frame-time-lock']!r}); this test is not exercising a save"
         )
-        changed = [i for i in range(PREFS_BYTES) if middle[i] != before[i]]
-        assert changed == [1], (
-            f"toggling frame time lock also changed bytes {changed}. "
-            f"before={before!r} after={middle!r}"
+        changed = sorted(key for key in set(before) | set(middle)
+                         if before.get(key) != middle.get(key))
+        assert changed == ["frame-time-lock"], (
+            f"toggling frame time lock also changed {changed}"
         )
     finally:
         _toggle_frame_time_lock(host)
 
-    after = fs_read(host, PREFS_PATH)
+    after = read_settings(host)
     assert after == before, (
-        f"preferences did not round-trip.\n  before {before!r}\n  after  {after!r}"
+        f"the settings did not round-trip.\n  before {before!r}\n  after  {after!r}"
     )
 
 
@@ -1576,6 +1564,17 @@ def test_the_scan_mode_is_not_half_applied(host):
 INPUT_NAMES = ("rgbs", "rgsb", "vga", "ypbpr", "sv", "av")
 
 
+def stored_input(host):
+    """The input the settings name, or None when nothing has been chosen.
+
+    The same string /input takes and INPUT_NAMES lists. Nothing chosen is what
+    makes detection sweep, and it is what a unit no one has selected on holds --
+    so it is reported rather than guessed at.
+    """
+    chosen = setting(host, "input")
+    return chosen if chosen in INPUT_NAMES else None
+
+
 def test_the_input_route_refuses_what_it_does_not_recognise(host):
     """A bad or missing src is a 400, never a selection.
 
@@ -1686,15 +1685,10 @@ def test_a_present_source_is_not_declared_absent_when_its_input_is_selected(
     RGB spellings is cabled on a given bench, and guessing costs a detection
     sweep per guess.
     """
-    prefs = fs_read(host, PREFS_PATH)
-    assert prefs and len(prefs) > PREFS_INFO_BYTE, (
-        f"could not read the preferences: {prefs!r}")
-    stored = ord(prefs[PREFS_INFO_BYTE]) - ord("0")
-    assert stored in STORED_INPUT_IDS, (
-        f"no input is stored (Info={stored}), so nothing has been chosen -- "
-        "select one over /input or at the OLED first")
-
-    chosen = INPUT_NAMES[stored - 1]
+    chosen = stored_input(host)
+    assert chosen is not None, (
+        "no input is stored, so nothing has been chosen -- select one over "
+        "/input or at the OLED first")
     if SELECTED_ADC_INPUT[chosen] != 1:
         pytest.skip(
             f"the stored input is {chosen}, on the YPbPr connector, whose branch "
@@ -1793,16 +1787,10 @@ def test_a_chosen_input_is_not_swept_away(host, source):
     passes on a bench with one source. Needs --source because it moves the mux;
     the original selection is restored at the end whatever the outcome.
     """
-    prefs = fs_read(host, PREFS_PATH)
-    assert prefs and len(prefs) > PREFS_INFO_BYTE, (
-        f"could not read the preferences: {prefs!r}")
-    stored = ord(prefs[PREFS_INFO_BYTE]) - ord("0")
-    assert stored in STORED_INPUT_IDS, (
-        f"no input is stored (Info={stored}), so nothing has been chosen and a "
-        "sweep is the correct behaviour -- select one first, over /input or at "
-        "the OLED")
-
-    restore = INPUT_NAMES[stored - 1]
+    restore = stored_input(host)
+    assert restore is not None, (
+        "no input is stored, so nothing has been chosen and a sweep is the "
+        "correct behaviour -- select one first, over /input or at the OLED")
     wanted = OTHER_CONNECTOR[SELECTED_ADC_INPUT[restore]]
     expected = SELECTED_ADC_INPUT[wanted]
 
@@ -1847,14 +1835,6 @@ def test_a_chosen_input_is_not_swept_away(host, source):
             f"point the mux at itself; one that does not can never be reached "
             f"now that detection obeys the choice.")
 
-
-# The preferences file is positional and unversioned; this is the byte
-# applySavedInputSource() keys on. Six values against SeleInputSource's three,
-# which is what lets a restore tell RGsB from RGBs and VGA from either.
-PREFS_INFO_BYTE = 28
-
-# Its six values, in the order INPUT_NAMES lists them. 0 is nothing chosen.
-STORED_INPUT_IDS = range(1, 1 + len(INPUT_NAMES))
 
 RESTART_TIMEOUT = 30.0  # the unit is back inside 5 s; the margin is for WiFi
 
@@ -1914,14 +1894,9 @@ def test_the_saved_input_survives_a_restart(host, source):
 
     Reboots the unit, which is why it is behind --reboot.
     """
-    prefs = fs_read(host, PREFS_PATH)
-    assert prefs and len(prefs) > PREFS_INFO_BYTE, (
-        f"could not read the preferences: {prefs!r}")
-    stored = ord(prefs[PREFS_INFO_BYTE]) - ord("0")
-    assert stored in STORED_INPUT_IDS, (
-        f"no input is stored (Info={stored}), so the boot restore is expected to "
-        "send nothing and let detection sweep -- select one first, over /input "
-        "or at the OLED")
+    assert stored_input(host) is not None, (
+        "no input is stored, so the boot restore is expected to send nothing "
+        "and let detection sweep -- select one first, over /input or at the OLED")
 
     before = wait_for(lambda: _settled_vtotal(host), timeout=LOCK_TIMEOUT)
     assert before, "nothing is locked before the restart, so a recovery proves nothing"
@@ -1944,9 +1919,6 @@ def test_the_saved_input_survives_a_restart(host, source):
         "other number is a different input connected instead")
 
 
-# presetPreference written as a digit. OutputBypass is 10, so the byte is ':'.
-PREFS_BYPASS_BYTE = ":"
-
 # A save is one pass of loop() plus a LittleFS write. The margin is for the
 # detection this boot is in the middle of: getVideoMode() searches for six
 # seconds at a time, a restart lands in a run of them, and the queued command
@@ -1956,31 +1928,28 @@ SAVE_TIMEOUT = 120.0
 
 
 @pytest.mark.reboot
-def test_the_bypass_preference_is_readable_after_a_restart(host, preset_save):
-    """A preferences file this firmware wrote must still load on the next boot.
+def test_a_settings_file_this_firmware_wrote_loads_on_the_next_boot(host, preset_save):
+    """A boot that rejects its own settings file cannot be saved out of.
 
-    Byte 0 is `presetPreference + '0'`, and OutputBypass is 10 -- so the HD
-    bypass switch writes ':'. The boot's readability check has to accept every
-    value the save path can put there: a file it rejects is treated as an
-    unreadable one, and the unit then runs on defaults, sends the AV module no
-    input, and refuses every save from then on. That last part is what makes it
-    unrecoverable from the UI, because "restore defaults" saves too.
+    The loader refuses to save over a file it could not read, and that refusal
+    covers "restore defaults" too -- so a save writing something the next boot
+    rejects leaves the unit on defaults with no way back through the UI. The
+    value toggled is pass-through, because it is a save with a visible effect.
 
     Restarts the unit and writes flash, so it needs both flags.
     """
-    original = fs_read(host, PREFS_PATH)
-    assert original and len(original) == PREFS_BYTES, (
-        f"{PREFS_PATH} is {len(original) if original else 0} bytes, expected "
-        f"{PREFS_BYTES}")
+    original = read_settings(host)
+    assert original is not None, f"{SETTINGS_PATH} does not read whole to begin with"
 
     try:
         status, _ = get(host, "/sc?K")
         assert status == 200, f"/sc?K answered {status}"
         assert wait_for(
-            lambda: (fs_read(host, PREFS_PATH) or " ")[:1] == PREFS_BYPASS_BYTE,
+            lambda: (setting(host, "scale-rgbhv")
+                     != original.get("scale-rgbhv")) or None,
             timeout=LOCK_TIMEOUT), (
-            "/sc?K did not persist OutputBypass, so this test never wrote the "
-            "byte it is about")
+            "/sc?K did not persist the pass-through preference, so this test "
+            "never wrote the setting it is about")
 
         status, _ = get(host, "/uc?a")
         assert status == 200, f"the restart command was refused: {status}"
@@ -2001,20 +1970,24 @@ def test_the_bypass_preference_is_readable_after_a_restart(host, preset_save):
 
         # Whether the file loaded, asked the only way it shows from here: a boot
         # that rejected it refuses every save afterwards.
-        before = fs_read(host, PREFS_PATH)
+        before = read_settings(host)
+        assert before is not None, (
+            "the file does not read whole after the restart, so the boot was "
+            "handed something it would refuse")
         get(host, "/uc?5")
         flipped = wait_for(
-            lambda: (fs_read(host, PREFS_PATH) or before)[1] != before[1],
+            lambda: (setting(host, "frame-time-lock")
+                     != before["frame-time-lock"]) or None,
             timeout=SAVE_TIMEOUT)
         assert flipped, (
-            "no save takes effect after restarting with OutputBypass stored, so "
-            "the boot declared the file unreadable and left the unit on defaults. "
-            "Nothing in the UI repairs that -- delete /preferencesv2.txt over "
-            "/fs/rm and restart")
+            "no save takes effect after restarting, so the boot declared the "
+            "file unreadable and left the unit on defaults. Nothing in the UI "
+            f"repairs that -- delete {SETTINGS_PATH} over /fs/rm and restart")
         get(host, "/uc?5")
     finally:
         get(host, "/sc?~")
-        restore_preset_preference(host, original[:1])
+        if original.get("output"):
+            restore_output_mode(host, original["output"])
 
 
 def test_the_unit_reports_the_commit_it_was_built_from(host):

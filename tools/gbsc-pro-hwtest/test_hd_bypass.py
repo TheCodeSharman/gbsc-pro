@@ -20,7 +20,7 @@ import time
 
 import pytest
 
-from gbs_unit import fs_read, get, read_fields, restore_preset_preference
+from gbs_unit import get, read_fields, restore_output_mode, setting
 
 # How long to wait for the switch to write the route at all. The switch resets
 # blocks and reloads the chip, so it is not instant.
@@ -52,7 +52,7 @@ def wait_for_claim(host):
 
 
 def test_hd_bypass_keeps_the_route_it_claimed(host, preset_save):
-    original = fs_read(host, "/preferencesv2.txt")[:1]
+    original = setting(host, "output")
 
     try:
         status, body = get(host, "/sc?K")
@@ -77,4 +77,5 @@ def test_hd_bypass_keeps_the_route_it_claimed(host, preset_save):
         )
     finally:
         get(host, "/sc?~")
-        restore_preset_preference(host, original)
+        if original:
+            restore_output_mode(host, original)

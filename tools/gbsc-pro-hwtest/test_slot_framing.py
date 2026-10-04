@@ -17,7 +17,8 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from gbs_unit import (framing_matches, framing_of, framing_settled, fs_dir,
-                      fs_read, get, get_json, mode_serv, press, read_fields,
+                      fs_read, get, get_json, mode_serv, press,
+                      read_fields, read_settings,
                       reset_framing, wait_for)
 
 SLOT_FILE = "/slots.txt"
@@ -200,8 +201,8 @@ def test_a_slot_route_says_what_it_did(host, console, source, preset_save,
     place it can be reported.
     """
     select_slot(host, SLOT_CHARACTER)
-    prefs_before = fs_read(host, "/preferencesv2.txt")
-    assert prefs_before is not None, "could not read the preferences file"
+    settings_before = read_settings(host)
+    assert settings_before is not None, "could not read the settings file whole"
 
     # One at a time. /uc? QUEUES a single command character for loop() to pick
     # up, so two requests in flight lose the first -- and a 200 says only that
@@ -217,8 +218,8 @@ def test_a_slot_route_says_what_it_did(host, console, source, preset_save,
 
     assert [f for f in (fs_dir(host) or []) if f.endswith("~")] == [], (
         f"a half-written temp file was left behind: {fs_dir(host)}")
-    assert fs_read(host, "/preferencesv2.txt") == prefs_before, (
-        "a slot route changed the preferences; the unit may now boot expecting "
+    assert read_settings(host) == settings_before, (
+        "a slot route changed the settings; the unit may now boot expecting "
         "something that was never saved")
 
 

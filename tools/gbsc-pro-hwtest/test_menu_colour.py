@@ -18,7 +18,7 @@ import sys
 import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from gbs_unit import fs_read, get, get_json, read_fields, wait_for
+from gbs_unit import get, get_json, read_fields, read_settings, wait_for
 
 PICTURE_SETTINGS = "Picture Settings"
 
@@ -140,13 +140,15 @@ def test_default_colour_returns_every_row_to_neutral(
     assert shown(host, "B") == NEUTRAL
 
 
+BALANCE_KEYS = ("colour-red", "colour-green", "colour-blue", "luma-gain")
+
+
 def stored(host):
-    """The four balance values as the preferences file holds them."""
-    text = fs_read(host, "/preferencesv2.txt")
-    if text is None or len(text) < 12:
+    """The four balance values as the settings file holds them."""
+    values = read_settings(host)
+    if values is None or not all(key in values for key in BALANCE_KEYS):
         return None
-    tail = text[-12:]
-    return tuple(int(tail[i : i + 3]) for i in range(0, 12, 3))
+    return tuple(int(values[key]) for key in BALANCE_KEYS)
 
 
 def test_ok_keeps_the_balance_and_left_and_right_do_not(

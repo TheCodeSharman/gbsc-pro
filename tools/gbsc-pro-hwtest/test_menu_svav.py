@@ -18,15 +18,10 @@ import sys
 import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from gbs_unit import fs_read, get, get_json, wait_for
+from gbs_unit import get, get_json, setting, wait_for
 
 SYSTEM_SETTINGS = "System Settings"
 SV_AV = "Sv-Av InPutSet"
-
-# The three ADV7391 controls, the balance's four, and the two decoder standards
-# all sit at the end of the preferences file.
-BRIGHT_AT = -21
-
 
 def page(host, key=None):
     status, body = get_json(host, "/menu" + (f"?key={key}" if key else ""))
@@ -86,8 +81,8 @@ def press_until(host, label, want, key, timeout=30.0):
 
 
 def brightness_on_flash(host):
-    text = fs_read(host, "/preferencesv2.txt")
-    return None if text is None or len(text) < 21 else int(text[BRIGHT_AT:BRIGHT_AT + 3])
+    stored = setting(host, "av-brightness")
+    return None if stored is None else int(stored)
 
 
 @pytest.fixture

@@ -27,7 +27,7 @@ RUNNING = "frame time lock: running"
 
 def _frame_time_lock_selected(console, seconds=3.0):
     """Whether the option is on, off the heartbeat rather than the flash: /sc?W
-    changes RAM only, so /preferencesv2.txt answers about the last save."""
+    changes RAM only, so /preferences.txt answers about the last save."""
     deadline = time.time() + seconds
     while time.time() < deadline:
         if console.status:

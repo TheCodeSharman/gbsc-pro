@@ -790,22 +790,45 @@ def fs_read(host, path, timeout=15):
     return body if status == 200 else None
 
 
-# Byte 0 of /preferencesv2.txt is presetPreference written as `value + '0'`, and
-# each value has a /uc command that selects it. OutputCustomized and
-# OutputBypass have none, so a caller that put one of those there has to say so
-# rather than silently leave a different resolution behind.
-PREFERENCE_COMMAND = {"0": "f", "1": "h", "3": "g", "4": "p", "5": "s", "7": "j"}
+SETTINGS_PATH = "/preferences.txt"
+
+# The line a save ends with. A file not carrying it is one the unit refuses
+# too: Prefs::Settings rejects a read that does not reach the terminator, which
+# is what tells a truncated file from a short one.
+SETTINGS_TERMINATOR = "end"
 
 
-def restore_preset_preference(host, byte0):
-    """Put presetPreference back to what byte 0 of the preferences held.
+def read_settings(host, timeout=15):
+    """The unit's settings as a dict of key to value text, or None.
 
-    Reports rather than replaces a value no /uc command selects, so a run that
-    started from one does not silently leave a different resolution behind.
+    None means the file is missing or does not reach its terminator, which is
+    the same judgement the boot makes. Keyed, so a test names the setting it is
+    about -- every reader here used to count bytes into a positional file, and
+    adding a setting shifted the meaning of the ones after it.
     """
-    command = PREFERENCE_COMMAND.get(byte0)
-    if command is None:
-        print(f"presetPreference was {byte0!r}, which no /uc command selects; "
-              "it is left where this run put it")
-        return
-    get(host, f"/uc?{command}")
+    text = fs_read(host, SETTINGS_PATH, timeout=timeout)
+    if text is None:
+        return None
+
+    values = {}
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line == SETTINGS_TERMINATOR:
+            return values
+        key, separator, value = line.partition("=")
+        if separator:
+            values[key.strip()] = value.strip()
+    return None
+
+
+def setting(host, key, timeout=15):
+    """One setting's value, or None when the file will not read whole."""
+    values = read_settings(host, timeout=timeout)
+    return None if values is None else values.get(key)
+
+
+def restore_output_mode(host, mode):
+    """Put the output resolution back to the one a run started from."""
+    get(host, f"/output?res={mode}")
