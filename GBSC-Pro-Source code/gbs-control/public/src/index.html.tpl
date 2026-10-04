@@ -128,8 +128,8 @@
             <div class="gbs-resolution">
               <button
                 class="gbs-button gbs-button__resolution"
-                gbs-message="s"
-                gbs-message-type="user"
+                gbs-message="1920x1080"
+                gbs-message-type="setOutput"
                 gbs-click="normal"
                 gbs-element-ref="button1920x1080"
                 gbs-role="preset"
@@ -138,8 +138,8 @@
               </button>
               <button
                 class="gbs-button gbs-button__resolution"
-                gbs-message="p"
-                gbs-message-type="user"
+                gbs-message="1280x1024"
+                gbs-message-type="setOutput"
                 gbs-click="normal"
                 gbs-element-ref="button1280x1024"
                 gbs-role="preset"
@@ -148,8 +148,8 @@
               </button>
               <button
                 class="gbs-button gbs-button__resolution"
-                gbs-message="f"
-                gbs-message-type="user"
+                gbs-message="1280x960"
+                gbs-message-type="setOutput"
                 gbs-click="normal"
                 gbs-element-ref="button1280x960"
                 gbs-role="preset"
@@ -158,8 +158,8 @@
               </button>
               <button
                 class="gbs-button gbs-button__resolution"
-                gbs-message="g"
-                gbs-message-type="user"
+                gbs-message="1280x720"
+                gbs-message-type="setOutput"
                 gbs-click="normal"
                 gbs-element-ref="button1280x720"
                 gbs-role="preset"
@@ -168,8 +168,8 @@
               </button>
               <button
                 class="gbs-button gbs-button__resolution"
-                gbs-message="j"
-                gbs-message-type="user"
+                gbs-message="768x576"
+                gbs-message-type="setOutput"
                 gbs-click="normal"
                 gbs-element-ref="button768x576"
                 gbs-role="preset"
@@ -178,8 +178,8 @@
               </button>
               <button
                 class="gbs-button gbs-button__resolution"
-                gbs-message="h"
-                gbs-message-type="user"
+                gbs-message="720x480"
+                gbs-message-type="setOutput"
                 gbs-click="normal"
                 gbs-element-ref="button720x480"
                 gbs-role="preset"

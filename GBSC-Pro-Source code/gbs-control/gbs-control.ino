@@ -154,6 +154,8 @@ char userCommand;
 // doing any of that in the handler touches the bus from the wrong context. The
 // route parses and queues; loop() selects.
 volatile uint8_t pendingInputSelection = VideoSourceSelection::None;
+// -1 is nothing asked for; any other value is a PresetPreference.
+volatile int8_t pendingOutputPreference = -1;
 
 #if GBS_SAMPLING_LOG
 Tv5725::SamplingLog samplingLog;
@@ -4774,14 +4776,6 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
 
                     delay(200);
                     break;
-                case 'Y':
-                    loadComputedPreset(Tv5725::OutputChoice(Output720P));
-                    doPostPresetLoadSteps();
-                    break;
-                case 'y':
-                    loadComputedPreset(Tv5725::OutputChoice(Output720P));
-                    doPostPresetLoadSteps();
-                    break;
                 case 'P':; // SerialMprint(F("auto deinterlace: "));
                     rto->deinterlaceAutoEnabled = !rto->deinterlaceAutoEnabled;
                     if (rto->deinterlaceAutoEnabled) {
@@ -4836,14 +4830,6 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                         ; // SerialMprintln("off");
                     }
                     saveUserPrefs();
-                    break;
-                case 'e':
-                    loadComputedPreset(Tv5725::OutputChoice(Output960P));
-                    doPostPresetLoadSteps();
-                    break;
-                case 'r':
-                    loadComputedPreset(Tv5725::OutputChoice(Output960P));
-                    doPostPresetLoadSteps();
                     break;
                 case '!':
                     debugPrintf("sfr: %.4f pll: %lu\n",
@@ -5007,23 +4993,11 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                 case 'W':
                     toggleFrameTimeLock(false);
                     break;
-                case 'E':
-                    loadComputedPreset(Tv5725::OutputChoice(Output1024P));
-                    doPostPresetLoadSteps();
-                    break;
-                case 'R':
-                    loadComputedPreset(Tv5725::OutputChoice(Output1024P));
-                    doPostPresetLoadSteps();
-                    break;
                 case '0':
                     moveHS(4, true);
                     break;
                 case '1':
                     moveHS(4, false);
-                    break;
-                case '2':
-                    loadComputedPreset(Tv5725::OutputChoice(Output576P));
-                    doPostPresetLoadSteps();
                     break;
                 case '3':
                     //
@@ -5054,10 +5028,6 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     invertHS();
                     invertVS();
 
-                    break;
-                case '9':
-                    loadComputedPreset(Tv5725::OutputChoice(Output480P));
-                    doPostPresetLoadSteps();
                     break;
                 case 'o': {
                     const uint8_t wanted = rto->osr == 1 ? 2 : (rto->osr == 2 ? 4 : 1);
@@ -5306,14 +5276,6 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     ; // SerialMprint("1_26: ");
                     ; // SerialMprintln((if_hblank_scale_stop - 1), HEX);
                 } break;
-                case '(': {
-                    loadComputedPreset(Tv5725::OutputChoice(Output1080P));
-                    doPostPresetLoadSteps();
-                } break;
-                case ')': {
-                    loadComputedPreset(Tv5725::OutputChoice(Output1080P));
-                    doPostPresetLoadSteps();
-                } break;
                 case 'V': {
                     ; // SerialMprint(F("step response "));
                     uopt->wantStepResponse = !uopt->wantStepResponse;
@@ -5430,6 +5392,21 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
             const int16_t steps = pendingNudgeSteps;
             pendingNudgeSteps = 0;
             geometryControls.nudge(pendingNudge, steps);
+        }
+
+        if (pendingOutputPreference >= 0) {
+            const Tv5725::PresetPreference wanted =
+                (Tv5725::PresetPreference)pendingOutputPreference;
+            pendingOutputPreference = -1;
+
+            // A RESOLUTION IS A COMMAND TO SCALE: pass-through holds a source
+            // off the resolution just chosen, so choosing one leaves it, and
+            // before the change or the next pass routes the source back.
+            uopt->presetPreference = wanted;
+            uopt->preferScalingRgbhv = 1;
+            applyPassThroughPreference();
+            changeOutputResolution();
+            saveUserPrefs();
         }
 
         if (pendingInputSelection != VideoSourceSelection::None) {
@@ -6589,6 +6566,43 @@ void startWebserver()
         char body[64];
         snprintf_P(body, sizeof(body), PSTR("{\"queued\":\"%s\"}"),
             VideoSourceSelection::name(wanted));
+        request->send(200, "application/json", body);
+    });
+
+    // The output the picture lands in, named the way the mode names itself.
+    // GET reports it; ?res= chooses one. A resolution is a command to scale,
+    // so choosing one leaves pass-through the same way the serial letters do.
+    server.on("/output", HTTP_GET, [](AsyncWebServerRequest *request) {
+        if (!request->hasParam("res")) {
+            const Tv5725::OutputMode *const now = geometry.outputMode();
+            const Tv5725::OutputMode *const asked =
+                Tv5725::OutputMode::forPreference(
+                    (Tv5725::PresetPreference)uopt->presetPreference);
+            char body[160];
+            snprintf_P(body, sizeof(body),
+                PSTR("{\"mode\":\"%s\",\"requested\":\"%s\",\"passThrough\":%s}"),
+                now != NULL ? now->name() : "none",
+                asked != NULL ? asked->name() : "none",
+                (now != NULL && now->isBypass()) ? "true" : "false");
+            request->send(200, "application/json", body);
+            return;
+        }
+
+        const String value = request->getParam("res")->value();
+        const Tv5725::OutputMode *const wanted =
+            Tv5725::OutputMode::fromName(value.c_str());
+        Tv5725::PresetPreference preference = Tv5725::Output1080P;
+        if (!Tv5725::OutputMode::preferenceFor(wanted, preference)) {
+            request->send(400, "application/json",
+                PSTR("{\"error\":\"unknown res: 1920x1080 1280x1024 1280x960 "
+                     "1280x720 768x576 720x480\"}"));
+            return;
+        }
+
+        pendingOutputPreference = (int8_t)preference;
+        char body[64];
+        snprintf_P(body, sizeof(body), PSTR("{\"queued\":\"%s\"}"),
+            wanted->name());
         request->send(200, "application/json", body);
     });
 

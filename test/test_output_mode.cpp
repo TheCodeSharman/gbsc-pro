@@ -781,3 +781,42 @@ TEST_CASE("pass-through is not a resolution and says so")
 {
     CHECK(std::strcmp(ModeBypass.name(), "bypass") == 0);
 }
+
+TEST_CASE("a mode is found by the name it reports")
+{
+    // The round trip the /output route makes: a request names a mode the way
+    // the mode names itself, so nothing in between needs a code for it.
+    const OutputMode *modes[] = {&Mode1080p, &Mode1024p, &Mode960p,
+                                 &Mode720p,  &Mode576p,  &Mode480p};
+    for (size_t i = 0; i < sizeof(modes) / sizeof(modes[0]); ++i) {
+        const OutputMode *found = OutputMode::fromName(modes[i]->name());
+        CHECK(found == modes[i]);
+    }
+}
+
+TEST_CASE("an unknown output name selects nothing")
+{
+    CHECK(OutputMode::fromName("640x480") == (const OutputMode *)0);
+    CHECK(OutputMode::fromName("") == (const OutputMode *)0);
+    CHECK(OutputMode::fromName(0) == (const OutputMode *)0);
+}
+
+TEST_CASE("a mode names the preference that selects it")
+{
+    // The stored preference is what survives a boot, so a request that names a
+    // mode has to reach one. Derived from forPreference(), not a second table.
+    PresetPreference found = OutputCustomized;
+    CHECK(OutputMode::preferenceFor(&Mode1080p, found));
+    CHECK(found == Output1080P);
+    CHECK(OutputMode::preferenceFor(&Mode576p, found));
+    CHECK(found == Output576P);
+    CHECK(OutputMode::preferenceFor(&Mode480p, found));
+    CHECK(found == Output480P);
+}
+
+TEST_CASE("pass-through is not a preference")
+{
+    PresetPreference found = Output1080P;
+    CHECK_FALSE(OutputMode::preferenceFor(&ModeBypass, found));
+    CHECK_FALSE(OutputMode::preferenceFor(0, found));
+}

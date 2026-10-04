@@ -3,6 +3,7 @@
 #include "DisplayClock.h"
 
 #include <math.h>
+#include <string.h>
 
 namespace Tv5725 {
 
@@ -118,6 +119,30 @@ const OutputMode *OutputMode::forPreference(PresetPreference presetPreference)
         return &Mode576p;
 
     return 0;
+}
+
+const OutputMode *OutputMode::fromName(const char *name)
+{
+    if (name == NULL)
+        return NULL;
+    for (uint8_t i = 0; i < ScaledCount; ++i)
+        if (strcmp(name, Scaled[i]->name()) == 0)
+            return Scaled[i];
+    return NULL;
+}
+
+bool OutputMode::preferenceFor(const OutputMode *mode, PresetPreference &found)
+{
+    if (mode == NULL || mode->isBypass())
+        return false;
+    for (uint8_t p = 0; p <= Output576P; ++p) {
+        const PresetPreference candidate = (PresetPreference)p;
+        if (forPreference(candidate) == mode) {
+            found = candidate;
+            return true;
+        }
+    }
+    return false;
 }
 
 const OutputMode *OutputMode::forFrameHeight(uint16_t frameLines)

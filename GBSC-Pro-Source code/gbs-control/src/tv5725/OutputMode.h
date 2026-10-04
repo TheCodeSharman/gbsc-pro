@@ -244,6 +244,14 @@ public:
     // resolution. A preference is one height whatever the source runs at.
     static const OutputMode *forPreference(PresetPreference presetPreference);
 
+    // The mode that calls itself this, or NULL. The inverse of name(), so a
+    // request names a mode the way the mode names itself.
+    static const OutputMode *fromName(const char *name);
+
+    // The preference that selects this mode. False where none does, which is
+    // pass-through: handing the source to the encoder is not a resolution.
+    static bool preferenceFor(const OutputMode *mode, PresetPreference &found);
+
     // Calculates the output timings for the given frame rate. ceilingHz clamps
     // the display clock to usable maximum.
     OutputTiming solve(float fieldRateHz,

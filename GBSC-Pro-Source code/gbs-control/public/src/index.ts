@@ -501,6 +501,10 @@ const setSlot = (slot: string) => {
   fetch(`/slot/set?slot=${slot}&${+new Date()}`);
 };
 
+const setOutput = (res: string) => {
+  fetch(`/output?res=${encodeURIComponent(res)}&${+new Date()}`);
+};
+
 const updateSlotNames = () => {
   for (let i = 0; i < GBSControl.maxSlots; i++) {
     const el = document.querySelector(`[gbs-slot-id="${i}"]`);
@@ -1045,6 +1049,7 @@ const initGBSButtons = () => {
     user: loadUser,
     action: loadDoc,
     setSlot,
+    setOutput,
   };
 
   const buttons = nodelistToArray<HTMLElement>(
