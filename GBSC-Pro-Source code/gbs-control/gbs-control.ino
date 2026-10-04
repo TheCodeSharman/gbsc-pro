@@ -2461,14 +2461,10 @@ void doPostPresetLoadSteps()
 
         Tv5725::Adc::choosePhaseSyncProcessor(8);
 
-        if (rto->inputIsYpBpR) // && Info_sate == 0 )//&& SeleInputSource == S_YUV )
-        {
-            Tv5725::SyncOnGreen::choose(14);
-        } else if (rto->inputIsYpBpR) // == false && Info_sate == 0 )//&& (SeleInputSource == S_VGA || SeleInputSource == S_RGBs) )
-        {
-            Tv5725::SyncOnGreen::choose(13);
-        }
-
+        // The level is NOT chosen here. VideoSourceAcquisition::acquireSeparatorLevel()
+        // owns it, seeds from Adc::inputIsComponent() and then searches -- so a
+        // value stated here is a second owner writing a final answer where the
+        // engine writes a starting point. putInForce() carries whatever is held.
         Tv5725::SyncOnGreen::putInForce();
 
 
