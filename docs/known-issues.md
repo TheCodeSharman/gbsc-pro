@@ -3631,6 +3631,24 @@ whole PLL group has to move together.
 
 Acquisition also took about 40 s against the 15.2 s on record for this mode.
 
+### The six-tap filter is forced on at every mode change, and the web UI reports the preference
+
+`VideoPath::applyPictureFilters()` writes `VDS_TAP6_BYPS` from a hardcoded
+`true`, so the filter is in circuit after any mode change whatever
+`uopt->wantTap6` holds. The option is stored (`six-tap` in the settings file,
+defaulting to 1), the OSD's `'t'` key toggles it, and the status frame reports it
+in `toSend[4]` bit 3 -- so a unit told to turn it off shows the box clear and
+runs the filter anyway from the next source change onwards.
+
+Unlike the line filter and peaking beside it, which are passed in, nothing reads
+the preference on the setup path. Whether the preference should be honoured or
+the option retired is the open part: the OSD case is marked unused, and no
+measurement here says what the filter costs or buys.
+
+Passing it in as a third argument is the whole of the fix if it should be
+honoured.
+
+
 ## Fixed, kept here until the next session has seen them
 
 ### The sync pad came back before the mode was set up, and the sketch set it up a second time -- FIXED

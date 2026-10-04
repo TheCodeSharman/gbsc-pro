@@ -147,10 +147,19 @@ It owns, and the sketch calls:
 | `forgetPreviousSource()` | everything the previous source left in a block that measures -- sync positions, the ADC phase, the deinterlacer's scanlines and steering |
 | `applyClockGroup()` | the clock group's static half, after the ADC PLL has been restarted: lock enable, both loop filters, the input clock edge, the decimator modes |
 | `applyFrameBufferRequests()` | how the capture and playback stages ask for memory |
+| `applyPictureFilters(lineFilter, peaking)` | the display scaler's filters as the user chose them |
+| `applyOutputPictureFilters(sharpness, stepResponse)` | the two that follow the OUTPUT mode, so an output change re-applies these alone |
 
 **The divider and the oversampling are deliberately NOT there.** They move with
 the source, so `Tv5725::SourceMeasurement` owns them, and a phase here that set
 one would be a second owner of a measured fact.
+
+**A user preference arrives as an argument and is never held.** The option store
+is the sketch's and the engine is retiring it rather than adopting it, so a phase
+that needed one would be reading state it has no business owning. What the engine
+does supply is the fact it already holds: `applyOutputPictureFilters()` asks
+itself whether the output is 1080p rather than being told, which is why the
+sketch keeps no predicate for it.
 
 ## What is still in the sketch, and what it is waiting on
 
@@ -163,11 +172,10 @@ opposite of where they are going.
 | what it still reaches for | why it blocks the move |
 |---|---|
 | `rto->` (`inputIsYpBpR`, `osr`, `sourceDisconnected`, `syncWatcherEnabled`, `applyPresetDoneStage`) | runtime options, which the engine is retiring rather than adopting |
-| `uopt->` (`wantPeaking`, `wantVdsLineFilter`) | user options; `Tv5725::VideoProcessor` already takes them as arguments, so these are ready to be passed in |
 | `adco->` gains and offsets | the stored ADC calibration |
 | `inputAcquisition.` (`placeClampWindow`, `placeCoastWindow`, `applySyncProcessorDynamic`, `acquireSeparatorLevel`) | the acquisition layer, which VideoPath does not hold a reference to |
 | `frameSync.`, `frameTimeLock.` | the frame time lock, likewise not held |
-| `prepareSyncProcessor()`, `applyStoredAdcGain()`, `applyOutputResolutionSettings()`, `setAdcParametersGainAndOffset()`, `resetPLLAD()` | sketch helpers that are themselves unmigrated |
+| `prepareSyncProcessor()`, `applyStoredAdcGain()`, `setAdcParametersGainAndOffset()`, `resetPLLAD()` | sketch helpers that are themselves unmigrated |
 
 **`resetPLLAD()` is a near-duplicate of `Tv5725::Adc::restartPll()`** -- the same
 five writes, differing only in `restartPhaseAdjusters()` and `PLLAD_LEN`, with
@@ -175,9 +183,9 @@ five writes, differing only in `restartPhaseAdjusters()` and `PLLAD_LEN`, with
 a collapse that changes behaviour, so it wants a bench check on both sync types
 rather than only a compile.
 
-The order of the remaining work is: pass the user options in as arguments, give
-VideoPath the acquisition collaborators it needs, collapse `resetPLLAD()`, and
-the ordering is then the only thing left to move.
+The order of the remaining work is: move the stored ADC calibration onto
+`Tv5725::Adc`, give VideoPath the acquisition collaborators it needs, collapse
+`resetPLLAD()`, and the ordering is then the only thing left to move.
 
 ## What the sketch may call
 
