@@ -89,7 +89,7 @@ orders agree on all five usable modes. What the test reports is the window the
 engine solved.
 
 
-### A black HDMI frame with the acquisition healthy is `DAC_RGBS_S1EN` left at 0
+### A black HDMI frame with the acquisition healthy is `DAC_RGBS_S1EN` left at 0 -- FIXED
 
 **Measured after a hardware suite run, on `ypbpr` with the source acquired.**
 Everything the "no HDMI with every register perfect" checks ask for reads right:
@@ -127,6 +127,15 @@ black. A sink reporting no mode, or the old mode, is a different fault and the
 **It is found by diffing against a known-good dump**, which is the check that
 works: 63 fields differ between a clean `vga` state and this one, and all but
 this are the legitimate consequences of the input and source being different.
+
+**The sync DAC is `Tv5725::Chip::init()`'s now**, written beside the colour
+three rather than at the end of a preset load, so the boot path owns it:
+`setup()` calls `BringUp::init()` unconditionally and before detection, and
+every path that tears segment 0 down goes through `holdAllBlocks()`, which arms
+the bring-up again. Nothing else writes `s0_45` bits 2..4.
+`test_bringup.cpp` holds it. **The bench confirmation is a cold boot away** --
+the fix is host-tested and has not been read off a unit that came up from cold
+with this image.
 
 
 ### A stored framing from before shapes existed comes up unshaped
