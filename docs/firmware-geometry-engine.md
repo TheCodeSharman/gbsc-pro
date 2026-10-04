@@ -172,10 +172,17 @@ opposite of where they are going.
 | what it still reaches for | why it blocks the move |
 |---|---|
 | `rto->` (`inputIsYpBpR`, `osr`, `sourceDisconnected`, `syncWatcherEnabled`, `applyPresetDoneStage`) | runtime options, which the engine is retiring rather than adopting |
-| `adco->` gains and offsets | the stored ADC calibration |
 | `inputAcquisition.` (`placeClampWindow`, `placeCoastWindow`, `applySyncProcessorDynamic`, `acquireSeparatorLevel`) | the acquisition layer, which VideoPath does not hold a reference to |
 | `frameSync.`, `frameTimeLock.` | the frame time lock, likewise not held |
 | `prepareSyncProcessor()`, `applyStoredAdcGain()`, `setAdcParametersGainAndOffset()`, `resetPLLAD()` | sketch helpers that are themselves unmigrated |
+
+**The stored ADC calibration is `Tv5725::Adc`'s.** The gain the auto-gain loop
+settles on and the black level the offset calibration measures are facts only
+the ADC can establish, so the block that measures them holds them --
+`holdGain()`, `applyHeldGain()`, `applyHeldOffset()`. The same rule the user
+options follow, arrived at from the other side: a preference is passed in
+because the engine must not hold it, and a measurement is held because nothing
+else can take it.
 
 **`resetPLLAD()` is a near-duplicate of `Tv5725::Adc::restartPll()`** -- the same
 five writes, differing only in `restartPhaseAdjusters()` and `PLLAD_LEN`, with
@@ -183,9 +190,9 @@ five writes, differing only in `restartPhaseAdjusters()` and `PLLAD_LEN`, with
 a collapse that changes behaviour, so it wants a bench check on both sync types
 rather than only a compile.
 
-The order of the remaining work is: move the stored ADC calibration onto
-`Tv5725::Adc`, give VideoPath the acquisition collaborators it needs, collapse
-`resetPLLAD()`, and the ordering is then the only thing left to move.
+The order of the remaining work is: give VideoPath the acquisition
+collaborators it needs, collapse `resetPLLAD()`, and the ordering is then the
+only thing left to move.
 
 ## What the sketch may call
 
