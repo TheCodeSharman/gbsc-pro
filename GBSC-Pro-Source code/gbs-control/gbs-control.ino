@@ -6133,6 +6133,38 @@ private:
     }
 };
 
+// A slots.bin whose length does not match SlotMetaArray is REPLACED rather than
+// read. Every reader here pulls sizeof(SlotMetaArray) bytes without checking,
+// so a file from a build with a different SlotMeta gives garbled names -- and
+// the web UI refuses one of the wrong length and retries for ever, which reads
+// as a unit that never finishes loading.
+static void ensureSlotsFile()
+{
+    File existing = LittleFS.open(SLOTS_FILE, "r");
+    const bool usable = existing && existing.size() == sizeof(SlotMetaArray);
+    if (existing)
+        existing.close();
+    if (usable)
+        return;
+
+    SlotMetaArray slotsObject;
+    for (int i = 0; i < SLOTS_TOTAL; i++) {
+        slotsObject.slot[i].slot = i;
+        slotsObject.slot[i].scanlines = 0;
+        slotsObject.slot[i].scanlinesStrength = 0;
+        slotsObject.slot[i].wantVdsLineFilter = false;
+        slotsObject.slot[i].wantStepResponse = true;
+        slotsObject.slot[i].wantPeaking = true;
+        strncpy(slotsObject.slot[i].name, EMPTY_SLOT_NAME, 25);
+    }
+
+    File fresh = LittleFS.open(SLOTS_FILE, "w");
+    if (!fresh)
+        return;
+    fresh.write((byte *)&slotsObject, sizeof(slotsObject));
+    fresh.close();
+}
+
 void startWebserver()
 {
 
@@ -6848,32 +6880,7 @@ void startWebserver()
     server.on("/bin/slots.bin", HTTP_GET, [](AsyncWebServerRequest *request) {
     if (RouteHeap::allowsAReply(request))
     {
-      SlotMetaArray slotsObject;
-      File slotsBinaryFileRead = LittleFS.open(SLOTS_FILE, "r");
-
-      if (!slotsBinaryFileRead)
-      {
-        File slotsBinaryFileWrite = LittleFS.open(SLOTS_FILE, "w");
-        for (int i = 0; i < SLOTS_TOTAL; i++)
-        {
-          slotsObject.slot[i].slot = i;
-          slotsObject.slot[i].presetID = 0;
-          slotsObject.slot[i].scanlines = 0;
-          slotsObject.slot[i].scanlinesStrength = 0;
-          slotsObject.slot[i].wantVdsLineFilter = false;
-          slotsObject.slot[i].wantStepResponse = true;
-          slotsObject.slot[i].wantPeaking = true;
-          char emptySlotName[25] = "Empty                   ";
-          strncpy(slotsObject.slot[i].name, emptySlotName, 25);
-        }
-        slotsBinaryFileWrite.write((byte *)&slotsObject, sizeof(slotsObject));
-        slotsBinaryFileWrite.close();
-      }
-      else
-      {
-        slotsBinaryFileRead.close();
-      }
-
+      ensureSlotsFile();
       request->send(LittleFS, "/slots.bin", "application/octet-stream");
     } });
 
@@ -6925,8 +6932,7 @@ void startWebserver()
           for (int i = 0; i < SLOTS_TOTAL; i++)
           {
             slotsObject.slot[i].slot = i;
-            slotsObject.slot[i].presetID = 0;
-            slotsObject.slot[i].scanlines = 0;
+              slotsObject.slot[i].scanlines = 0;
             slotsObject.slot[i].scanlinesStrength = 0;
             slotsObject.slot[i].wantVdsLineFilter = false;
             slotsObject.slot[i].wantStepResponse = true;
@@ -7029,7 +7035,6 @@ fail:
           flag += LittleFS.rename("/preset_unknown." + String((char)(nextSlot)), "/preset_unknown." + String((char)slot));
 
           slotsObject.slot[currentSlot + loopCount].slot = slotsObject.slot[currentSlot + loopCount + 1].slot;
-          slotsObject.slot[currentSlot + loopCount].presetID = slotsObject.slot[currentSlot + loopCount + 1].presetID;
           slotsObject.slot[currentSlot + loopCount].scanlines = slotsObject.slot[currentSlot + loopCount + 1].scanlines;
           slotsObject.slot[currentSlot + loopCount].scanlinesStrength = slotsObject.slot[currentSlot + loopCount + 1].scanlinesStrength;
           slotsObject.slot[currentSlot + loopCount].wantVdsLineFilter = slotsObject.slot[currentSlot + loopCount + 1].wantVdsLineFilter;

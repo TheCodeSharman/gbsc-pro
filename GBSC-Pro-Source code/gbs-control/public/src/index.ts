@@ -12,7 +12,6 @@ interface StructDescriptors {
 const Structs: StructDescriptors = {
   slots: [
     { name: "name", type: "string", size: 25 },
-    { name: "presetID", type: "byte", size: 1 },
     { name: "scanlines", type: "byte", size: 1 },
     { name: "scanlinesStrength", type: "byte", size: 1 },
     { name: "slot", type: "byte", size: 1 },
@@ -507,10 +506,6 @@ const updateSlotNames = () => {
     const el = document.querySelector(`[gbs-slot-id="${i}"]`);
 
     el.setAttribute("gbs-name", GBSControl.structs.slots[i].name);
-    el.setAttribute(
-      "gbs-meta",
-      getSlotPresetName(parseInt(GBSControl.structs.slots[i].presetID, 10))
-    );
   }
 };
 
@@ -529,37 +524,6 @@ const fetchSlotNames = () => {
       }
       return false;
     });
-};
-
-const getSlotPresetName = (presetID: number) => {
-  switch (presetID) {
-    case 0x01:
-    case 0x011:
-      return "1280x960";
-    case 0x02:
-    case 0x012:
-      return "1280x1024";
-    case 0x03:
-    case 0x013:
-      return "1280x720";
-    case 0x05:
-    case 0x015:
-      return "1920x1080";
-    case 0x06:
-    case 0x016:
-      return "DOWNSCALE";
-    case 0x04:
-    case 0x014:
-      return "720x480";
-    case 0x07:
-    case 0x017:
-      return "768x576";
-    case 0x21: // bypass 1
-    case 0x22: // bypass 2
-      return "BYPASS";
-    default:
-      return "CUSTOM";
-  }
 };
 
 const fetchSlotNamesErrorRetry = () => {
