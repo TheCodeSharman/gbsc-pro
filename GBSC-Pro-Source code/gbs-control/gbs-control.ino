@@ -1496,13 +1496,14 @@ void applySavedInputSource()
         return;
     }
 
+    // The same sequence every other caller gets. Applying the registers and
+    // sending the frame is not it: the reference sampling clock, the scan its
+    // line implies and the sync processor reset belong to a selection too, and
+    // without them the first measurement of the arriving source is taken
+    // through whatever divider the chip was left holding.
+    restoreInputSelection(saved);
+
     const VideoSourceSelection::Settings settings = VideoSourceSelection::settingsFor(saved);
-    applyInputRegisters(settings);
-
-    // The other half of the path: the HC32's asw_01..04 decide what is actually
-    // connected to the ADC input just selected, and appear in no register dump.
-    sendInputFrame(settings.frame);
-
     bootLogPrintf("INPUT: %s frame=0x%02x ADC_INPUT_SEL=%u t=%lums\n",
                   VideoSourceSelection::name(saved), (unsigned)settings.frame,
                   (unsigned)GBS::ADC_INPUT_SEL::read(), (unsigned long)millis());

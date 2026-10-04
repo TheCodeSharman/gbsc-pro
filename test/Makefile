@@ -16,7 +16,7 @@ CXXFLAGS ?= -std=c++11 -O1 -Wall -Wextra
 # embarrassingly parallel: measured 3m26s serial against 34s here.
 MAKEFLAGS += -j$(shell nproc)
 
-.PHONY: all test ir-receiver menu aspect video-signal test-bus test-bus-rate-measurement steady-run sync-on-green sampling-log axis source-key source-timing framing-table framing-text scale video-source-line capture-window output-window video-path source-measurement memory-window display-clock frame-sync frame-time-lock output-mode clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc video-route rgbhv-output write-trace settings clean help
+.PHONY: all test ir-receiver menu aspect video-signal test-bus test-bus-rate-measurement steady-run sync-on-green sampling-log axis source-key source-timing framing-table framing-text scale video-source-line capture-window output-window video-path source-measurement memory-window display-clock frame-sync frame-time-lock output-mode clock-ramp rate-agreement hold-ramp sync-search video-source-selection video-source-selector segment-select register-queue preset-load sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc video-route rgbhv-output write-trace settings clean help
 .DEFAULT_GOAL := test
 
 ## help: list the targets
@@ -457,6 +457,21 @@ video-source-selection:
 	  -o "$(OUT)/test_video_source_selection" \
 	  "$(HERE)/test_video_source_selection.cpp" src/videosource/VideoSourceSelection.cpp
 	@"$(OUT)/test_video_source_selection"
+
+## video-source-selector: host unit tests for applying a selection
+#
+# Selecting an input is one sequence and every caller owes all of it. The boot
+# applied the registers and sent the frame and stopped, where every other caller
+# went on to install a reference sampling clock, state the scan it implies and
+# reset the sync processor -- so a boot measured the arriving source through
+# whatever divider the chip was left holding.
+video-source-selector:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) \
+	  -o "$(OUT)/test_video_source_selector" \
+	  "$(HERE)/test_video_source_selector.cpp" \
+	  src/videosource/VideoSourceSelector.cpp src/videosource/VideoSourceSelection.cpp
+	@"$(OUT)/test_video_source_selector"
 
 ## sync-search: host unit tests for which sync search a saved input selects
 #
@@ -904,7 +919,7 @@ write-trace:
 	@"$(OUT)/test_write_trace"
 
 ## test: every host unit test
-test: input-scale ir-receiver osd-row osd-screens menu aspect video-signal test-bus test-bus-rate-measurement steady-run source-absence detection-entry sync-measurement colour-space colour-balance framing-save-timer sync-on-green axis source-key source-timing framing-table framing-text scale sync-processor video-processor video-source-line capture-window output-window video-path source-measurement memory-window display-clock frame-sync frame-time-lock output-mode clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc sampling-log video-route rgbhv-output write-trace settings
+test: input-scale ir-receiver osd-row osd-screens menu aspect video-signal test-bus test-bus-rate-measurement steady-run source-absence detection-entry sync-measurement colour-space colour-balance framing-save-timer sync-on-green axis source-key source-timing framing-table framing-text scale sync-processor video-processor video-source-line capture-window output-window video-path source-measurement memory-window display-clock frame-sync frame-time-lock output-mode clock-ramp rate-agreement hold-ramp sync-search video-source-selection video-source-selector segment-select register-queue preset-load sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc sampling-log video-route rgbhv-output write-trace settings
 all: test
 
 ## clean: remove the compiled test binaries

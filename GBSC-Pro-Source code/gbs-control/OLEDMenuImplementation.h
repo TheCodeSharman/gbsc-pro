@@ -99,7 +99,6 @@ void initOLEDMenu();
 bool InputSwHandler(OLEDMenuManager *manager, OLEDMenuItem *item, OLEDMenuNav);
 
 void Checksum_Send(const unsigned char *buff);
-void Checksum_Sendmode(const unsigned char *buff, uint8_t mode);
 // The frame the OLED handlers send, from a restored preference instead of a
 // keypress. See the definition for why nothing did this at boot.
 void sendInputFrame(uint8_t frame);
@@ -107,6 +106,10 @@ void sendInputFrame(uint8_t frame);
 // boot restore and the menu both apply the whole row through this, so the two
 // cannot come up having applied different amounts of it.
 void applyInputRegisters(const VideoSourceSelection::Settings &settings);
+
+// Putting the stored input in force at boot: the same sequence a chosen one
+// gets, without writing back the selection the settings already name.
+void restoreInputSelection(VideoSourceSelection::Id id);
 
 // A menu selection: the registers above plus the bookkeeping every handler
 // repeated -- the legacy source byte, the stored id, the brightness set, the
@@ -129,12 +132,7 @@ void Send_Smooth(bool Smooth);
 void Send_Compatibility(bool Com);
 void InputINFO(void);
 
-void InputSV_mode(uint8_t mode);
-void InputAV_mode(uint8_t mode);
 
-void InputRGBs_mode(uint8_t mode);
-void InputRGsB_mode(uint8_t mode);
-void InputVGA_mode(uint8_t mode);
 void InputNULL(void);
 
 

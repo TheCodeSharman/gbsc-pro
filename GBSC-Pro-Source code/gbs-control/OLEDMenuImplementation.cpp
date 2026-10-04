@@ -18,6 +18,7 @@
 #include "src/tv5725/VideoPath.h"
 #include "src/tv5725/RgbhvOutput.h"
 #include "src/videosource/FrameTimeLock.h"
+#include "src/videosource/VideoSourceSelector.h"
 #include "src/tv5725/Tv5725Log.h"
 #include <stdio.h>
 
@@ -470,18 +471,6 @@ void sendInputFrame(uint8_t frame)
     sender.send(command);
 }
 
-void Checksum_Sendmode(const unsigned char *buff, uint8_t mode)
-{     
-    unsigned char buff_lin[7];
-    buff_lin[0] = buff[0];
-    buff_lin[1] = buff[1];
-    buff_lin[2] = buff[2];
-    buff_lin[3] = buff[3] | (mode & 0x0f);
-    buff_lin[4] = random(254);
-    buff_lin[5] = 0xfe;
-    buff_lin[6] = buff_lin[0] + buff_lin[1] + buff_lin[2] + buff_lin[3] + buff_lin[4] + buff_lin[5];
-    Serial.write(buff_lin, 7);
-}
 
 static void LoadDefault()
 {
@@ -618,66 +607,75 @@ void applyInputRegisters(const VideoSourceSelection::Settings &settings)
 // next pass counts the arriving source in -- so the one fact worth reading off
 // this line is that it precedes detection's first DETECT.
 // docs/investigations/a-ypbpr-detection-that-succeeds-first-pass-skips-the-preparation.md
-void applyInputSelection(VideoSourceSelection::Id id)
+// The scan the reference divider's line implies, which has to be stated with
+// it: 2506 ADC samples is a line no progressive counter can hold, so the
+// previous source's scan left beside it makes the input formatter count
+// several lines per line.
+static void applyBringUpScan()
 {
-    const VideoSourceSelection::Settings settings = VideoSourceSelection::settingsFor(id);
-    const unsigned long began = millis();
-
-    SeleInputSource = settings.legacySource;
-    VideoSourceSelection::select(id);
-    sourceAbsence.selectionChanged();
-    Tv5725::Adc::installReferenceSamplingClock();
-    // And the scan its line implies, in the same breath: the reference divider
-    // is 2506 ADC samples, which no progressive counter can hold, so the
-    // previous source's scan left beside it makes the input formatter count
-    // several lines per line.
     inputFormatter.applyScan(Tv5725::Adc::BringUpDivider,
                              Tv5725::Adc::BringUpLineDoubled,
                              Tv5725::Adc::inputIsComponent());
-    resetSyncProcessor();
-    const unsigned long reset = millis();
-    applyInputRegisters(settings);
-    const unsigned long registers = millis();
-    BriorCon = settings.brightnessSet;
-    rto->sourceDisconnected = true;
-    if (settings.clearsLowPower)
-        rto->isInLowPowerMode = false;
-    saveUserPrefs();
+}
 
-    char line[112];
+static void noteSelectionChanged() { sourceAbsence.selectionChanged(); }
+static void installReferenceSamplingClock() { Tv5725::Adc::installReferenceSamplingClock(); }
+static void resetSyncProcessorForSelection() { resetSyncProcessor(); }
+
+// Built per call rather than held: rto is a pointer the sketch fills in at
+// startup, and a selector made before that would hold the addresses of nothing.
+static VideoSourceSelector videoSourceSelector()
+{
+    VideoSourceSelector::Actions actions;
+    actions.sendFrame = sendInputFrame;
+    actions.selectionChanged = noteSelectionChanged;
+    actions.installReferenceSamplingClock = installReferenceSamplingClock;
+    actions.applyBringUpScan = applyBringUpScan;
+    actions.resetSyncProcessor = resetSyncProcessorForSelection;
+    actions.applyRegisters = applyInputRegisters;
+    actions.persist = saveUserPrefs;
+
+    VideoSourceSelector::State state;
+    state.legacySource = &SeleInputSource;
+    state.brightnessSet = &BriorCon;
+    state.sourceDisconnected = &rto->sourceDisconnected;
+    state.inLowPowerMode = &rto->isInLowPowerMode;
+
+    return VideoSourceSelector(actions, state);
+}
+
+static void announceSelection(VideoSourceSelection::Id id, unsigned long began)
+{
+    char line[96];
     snprintf(line, sizeof(line),
-             "input selected: %s, reference divider %u, reset +%lums, "
-             "registers +%lums, saved +%lums",
+             "input selected: %s, reference divider %u, applied +%lums",
              VideoSourceSelection::name(id),
              (unsigned)Tv5725::Adc::dividerInForce(),
-             reset - began, registers - began, millis() - began);
+             millis() - began);
     tv5725Log(line);
 }
 
-void InputVGA_mode(uint8_t mode)
+void applyInputSelection(VideoSourceSelection::Id id)
 {
-    Checksum_Sendmode(VGA, !mode);
-    applyInputSelection(VideoSourceSelection::Vga);
+    const unsigned long began = millis();
+    videoSourceSelector().select(id);
+    announceSelection(id, began);
 }
-void InputRGsB_mode(uint8_t mode)
+
+void restoreInputSelection(VideoSourceSelection::Id id)
 {
-    Checksum_Sendmode(RGsB, !mode);
-    applyInputSelection(VideoSourceSelection::RgsB);
+    const unsigned long began = millis();
+    videoSourceSelector().restore(id);
+    announceSelection(id, began);
 }
-void InputRGBs_mode(uint8_t mode)
-{
-    Checksum_Sendmode(RGBs, !mode);
-    applyInputSelection(VideoSourceSelection::Rgbs);
-}
+
 
 void InputRGBs(void)
 {
-    sender.send(RGBs);
     applyInputSelection(VideoSourceSelection::Rgbs);
 }
 void InputYUV(void)
 {
-    sender.send(Ypbpr);
     applyInputSelection(VideoSourceSelection::Ypbpr);
 }
 
@@ -691,12 +689,10 @@ void InputNULL(void)
 }
 void InputRGsB(void)
 {
-    sender.send(RGsB);
     applyInputSelection(VideoSourceSelection::RgsB);
 }
 void InputVGA(void)
 {
-    Checksum_Sendmode(VGA, 1);
     applyInputSelection(VideoSourceSelection::Vga);
 }
 void InputINFO(void)
@@ -712,26 +708,14 @@ void InputINFO(void)
 }
 void InputSV(void)
 {
-    sender.send(Adv_7391_SV);
     applyInputSelection(VideoSourceSelection::SVideo);
 }
 
-void InputSV_mode(uint8_t mode)
-{
-    Checksum_Sendmode(Adv_7391_SV, mode);
-    applyInputSelection(VideoSourceSelection::SVideo);
-}
 void InputAV(void)
 {
-    sender.send(Adv_7391_AV);
     applyInputSelection(VideoSourceSelection::Composite);
 }
 
-void InputAV_mode(uint8_t mode)
-{
-    Checksum_Sendmode(Adv_7391_AV, mode);
-    applyInputSelection(VideoSourceSelection::Composite);
-}
 
 void Send_TvMode(uint8_t Mode)
 {
