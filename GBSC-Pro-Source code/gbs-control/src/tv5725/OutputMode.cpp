@@ -130,15 +130,19 @@ const OutputMode *OutputMode::forFrameHeight(uint16_t frameLines)
     return 0;
 }
 
-OutputMode::OutputMode(uint16_t activeLines, uint16_t syncPx, uint16_t backPorchPx,
-                       uint16_t activePx, uint16_t carriedPx, uint16_t totalPx,
+OutputMode::OutputMode(const char *name, uint16_t activeLines, uint16_t syncPx,
+                       uint16_t backPorchPx, uint16_t activePx,
+                       uint16_t carriedPx, uint16_t totalPx,
                        uint32_t standardHz, uint16_t vsyncLines,
                        uint16_t vBackPorchLines, uint16_t vFrontPorchLines)
-    : activeLines_(activeLines), syncPx_(syncPx), backPorchPx_(backPorchPx),
+    : name_(name),
+      activeLines_(activeLines), syncPx_(syncPx), backPorchPx_(backPorchPx),
       activePx_(activePx), carriedPx_(carriedPx), totalPx_(totalPx),
       standardHz_(standardHz),
       vsyncLines_(vsyncLines), vBackPorchLines_(vBackPorchLines),
       vFrontPorchLines_(vFrontPorchLines) {}
+
+const char *OutputMode::name() const { return name_; }
 
 Aspect OutputMode::displayAspect() const
 {
@@ -323,14 +327,14 @@ OutputTiming OutputMode::solve(float fieldRateHz, uint32_t ceilingHz) const
 // porches, so frameLines() is 0 and clockDividerFor() finds no divider -- which
 // is what makes solve() fail usable() rather than return a plausible zero
 // raster, and is why its zero standardHz is never divided by.
-const OutputMode ModeBypass(0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+const OutputMode ModeBypass("bypass", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
 
 //                       active  sync   bp  activePx  carriedPx  totalPx  standardHz  vsync bp fp
-const OutputMode Mode1080p(1080, 44, 148, 1920, 1920, 2200, 148500000, 5, 36, 4);  // 1125
-const OutputMode Mode1024p(1024, 112, 248, 1280, 1280, 1688, 108000000, 3, 38, 1); // 1066
-const OutputMode Mode960p(960, 112, 312, 1280, 1280, 1800, 108000000, 3, 36, 1);   // 1000
-const OutputMode Mode720p(720, 40, 220, 1280, 1280, 1650, 74250000, 5, 20, 5);     //  750
-const OutputMode Mode576p(600, 64, 68, 720, 679, 864, 27000000, 5, 19, 1);         //  625
-const OutputMode Mode480p(480, 62, 60, 720, 690, 858, 27000000, 6, 30, 9);         //  525
+const OutputMode Mode1080p("1920x1080", 1080, 44, 148, 1920, 1920, 2200, 148500000, 5, 36, 4);  // 1125
+const OutputMode Mode1024p("1280x1024", 1024, 112, 248, 1280, 1280, 1688, 108000000, 3, 38, 1); // 1066
+const OutputMode Mode960p("1280x960", 960, 112, 312, 1280, 1280, 1800, 108000000, 3, 36, 1);   // 1000
+const OutputMode Mode720p("1280x720", 720, 40, 220, 1280, 1280, 1650, 74250000, 5, 20, 5);     //  750
+const OutputMode Mode576p("768x576", 600, 64, 68, 720, 679, 864, 27000000, 5, 19, 1);         //  625
+const OutputMode Mode480p("720x480", 480, 62, 60, 720, 690, 858, 27000000, 6, 30, 9);         //  525
 
 }  // namespace Tv5725

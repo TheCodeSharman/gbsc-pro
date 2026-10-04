@@ -52,10 +52,14 @@ public:
     // `carriedPx` is what the CHAIN takes, in the standard's own pixels, which
     // is the standard's `activePx` on four of the six modes and measurably less
     // on the two SD ones. See below.
-    OutputMode(uint16_t activeLines, uint16_t syncPx, uint16_t backPorchPx,
-               uint16_t activePx, uint16_t carriedPx, uint16_t totalPx,
-               uint32_t standardHz, uint16_t vsyncLines, uint16_t vBackPorchLines,
-               uint16_t vFrontPorchLines);
+    OutputMode(const char *name, uint16_t activeLines, uint16_t syncPx,
+               uint16_t backPorchPx, uint16_t activePx, uint16_t carriedPx,
+               uint16_t totalPx, uint32_t standardHz, uint16_t vsyncLines,
+               uint16_t vBackPorchLines, uint16_t vFrontPorchLines);
+
+    // What this mode is called, which is the only thing that knows. Everything
+    // that shows the user a resolution asks here.
+    const char *name() const;
 
     // The shape of the PANEL the picture lands on, which every mode shares.
     // EDID reaches no MCU on this board, so the sink cannot be asked and a set
@@ -253,6 +257,7 @@ private:
     // The pixel count of a standard width at the clock this line runs at.
     uint16_t scaled(uint16_t standardPx, float clockHz) const;
 
+    const char *name_;
     uint16_t activeLines_;
     uint16_t syncPx_, backPorchPx_, activePx_, carriedPx_, totalPx_;
     uint32_t standardHz_;

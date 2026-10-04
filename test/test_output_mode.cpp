@@ -763,3 +763,21 @@ TEST_CASE("every raster is shown on a 16:9 panel, whatever its own counts are")
     for (int i = 0; i < 6; ++i)
         CHECK(modes[i]->displayAspect() == Aspect(Aspect::SixteenNine));
 }
+
+TEST_CASE("every selectable output mode names itself")
+{
+    // The OLED and the web UI both used to decode a table-shaped byte back into
+    // a resolution, and the two encoders disagreed about 576p -- which reached
+    // the panel as "bypass". The mode is the one thing that knows what it is.
+    CHECK(std::strcmp(Mode1080p.name(), "1920x1080") == 0);
+    CHECK(std::strcmp(Mode1024p.name(), "1280x1024") == 0);
+    CHECK(std::strcmp(Mode960p.name(), "1280x960") == 0);
+    CHECK(std::strcmp(Mode720p.name(), "1280x720") == 0);
+    CHECK(std::strcmp(Mode576p.name(), "768x576") == 0);
+    CHECK(std::strcmp(Mode480p.name(), "720x480") == 0);
+}
+
+TEST_CASE("pass-through is not a resolution and says so")
+{
+    CHECK(std::strcmp(ModeBypass.name(), "bypass") == 0);
+}

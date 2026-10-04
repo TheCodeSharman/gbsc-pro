@@ -15,6 +15,7 @@
 #include "src/tv5725/SyncProcessor.h"
 #include "src/tv5725/SyncMeasurement.h"
 #include "src/tv5725/VideoRoute.h"
+#include "src/tv5725/VideoPath.h"
 #include "src/tv5725/RgbhvOutput.h"
 #include "src/videosource/FrameTimeLock.h"
 #include "src/tv5725/Tv5725Log.h"
@@ -51,6 +52,7 @@ extern const char *device_hostname_full;
 extern WebSocketsServer webSocket;
 extern OLEDMenuManager oledMenu;
 extern FrameTimeLock frameTimeLock;
+extern Tv5725::VideoPath geometry;
 unsigned long oledMenuFreezeStartTime;
 unsigned long oledMenuFreezeTimeoutInMS;
 
@@ -350,34 +352,8 @@ bool currentSettingHandler(OLEDMenuManager *manager, OLEDMenuItem *, OLEDMenuNav
         display.setFont(URW_Gothic_L_Book_20);
         display.setTextAlignment(TEXT_ALIGN_LEFT);
 
-        if (rto->presetID == 0x01 || rto->presetID == 0x11)
-        {
-            display.drawString(0, 0, "1280x960");
-        }
-        else if (rto->presetID == 0x02 || rto->presetID == 0x12)
-        {
-            display.drawString(0, 0, "1280x1024");
-        }
-        else if (rto->presetID == 0x03 || rto->presetID == 0x13)
-        {
-            display.drawString(0, 0, "1280x720");
-        }
-        else if (rto->presetID == 0x05 || rto->presetID == 0x15)
-        {
-            display.drawString(0, 0, "1920x1080");
-        }
-        else if (rto->presetID == 0x04)
-        {
-            display.drawString(0, 0, "720x480");
-        }
-        else if (rto->presetID == 0x14)
-        {
-            display.drawString(0, 0, "768x576");
-        }
-        else
-        {
-            display.drawString(0, 0, "bypass");
-        }
+        const Tv5725::OutputMode *const mode = geometry.outputMode();
+        display.drawString(0, 0, mode != NULL ? mode->name() : "bypass");
 
         display.drawString(0, 20, String(ofr, 5) + "Hz");
 
@@ -525,7 +501,6 @@ static void LoadDefault()
     rto->syncWatcherEnabled = true;    //
     Tv5725::Adc::choosePhaseAdc(16);
     Tv5725::Adc::choosePhaseSyncProcessor(16);
-    rto->presetID = 0;                 //
     Tv5725::Deinterlacer::disableMotionAdapt();
     rto->deinterlaceAutoEnabled = true;           // 去隔行扫描自动启用
     Tv5725::Deinterlacer::forgetScanlines();

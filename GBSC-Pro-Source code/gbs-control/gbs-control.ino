@@ -123,8 +123,6 @@ static unsigned long Tim_Resolution = 0, Tim_Resolution_Start = 0;
 #include "src/videosource/SyncSearch.h"
 
 enum PresetID : uint8_t {
-    PresetHdBypass = 0x21,
-    PresetBypassRGBHV = 0x22,
 };
 struct runTimeOptions rtos;
 struct runTimeOptions *rto = &rtos;
@@ -544,7 +542,6 @@ static void resetRunTimeDefaults()
     rto->syncWatcherEnabled = true;
     Tv5725::Adc::choosePhaseAdc(16);
     Tv5725::Adc::choosePhaseSyncProcessor(16);
-    rto->presetID = 0;
     Tv5725::Deinterlacer::disableMotionAdapt();
     rto->deinterlaceAutoEnabled = true;
     Tv5725::Deinterlacer::forgetScanlines();
@@ -1121,36 +1118,6 @@ void zeroAll()
 
 // The preset id, as the tables carried it in their s1_2B byte: low nibble the
 // resolution, high nibble the source standard.
-//
-//     960p 0x01/0x11   1024p 0x02/0x12   720p 0x03/0x13
-//     480p 0x04/0x14   1080p 0x05/0x15        (NTSC/PAL)
-//
-// Every path that decides an id sets rto->presetID, so a stale one left by an
-// earlier bypass cannot send a scaling load down a bypass branch.
-//
-// It stays a table-shaped number. Whether presetID should survive at all is a
-// separate question from where it comes from.
-static uint8_t presetIdFor(const Tv5725::OutputMode *mode)
-{
-  uint8_t code = 0;
-  if (mode == &Tv5725::Mode960p) {
-    code = 0x01;
-  } else if (mode == &Tv5725::Mode1024p) {
-    code = 0x02;
-  } else if (mode == &Tv5725::Mode720p) {
-    code = 0x03;
-  } else if (mode == &Tv5725::Mode480p) {
-    code = 0x04;
-  } else if (mode == &Tv5725::Mode576p) {
-    // Its own code rather than 480p's with a rate bit beside it: the id names
-    // the OUTPUT, and either resolution is selectable at either source rate.
-    code = 0x07;
-  } else if (mode == &Tv5725::Mode1080p) {
-    code = 0x05;
-  }
-  return code;
-}
-
 // The output resolution asked for. Nothing qualifies it: a preference names a
 // height and the source does not get a say.
 static Tv5725::OutputChoice outputChoiceFor()
@@ -1159,11 +1126,9 @@ static Tv5725::OutputChoice outputChoiceFor()
       (Tv5725::PresetPreference)uopt->presetPreference);
 }
 
-// The two picture controls whose value depends on the output resolution read
-// this, so the preset ids live in one place.
 static bool outputIsAt1080p()
 {
-  return rto->presetID == 0x05 || rto->presetID == 0x15;
+  return geometry.outputMode() == &Tv5725::Mode1080p;
 }
 
 // What the OUTPUT resolution decides, and all it decides. Everything else
@@ -1183,13 +1148,12 @@ static void applyOutputResolutionSettings()
 //
 // s1_2B and s1_2C are cleared here because nothing else clears them and they
 // latch across loads.
-void loadComputedPreset(const Tv5725::OutputChoice &choice, uint8_t presetId)
+void loadComputedPreset(const Tv5725::OutputChoice &choice)
 {
   // The engine is told the choice HERE, by the call whose job that is. It used
   // to arrive as an argument to the source event further down, which is how a
   // source event came to carry output state.
   inputAcquisition.setOutputResolution(choice.resolve());
-  rto->presetID = presetId;
 
   // The load rewrites the scanline stages, so whatever was applied is gone.
   Tv5725::Deinterlacer::forgetScanlines();
@@ -1260,7 +1224,6 @@ void setResetParameters()
     GBS::ADC_UNUSED_65::write(0);
     GBS::ADC_UNUSED_66::write(0);
     GBS::ADC_UNUSED_67::write(0);
-    rto->presetID = 0;
     Tv5725::PresetLoad::forgetScalingRgbhv();
 
     // The reference line WHOLE, path registers included. The scan and the line
@@ -2204,7 +2167,9 @@ uint16_t getCsVsStop()
 void printVideoTimings()
 {
 #if GBS_DEBUG
-    if (rto->presetID < 0x20) {
+    // NULL is nothing chosen yet, which is not bypass.
+    const Tv5725::OutputMode *const out = geometry.outputMode();
+    if (out == NULL || !out->isBypass()) {
         SerialM.printf_P(PSTR("\nHT / scale   : %d %d\n"), GBS::VDS_HSYNC_RST::read(), GBS::VDS_HSCALE::read());
         SerialM.printf_P(PSTR("HS ST/SP     : %d %d\n"), GBS::VDS_HS_ST::read(), GBS::VDS_HS_SP::read());
         SerialM.printf_P(PSTR("HB ST/SP(d)  : %d %d\n"), GBS::VDS_DIS_HB_ST::read(), GBS::VDS_DIS_HB_SP::read());
@@ -2462,8 +2427,6 @@ void debugPinProbe() {}
 static void changeOutputResolution()
 {
     const Tv5725::OutputChoice choice = outputChoiceFor();
-
-    rto->presetID = presetIdFor(choice.resolve());
 
     if (!inputAcquisition.setOutputResolution(choice.resolve())) {
         applyPresets();
@@ -2863,7 +2826,6 @@ void applyPresets()
             } else // 
             {
                 // setResetParameters();
-                // rto->presetID = 0;
                 // printf("End \n");
                 return;
             }
@@ -2889,7 +2851,7 @@ void applyPresets()
     // VideoSourceAcquisition::passSourceThrough() -- the only caller with one.
     // docs/video-source-acquisition.md
     const Tv5725::OutputChoice choice = outputChoiceFor();
-    loadComputedPreset(choice, presetIdFor(choice.resolve()));
+    loadComputedPreset(choice);
 
     // The output an RGBHV source is entitled to. Held beside the source rather
     // than in the byte, which carried both facts in one number.
@@ -3016,15 +2978,10 @@ void enterHdBypass()
     applyStoredAdcGain();
     Tv5725::SyncOnGreen::putInForce();
 
-    rto->presetID = PresetHdBypass;
-
-    // Beside the preset id, because they are one fact: which mode the chip is
-    // in. The branch that sends a source here clears
+    // The branch that sends a source here clears
     // rto->isValidForScalingRGBHV in RAM only, and outside the low-power path
     // nothing else clears the register -- so without this the bit says the
-    // opposite of the truth. Several sites read it back to decide things,
-    // including PresetLoad via writeProgramArrayNew() and the autoBestHtotal
-    // guard in doPostPresetLoadSteps().
+    // opposite of the truth, and several sites read it back to decide things.
     Tv5725::PresetLoad::forgetScalingRgbhv();
 
     delay(200);
@@ -3625,6 +3582,29 @@ void discardSerialRxData()
     }
 }
 
+// webui.html's buttonMapping is the other half of this: the char names which
+// resolution button is lit. '0' is none of them.
+static char webResolutionCode(const Tv5725::OutputMode *mode)
+{
+    if (mode == NULL)
+        return '0';
+    if (mode->isBypass())
+        return '8';
+    if (mode == &Tv5725::Mode960p)
+        return '1';
+    if (mode == &Tv5725::Mode1024p)
+        return '2';
+    if (mode == &Tv5725::Mode720p)
+        return '3';
+    if (mode == &Tv5725::Mode480p)
+        return '4';
+    if (mode == &Tv5725::Mode1080p)
+        return '5';
+    if (mode == &Tv5725::Mode576p)
+        return '7';
+    return '0';
+}
+
 void updateWebSocketData()
 {
     if (rto->webServerEnabled && rto->webServerStarted) {
@@ -3634,60 +3614,7 @@ void updateWebSocketData()
             char toSend[MESSAGE_LEN] = {0};
             toSend[0] = '#';
 
-            switch (rto->presetID) {
-                    case 0x01:
-                    case 0x11:
-                        toSend[1] = '1';
-                        break;
-                    case 0x02:
-                    case 0x12:
-                        toSend[1] = '2';
-                        break;
-                    case 0x03:
-                    case 0x13:
-                        toSend[1] = '3';
-                        break;
-                    case 0x04:
-                    case 0x14:
-                        toSend[1] = '4';
-                        break;
-                    case 0x05:
-                    case 0x15:
-                        toSend[1] = '5';
-                        break;
-                    case PresetHdBypass:
-                    case PresetBypassRGBHV:
-                        toSend[1] = '8';
-                        break;
-                    default:
-                        toSend[1] = '0';
-                        break;
-                }
-
-            toSend[2] = (char)uopt->presetSlot;
-
-            toSend[3] = '@';
-            toSend[4] = '@';
-            toSend[5] = '@';
-
-            if (uopt->enableAutoGain) {
-                toSend[3] |= (1 << 0);
-            }
-            if (uopt->wantScanlines) {
-                toSend[3] |= (1 << 1);
-            }
-            if (uopt->wantVdsLineFilter) {
-                toSend[3] |= (1 << 2);
-            }
-            if (uopt->wantPeaking) {
-                toSend[3] |= (1 << 3);
-            }
-            if (uopt->PalForce60) {
-                toSend[3] |= (1 << 4);
-            }
-            if (uopt->wantOutputComponent) {
-                toSend[3] |= (1 << 5);
-            }
+            toSend[1] = webResolutionCode(geometry.outputMode());
 
             if (uopt->matchPresetSource) {
                 toSend[4] |= (1 << 0);
@@ -4848,11 +4775,11 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     delay(200);
                     break;
                 case 'Y':
-                    loadComputedPreset(Tv5725::OutputChoice(Output720P), 0x03);
+                    loadComputedPreset(Tv5725::OutputChoice(Output720P));
                     doPostPresetLoadSteps();
                     break;
                 case 'y':
-                    loadComputedPreset(Tv5725::OutputChoice(Output720P), 0x13);
+                    loadComputedPreset(Tv5725::OutputChoice(Output720P));
                     doPostPresetLoadSteps();
                     break;
                 case 'P':; // SerialMprint(F("auto deinterlace: "));
@@ -4911,11 +4838,11 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     saveUserPrefs();
                     break;
                 case 'e':
-                    loadComputedPreset(Tv5725::OutputChoice(Output960P), 0x01);
+                    loadComputedPreset(Tv5725::OutputChoice(Output960P));
                     doPostPresetLoadSteps();
                     break;
                 case 'r':
-                    loadComputedPreset(Tv5725::OutputChoice(Output960P), 0x11);
+                    loadComputedPreset(Tv5725::OutputChoice(Output960P));
                     doPostPresetLoadSteps();
                     break;
                 case '!':
@@ -5072,22 +4999,20 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     Tv5725::SyncProcessor::reset();
                     break;
                 case 'Z': {
+                    // Nothing on the video path reads matchPresetSource, so
+                    // there is nothing to re-apply for.
                     uopt->matchPresetSource = !uopt->matchPresetSource;
                     saveUserPrefs();
-                    if ((uopt->presetPreference == 0 && rto->presetID == 0x11)
-                        || (uopt->presetPreference == 4 && rto->presetID == 0x02)) {
-                        applyPresets();
-                    }
                 } break;
                 case 'W':
                     toggleFrameTimeLock(false);
                     break;
                 case 'E':
-                    loadComputedPreset(Tv5725::OutputChoice(Output1024P), 0x02);
+                    loadComputedPreset(Tv5725::OutputChoice(Output1024P));
                     doPostPresetLoadSteps();
                     break;
                 case 'R':
-                    loadComputedPreset(Tv5725::OutputChoice(Output1024P), 0x12);
+                    loadComputedPreset(Tv5725::OutputChoice(Output1024P));
                     doPostPresetLoadSteps();
                     break;
                 case '0':
@@ -5097,7 +5022,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     moveHS(4, false);
                     break;
                 case '2':
-                    loadComputedPreset(Tv5725::OutputChoice(Output576P), 0x14);
+                    loadComputedPreset(Tv5725::OutputChoice(Output576P));
                     doPostPresetLoadSteps();
                     break;
                 case '3':
@@ -5131,7 +5056,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
 
                     break;
                 case '9':
-                    loadComputedPreset(Tv5725::OutputChoice(Output480P), 0x04);
+                    loadComputedPreset(Tv5725::OutputChoice(Output480P));
                     doPostPresetLoadSteps();
                     break;
                 case 'o': {
@@ -5382,11 +5307,11 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     ; // SerialMprintln((if_hblank_scale_stop - 1), HEX);
                 } break;
                 case '(': {
-                    loadComputedPreset(Tv5725::OutputChoice(Output1080P), 0x05);
+                    loadComputedPreset(Tv5725::OutputChoice(Output1080P));
                     doPostPresetLoadSteps();
                 } break;
                 case ')': {
-                    loadComputedPreset(Tv5725::OutputChoice(Output1080P), 0x15);
+                    loadComputedPreset(Tv5725::OutputChoice(Output1080P));
                     doPostPresetLoadSteps();
                 } break;
                 case 'V': {
@@ -7841,7 +7766,7 @@ static void handleRemoteKey()
 
             /////////new
             // loadDefaultUserOptions();
-            loadComputedPreset(Tv5725::OutputChoice(Output480P), 0x04); 
+            loadComputedPreset(Tv5725::OutputChoice(Output480P)); 
             doPostPresetLoadSteps();
             GBS::VDS_DIS_HB_ST::write(0x00);
             GBS::VDS_DIS_HB_SP::write(0xffff);
