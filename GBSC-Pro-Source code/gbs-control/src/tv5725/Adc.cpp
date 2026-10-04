@@ -130,7 +130,7 @@ void Adc::init()
     // The ADC PLL's VCO gain and charge pump. applySampleRate() owns both --
     // the gain derived from the VCO, the pump constant -- so these are only
     // what the part holds between bring-up and the first solve. Neither takes
-    // effect until PLLAD_LAT sees a rising edge, which resetPLLAD() supplies
+    // effect until PLLAD_LAT sees a rising edge, which restartPll() supplies
     // well after BringUp::init().
     PLLAD_FS::write(0x1);                        // s5_11[5:5]
     PLLAD_BPS::write(0x0);                       // s5_11[6:6]

@@ -1196,7 +1196,8 @@ void setResetParameters()
     Tv5725::Adc::applyResetParameters();
     resetPLL();
     delay(2);
-    resetPLLAD();
+    Tv5725::Adc::restartPll();
+    Tv5725::SyncProcessor::forgetPositions();
     GBS::PLL_VCORST::write(1);
     Tv5725::Adc::holdPllInReset();
 
@@ -1865,19 +1866,6 @@ void dumpRegisters(byte segment)
     }
 }
 
-void resetPLLAD()
-{
-    GBS::PLLAD_VCORST::write(1);
-    GBS::PLLAD_PDZ::write(1);
-    latchPLLAD();
-    GBS::PLLAD_VCORST::write(0);
-    delay(1);
-    latchPLLAD();
-    Tv5725::SyncProcessor::forgetPositions();
-}
-
-void latchPLLAD() { Tv5725::Adc::latch(); }
-
 // How long to wait for the source to lock again after moving the divider. The
 // sync processor needs a few frames; 1.2 s is several, and short enough that a
 // failed attempt does not feel like a hang.
@@ -2484,7 +2472,8 @@ void doPostPresetLoadSteps()
 
         Tv5725::Chip::resetVideoBlocks();
 
-        resetPLLAD();
+        Tv5725::Adc::restartPll();
+        Tv5725::SyncProcessor::forgetPositions();
         geometry.applyClockGroup();
 
         // **DO NOT DISABLE CAP_SAFE_GUARD_EN HERE.** Tv5725::FrameBuffer
@@ -2756,7 +2745,7 @@ void setAndLatchPhaseADC()
 // Restart the blocks a bypass switch has just reconfigured, then load what it
 // chose.
 //
-// **THE LATCHES ARE LAST, AND THAT IS THE ORDERING CONSTRAINT.** latchPLLAD() is
+// **THE LATCHES ARE LAST, AND THAT IS THE ORDERING CONSTRAINT.** Adc::latch() is
 // what loads PLLAD_MD, ND, KS, CKOS and ICP into the ADC PLL, on a rising edge.
 // Everything choosing those has to run BEFORE this: written after, the registers
 // read the new divider while the PLL still clocks the old one, which is a solid
@@ -2772,15 +2761,14 @@ static void restartAfterBypassSwitch()
     delay(2);
     ResetSDRAM();
     delay(2);
-    resetPLLAD();
-    Tv5725::Adc::restartPhaseAdjusters();
+    Tv5725::Adc::restartPll();
+    Tv5725::SyncProcessor::forgetPositions();
     delay(20);
-    GBS::PLLAD_LEN::write(1);
     Tv5725::Chip::outputUp();
 
     setAndLatchPhaseSP();
     setAndLatchPhaseADC();
-    latchPLLAD();
+    Tv5725::Adc::latch();
 }
 
 // The one entry to pass-through, for every source that reaches it.
@@ -4466,7 +4454,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
 
                     GBS::PLL648_CONTROL_01::write(0x85);
                     GBS::PLL_CKIS::write(1);
-                    latchPLLAD();
+                    Tv5725::Adc::latch();
 
                     frameTimeLock.forgiveFailures();
                     frameSync.reset(uopt->frameTimeLockMethod);
@@ -4549,10 +4537,11 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     Serial.println("done");
                 } break;
                 case 'j':
-                    latchPLLAD();
+                    Tv5725::Adc::latch();
                     break;
                 case 'J':
-                    resetPLLAD();
+                    Tv5725::Adc::restartPll();
+                    Tv5725::SyncProcessor::forgetPositions();
                     break;
                 case 'v':
                     Tv5725::Adc::choosePhaseSyncProcessor(
@@ -4563,7 +4552,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     break;
                 case 'b':
                     advancePhase();
-                    latchPLLAD();
+                    Tv5725::Adc::latch();
                     ; // SerialMprint("ADC: ");
                     break;
                 case '#':
@@ -4725,7 +4714,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     const uint8_t inForce = Tv5725::Adc::oversampleInForce();
                     const uint8_t wanted = inForce == 1 ? 2 : (inForce == 2 ? 4 : 1);
                     Tv5725::Adc::applyOversample(GBS::PLLAD_KS::read(), wanted);
-                    latchPLLAD();
+                    Tv5725::Adc::latch();
                     delay(4);
                     inputAcquisition.acquireSamplingPhase();
                     ; // SerialMprint("OSR ");
