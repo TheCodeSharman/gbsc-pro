@@ -1328,6 +1328,22 @@ is green -- including with every register made identical to a clean unit's --
 and return when the picture does. The sync front end reads the same in both
 states.
 
+**The boot it appears on does not exist on the vendor firmware.** Tag `1.3`
+loads the saved input and spends it on three gates inside
+`detectAndSwitchToActiveInput()`; the two writes that would restore the
+hardware, `ADC_INPUT_SEL` and `SP_EXT_SYNC_SEL`, are commented out directly
+beneath the load, and no AV module frame is sent at boot. This fork writes the
+register and sends the frame before anything has been measured. Whether a
+vendor boot onto `ypbpr` is clean is still untested -- reaching that input there
+needs the remote or the panel, there being no web or serial route.
+
+**The fault is a family, and a fourth member is a flat neutral WHITE field** at
+luma 236 with the three channels equal, the sync path perfect beneath it at
+`VTOTAL` 260 and `HTOTAL` 2200 against `PLLAD_MD` 2200. On that state the four
+RGB-family AV frames move the output by less than a tenth of a grey level while
+`sv` and `av` take it to black, so the part answers two of six and the RGB
+family addresses nothing.
+
 | tried | reaches | clears it |
 |---|---|---|
 | `/input?src=ypbpr`, the input already selected | HC32 and scaler | no |
