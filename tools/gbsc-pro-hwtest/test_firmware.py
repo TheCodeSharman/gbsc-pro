@@ -1985,6 +1985,11 @@ def test_a_settings_file_this_firmware_wrote_loads_on_the_next_boot(host, preset
             f"repairs that -- delete {SETTINGS_PATH} over /fs/rm and restart")
         get(host, "/uc?5")
     finally:
+        # /sc?K TOGGLES a persisted preference, so it has to be toggled back.
+        # Left at whatever the test flipped it to, the next run starts from a
+        # different route and the unit keeps a setting nobody chose.
+        if setting(host, "scale-rgbhv") != original.get("scale-rgbhv"):
+            get(host, "/sc?K")
         get(host, "/sc?~")
         if original.get("output"):
             restore_output_mode(host, original["output"])
