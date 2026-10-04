@@ -174,7 +174,7 @@ opposite of where they are going.
 | `rto->` (`inputIsYpBpR`, `osr`, `sourceDisconnected`, `syncWatcherEnabled`, `applyPresetDoneStage`) | runtime options, which the engine is retiring rather than adopting |
 | `inputAcquisition.` (`placeClampWindow`, `placeCoastWindow`, `applySyncProcessorDynamic`, `acquireSeparatorLevel`) | the acquisition layer, which VideoPath does not hold a reference to |
 | `frameSync.`, `frameTimeLock.` | the frame time lock, likewise not held |
-| `prepareSyncProcessor()`, `applyStoredAdcGain()`, `setAdcParametersGainAndOffset()`, `resetPLLAD()` | sketch helpers that are themselves unmigrated |
+| `prepareSyncProcessor()`, `applyStoredAdcGain()`, `setAdcParametersGainAndOffset()` | sketch helpers that are themselves unmigrated |
 
 **The stored ADC calibration is `Tv5725::Adc`'s.** The gain the auto-gain loop
 settles on and the black level the offset calibration measures are facts only
@@ -184,15 +184,15 @@ options follow, arrived at from the other side: a preference is passed in
 because the engine must not hold it, and a measurement is held because nothing
 else can take it.
 
-**`resetPLLAD()` is a near-duplicate of `Tv5725::Adc::restartPll()`** -- the same
-five writes, differing only in `restartPhaseAdjusters()` and `PLLAD_LEN`, with
-`SyncProcessor::forgetPositions()` on the sketch's side. Nothing says why. It is
-a collapse that changes behaviour, so it wants a bench check on both sync types
-rather than only a compile.
-
 The order of the remaining work is: give VideoPath the acquisition
-collaborators it needs, collapse `resetPLLAD()`, and the ordering is then the
-only thing left to move.
+collaborators it needs, and the ordering is then the only thing left to move.
+
+**Giving it those collaborators is not plumbing.** `VideoSourceAcquisition` is
+constructed WITH the engine, so a reference the other way is a cycle: it has to
+arrive after both exist, or the phases that need the acquisition layer have to
+be driven from it rather than from here. Which of those is right is open, and
+it decides whether `rto->sourceDisconnected` becomes held state on the
+acquisition layer or disappears into `sourceIsPresent()`.
 
 ## What the sketch may call
 
