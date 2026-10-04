@@ -129,6 +129,56 @@ holding the denominator to convert between them:
 It is **behind `GBS_DEBUG`**: nothing on the product path reads it, only the
 bench instruments and the hardware suite. A build without it answers 404.
 
+## What VideoPath is responsible for
+
+**It orchestrates a video mode change.** Solving the geometry is part of that,
+not the whole of it: putting a source on screen is a sequence of phases, and
+deciding which phases there are and what order they run in belongs here. A step
+that is part of setting the chip up for a source belongs in this class whether
+or not it computes anything.
+
+Reading it as the arithmetic alone is what left the setup sequence in the
+sketch, where it was also a second writer on registers the engine already owned.
+
+It owns, and the sketch calls:
+
+| phase | what it is |
+|---|---|
+| `forgetPreviousSource()` | everything the previous source left in a block that measures -- sync positions, the ADC phase, the deinterlacer's scanlines and steering |
+| `applyClockGroup()` | the clock group's static half, after the ADC PLL has been restarted: lock enable, both loop filters, the input clock edge, the decimator modes |
+| `applyFrameBufferRequests()` | how the capture and playback stages ask for memory |
+
+**The divider and the oversampling are deliberately NOT there.** They move with
+the source, so `Tv5725::SourceMeasurement` owns them, and a phase here that set
+one would be a second owner of a measured fact.
+
+## What is still in the sketch, and what it is waiting on
+
+`doPostPresetLoadSteps()` is the rest of the sequence. It writes no registers of
+its own any more, so what remains is the ordering plus the state it reads. It
+cannot move wholesale until that state has somewhere to live, because moving it
+as it stands would pull the legacy option structs into the engine -- the
+opposite of where they are going.
+
+| what it still reaches for | why it blocks the move |
+|---|---|
+| `rto->` (`inputIsYpBpR`, `osr`, `sourceDisconnected`, `syncWatcherEnabled`, `applyPresetDoneStage`) | runtime options, which the engine is retiring rather than adopting |
+| `uopt->` (`wantPeaking`, `wantVdsLineFilter`) | user options; `Tv5725::VideoProcessor` already takes them as arguments, so these are ready to be passed in |
+| `adco->` gains and offsets | the stored ADC calibration |
+| `inputAcquisition.` (`placeClampWindow`, `placeCoastWindow`, `applySyncProcessorDynamic`, `acquireSeparatorLevel`) | the acquisition layer, which VideoPath does not hold a reference to |
+| `frameSync.`, `frameTimeLock.` | the frame time lock, likewise not held |
+| `prepareSyncProcessor()`, `applyStoredAdcGain()`, `applyOutputResolutionSettings()`, `setAdcParametersGainAndOffset()`, `resetPLLAD()` | sketch helpers that are themselves unmigrated |
+
+**`resetPLLAD()` is a near-duplicate of `Tv5725::Adc::restartPll()`** -- the same
+five writes, differing only in `restartPhaseAdjusters()` and `PLLAD_LEN`, with
+`SyncProcessor::forgetPositions()` on the sketch's side. Nothing says why. It is
+a collapse that changes behaviour, so it wants a bench check on both sync types
+rather than only a compile.
+
+The order of the remaining work is: pass the user options in as arguments, give
+VideoPath the acquisition collaborators it needs, collapse `resetPLLAD()`, and
+the ordering is then the only thing left to move.
+
 ## What the sketch may call
 
 `Tv5725::VideoPath` sets the chip up for a source -- it orchestrates a video
