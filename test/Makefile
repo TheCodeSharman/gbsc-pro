@@ -16,7 +16,7 @@ CXXFLAGS ?= -std=c++11 -O1 -Wall -Wextra
 # embarrassingly parallel: measured 3m26s serial against 34s here.
 MAKEFLAGS += -j$(shell nproc)
 
-.PHONY: all test ir-receiver menu aspect video-signal test-bus test-bus-rate-measurement steady-run sync-on-green sampling-log axis source-key source-timing framing-table framing-text slot-table slot-text scale video-source-line capture-window output-window video-path source-measurement memory-window display-clock frame-sync frame-time-lock output-mode output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc video-route rgbhv-output write-trace clean help
+.PHONY: all test ir-receiver menu aspect video-signal test-bus test-bus-rate-measurement steady-run sync-on-green sampling-log axis source-key source-timing framing-table framing-text scale video-source-line capture-window output-window video-path source-measurement memory-window display-clock frame-sync frame-time-lock output-mode output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc video-route rgbhv-output write-trace clean help
 .DEFAULT_GOAL := test
 
 ## help: list the targets
@@ -270,23 +270,6 @@ framing-table:
 	  src/tv5725/PictureOrigin.cpp
 	@"$(OUT)/test_framing_table"
 
-## slot-table: host unit tests for Tv5725::SlotTable
-#
-# The framing a user stored in a numbered slot, against the source it was stored
-# for. Pure, so every rule about the table rather than about flash is checked
-# here. docs/framing-presets.md.
-slot-table:
-	@mkdir -p "$(OUT)"
-	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
-	  -o "$(OUT)/test_slot_table" \
-	  "$(HERE)/test_slot_table.cpp" src/tv5725/SlotTable.cpp \
-	  src/tv5725/SourceKey.cpp $(SAMPLING_SRC) \
- src/tv5725/PanAndZoom.cpp src/tv5725/Aspect.cpp src/tv5725/Axis.cpp \
-	  src/tv5725/Scale.cpp src/tv5725/BlankingTiming.cpp \
-	  src/tv5725/OutputMapping.cpp src/tv5725/RasterFit.cpp \
-	  src/tv5725/PictureOrigin.cpp
-	@"$(OUT)/test_slot_table"
-
 ## framing-text: host unit tests for Tv5725::FramingText
 #
 # The framing table as lines of text, and what a partial or hand-edited file
@@ -304,23 +287,6 @@ framing-text:
 	  src/tv5725/BlankingTiming.cpp src/tv5725/OutputMapping.cpp \
 	  src/tv5725/RasterFit.cpp src/tv5725/PictureOrigin.cpp
 	@"$(OUT)/test_framing_text"
-
-## slot-text: host unit tests for Tv5725::SlotText
-#
-# The slot table as lines of text, and what a partial or hand-edited file does.
-# docs/framing-presets.md.
-slot-text:
-	@mkdir -p "$(OUT)"
-	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
-	  -o "$(OUT)/test_slot_text" \
-	  "$(HERE)/test_slot_text.cpp" src/tv5725/SlotText.cpp \
-	  src/tv5725/SlotTable.cpp src/tv5725/FramingLine.cpp \
-	  src/tv5725/SourceKey.cpp $(SAMPLING_SRC) \
- src/tv5725/PanAndZoom.cpp src/tv5725/Aspect.cpp src/tv5725/Axis.cpp \
-	  src/tv5725/Scale.cpp src/tv5725/BlankingTiming.cpp \
-	  src/tv5725/OutputMapping.cpp src/tv5725/RasterFit.cpp \
-	  src/tv5725/PictureOrigin.cpp
-	@"$(OUT)/test_slot_text"
 
 ## video-source-line: host unit tests for Tv5725::VideoSourceLine
 #
@@ -938,7 +904,7 @@ write-trace:
 	@"$(OUT)/test_write_trace"
 
 ## test: every host unit test
-test: input-scale ir-receiver osd-row osd-screens menu aspect video-signal test-bus test-bus-rate-measurement steady-run source-absence detection-entry sync-measurement colour-space colour-balance framing-save-timer sync-on-green axis source-key source-timing framing-table framing-text slot-table slot-text scale sync-processor video-processor video-source-line capture-window output-window video-path source-measurement memory-window display-clock frame-sync frame-time-lock output-mode output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc sampling-log video-route rgbhv-output write-trace
+test: input-scale ir-receiver osd-row osd-screens menu aspect video-signal test-bus test-bus-rate-measurement steady-run source-absence detection-entry sync-measurement colour-space colour-balance framing-save-timer sync-on-green axis source-key source-timing framing-table framing-text scale sync-processor video-processor video-source-line capture-window output-window video-path source-measurement memory-window display-clock frame-sync frame-time-lock output-mode output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc sampling-log video-route rgbhv-output write-trace
 all: test
 
 ## clean: remove the compiled test binaries

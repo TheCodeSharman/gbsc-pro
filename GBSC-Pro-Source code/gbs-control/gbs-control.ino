@@ -65,7 +65,6 @@ static unsigned long Tim_Resolution = 0, Tim_Resolution_Start = 0;
 #include "gbs_types.h"   // typedef Tv5725::Tv5725 GBS, in one place
 #include "src/tv5725/WriteTrace.h"
 #include "src/tv5725/FramingText.h"
-#include "src/tv5725/SlotText.h"
 #include "src/tv5725/VideoPath.h"
 #include "src/tv5725/FramingSaveTimer.h"
 #include "src/tv5725/Controls.h"
@@ -787,12 +786,9 @@ static bool framingIsSuspect = true;
 // The framing a numbered slot holds, in its own file again. A slot is what the
 // user chose to keep and named, where the table above is what the engine
 // remembers on its own. docs/framing-presets.md
-Tv5725::SlotTable slotFramings;
-static const char SlotFramingFilePath[] = "/slots.txt";
 
 // A slot is written on an explicit save rather than on every press, so there is
 // nothing to debounce -- only the same read guard.
-static bool slotFramingIsSuspect = true;
 
 Tv5725::Controls geometryControls(geometry, SerialM);
 
@@ -4095,11 +4091,6 @@ void setup()
         bootLogPrintf("FRAMING: %u stored, suspect=%d t=%lums\n",
             (unsigned)sourceFramings.count(), framingIsSuspect ? 1 : 0,
             (unsigned long)millis());
-
-        loadSlotFramings();
-        bootLogPrintf("SLOTS: %u stored, suspect=%d t=%lums\n",
-            (unsigned)slotFramings.count(), slotFramingIsSuspect ? 1 : 0,
-            (unsigned long)millis());
     }
 
 
@@ -7017,6 +7008,69 @@ fail:
       }
       else
       {
+        const int16_t currentSlot = currentSlotIndex();
+        if (currentSlot < 0) {
+            request->send(200, "application/json", "false");
+            return;
+        }
+
+        SlotMetaArray slotsObject;
+        ensureSlotsFile();
+        File slotsBinaryFileRead = LittleFS.open(SLOTS_FILE, "r");
+        slotsBinaryFileRead.read((byte *)&slotsObject, sizeof(slotsObject));
+        slotsBinaryFileRead.close();
+
+        // Removing a slot closes the gap, so everything after it moves down
+        // one: the name, the picture settings and the framings file alike.
+        // `.slot` is the position rather than a stored value, so it stays.
+        for (int i = currentSlot; i < SLOTS_TOTAL - 1; ++i) {
+            SlotMeta &into = slotsObject.slot[i];
+            const SlotMeta &from = slotsObject.slot[i + 1];
+            into.scanlines = from.scanlines;
+            into.scanlinesStrength = from.scanlinesStrength;
+            into.wantVdsLineFilter = from.wantVdsLineFilter;
+            into.wantStepResponse = from.wantStepResponse;
+            into.wantPeaking = from.wantPeaking;
+            into.slot = i;
+            strncpy(into.name, from.name, 25);
+
+            LittleFS.remove(slotFramingPath(i));
+            LittleFS.rename(slotFramingPath(i + 1), slotFramingPath(i));
+        }
+
+        SlotMeta &last = slotsObject.slot[SLOTS_TOTAL - 1];
+        last.slot = SLOTS_TOTAL - 1;
+        last.scanlines = 0;
+        last.scanlinesStrength = 0;
+        last.wantVdsLineFilter = false;
+        last.wantStepResponse = true;
+        last.wantPeaking = true;
+        strncpy(last.name, EMPTY_SLOT_NAME, 25);
+        LittleFS.remove(slotFramingPath(SLOTS_TOTAL - 1));
+
+        File slotsBinaryFileWrite = LittleFS.open(SLOTS_FILE, "w");
+        slotsBinaryFileWrite.write((byte *)&slotsObject, sizeof(slotsObject));
+        slotsBinaryFileWrite.close();
+
+        result = true;
+      }
+    }
+
+    request->send(200, "application/json", result ? "true" : "false"); });
+
+    server.on("/slot/remove", HTTP_GET, [](AsyncWebServerRequest *request) {
+    bool result = false;
+    int params = request->params();
+    AsyncWebParameter *p = request->getParam(0);
+    char param = p->name().charAt(0);
+    if (params > 0)
+    {
+      if (param == '0')
+      {
+        result = true;
+      }
+      else
+      {
         Ascii8 slot = uopt->presetSlot;
         Ascii8 nextSlot;
         auto currentSlot = slotIndexMap.indexOf(slot);
@@ -7028,16 +7082,6 @@ fail:
         String slotName = slotsObject.slot[currentSlot].name;
 
         
-        LittleFS.remove("/preset_ntsc." + String((char)slot));
-        LittleFS.remove("/preset_pal." + String((char)slot));
-        LittleFS.remove("/preset_ntsc_480p." + String((char)slot));
-        LittleFS.remove("/preset_pal_576p." + String((char)slot));
-        LittleFS.remove("/preset_ntsc_720p." + String((char)slot));
-        LittleFS.remove("/preset_ntsc_1080p." + String((char)slot));
-        LittleFS.remove("/preset_medium_res." + String((char)slot));
-        LittleFS.remove("/preset_vga_upscale." + String((char)slot));
-        LittleFS.remove("/preset_unknown." + String((char)slot));
-
         uint8_t loopCount = 0;
         uint8_t flag = 1;
         while (flag != 0)
@@ -7045,15 +7089,6 @@ fail:
           slot = slotIndexMap[currentSlot + loopCount];
           nextSlot = slotIndexMap[currentSlot + loopCount + 1];
           flag = 0;
-          flag += LittleFS.rename("/preset_ntsc." + String((char)(nextSlot)), "/preset_ntsc." + String((char)slot));
-          flag += LittleFS.rename("/preset_pal." + String((char)(nextSlot)), "/preset_pal." + String((char)slot));
-          flag += LittleFS.rename("/preset_ntsc_480p." + String((char)(nextSlot)), "/preset_ntsc_480p." + String((char)slot));
-          flag += LittleFS.rename("/preset_pal_576p." + String((char)(nextSlot)), "/preset_pal_576p." + String((char)slot));
-          flag += LittleFS.rename("/preset_ntsc_720p." + String((char)(nextSlot)), "/preset_ntsc_720p." + String((char)slot));
-          flag += LittleFS.rename("/preset_ntsc_1080p." + String((char)(nextSlot)), "/preset_ntsc_1080p." + String((char)slot));
-          flag += LittleFS.rename("/preset_medium_res." + String((char)(nextSlot)), "/preset_medium_res." + String((char)slot));
-          flag += LittleFS.rename("/preset_vga_upscale." + String((char)(nextSlot)), "/preset_vga_upscale." + String((char)slot));
-          flag += LittleFS.rename("/preset_unknown." + String((char)(nextSlot)), "/preset_unknown." + String((char)slot));
 
           slotsObject.slot[currentSlot + loopCount].slot = slotsObject.slot[currentSlot + loopCount + 1].slot;
           slotsObject.slot[currentSlot + loopCount].scanlines = slotsObject.slot[currentSlot + loopCount + 1].scanlines;
@@ -7070,9 +7105,8 @@ fail:
         slotsBinaryFileWrite.write((byte *)&slotsObject, sizeof(slotsObject));
         slotsBinaryFileWrite.close();
 
-        // Or the next slot named here inherits a framing nobody stored for it.
-        if (slotFramings.forget((uint8_t)currentSlot))
-            saveSlotFramings();
+        // Or the next slot named here inherits framings nobody stored for it.
+        LittleFS.remove(slotFramingPath(currentSlot));
         result = true;
       }
     }
@@ -7242,40 +7276,6 @@ fail:
     WiFiMode_t wifiMode = WiFi.getMode();
     request->send(200, "application/json", wifiMode == WIFI_AP ? "{\"mode\":\"ap\"}" : "{\"mode\":\"sta\",\"ssid\":\"" + WiFi.SSID() + "\"}"); });
 
-    server.on("/gbs/restore-filters", HTTP_GET, [](AsyncWebServerRequest *request) {
-    SlotMetaArray slotsObject;
-    File slotsBinaryFileRead = LittleFS.open(SLOTS_FILE, "r");
-    bool result = false;
-    if (slotsBinaryFileRead)
-    {
-      slotsBinaryFileRead.read((byte *)&slotsObject, sizeof(slotsObject));
-      slotsBinaryFileRead.close();
-      auto currentSlot = slotIndexMap.indexOf(uopt->presetSlot);
-      if (currentSlot == -1)
-      {
-        goto fail;
-      }
-
-      uopt->wantScanlines = slotsObject.slot[currentSlot].scanlines;
-      if (uopt->wantScanlines)
-      {
-      }
-      else
-      {
-        disableScanlines();
-      }
-      saveUserPrefs();
-
-      uopt->scanlineStrength = slotsObject.slot[currentSlot].scanlinesStrength;
-      uopt->wantVdsLineFilter = slotsObject.slot[currentSlot].wantVdsLineFilter;
-      uopt->wantStepResponse = slotsObject.slot[currentSlot].wantStepResponse;
-      uopt->wantPeaking = slotsObject.slot[currentSlot].wantPeaking;
-      result = true;
-    }
-
-fail:
-    request->send(200, "application/json", result ? "true" : "false"); });
-
     persWM.setConnectNonBlock(true);
     if (WiFi.SSID().length() == 0) {
         persWM.setupWiFiHandlers();
@@ -7409,85 +7409,79 @@ void saveFramingTable()
     framingSaves.markSaved(sourceFramings.revision());
 }
 
-// Which slot the user has selected, as an index into slotFramings, or -1 when
-// the preference names none.
+// Which slot the user has selected, or -1 when the preference names none.
 int16_t currentSlotIndex()
 {
     return (int16_t)slotIndexMap.indexOf((char)uopt->presetSlot);
 }
 
-void loadSlotFramings()
+// A slot is a NAMED COPY OF THE FRAMING TABLE. Saving one copies the file the
+// per-source framings already live in; loading one copies it back and reloads
+// it. That bounds the data by the number of slots rather than by RAM, which is
+// what a table of every slot's framings could not be: the whole table fits in
+// one file and only one is ever in memory. docs/framing-presets.md
+static String slotFramingPath(int16_t slot)
 {
-    slotFramingIsSuspect = true;
-
-    if (!LittleFS.exists(SlotFramingFilePath)) {
-        slotFramingIsSuspect = false;
-        return;
-    }
-
-    File f = LittleFS.open(SlotFramingFilePath, "r");
-    if (!f)
-        return;
-
-    Tv5725::SlotText text(slotFramings);
-    char line[80];
-    while (f.available()) {
-        const String next = f.readStringUntil('\n');
-        strncpy(line, next.c_str(), sizeof(line) - 1);
-        line[sizeof(line) - 1] = '\0';
-        text.readLine(line);
-    }
-    f.close();
-
-    slotFramingIsSuspect = false;
+    return String(F("/slot-")) + String((int)slot) + String(F(".txt"));
 }
 
-void saveSlotFramings()
+static bool copyFile(const String &from, const String &to)
 {
-    if (slotFramingIsSuspect) {
-        printf("not saving slot framings: this boot could not read them\n");
-        return;
+    File in = LittleFS.open(from, "r");
+    if (!in)
+        return false;
+
+    File out = LittleFS.open(to, "w");
+    if (!out) {
+        in.close();
+        return false;
     }
 
-    File f = LittleFS.open(SlotFramingFilePath, "w");
-    if (!f)
-        return;
-
-    f.print(F("# slot framings: "
-              "<slot> <lines>@<fieldRateHz>/<syncWidth><hPol><vPol> = "
-              "originH extentH originV extentV shape\n"
-              "# in ten-thousandths of the capturable region; shape 0 fills\n"));
-
-    Tv5725::SlotText text(slotFramings);
-    char line[80];
-    for (uint16_t i = 0; i < slotFramings.count(); ++i)
-        if (text.writeLine(i, line, sizeof(line))) {
-            f.print(line);
-            f.print('\n');
-        }
-    f.close();
+    uint8_t buffer[128];
+    while (in.available()) {
+        const size_t got = in.read(buffer, sizeof(buffer));
+        if (got == 0)
+            break;
+        out.write(buffer, got);
+    }
+    in.close();
+    out.close();
+    return true;
 }
 
-// The current framing into the current slot, against the source it is framed
-// for. The INPUTS to the calculation, never the registers it produced.
-// docs/framing-presets.md
+// The framings as they stand, under this slot's name. The debounced save is
+// flushed first, or the copy is of whatever the table held when it last went
+// quiet rather than of what is on screen.
 bool storeSlotFraming(int16_t slot)
 {
     if (slot < 0)
         return false;
-    if (!slotFramings.remember((uint8_t)slot, geometry.framedKey(),
-                               geometry.framing()))
+    saveFramingTable();
+    if (!LittleFS.exists(FramingFilePath))
         return false;
-    saveSlotFramings();
-    return true;
+    return copyFile(String(FramingFilePath), slotFramingPath(slot));
 }
 
-// Restored through the engine, which re-solves every register from it.
+// This slot's framings become the framings. Restored through the engine, which
+// re-solves every register from them.
 bool recallSlotFraming(int16_t slot)
 {
-    Tv5725::PanAndZoom framing;
-    if (slot < 0 || !slotFramings.find((uint8_t)slot, geometry.framedKey(), &framing))
+    if (slot < 0)
         return false;
+    const String path = slotFramingPath(slot);
+    if (!LittleFS.exists(path))
+        return false;
+    if (!copyFile(path, String(FramingFilePath)))
+        return false;
+
+    sourceFramings.clear();
+    loadFramingTable();
+
+    Tv5725::PanAndZoom framing;
+    Tv5725::Aspect shape;
+    if (!sourceFramings.find(geometry.framedKey(), &framing, &shape))
+        return false;
+    geometry.setAspect(shape);
     return geometry.applyFraming(framing);
 }
 

@@ -64,7 +64,6 @@ const GBSControl = {
         5: "button1920x1080",
         6: "button15kHzScaleDown",
         8: "buttonSourcePassThrough",
-        9: "buttonLoadCustomPreset",
     },
     controlKeysMobileMode: "move",
     controlKeysMobile: {
@@ -94,7 +93,6 @@ const GBSControl = {
     ui: {
         backupButton: null,
         backupInput: null,
-        customSlotFilters: null,
         developerSwitch: null,
         loader: null,
         outputClear: null,
@@ -363,15 +361,6 @@ const savePreset = () => {
     })
         .catch(() => { });
 };
-const loadPreset = () => {
-    loadUser("3").then(() => {
-        if (GBSStorage.read("customSlotFilters") === true) {
-            setTimeout(() => {
-                fetch(`/gbs/restore-filters?${+new Date()}`);
-            }, 250);
-        }
-    });
-};
 const removePreset = () => {
     fetch(`/slot/remove?0&nocache=${new Date().getTime()}`).then(() => {
         setTimeout(() => {
@@ -469,11 +458,6 @@ const toggleDeveloperMode = () => {
     GBSStorage.write("developerMode", !developerMode);
     updateDeveloperMode(!developerMode);
 };
-const toggleCustomSlotFilters = () => {
-    const customSlotFilters = GBSStorage.read("customSlotFilters");
-    GBSStorage.write("customSlotFilters", !customSlotFilters);
-    updateCustomSlotFilters(!customSlotFilters);
-};
 const updateHelp = (help) => {
     if (help) {
         document.body.classList.remove("gbs-help-hide");
@@ -495,15 +479,6 @@ const updateDeveloperMode = (developerMode) => {
         document.body.classList.add("gbs-output-hide");
     }
     GBSControl.ui.developerSwitch.querySelector(".gbs-icon").innerText = developerMode ? "toggle_on" : "toggle_off";
-};
-const updateCustomSlotFilters = (customFilters = GBSStorage.read("customSlotFilters") === true) => {
-    if (customFilters) {
-        GBSControl.ui.customSlotFilters.setAttribute("active", "");
-    }
-    else {
-        GBSControl.ui.customSlotFilters.removeAttribute("active");
-    }
-    GBSControl.ui.customSlotFilters.querySelector(".gbs-icon").innerText = customFilters ? "toggle_on" : "toggle_off";
 };
 const GBSStorage = {
     lsObject: {},
@@ -920,7 +895,6 @@ const initUIElements = () => {
         backupButton: document.querySelector(".gbs-backup-button"),
         backupInput: document.querySelector(".gbs-backup-input"),
         developerSwitch: document.querySelector("[gbs-dev-switch]"),
-        customSlotFilters: document.querySelector("[gbs-slot-custom-filters]"),
         alert: document.querySelector('section[name="alert"]'),
         alertOk: document.querySelector("[gbs-alert-ok]"),
         alertContent: document.querySelector("[gbs-alert-content]"),
@@ -946,7 +920,6 @@ const initGeneralListeners = () => {
     GBSControl.ui.wifiApButton.addEventListener("click", wifiSetAPMode);
     GBSControl.ui.wifiStaButton.addEventListener("click", wifiScanSSID);
     GBSControl.ui.developerSwitch.addEventListener("click", toggleDeveloperMode);
-    GBSControl.ui.customSlotFilters.addEventListener("click", toggleCustomSlotFilters);
     GBSControl.ui.alertOk.addEventListener("click", () => {
         GBSControl.ui.alert.setAttribute("hidden", "");
         gbsAlertPromise.resolve();
@@ -1043,7 +1016,6 @@ const gbsPrompt = (text, defaultValue = "") => {
     });
 };
 const initUI = () => {
-    updateCustomSlotFilters();
     initGeneralListeners();
     updateViewPort();
     initSlotButtons();

@@ -225,16 +225,6 @@
             <div class="gbs-presets" gbs-slot-html></div>
             <div class="gbs-flex">
               <button
-                class="gbs-button gbs-button__control-action"
-                active
-                gbs-element-ref="buttonLoadCustomPreset"
-                gbs-role="preset"
-                onclick="loadPreset()"
-              >
-                <div class="gbs-icon">play_arrow</div>
-                <div>load preset</div>
-              </button>
-              <button
                 class="gbs-button gbs-button__control-action gbs-button__secondary"
                 onclick="savePreset()"
                 active
@@ -993,17 +983,6 @@
                   <!-- prettier-ignore -->
                   <ul class="gbs-help">
                     <li>Enables the developer menu which contains various debugging tools</li>
-                  </ul>
-                </td>
-                <td class="gbs-icon">toggle_off</td>
-              </tr>
-              <tr gbs-slot-custom-filters>
-                <td>
-                  Save Filtering Per Slot
-                  <!-- prettier-ignore -->
-                  <ul class="gbs-help">
-                    <li>When enabled, saved slots recover their own filter preferences.</li>
-                    <li>When disabled, saved slots maintain current filter settings.</li>
                   </ul>
                 </td>
                 <td class="gbs-icon">toggle_off</td>
