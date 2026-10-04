@@ -12,7 +12,7 @@ is about the code.
 | File | What |
 |---|---|
 | `…/gbs-control/src/tv5725/` | the driver. One class per file; every caller includes the classes it names, and there is no umbrella header |
-| `…/src/tv5725/VideoPath.cpp` | the sequencing, and the only part of the cluster that writes registers — everything it derives from is pure arithmetic and host-compiles. `test/Makefile`'s `HOST_GEOMETRY_SRC` is the exclusion list |
+| `…/src/tv5725/VideoPath.cpp` | the orchestration of a mode change, and the only part of the cluster that writes registers — everything it derives from is pure arithmetic and host-compiles. `test/Makefile`'s `HOST_GEOMETRY_SRC` is the exclusion list |
 | `test/test_capture_window.cpp`, `test_output_window.cpp`, `test_scale.cpp`, `test_axis.cpp`, `test_memory_window.cpp` | host-compiled unit tests, one per class, `make -C test` |
 | `test/test_video_path_windows.cpp`, `test_video_path_raster.cpp` | what a solve writes, asserted field by field over the fake bus |
 
@@ -131,8 +131,9 @@ bench instruments and the hardware suite. A build without it answers 404.
 
 ## What the sketch may call
 
-`Tv5725::VideoPath` is the engine's geometry half, and this is its whole
-surface. **The engine is the new code, all of it** -- `VideoSourceAcquisition` and
+`Tv5725::VideoPath` sets the chip up for a source -- it orchestrates a video
+mode change rather than only computing one, deciding what is re-solved, in what
+order, and what the video route becomes. This is its whole surface. **The engine is the new code, all of it** -- `VideoSourceAcquisition` and
 every `Tv5725::` class -- as against the legacy sketch; what the sketch may reach
 is `VideoSourceAcquisition`, which calls the rest.
 [video-source-acquisition.md](video-source-acquisition.md)
