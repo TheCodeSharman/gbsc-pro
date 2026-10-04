@@ -420,26 +420,43 @@ diagnosing "the unit" while able to observe roughly a third of it.
   `videoprocess.c`, `uart_dma.c` and `flash.c` are the AV module. Version-tagged
   in git history (`V1.3`, `v1.2.3`, `v1.2.2`). These files are ISO-8859, so
   `grep -r … | grep -v Binary` hides them — **use `grep -a`.**
-- **The ESP commands the HC32 over its UART**, ESP TX → HC32 `USART4` RX (PB7),
-  115200 8N1. 7-byte frame: `41 44 <cmd> <arg> <val|nonce> FE <sum of bytes 0-5>`.
-  `'S'` selects input: `0x4n` RGBs, `0x5n` RGsB, `0x6n` VGA, `0x70` YPbPr,
-  `0x1n` S-Video, `0x2n` composite; `0xA0`/`0xA1` toggle `asw_02`. There is **no
-  readback**, and the reason is the BOARD rather than the firmware: **no
-  conductor carries a reply.** `ESP_RXD` is driven only by the CH340's TXD
-  through R60, and the HC32's `USART4` TX (PB6, pin 42) goes to the J18 header
-  and to SW2, the update button that holds the bootloader entry — so the pin
-  that would answer is spent on something else. Read off schematic sheet 12.
-  **No HC32 firmware change reaches an acknowledge, a state query, a log or a
-  UART IAP**; each needs a wire, and J18 exposes PB5/PB4/PB3 beside GND for
-  one. The `'I'` INFO handler being commented out is a consequence of this, not
-  the cause.
+- **The ESP commands the HC32 over its UART**, ESP TX → HC32 `USART4` RX (PB7,
+  pin 43), 115200 8N1. 7-byte frame: `41 44 <cmd> <arg> <val|nonce> FE <sum of
+  bytes 0-5>`. `'S'` selects input: `0x4n` RGBs, `0x5n` RGsB, `0x6n` VGA,
+  `0x70` YPbPr, `0x1n` S-Video, `0x2n` composite; `0xA0`/`0xA1` toggle
+  `asw_02`. **NO REPLY REACHES THE ESP, AND THE REASON IS THE BOARD RATHER THAN
+  THE FIRMWARE.** `ESP_RXD` is driven only by the CH340T's TXD through R60, and
+  the HC32's `USART4` TX (PB6, pin 42) goes to J18 pin 2 and to SW2, never to
+  the ESP — so no firmware change creates that path, and the commented-out
+  `'I'` INFO handler follows from the missing conductor. Schematic sheet 12.
+- **SW2 IS NOT A BOOTLOADER BUTTON.** `Key_Init()` configures PB6 as a
+  pulled-up input and `Key_Read()` polls it, so SW2 is an application key
+  grounding PB6 through R106 — which also means the application claims the pin
+  `USART4` TX would otherwise drive.
+- **THE HC32 IS REACHABLE AND ITS FIRMWARE IS UPDATABLE, AND NO ROUTE NEEDS A
+  BOARD MODIFICATION.** All three reach a HOST rather than the ESP, so they buy
+  visibility and a way to flash the part — never a readback the ESP can act on.
+  The part is an `HC32F460JEUA-QFN48TR`, so pin numbers are QFN48.
+
+  | route | where | state |
+  |---|---|---|
+  | SWD | J19: 1 `DVDDIO_3.3V`, 2 `SWDIO` (PA13, pin 34), 3 `SWDCLK` (PA14, pin 37), 4 GND | the vendor's own MDK project ships `JLinkSettings.ini` and a `debug_init.ini` that loads the hex, so this is the route the board author used |
+  | `USART4` | J18, a 6-pin header carrying PB7, PB6, PB5, PB4, PB3, GND | TX is already on pin 2, so a USB-serial adapter is a read channel. `BSP_PRINTF_DEVICE` points at USART3, so `printf` needs re-pointing to come out of it |
+  | USB device | USB1, a USB-C receptacle, straight to PA12/`USBFS_DP` and PA11/`USBFS_DM` with CC1/CC2 pulled down 5.1K | wired and UNUSED — `LL_USB_ENABLE` is `DDL_OFF`, no USB source file is in the MDK project, and `main()` never touches it |
+
+  **The USB-C port is the HC32's, not the ESP's.** The ESP's serial is a
+  separate micro-USB, J5 → CH340T, on sheet 1, so the two enumerate
+  independently and the cable that powers the board is a free channel to the
+  HC32. **The MDK project is not an IAP application despite the folder name**:
+  the scatter file maps the image at `0x00000000` across the whole `0x40000`
+  with no reserved boot region.
 - **THE HC32 HAS THREE TWO-WIRE BUSES AND ONLY ONE CARRIES A CHIP**, which is a
   trap because the chips are NOT on the pins named `I2C_*`. Schematic sheet 12:
 
   | HC32 pins | net | on it |
   |---|---|---|
   | 17 / 16 (PA7/PA6) | `SDA` / `SCL` | the ADV7280 (0x42, ALSB high) and the ADV7391 |
-  | 46 / 45 (PB9/PB8) | `I2C_SDA` / `I2C_SCL` | nothing -- out to J16, a 4-pin header, with 2.2K pull-ups |
+  | 45 / 44 (PB8/PB11) | `I2C_SDA` / `I2C_SCL` | nothing -- out to J16, a 4-pin header, with 2.2K pull-ups. **PB11 is the `MD` boot-mode pin**, so J16 pin 1 is also the ROM-bootloader strap -- which UART the ROM then listens on is unconfirmed, the HC32F460 manual not being in this repo. PB9, pin 46, is unconnected |
   | 15 / 14 (PA5/PA4) | `SCREEN_SDA` / `SCREEN_SCL` | nothing -- out to J17, for an external screen |
 
 - **The OLED menu is on the ESP**, not the HC32. Picking an input there works
