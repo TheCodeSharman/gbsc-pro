@@ -77,6 +77,19 @@ public:
     // How the capture and playback stages ask for memory.
     void applyFrameBufferRequests();
 
+    // The display scaler's picture filters, as the user chose them. They arrive
+    // as arguments because the preference is the user option store's and not a
+    // fact about the source -- the engine applies a choice it does not hold.
+    //
+    // The six-tap filter is forced ON and takes no argument, which overrides
+    // the preference the web UI reports. ../../../../docs/known-issues.md
+    void applyPictureFilters(bool lineFilter, bool peaking);
+
+    // The two that follow the OUTPUT mode rather than the source, so an output
+    // change re-applies these alone. Whether the output is 1080p is this
+    // class's own fact, so the caller passes the preferences and nothing else.
+    void applyOutputPictureFilters(bool sharpness, bool stepResponse);
+
     // The shape the picture is shown in. Defaulted from the raster the source
     // matched, replaced by whatever the user last chose for that source, and
     // stored beside the framing. An OUTPUT transform: setting it moves no part

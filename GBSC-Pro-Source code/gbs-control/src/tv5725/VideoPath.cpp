@@ -75,6 +75,20 @@ void VideoPath::applyFrameBufferRequests()
     FrameBuffer::writeFifoLineOffset(0);
 }
 
+void VideoPath::applyPictureFilters(bool lineFilter, bool peaking)
+{
+    VideoProcessor::setLineFilter(lineFilter);
+    VideoProcessor::setPeaking(peaking);
+    VideoProcessor::setSixTapFilter(true);
+}
+
+void VideoPath::applyOutputPictureFilters(bool sharpness, bool stepResponse)
+{
+    const bool at1080p = mode_ == &Mode1080p;
+    VideoProcessor::setSharpness(sharpness, at1080p);
+    VideoProcessor::setStepResponse(stepResponse && !at1080p);
+}
+
 const PanAndZoom &VideoPath::framing() const { return framing_; }
 
 const SourceKey &VideoPath::framedKey() const { return framedKey_; }

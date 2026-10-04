@@ -1069,21 +1069,6 @@ void chooseOutputMode(const Tv5725::OutputMode *mode)
   uopt->outputResolution[OutputResolutionBytes - 1] = '\0';
 }
 
-static bool outputIsAt1080p()
-{
-  return geometry.outputMode() == &Tv5725::Mode1080p;
-}
-
-// What the OUTPUT resolution decides, and all it decides. Everything else
-// doPostPresetLoadSteps() writes is about the source, the ADC or the sync
-// processor, none of which an output change touches.
-static void applyOutputResolutionSettings()
-{
-  Tv5725::VideoProcessor::setSharpness(uopt->wantSharpness, outputIsAt1080p());
-  Tv5725::VideoProcessor::setStepResponse(uopt->wantStepResponse &&
-                                          !outputIsAt1080p());
-}
-
 // A preset load: the mode state a load decides, and nothing else. Every
 // register is computed afterwards, from `choice` -- the output resolution this
 // load asks for, remembered for doPostPresetLoadSteps(), which hands it to the
@@ -2368,7 +2353,7 @@ static void changeOutputResolution()
         return;
     }
 
-    applyOutputResolutionSettings();
+    geometry.applyOutputPictureFilters(uopt->wantSharpness, uopt->wantStepResponse);
 
     // The raster moved, so the ratio the frequency lock steers by is stale.
     frameSync.cleanup();
@@ -2499,10 +2484,8 @@ void doPostPresetLoadSteps()
             Tv5725::Adc::applyOffset(adco->r_off, adco->g_off, adco->b_off);
         }
 
-        Tv5725::VideoProcessor::setLineFilter(uopt->wantVdsLineFilter);
-        Tv5725::VideoProcessor::setPeaking(uopt->wantPeaking);
-        Tv5725::VideoProcessor::setSixTapFilter(true);
-        applyOutputResolutionSettings();
+        geometry.applyPictureFilters(uopt->wantVdsLineFilter, uopt->wantPeaking);
+        geometry.applyOutputPictureFilters(uopt->wantSharpness, uopt->wantStepResponse);
 
         frameSync.cleanup();
         frameTimeLock.forgiveFailures();
@@ -4485,8 +4468,8 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                             GBS::HD_V_OFFSET::write(GBS::HD_V_OFFSET::read() + 0x24);
                         }; // SerialMprintln("on");
                     } else {
-                        Tv5725::VideoProcessor::setSharpness(
-                            uopt->wantSharpness, outputIsAt1080p());
+                        geometry.applyOutputPictureFilters(
+                            uopt->wantSharpness, uopt->wantStepResponse);
                         // The luma offset is the balance's, so leaving the view
                         // asks it rather than putting back a saved copy.
                         applyColourBalance();
@@ -5012,7 +4995,8 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                 case 'V': {
                     ; // SerialMprint(F("step response "));
                     uopt->wantStepResponse = !uopt->wantStepResponse;
-                    Tv5725::VideoProcessor::setStepResponse(uopt->wantStepResponse);
+                    geometry.applyOutputPictureFilters(uopt->wantSharpness,
+                                                       uopt->wantStepResponse);
                     saveUserPrefs();
                 } break;
                 case ':':
@@ -5520,8 +5504,8 @@ void handleType2Command(char argument)
             break;
         case 'W':
             uopt->wantSharpness = uopt->wantSharpness ? 0 : 1;
-            Tv5725::VideoProcessor::setSharpness(uopt->wantSharpness,
-                                                 outputIsAt1080p());
+            geometry.applyOutputPictureFilters(uopt->wantSharpness,
+                                               uopt->wantStepResponse);
             saveUserPrefs();
             break;
         // The colour balance. These six used to step VDS_Y_OFST, VDS_U_OFST and
@@ -7248,9 +7232,9 @@ bool applySelectedSlot()
 
         if (!uopt->wantScanlines)
             disableScanlines();
-        Tv5725::VideoProcessor::setLineFilter(uopt->wantVdsLineFilter);
-        Tv5725::VideoProcessor::setPeaking(uopt->wantPeaking);
-        Tv5725::VideoProcessor::setStepResponse(uopt->wantStepResponse);
+        geometry.applyPictureFilters(uopt->wantVdsLineFilter, uopt->wantPeaking);
+        geometry.applyOutputPictureFilters(uopt->wantSharpness,
+                                           uopt->wantStepResponse);
     } else if (f) {
         f.close();
     }

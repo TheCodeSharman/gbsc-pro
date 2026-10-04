@@ -18,6 +18,7 @@
 FakeTwoWire Wire;
 
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SamplingClock.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/VideoProcessor.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/VideoRoute.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/clock/ClockGen.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/videosource/VideoSourceAcquisition.h"
@@ -716,4 +717,43 @@ TEST_CASE("the frame buffer phase puts every one of its request modes in force")
     CHECK(Tv5725::FrameBuffer::CAP_STATUS_SEL::read() == 1);
     CHECK(Tv5725::FrameBuffer::PB_REQ_SEL::read() == 3);
     CHECK(Tv5725::FrameBuffer::RFF_WFF_OFFSET::read() == 0);
+}
+
+TEST_CASE("the picture filter phase puts the user's choices in force")
+{
+    Wire.reset();
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+
+    engine.applyPictureFilters(true, false);
+
+    CHECK(Tv5725::VideoProcessor::VDS_D_RAM_BYPS::read() == 0);
+    CHECK(Tv5725::VideoProcessor::VDS_PK_Y_H_BYPS::read() == 1);
+    CHECK(Tv5725::VideoProcessor::VDS_TAP6_BYPS::read() == 0);
+}
+
+// Sharpness and the step response follow the OUTPUT mode, which the engine
+// already holds -- so the phase asks itself rather than being told, and the
+// sketch keeps no 1080p predicate of its own.
+TEST_CASE("the output picture filters take the 1080p question from the held mode")
+{
+    SettledEngine settled;
+
+    SUBCASE("at 1080p the step response is refused and the high gain drops") {
+        settled.engine.setOutputMode(&Mode1080p);
+        settled.engine.applyOutputPictureFilters(false, true);
+
+        CHECK(Tv5725::VideoProcessor::VDS_PK_LH_GAIN::read() == 0x0A);
+        CHECK(Tv5725::VideoProcessor::VDS_UV_STEP_BYPS::read() == 1);
+    }
+
+    SUBCASE("below it the step response is honoured") {
+        settled.engine.setOutputMode(&Mode720p);
+        settled.engine.applyOutputPictureFilters(false, true);
+
+        CHECK(Tv5725::VideoProcessor::VDS_PK_LH_GAIN::read() == 0x18);
+        CHECK(Tv5725::VideoProcessor::VDS_UV_STEP_BYPS::read() == 0);
+    }
 }
