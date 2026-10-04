@@ -1303,57 +1303,73 @@ measurement of it. A count that matches the source says the arriving signal is
 intact; one that cannot be made to settle on the right path says it is not, and
 that is the one that needs power.
 
-### A cold boot with `input = ypbpr` stored comes up solid green, and nothing at runtime clears it
+### A boot that lands on `ypbpr` comes up solid green, and the cause is not on the TV5725
 
-**Reproduced twice, on command.** The discriminator is which input the settings
-file names when the unit powers up:
+**Reproduced on demand, across a true mains-and-USB power cycle.** Which input
+the settings file names at power-up decides it: stored as `ypbpr` the picture is
+solid green with faint vertical bars; stored as `vga` it is clean, and selecting
+`ypbpr` afterwards is clean too. Same input, same cable, same source.
 
-| cold boot, `input` stored as | picture |
-|---|---|
-| `ypbpr` | **solid green with faint vertical bars**, twice |
-| `vga` | clean; and selecting `ypbpr` afterwards is clean too |
+**The register file is excluded, in both directions.** The whole 1536-register
+difference between a green state and a clean one resolves to fifteen fields
+outside the geometry solve. Writing them to their clean values on a green unit
+leaves it green; writing them to their green values on a clean unit leaves it
+clean and in colour. **A register dump cannot reach this fault**, which is why
+every pass over one finds nothing.
 
-So it is not a property of the YPbPr path or of the Wii -- the same input, the
-same cable and the same source give a correct picture when the boot came up on
-`vga` first. It is the boot that lands on `ypbpr`.
+**The HC32's analog switches are in the causal path.** `/avframe?src=<name>`
+sends the AV module frame and nothing else. Against a green boot, `vga` then
+`ypbpr` takes the output from saturated green to a neutral field with
+`ADC_INPUT_SEL` at 0 throughout and no register written.
 
-**Everything a dump can ask reads correct.** `state: acquired`,
-`STATUS_SYNC_PROC_VTOTAL` 259/260 (the Wii in 480i, alternating as it should),
-`STATUS_SYNC_PROC_HTOTAL` 2200 against `PLLAD_MD` 2200 -- so the divider is
-latched -- `SP_SOG_MODE` 1 and `ADC_INPUT_SEL` 0, both right for component.
-`s0_46` 0x7f with every block released, `s0_45` 0x11, `s0_49` 0x0a with
-`PAD_SYNC_OUT_ENZ` 0, DACs powered, `DAC_RGBS_BYPS2DAC` 0 and `OUT_SYNC_SEL` 0
-on the scaling path. ADC gains 51/51/51 and offsets 64/64/64, identical in the
-green state and in a clean one.
+**A signal is missing that the registers do not explain.** `TEST_BUS_SEL` 14 and
+16 carry a line-rate signal whenever the picture is good and read 0 whenever it
+is green -- including with every register made identical to a clean unit's --
+and return when the picture does. The sync front end reads the same in both
+states.
 
-**BOTH DOCUMENTED CAUSES OF A GREEN SCREEN ARE RULED OUT.** The divider written
-after the latch is excluded by `HTOTAL` equalling `PLLAD_MD` exactly, which is
-the only witness there is that the latch happened. The `PLLAD_CKOS`-against-the-
-decimators mismatch is excluded by reading all five together: `PLLAD_CKOS` 0,
-`ADC_CLK_ICLK1X` 1, `ADC_CLK_ICLK2X` 1, `DEC1_BYPS` 0, `DEC2_BYPS` 0 -- mutually
-consistent for oversample 4, which is one `Adc::applyOversample()` call.
+| tried | reaches | clears it |
+|---|---|---|
+| `/input?src=ypbpr`, the input already selected | HC32 and scaler | no |
+| `/sc?~`, a full detection pass | scaler | no |
+| the fifteen fields written to their clean values | scaler | no |
+| `/avframe` `vga` then `ypbpr` | HC32 only | partly -- green to neutral |
+| `/input?src=vga` then back | HC32 and scaler | **yes** |
 
-**No runtime action recovers it**, which is what separates it from the green
-screen a detection pass repairs:
+**Open:** which switch state the HC32 holds, and why a boot reaches it.
+`/avframe` makes both sweepable, the frames being enumerable and the emitted
+frame readable off the USB capture.
+`docs/investigations/the-green-ypbpr-boot-is-outside-the-register-file.md`.
 
-| tried | result |
-|---|---|
-| `/input?src=ypbpr`, re-selecting the input it is already on | still green |
-| `/input?src=vga` then back to `ypbpr` | still green, and `vga` did not re-acquire |
-| a cold boot with `vga` stored, then selecting `ypbpr` | **clean** |
+### A boot that only ever detects `ypbpr` never runs `applyPresets()`
 
-**The boot log shows the measurement starting wrong and settling.** On the green
-boot, `DETECT: 25ms, syncFound 2` against 2543 ms for a healthy `vga` boot, and
-the first samples read `270 lines x 121.42 Hz` where a healthy Wii in 480i reads
-259/260 at ~60 Hz. It reaches 2200 as its divider either way, and `VTOTAL` reads
-260 once settled -- so the early counts are wrong and the end state is not.
-Whether that matters is not established.
+`detectAndSwitchToActiveInput()`'s YPbPr branch sets the sync-on-green level and
+returns, where its RGB branch calls `applyPresets()`. That is the only caller of
+`doPostPresetLoadSteps()` a boot reaches, so a unit that comes up on `ypbpr` and
+stays there leaves its static configuration at reset defaults:
 
-**The next move is a diff, not another hypothesis.** Two self-consistent states
-exist, one green and one clean, so take `snapdiff.py --save` in each --
-the green one from a cold boot on `ypbpr`, the clean one from a cold boot on
-`vga` followed by selecting `ypbpr` -- and the cause is in the difference. A
-1536-register dump of the green state is what the first half costs.
+| field | left at | `doPostPresetLoadSteps()` writes |
+|---|---|---|
+| `VDS_PK_LB_GAIN`, `VDS_PK_LH_GAIN` | 0 | 22, 10 |
+| `VDS_D_RAM_BYPS`, `VDS_UV_STEP_BYPS` | 0 | 1, 1 |
+| `VDS_FRAME_RST`, `VDS_FRAME_NO`, `VDS_FR_SELECT` | 0 | 4, 1, 1 |
+| `PB_CUT_REFRESH`, `PB_REQ_SEL`, `CAP_STATUS_SEL` | 0 | 1, 3, 1 |
+| `DEC_IDREG_EN`, `DEC_WEN_MODE` | 0 | 1, 1 |
+| `DEC_TEST_ENABLE` | 1 | 0 |
+| `PLL_R`, `PLL_S` | 0 | 1, 2 |
+
+The same set on two independently produced boots. Selecting any input repairs it
+for the life of the boot, because the chip keeps its registers.
+
+**This is not the green screen above**: writing the set either way moves no
+picture. What it costs is the peaking, the line filter and the frame sequencing.
+
+`PLL_R`, `PLL_S`, `DEC_IDREG_EN` and `DEC_WEN_MODE` are raw `GBS::` writes in
+the sketch; the rest already go through `FrameBuffer`, `VideoProcessor` and
+`Adc`, orchestrated from the sketch. Absorbing `doPostPresetLoadSteps()` into
+the engine is what removes the asymmetry, because the engine's half of the solve
+is input-symmetric already and only the sketch's half is not.
+
 
 ### The HC32 stops following input selections, and only a true power cycle returns it
 
