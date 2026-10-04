@@ -1,8 +1,11 @@
 #ifndef TV5725_VIDEO_PATH_H_
 #define TV5725_VIDEO_PATH_H_
 
-// Where the geometry meets the TV5725's registers, and the only place they meet.
-// docs/firmware-geometry-engine.md
+// Setting the chip up for a source: the orchestration of a video mode change,
+// not the arithmetic alone. It is where the geometry meets the TV5725's
+// registers and the only place they meet, and it is also what sequences the
+// change itself -- what is re-solved, in what order, and what the video route
+// becomes. docs/firmware-geometry-engine.md
 
 #include <Arduino.h>   // `boolean`
 #include <stdint.h>
@@ -33,6 +36,12 @@ class InputFormatter;
     in the chosen output mode. It solves the sampling clock, the output raster,
     the display clock and both windows from a measurement and a framing, and
     owns the route the video takes -- scaled, or handed to the panel.
+
+    **It is the orchestrator of a mode change, not a solver the sketch drives.**
+    Reading it as the geometry alone is what leaves setup sequences in the
+    sketch: deciding the order a change is applied in is this class's job, and a
+    step that belongs to putting a source on screen belongs here whether or not
+    it computes anything.
 
     It measures nothing. Every characteristic of the source arrives from
     VideoSourceAcquisition, which owns the measuring.
