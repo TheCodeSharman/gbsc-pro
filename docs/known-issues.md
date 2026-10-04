@@ -1351,6 +1351,28 @@ two trials and is worth repeating before being leaned on.
 frame readable off the USB capture.
 `docs/investigations/the-green-ypbpr-boot-is-outside-the-register-file.md`.
 
+### A non-component source never gets the default sync-on-green level
+
+`doPostPresetLoadSteps()` picks the level with a branch whose second arm cannot
+be reached:
+
+```cpp
+if (rto->inputIsYpBpR)       { Tv5725::SyncOnGreen::choose(14); }
+else if (rto->inputIsYpBpR)  { Tv5725::SyncOnGreen::choose(13); }
+```
+
+The commented-out original beside it reads `== false`, so the negation was lost.
+14 is `SyncOnGreen::ComponentLevel` and 13 is `DefaultLevel`, written as bare
+numbers, which is why the two arms do not read as obviously the same test.
+
+**It does not reach the component path**: detection's YPbPr branch already
+chooses `ComponentLevel`, so a YPbPr source lands on 14 either way. What it
+costs is an RGB source, which keeps whatever level was last in force -- 14 after
+any YPbPr excursion -- rather than being put back to the default.
+
+Fixing it is a behaviour change for every RGB source, so it wants a bench check
+on both sync types rather than only the compile.
+
 ### The boot selects an input differently from every other caller
 
 `/input`, the OLED and the IR handler all reach `applyInputSelection()`. The boot
