@@ -340,3 +340,32 @@ def _restores(host, where, command, lines, was, wanted, named):
     assert back, (
         f"slot {SLOT_CHARACTER} did not give {named} back its own framing: "
         f"wanted {wanted}, at {framing_of(get_json(host, '/geometry')[1])}")
+
+
+def test_selecting_a_slot_restores_what_it_holds(host, source, preset_save,
+                                                 framing_guard):
+    """Choosing a slot IS loading it. A slot keeps the user's framing for every
+    source it was stored against, so arriving on one has to put the picture
+    where that slot left it -- without a second command nobody knows to send.
+    """
+    select_slot(host, SLOT_CHARACTER)
+    reset_framing(host)
+    tuned = tune_the_framing(host)
+
+    assert get(host, SAVE_COMMAND)[0] == 200
+    time.sleep(SETTLE_SECONDS)
+
+    default = reset_framing(host)
+    assert default is not None, "the framing never went back to its default"
+    assert not framing_matches(default, tuned), (
+        "the reset left the framing where the tuning put it, so nothing below "
+        "can tell a restore from a reset that did nothing")
+
+    select_slot(host, SLOT_CHARACTER)
+    back = wait_for(
+        lambda: framing_of(get_json(host, "/geometry")[1]) if framing_matches(
+            framing_of(get_json(host, "/geometry")[1]), tuned) else None,
+        timeout=SETTLE_SECONDS + 10.0)
+    assert back is not None, (
+        f"selecting slot {SLOT_CHARACTER} did not restore its framing: "
+        f"wanted {tuned}, at {framing_of(get_json(host, '/geometry')[1])}")
