@@ -157,22 +157,29 @@ remaining evidence points at. It is not yet proven to be the green: `/sc?~`
 resets the sync processor without curing it, so the reference clock and the
 frame together are the part not yet tried.
 
-## The cure is not deterministic, and that weakens every negative
+## The cure needs an acquisition on the other input
 
-The `vga` round trip cured the green first time, repeatedly, and then did not:
-one attempt left the picture a dim green field with `vga` failing to acquire at
-all, and a second attempt immediately afterwards cured it. Nothing was different
-between them.
+Five boots, each walked through the candidates in turn:
 
-**So a single failed attempt does not distinguish "does not cure" from "did not
-cure this time".** Every row of the table above rests on one or two trials, and
-the ones carrying the most weight -- the detection pass, the bounce, the `av`
-excursion -- are the ones most worth repeating before being relied on.
+| | |
+|---|---|
+| boots that came up faulted | 5 of 5 |
+| cured by `/sc?~` | 0 of 5 |
+| cured by the round trip | 5 of 5 |
+| round trips needed | 1, 1, 1, 3, 1 |
 
-It also accounts for the family of wrong states. A boot onto `ypbpr` produces a
-bright green field, a dim one or no output at all, with the source untouched
-throughout, which is what a settling race looks like and is not what a
-deterministic difference in configuration looks like.
+The trial needing three spent the first two with `vga` reporting no rate at all,
+and went clean on the attempt where `vga` acquired. **Across every trial the
+round trip cured the fault whenever `vga` acquired and never when it did not**,
+so what is unreliable is the acquisition rather than the cure.
+
+That is the sharper statement, and it moves the question: a cure which needs the
+other input to have genuinely acquired is not explained by any register the
+round trip writes, because those are written either way. It is explained by the
+part that decides whether a signal arrives at all.
+
+A boot lands on a bright green field, a dim one or no output, with the source
+untouched throughout -- a family of wrong analog states rather than one.
 
 ## Open
 

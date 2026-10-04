@@ -1338,13 +1338,26 @@ states.
 | `/input?src=av` excursion, then back | HC32 and scaler | no |
 | `/input?src=vga` then back | HC32 and scaler | **usually** |
 
-**THE CURE IS NOT DETERMINISTIC, SO ONE FAILED ATTEMPT PROVES NOTHING.** The
-round trip cured it first time and repeatedly, then failed once with `vga` not
-acquiring at all and succeeded on the next attempt with nothing changed between.
-A boot likewise lands on a bright green field, a dim one or no output, with the
-source untouched -- a family of wrong states rather than one, which is what a
-settling race looks like. Every "does not clear it" row above rests on one or
-two trials and is worth repeating before being leaned on.
+**MEASURED OVER FIVE BOOTS.** Every one faulted, none was cured by a detection
+pass, and every one was cured by the round trip:
+
+| | |
+|---|---|
+| boots that came up faulted | 5 of 5 |
+| cured by `/sc?~` | 0 of 5 |
+| cured by the round trip | 5 of 5 |
+| round trips needed | 1, 1, 1, 3, 1 |
+
+**WHAT IS UNRELIABLE IS `vga`'S ACQUISITION, NOT THE CURE.** The trial needing
+three attempts spent the first two with `vga` not acquiring at all, and the
+picture came good on the attempt where it did. Across every trial the round trip
+cured it whenever `vga` acquired and never when it did not, so the cure is
+deterministic given an acquisition on the other input -- and needing one is what
+points back at the HC32 rather than at anything the round trip writes.
+
+A boot lands on a bright green field, a dim one or no output at all with the
+source untouched, so the fault is a family of wrong analog states rather than
+one.
 
 **Open:** which switch state the HC32 holds, and why a boot reaches it.
 `/avframe` makes both sweepable, the frames being enumerable and the emitted
