@@ -192,6 +192,31 @@ public:
     typedef UReg<0x05, 0x1F, 1, 1> DEC2_BYPS;                         // The 2x to 1x decimator bypass enable When 1, the 2x to 1x
                                                                       // decimator hypass
 
+    typedef UReg<0x05, 0x1E, 7, 1> DEC_WEN_MODE;                      // Write enable mode enable. When this bit is 1, then
+                                                                      // decimator will drop data by write enable signal generated
+                                                                      // by horizontal sync, else write enable is not used
+
+    typedef UReg<0x05, 0x1F, 7, 1> DEC_IDREG_EN;
+
+    typedef UReg<0x05, 0x64, 0, 8> ADC_UNUSED_64;
+    typedef UReg<0x05, 0x65, 0, 8> ADC_UNUSED_65;
+    typedef UReg<0x05, 0x66, 0, 8> ADC_UNUSED_66;
+    typedef UReg<0x05, 0x67, 0, 16> ADC_UNUSED_67;
+
+    // s5_64..67, which RD-5725-1.1 names and describes nothing of. Cleared at
+    // every setup because a preset table used to.
+    static void clearUnusedRegisters();
+
+    // Lock enable, after the PLL has been taken out of reset.
+    static void enablePll();
+
+    // The loop filter alone. PLLAD_KS and PLLAD_CKOS share s5_16 with it and
+    // belong to applySampleRate().
+    static void applyPllLoopFilter();
+
+    // The decimator's write-enable and ID-register modes.
+    static void applyDecimatorModes();
+
     // The analog input mux, and whether sync-on-green is extracted. Separate
     // because the mux is written LAST of the three registers an input choice
     // decides: the sync path is configured before the input is connected to it.

@@ -1207,3 +1207,46 @@ TEST_CASE("the reference clock is latched, so the PLL leaves on it")
 
     CHECK(lastWriteOf<Adc::PLLAD_MD>() < latchRisingEdge());
 }
+
+TEST_CASE("the unused ADC registers are cleared together")
+{
+    Wire.reset();
+
+    Tv5725::Adc::clearUnusedRegisters();
+
+    CHECK(Tv5725::Adc::ADC_UNUSED_64::read() == 0);
+    CHECK(Tv5725::Adc::ADC_UNUSED_65::read() == 0);
+    CHECK(Tv5725::Adc::ADC_UNUSED_66::read() == 0);
+    CHECK(Tv5725::Adc::ADC_UNUSED_67::read() == 0);
+}
+
+TEST_CASE("the PLL loop filter is the only thing its write touches")
+{
+    Wire.reset();
+    Tv5725::Adc::PLLAD_KS::write(2);
+
+    Tv5725::Adc::applyPllLoopFilter();
+
+    CHECK(Tv5725::Adc::PLLAD_R::read() == 3);
+    CHECK(Tv5725::Adc::PLLAD_S::read() == 3);
+    CHECK(Tv5725::Adc::PLLAD_KS::read() == 2);
+}
+
+TEST_CASE("the decimator modes are put in force together")
+{
+    Wire.reset();
+
+    Tv5725::Adc::applyDecimatorModes();
+
+    CHECK(Tv5725::Adc::DEC_IDREG_EN::read() == 1);
+    CHECK(Tv5725::Adc::DEC_WEN_MODE::read() == 1);
+}
+
+TEST_CASE("the PLL lock enable is set on its own")
+{
+    Wire.reset();
+
+    Tv5725::Adc::enablePll();
+
+    CHECK(Tv5725::Adc::PLLAD_LEN::read() == 1);
+}

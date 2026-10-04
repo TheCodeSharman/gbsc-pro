@@ -464,14 +464,31 @@ void Adc::applyDivider(uint16_t divider)
     latch();
 }
 
-void Adc::applyResetParameters()
+void Adc::clearUnusedRegisters()
 {
-    // The loop filter only. PLLAD_KS and PLLAD_CKOS share s5_16 with it and
-    // belong to applySampleRate(), which writes them from the crossover row
-    // immediately below.
+    ADC_UNUSED_64::write(0);
+    ADC_UNUSED_65::write(0);
+    ADC_UNUSED_66::write(0);
+    ADC_UNUSED_67::write(0);
+}
+
+void Adc::enablePll() { PLLAD_LEN::write(1); }
+
+void Adc::applyPllLoopFilter()
+{
     PLLAD_R::write(3);
     PLLAD_S::write(3);
+}
 
+void Adc::applyDecimatorModes()
+{
+    DEC_IDREG_EN::write(1);
+    DEC_WEN_MODE::write(1);
+}
+
+void Adc::applyResetParameters()
+{
+    applyPllLoopFilter();
     installReferenceSamplingClock();
 }
 

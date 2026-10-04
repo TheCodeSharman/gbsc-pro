@@ -104,6 +104,10 @@ public:
     // from the source's own timing.
     void handOver();
 
+    // The display PLL's skew controls, which a setup states once. Static, so a
+    // caller holding no generator can still put them in force.
+    static void applyPllSkew();
+
     // The seed the raster solve chose. A TARGET FREQUENCY, not a byte to write:
     // select() puts ExternalPclkIn in the register instead whenever a generator
     // is driving, so the register stops answering what the raster asked for.

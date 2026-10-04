@@ -657,15 +657,11 @@ public:
 // ADC REGISTERS
 
 
-    typedef UReg<0x05, 0x1E, 7, 1> DEC_WEN_MODE;                      // Write enable mode enable. When this bit is 1, then
-                                                                      // decimator will drop data by write enable signal generated
-                                                                      // by horizontal sync, else write enable is not used
 
 
 
                                                                       // space convert module bypass
 
-    typedef UReg<0x05, 0x1F, 7, 1> DEC_IDREG_EN;
 
 // SYNC_PROC REGISTERS
 
@@ -681,16 +677,12 @@ public:
 
 
 
-    typedef UReg<0x05, 0x64, 0, 8> ADC_UNUSED_64;
 
 
-    typedef UReg<0x05, 0x65, 0, 8> ADC_UNUSED_65;
 
 
-    typedef UReg<0x05, 0x66, 0, 8> ADC_UNUSED_66;
 
 
-    typedef UReg<0x05, 0x67, 0, 16> ADC_UNUSED_67;
 
 };
 

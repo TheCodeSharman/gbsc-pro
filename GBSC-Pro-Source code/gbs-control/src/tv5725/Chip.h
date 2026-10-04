@@ -173,6 +173,17 @@ public:
     // raster and the windows.
     static void init();
 
+    // The external clock input pad. Enabled wherever the display clock is the
+    // Si5351's rather than the part's own.
+    static void enableClockInputPad();
+
+    // HSOUT/VSOUT carrying the output's sync. Narrower than outputUp(), which
+    // also drives the sync pad -- that belongs to the arm, not to a setup.
+    static void enableOutputSync();
+
+    // The RGBS DACs. Narrower than outputUp() for the same reason.
+    static void powerDacs();
+
     // The DAC routes are ALTERNATIVES, and nothing outside this class clears
     // any of them, so each one clears the others. Two set at once sums the
     // paths at the DACs: the black level lifts and the colours desaturate while

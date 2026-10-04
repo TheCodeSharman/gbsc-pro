@@ -2419,11 +2419,8 @@ void doPostPresetLoadSteps()
 
     // if(Info_sate == 0)
     {
-        GBS::ADC_UNUSED_64::write(0);
-        GBS::ADC_UNUSED_65::write(0);
-        GBS::ADC_UNUSED_66::write(0);
-        GBS::ADC_UNUSED_67::write(0);
-        GBS::PAD_CKIN_ENZ::write(0);
+        Tv5725::Adc::clearUnusedRegisters();
+        Tv5725::Chip::enableClockInputPad();
 
         // BEFORE prepareSyncProcessor(), which is the per-load setup that does
         // not follow the sync type. Asked on every route rather than only the
@@ -2448,7 +2445,7 @@ void doPostPresetLoadSteps()
         }
 
         Tv5725::SyncProcessor::holdClamp();
-        GBS::OUT_SYNC_CNTRL::write(1); // 
+        Tv5725::Chip::enableOutputSync();
 
         if (rto->inputIsYpBpR == true) //&& Info_sate == 0 )//&& SeleInputSource == S_YUV)
         {
@@ -2549,15 +2546,12 @@ void doPostPresetLoadSteps()
         Tv5725::Chip::resetVideoBlocks();
 
         resetPLLAD();
-        GBS::PLLAD_LEN::write(1); //
+        Tv5725::Adc::enablePll();
 
         Tv5725::VideoProcessor::clockInputOnFallingEdge();
-        GBS::PLLAD_R::write(3);
-        GBS::PLLAD_S::write(3);
-        GBS::PLL_R::write(1);
-        GBS::PLL_S::write(2);
-        GBS::DEC_IDREG_EN::write(1);
-        GBS::DEC_WEN_MODE::write(1);
+        Tv5725::Adc::applyPllLoopFilter();
+        Tv5725::DisplayClock::applyPllSkew();
+        Tv5725::Adc::applyDecimatorModes();
 
         // **DO NOT DISABLE CAP_SAFE_GUARD_EN HERE.** Tv5725::FrameBuffer
         // owns that bit and switches it ON; a write here runs later in this
@@ -2587,7 +2581,7 @@ void doPostPresetLoadSteps()
         Tv5725::SyncProcessor::clampFromReferenceClock();
         Tv5725::SyncProcessor::applyDefaultClampWindow();
 
-        GBS::DAC_RGBS_PWDNZ::write(1); 
+        Tv5725::Chip::powerDacs();
 
 
         Tv5725::SyncProcessor::setHsyncOverflowProtect(false);

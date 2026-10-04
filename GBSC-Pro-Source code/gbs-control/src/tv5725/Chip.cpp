@@ -57,6 +57,12 @@ void Chip::padsToResetState()
     PAD_PLUP_ENZ::write(0);
 }
 
+void Chip::enableClockInputPad() { PAD_CKIN_ENZ::write(0); }
+
+void Chip::enableOutputSync() { OUT_SYNC_CNTRL::write(1); }
+
+void Chip::powerDacs() { DAC_RGBS_PWDNZ::write(1); }
+
 void Chip::outputDown()
 {
     OUT_SYNC_CNTRL::write(0);

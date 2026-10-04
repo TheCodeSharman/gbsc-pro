@@ -169,6 +169,12 @@ uint32_t DisplayClock::reset()
     return target;
 }
 
+void DisplayClock::applyPllSkew()
+{
+    GBS::PLL_R::write(1);
+    GBS::PLL_S::write(2);
+}
+
 uint32_t DisplayClock::hzNow() const { return hzNow_; }
 
 void DisplayClock::assumeHz(uint32_t hz) { hzNow_ = hz; }

@@ -310,3 +310,39 @@ TEST_CASE("the pads reach their reset state without disturbing the reserved bit"
     CHECK((Wire.bank[0][0x49] & 0x7f) == 0x1f);
     CHECK((Wire.bank[0][0x49] & 0x80) == 0x80);
 }
+
+// The setup sequence needs the output sync and the DACs on without handing back
+// the sync pad: the pad is the arm's, taken before a mode change and given back
+// once the setup has settled. outputUp() does all three, so a setup calling it
+// would present the output early.
+
+TEST_CASE("enabling the output sync leaves the sync pad where the arm put it")
+{
+    fresh();
+    Chip::PAD_SYNC_OUT_ENZ::write(1);
+
+    Chip::enableOutputSync();
+
+    CHECK(Chip::OUT_SYNC_CNTRL::read() == 1);
+    CHECK(Chip::PAD_SYNC_OUT_ENZ::read() == 1);
+}
+
+TEST_CASE("powering the DACs leaves the sync pad where the arm put it")
+{
+    fresh();
+    Chip::PAD_SYNC_OUT_ENZ::write(1);
+
+    Chip::powerDacs();
+
+    CHECK(Chip::DAC_RGBS_PWDNZ::read() == 1);
+    CHECK(Chip::PAD_SYNC_OUT_ENZ::read() == 1);
+}
+
+TEST_CASE("the clock input pad is enabled by clearing its disable")
+{
+    fresh();
+
+    Chip::enableClockInputPad();
+
+    CHECK(Chip::PAD_CKIN_ENZ::read() == 0);
+}
