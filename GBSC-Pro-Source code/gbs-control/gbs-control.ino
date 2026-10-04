@@ -136,8 +136,6 @@ struct runTimeOptions *rto = &rtos;
 #endif
 struct userOptions uopts;
 struct userOptions *uopt = &uopts;
-struct adcOptions adcopts;
-struct adcOptions *adco = &adcopts;
 struct avOptions avopts = {0, 0, 128, 128, 128, false, false, false};
 struct avOptions *avo = &avopts;
 
@@ -1142,9 +1140,7 @@ void setResetParameters()
     Tv5725::Deinterlacer::forgetSteering();
     rto->isValidForScalingRGBHV = false;          
 
-    adco->r_gain = 0;
-    adco->g_gain = 0;
-    adco->b_gain = 0;
+    Tv5725::Adc::forgetGain();
 
     GBS::ADC_UNUSED_64::write(0);
     GBS::ADC_UNUSED_65::write(0);
@@ -1270,9 +1266,7 @@ void toggleIfAutoOffset()
         GBS::IF_AUTO_OFST_EN::write(1);
         GBS::IF_AUTO_OFST_PRD::write(0);
     } else {
-        if (adco->r_off != 0 && adco->g_off != 0 && adco->b_off != 0) {
-            Tv5725::Adc::applyOffset(adco->r_off, adco->g_off, adco->b_off);
-        }
+        Tv5725::Adc::applyHeldOffset();
 
         GBS::IF_AUTO_OFST_EN::write(0);
         GBS::IF_AUTO_OFST_PRD::write(0);
@@ -1355,14 +1349,6 @@ void applyRGBPatches()
     if (uopt->wantOutputComponent) {
         applyComponentColorMixing();
     }
-}
-
-void setAdcGain(uint8_t gain)
-{
-    Tv5725::Adc::applyGain(gain, gain, gain);
-    adco->r_gain = gain;
-    adco->g_gain = gain;
-    adco->b_gain = gain;
 }
 
 void setAdcParametersGainAndOffset()
@@ -2369,11 +2355,7 @@ void applyStoredAdcGain()
         Tv5725::Adc::enableGainMeasurement(false);
         return;
     }
-    if (adco->r_gain == 0) {
-        setAdcGain(AUTO_GAIN_INIT);
-    } else {
-        Tv5725::Adc::applyGain(adco->r_gain, adco->g_gain, adco->b_gain);
-    }
+    Tv5725::Adc::applyHeldGain(AUTO_GAIN_INIT);
     Tv5725::Adc::enableGainMeasurement(true);
 }
 
@@ -2480,9 +2462,7 @@ void doPostPresetLoadSteps()
 
         applyStoredAdcGain();
 
-        if (adco->r_off != 0 && adco->g_off != 0 && adco->b_off != 0) {
-            Tv5725::Adc::applyOffset(adco->r_off, adco->g_off, adco->b_off);
-        }
+        Tv5725::Adc::applyHeldOffset();
 
         geometry.applyPictureFilters(uopt->wantVdsLineFilter, uopt->wantPeaking);
         geometry.applyOutputPictureFilters(uopt->wantSharpness, uopt->wantStepResponse);
@@ -2912,11 +2892,7 @@ void runAutoGain() //
                 limit_found = 0;
                 uint8_t level = GBS::ADC_GGCTRL::read();
                 if (level < 0xfe) {
-                    setAdcGain(level + 2);
-
-                    adco->r_gain = GBS::ADC_RGCTRL::read(); // ADC R 
-                    adco->g_gain = GBS::ADC_GGCTRL::read(); // ADC G 
-                    adco->b_gain = GBS::ADC_BGCTRL::read(); // ADC B 
+                    Tv5725::Adc::holdGain(level + 2, level + 2, level + 2);
 
                     printInfo();
                     delay(2);
@@ -3286,6 +3262,9 @@ void calibrateAdcOffset()
     uint16_t readout16 = 0;
     uint8_t missTargetCounter = 0;
     uint8_t readout = 0;
+    uint8_t redOffset = 0;
+    uint8_t greenOffset = 0;
+    uint8_t blueOffset = 0;
 
     Tv5725::Adc::applyGain(0x7F, 0x7F, 0x7F);
     Tv5725::Adc::applyOffset(0x7F, 0x3D, 0x7F);
@@ -3332,27 +3311,27 @@ void calibrateAdcOffset()
         }
         if (i == 0) {
 
-            adco->g_off = GBS::ADC_GOFCTRL::read();
+            greenOffset = GBS::ADC_GOFCTRL::read();
             GBS::ADC_GOFCTRL::write(0x7F);
             GBS::ADC_ROFCTRL::write(0x3D);
             Tv5725::Adc::DEC_TEST_SEL::write(2);
         }
         if (i == 1) {
-            adco->r_off = GBS::ADC_ROFCTRL::read();
+            redOffset = GBS::ADC_ROFCTRL::read();
             GBS::ADC_ROFCTRL::write(0x7F);
             GBS::ADC_BOFCTRL::write(0x3D);
             Tv5725::Adc::DEC_TEST_SEL::write(3);
         }
         if (i == 2) {
-            adco->b_off = GBS::ADC_BOFCTRL::read();
+            blueOffset = GBS::ADC_BOFCTRL::read();
         }
     }
 
     if (readout >= 0x52) {
-        adco->r_off = adco->g_off = adco->b_off = 0x40;
+        redOffset = greenOffset = blueOffset = 0x40;
     }
 
-    Tv5725::Adc::applyOffset(adco->r_off, adco->g_off, adco->b_off);
+    Tv5725::Adc::holdOffset(redOffset, greenOffset, blueOffset);
 }
 
 // What a stored output mode and pass-through preference have to tell the
@@ -3674,12 +3653,8 @@ void setup()
     Tv5725::SyncMeasurement::forget();
     Tv5725::SyncOnGreen::choose(5);          
 
-    adco->r_gain = 0;
-    adco->g_gain = 0;
-    adco->b_gain = 0;
-    adco->r_off = 0;
-    adco->g_off = 0;
-    adco->b_off = 0;
+    Tv5725::Adc::forgetGain();
+    Tv5725::Adc::forgetOffset();
 
     serialCommand = '@';
     userCommand = '@';
@@ -4543,7 +4518,8 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                 case 'T':; // SerialMprint(F("auto gain "));
                     if (uopt->enableAutoGain == 0) {
                         uopt->enableAutoGain = 1;
-                        setAdcGain(AUTO_GAIN_INIT);
+                        Tv5725::Adc::holdGain(AUTO_GAIN_INIT, AUTO_GAIN_INIT,
+                                              AUTO_GAIN_INIT);
                         Tv5725::Adc::enableGainMeasurement(true);
                         ; // SerialMprintln("on");
                     } else {
@@ -5386,12 +5362,12 @@ void handleType2Command(char argument)
             break;
         case 'n':; // SerialMprint(F("ADC gain++ : "));
             uopt->enableAutoGain = 0;
-            setAdcGain(GBS::ADC_RGCTRL::read() - 1);
+            Tv5725::Adc::stepGain(-1);
             ; // SerialMprintln(GBS::ADC_RGCTRL::read(), HEX);
             break;
         case 'o':; // SerialMprint(F("ADC gain-- : "));
             uopt->enableAutoGain = 0;
-            setAdcGain(GBS::ADC_RGCTRL::read() + 1);
+            Tv5725::Adc::stepGain(+1);
             ; // SerialMprintln(GBS::ADC_RGCTRL::read(), HEX);
             break;
         // 'A'-'D' were the border mask, removed: the engine computes the
@@ -5609,7 +5585,7 @@ void handleType2Command(char argument)
             // is the colour space's own.
             GBS::VDS_UCOS_GAIN::write(0x1C);
             GBS::VDS_VCOS_GAIN::write(0x29);
-            Tv5725::Adc::applyOffset(adco->r_off, adco->g_off, adco->b_off);
+            Tv5725::Adc::applyHeldOffset();
             geometry.colour().reset();
             applyColourBalance();
             saveUserPrefs();

@@ -1250,3 +1250,75 @@ TEST_CASE("the PLL lock enable is set on its own")
 
     CHECK(Tv5725::Adc::PLLAD_LEN::read() == 1);
 }
+
+// THE STORED CALIBRATION. The gain the auto-gain loop settles on and the black
+// level the offset calibration measures are facts about this board and this
+// input that only the ADC establishes, so the block that measures them holds
+// them. Zero means unmeasured, and the two sides differ in what that costs:
+// an unmeasured gain has a sensible place to start and an unmeasured offset
+// does not, 0x40 being the neutral point and 0 a rail.
+
+TEST_CASE("an unmeasured gain starts from the initial value, a held one from itself")
+{
+    Wire.reset();
+
+    SUBCASE("nothing held, so the search starts where the caller says") {
+        Adc::forgetGain();
+        Adc::applyHeldGain(0x48);
+
+        CHECK(Adc::ADC_RGCTRL::read() == 0x48);
+        CHECK(Adc::ADC_GGCTRL::read() == 0x48);
+        CHECK(Adc::ADC_BGCTRL::read() == 0x48);
+    }
+
+    SUBCASE("held, so the initial value is ignored") {
+        Adc::holdGain(0x51, 0x52, 0x53);
+        Adc::applyGain(0, 0, 0);
+        Adc::applyHeldGain(0x48);
+
+        CHECK(Adc::ADC_RGCTRL::read() == 0x51);
+        CHECK(Adc::ADC_GGCTRL::read() == 0x52);
+        CHECK(Adc::ADC_BGCTRL::read() == 0x53);
+    }
+}
+
+TEST_CASE("an unmeasured offset is left alone rather than written to the rail")
+{
+    Wire.reset();
+
+    SUBCASE("nothing held, so the neutral point the bring-up left stands") {
+        Adc::forgetOffset();
+        Adc::applyOffset(0x40, 0x40, 0x40);
+        Adc::applyHeldOffset();
+
+        CHECK(Adc::ADC_ROFCTRL::read() == 0x40);
+        CHECK(Adc::ADC_GOFCTRL::read() == 0x40);
+        CHECK(Adc::ADC_BOFCTRL::read() == 0x40);
+    }
+
+    SUBCASE("held, so the calibration goes back") {
+        Adc::holdOffset(0x3D, 0x42, 0x3E);
+        Adc::applyOffset(0x40, 0x40, 0x40);
+        Adc::applyHeldOffset();
+
+        CHECK(Adc::ADC_ROFCTRL::read() == 0x3D);
+        CHECK(Adc::ADC_GOFCTRL::read() == 0x42);
+        CHECK(Adc::ADC_BOFCTRL::read() == 0x3E);
+    }
+}
+
+TEST_CASE("a manual gain step moves from what is in force, and is then held")
+{
+    Wire.reset();
+    Adc::forgetGain();
+    Adc::applyGain(0x40, 0x40, 0x40);
+
+    Adc::stepGain(-1);
+    CHECK(Adc::ADC_RGCTRL::read() == 0x3F);
+
+    // Held, so a later re-apply keeps the step rather than the last hold.
+    Adc::applyGain(0, 0, 0);
+    Adc::applyHeldGain(0x48);
+    CHECK(Adc::ADC_GGCTRL::read() == 0x3F);
+    CHECK(Adc::ADC_BGCTRL::read() == 0x3F);
+}

@@ -535,6 +535,28 @@ public:
     // Arm the path the gain is measured through.
     static void enableGainMeasurement(bool on);
 
+    // THE STORED CALIBRATION. The gain the auto-gain loop settles on and the
+    // black level the offset calibration measures are facts about this board
+    // and this input that only the ADC can establish, so the block that
+    // measures them is what holds them. Zero means unmeasured.
+    //
+    // The two sides differ in what unmeasured costs, which is why only one of
+    // them takes a starting value: the gain search has a sensible place to
+    // begin and the caller states it, while an unmeasured offset is left alone
+    // because 0x40 is the neutral point and 0 is a rail.
+    static void holdGain(uint8_t r, uint8_t g, uint8_t b);
+    static void applyHeldGain(uint8_t initial);
+
+    // One step of the manual control, taken from what is IN FORCE rather than
+    // from the held value: the colour space writes these registers too, and
+    // the user is adjusting the picture in front of them.
+    static void stepGain(int8_t by);
+    static void forgetGain();
+
+    static void holdOffset(uint8_t r, uint8_t g, uint8_t b);
+    static void applyHeldOffset();
+    static void forgetOffset();
+
 private:
     // How many taps above the post divider a ratio asks for: one per doubling.
     static uint8_t stepsFor(uint8_t oversample);
@@ -545,6 +567,8 @@ private:
     static uint8_t oversampleInForce_;
     static uint16_t dividerInForce_;
     static bool phaseFound_;
+    static uint8_t gain_[3];
+    static uint8_t offset_[3];
 
 };
 

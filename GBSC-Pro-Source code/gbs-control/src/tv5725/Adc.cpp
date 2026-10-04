@@ -550,6 +550,49 @@ void Adc::applyOffset(uint8_t r, uint8_t g, uint8_t b)
     ADC_BOFCTRL::write(b);
 }
 
+uint8_t Adc::gain_[3] = {0, 0, 0};
+uint8_t Adc::offset_[3] = {0, 0, 0};
+
+void Adc::holdGain(uint8_t r, uint8_t g, uint8_t b)
+{
+    gain_[0] = r;
+    gain_[1] = g;
+    gain_[2] = b;
+    applyGain(r, g, b);
+}
+
+void Adc::applyHeldGain(uint8_t initial)
+{
+    if (gain_[0] == 0)
+        holdGain(initial, initial, initial);
+    else
+        applyGain(gain_[0], gain_[1], gain_[2]);
+}
+
+void Adc::stepGain(int8_t by)
+{
+    const uint8_t gain = ADC_RGCTRL::read() + by;
+    holdGain(gain, gain, gain);
+}
+
+void Adc::forgetGain() { gain_[0] = gain_[1] = gain_[2] = 0; }
+
+void Adc::holdOffset(uint8_t r, uint8_t g, uint8_t b)
+{
+    offset_[0] = r;
+    offset_[1] = g;
+    offset_[2] = b;
+    applyOffset(r, g, b);
+}
+
+void Adc::applyHeldOffset()
+{
+    if (offset_[0] != 0 && offset_[1] != 0 && offset_[2] != 0)
+        applyOffset(offset_[0], offset_[1], offset_[2]);
+}
+
+void Adc::forgetOffset() { offset_[0] = offset_[1] = offset_[2] = 0; }
+
 void Adc::enableGainMeasurement(bool on)
 {
     DEC_TEST_ENABLE::write(on ? 1 : 0);

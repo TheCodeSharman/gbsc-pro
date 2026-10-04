@@ -141,14 +141,4 @@ struct avOptions
 };
 
 // remember adc options across presets
-struct adcOptions
-{
-
-    uint8_t r_gain;
-    uint8_t g_gain;
-    uint8_t b_gain;
-    uint8_t r_off;
-    uint8_t g_off;
-    uint8_t b_off;
-};
 #endif
