@@ -1341,6 +1341,24 @@ states.
 frame readable off the USB capture.
 `docs/investigations/the-green-ypbpr-boot-is-outside-the-register-file.md`.
 
+### The boot selects an input differently from every other caller
+
+`/input`, the OLED and the IR handler all reach `applyInputSelection()`. The boot
+reaches `applySavedInputSource()`, which sends the same frame and writes the same
+input registers but omits the rest of it: `installReferenceSamplingClock()`,
+`inputFormatter.applyScan()`, `resetSyncProcessor()` and
+`sourceAbsence.selectionChanged()`.
+
+The consequence that is measured is the first one: the boot takes its opening
+measurement of the arriving source through whatever divider the chip was left
+holding rather than through a reference one, and a faulted boot's early samples
+read `270 lines x 121.42 Hz` against a source at 60. The
+`input selected: …, reference divider 2506` line is only ever emitted on the
+selection path.
+
+Nothing says why the two differ, which by the conventions is what means collapse
+them: the boot should select an input the way every other caller does.
+
 ### A boot that only ever detects `ypbpr` never runs `applyPresets()`
 
 `detectAndSwitchToActiveInput()`'s YPbPr branch sets the sync-on-green level and

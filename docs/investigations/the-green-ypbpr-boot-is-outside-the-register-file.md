@@ -101,13 +101,54 @@ may be inferred from it about whether the HC32 restarted. The green also
 survives a true power cycle, so it is not an artefact of resetting the ESP
 alone.
 
+## The frames move the switches, and no sequence of them is enough
+
+Swept against a faulted boot, each frame sent on its own with nothing else
+written. A flat field reads a high `cast` -- the spread between the brightest
+and dimmest channel -- and a low `spread`; a real picture is the reverse.
+
+| frame sent | emitted |
+|---|---|
+| `rgbs`, `rgsb`, `ypbpr` | dim field, `cast` 0.52, `spread` 8 |
+| `vga`, `sv`, `av` | nothing at all |
+| a clean picture, for scale | `cast` 0.13, `spread` 93 |
+
+So the switches answer the frames -- routing the S-Video or composite pair takes
+the output to black, and routing a component or RGB pair brings a field back --
+and **no sequence of frames alone reaches a correct picture**. `/input` does. The
+scaler therefore carries a second contribution that the frames leave stale.
+
+## The boot selects an input differently from every other caller
+
+`/input` reaches `applyInputSelection()`. The boot reaches
+`applySavedInputSource()`, which is a partial copy of it:
+
+| `applyInputSelection()` | `applySavedInputSource()` |
+|---|---|
+| sends the frame | sends the frame |
+| `Tv5725::Adc::installReferenceSamplingClock()` | — |
+| `inputFormatter.applyScan(BringUpDivider, …)` | — |
+| `resetSyncProcessor()` | — |
+| `sourceAbsence.selectionChanged()` | — |
+| `applyInputRegisters(settings)` | `applyInputRegisters(settings)` |
+
+The boot therefore takes its first measurement of the arriving source through
+whatever divider the chip was left holding, rather than through a reference one.
+The boot log reads that way: the early samples on a faulted boot are
+`270 lines x 121.42 Hz` against a source at 60, and the console's
+`input selected: …, reference divider 2506` line is only ever emitted on the
+selection path.
+
+Collapsing the two is what the conventions call for, and it is the candidate the
+remaining evidence points at. It is not yet proven to be the green: `/sc?~`
+resets the sync processor without curing it, so the reference clock and the
+frame together are the part not yet tried.
+
 ## Open
 
-Which switch state the HC32 holds is not established, and neither is why a boot
-reaches it. `/avframe` makes both sweepable: the frames are enumerable and the
-emitted frame is readable off the USB capture, so a sequence that restores the
-routing without the scaler moving would name the state.
-
-The neutral field the frames reach is not a correct picture either, and a
-detection pass after them does not finish it. Only the full round trip does, so
-the scaler carries a second contribution that the frames alone leave stale.
+Which switch state the HC32 holds is not established. A `/restart` reproduces a
+fault state without a bench trip, but **not the same one each time** -- a bright
+green field, a dim one and an all-black output have each followed a boot onto
+`ypbpr` with the source unchanged throughout, confirmed by a round trip
+restoring the picture after each. The fault is a family of wrong analog states
+rather than one.
