@@ -23,27 +23,11 @@
 
 namespace Tv5725 {
 
-// The modes the user can select
-enum PresetPreference : uint8_t {
-    Output960P = 0,
-    Output480P = 1,
-    OutputCustomized = 2,
-    Output720P = 3,
-    Output1024P = 4,
-    Output1080P = 5,
-    // 6 was OutputDownscale, which went with the preset tables.
-    Output576P = 7,
-    // 10 was OutputBypass. Handing the source to the panel is not a resolution,
-    // and stored in this field it destroyed the one the user chose -- there was
-    // nowhere else it was kept, so the way back had to invent one.
-    // docs/video-source-acquisition.md
-};
-
 // An output mode: its frame height, and the CEA-861 timings that place the sync
 // pulse inside it.
 //
-// Call forFrameHeight() to find the mode that owns a frame height, and forPreference() to
-// find the mode the user asked for.
+// Call fromName() to find the mode the user asked for, and forFrameHeight()
+// to find the one that owns a frame height.
 class OutputMode {
 public:
     // The standard's own raster, in its own pixels at its own clock: active
@@ -240,17 +224,9 @@ public:
     static const OutputMode *transmittableFor(const OutputMode *asked,
                                              float fieldRateHz);
 
-    // The mode a preference names. NULL for a custom preset, which is not a
-    // resolution. A preference is one height whatever the source runs at.
-    static const OutputMode *forPreference(PresetPreference presetPreference);
-
     // The mode that calls itself this, or NULL. The inverse of name(), so a
     // request names a mode the way the mode names itself.
     static const OutputMode *fromName(const char *name);
-
-    // The preference that selects this mode. False where none does, which is
-    // pass-through: handing the source to the encoder is not a resolution.
-    static bool preferenceFor(const OutputMode *mode, PresetPreference &found);
 
     // Calculates the output timings for the given frame rate. ceilingHz clamps
     // the display clock to usable maximum.

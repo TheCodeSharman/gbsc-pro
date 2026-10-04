@@ -153,8 +153,8 @@ char userCommand;
 // doing any of that in the handler touches the bus from the wrong context. The
 // route parses and queues; loop() selects.
 volatile uint8_t pendingInputSelection = VideoSourceSelection::None;
-// -1 is nothing asked for; any other value is a PresetPreference.
-volatile int8_t pendingOutputPreference = -1;
+// NULL is nothing asked for.
+const Tv5725::OutputMode *volatile pendingOutputMode = NULL;
 // 0 is nothing asked for; any other value is the slot character.
 volatile uint8_t pendingSlotSelection = 0;
 
@@ -378,7 +378,7 @@ uint8_t SeleInputSource = 0;
 // shorter file cannot be a whole one, whatever the filesystem says about the
 // open, so a file written by a build with a different field set is rejected and
 // the defaults stand.
-#define PREFS_BYTES 38
+#define PREFS_BYTES 46
 
 // Set when this boot could not read the preferences file. Everything running
 // afterwards is on defaults that were never the user's, so nothing may write
@@ -451,15 +451,13 @@ static void bootLogAppend(const char *data, size_t len)
 // written raw -- so byte 0 is the one position that can be asserted on, and
 // "not all bytes identical" rules out erased flash and zero fill.
 //
-// Byte 0 is `presetPreference + '0'` and a preference names a resolution, so it
-// is a digit. It was not always: pass-through used to be stored in the same
-// field as the resolutions, at 10, which encodes as ':' -- so the bound here had
-// to admit one, and a digits-only bound rejected a file this firmware had
-// written. A rejected file is what stops saveUserPrefs() writing at all,
-// including the save behind "restore defaults".
+// Byte 0 is the first character of the chosen output mode's name, and every
+// mode names itself with a leading digit. A rejected file is what stops
+// saveUserPrefs() writing at all, including the save behind "restore
+// defaults", so the bound admits anything a mode could be called.
 static bool prefsLookPlausible(const uint8_t *buf)
 {
-    if (buf[0] < '0' || buf[0] > (uint8_t)('0' + Output576P)) {
+    if (buf[0] < '0' || buf[0] > '9') {
         return false;
     }
     for (uint8_t i = 1; i < PREFS_BYTES; i++) {
@@ -1119,12 +1117,21 @@ void zeroAll()
 
 // The preset id, as the tables carried it in their s1_2B byte: low nibble the
 // resolution, high nibble the source standard.
-// The output resolution asked for. Nothing qualifies it: a preference names a
-// height and the source does not get a say.
-static Tv5725::OutputChoice outputChoiceFor()
+// The output mode the user chose. Nothing qualifies it: it names a height and
+// the source does not get a say. A stored name no mode answers to -- an older
+// file, or one written by a build with a mode this one lacks -- falls back
+// rather than leaving the engine with no raster to solve.
+static const Tv5725::OutputMode *chosenOutputMode()
 {
-  return Tv5725::OutputChoice(
-      (Tv5725::PresetPreference)uopt->presetPreference);
+  const Tv5725::OutputMode *mode =
+      Tv5725::OutputMode::fromName(uopt->outputResolution);
+  return mode != NULL ? mode : &Tv5725::Mode1080p;
+}
+
+void chooseOutputMode(const Tv5725::OutputMode *mode)
+{
+  strncpy(uopt->outputResolution, mode->name(), OutputResolutionBytes - 1);
+  uopt->outputResolution[OutputResolutionBytes - 1] = '\0';
 }
 
 static bool outputIsAt1080p()
@@ -1149,12 +1156,12 @@ static void applyOutputResolutionSettings()
 //
 // s1_2B and s1_2C are cleared here because nothing else clears them and they
 // latch across loads.
-void loadComputedPreset(const Tv5725::OutputChoice &choice)
+void loadComputedPreset(const Tv5725::OutputMode *chosen)
 {
   // The engine is told the choice HERE, by the call whose job that is. It used
   // to arrive as an argument to the source event further down, which is how a
   // source event came to carry output state.
-  inputAcquisition.setOutputResolution(choice.resolve());
+  inputAcquisition.setOutputResolution(chosen);
 
   // The load rewrites the scanline stages, so whatever was applied is gone.
   Tv5725::Deinterlacer::forgetScanlines();
@@ -2427,9 +2434,9 @@ void debugPinProbe() {}
 // caller's, taken before this runs.
 static void changeOutputResolution()
 {
-    const Tv5725::OutputChoice choice = outputChoiceFor();
+    const Tv5725::OutputMode *const chosen = chosenOutputMode();
 
-    if (!inputAcquisition.setOutputResolution(choice.resolve())) {
+    if (!inputAcquisition.setOutputResolution(chosen)) {
         applyPresets();
         return;
     }
@@ -2851,8 +2858,7 @@ void applyPresets()
     // through is answered from the measurement that follows, by
     // VideoSourceAcquisition::passSourceThrough() -- the only caller with one.
     // docs/video-source-acquisition.md
-    const Tv5725::OutputChoice choice = outputChoiceFor();
-    loadComputedPreset(choice);
+    loadComputedPreset(chosenOutputMode());
 
     // The output an RGBHV source is entitled to. Held beside the source rather
     // than in the byte, which carried both facts in one number.
@@ -3471,7 +3477,7 @@ void calibrateAdcOffset()
 
 void loadDefaultUserOptions()
 {
-    uopt->presetPreference = Output1080P;
+    chooseOutputMode(&Tv5725::Mode1080p);
     uopt->enableFrameTimeLock = 0;
     uopt->presetSlot = 'A';        //
     uopt->frameTimeLockMethod = 0; 
@@ -3920,27 +3926,11 @@ void setup()
         }
 
         if (f && prefsReadable) {
-            uopt->presetPreference = (PresetPreference)(f.read() - '0'); 
-            if (uopt->presetPreference > 10)
-                uopt->presetPreference = Output1080P;
-            // 6 was OutputDownscale. No interface could select it, so nothing
-            // should have it saved -- but a file that does would name a
-            // resolution that does not exist and get no raster at all.
-            if (uopt->presetPreference == 6)
-                uopt->presetPreference = Output1080P;
-
-            // 2 was OutputCustomized: load the register dump saved for this
-            // standard. There are no register dumps any more, and a unit
-            // upgraded from a build that had them boots with 2 stored. Say so
-            // rather than silently landing on a different resolution than the
-            // one the display has been showing. The VALUE stays reserved
-            // because the preferences layout is positional; nothing selects it,
-            // because a slot now holds a framing and the output resolution is a
-            // preference of its own. docs/framing-presets.md
-            if (uopt->presetPreference == OutputCustomized) {
-                bootLogPrintf("PREFS: preset 2 was a saved register dump; using 1080p\n");
-                uopt->presetPreference = Output1080P;
-            }
+            for (uint8_t i = 0; i < OutputResolutionBytes - 1; ++i)
+                uopt->outputResolution[i] = (char)f.read();
+            uopt->outputResolution[OutputResolutionBytes - 1] = '\0';
+            if (Tv5725::OutputMode::fromName(uopt->outputResolution) == NULL)
+                chooseOutputMode(&Tv5725::Mode1080p);
 
             uopt->enableFrameTimeLock = (uint8_t)(f.read() - '0');
             if (uopt->enableFrameTimeLock > 1)
@@ -4069,13 +4059,13 @@ void setup()
             f.close();
         }
 
-        // The one line worth reading on a cold boot. presetPreference 5 with
+        // The one line worth reading on a cold boot. 1920x1080 with
         // frameTimeLock 0 is the defaults signature -- if it shows up here while
         // suspect=0, the read passed validation and still produced defaults, and
         // the guard above has another hole in it.
-        bootLogPrintf("PREFS: loaded presetPreference=%u frameTimeLock=%u slot=%u "
+        bootLogPrintf("PREFS: loaded output=%s frameTimeLock=%u slot=%u "
                "SeleInputSource=%u suspect=%d t=%lums\n",
-            (unsigned)uopt->presetPreference, (unsigned)uopt->enableFrameTimeLock,
+            uopt->outputResolution, (unsigned)uopt->enableFrameTimeLock,
             (unsigned)uopt->presetSlot, (unsigned)SeleInputSource,
             prefsAreSuspect ? 1 : 0, (unsigned long)millis());
 
@@ -4199,7 +4189,7 @@ void setup()
         // arm a solve without a resolution to solve to, and the only other
         // armer IS that preset load -- so a boot whose detection pass is
         // refused had no route to a picture for the life of the boot.
-        inputAcquisition.setOutputResolution(outputChoiceFor().resolve());
+        inputAcquisition.setOutputResolution(chosenOutputMode());
 
         delay(4);
         handleWiFi(1);
@@ -5384,15 +5374,14 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
             applySelectedSlot();
         }
 
-        if (pendingOutputPreference >= 0) {
-            const Tv5725::PresetPreference wanted =
-                (Tv5725::PresetPreference)pendingOutputPreference;
-            pendingOutputPreference = -1;
+        if (pendingOutputMode != NULL) {
+            const Tv5725::OutputMode *const wanted = pendingOutputMode;
+            pendingOutputMode = NULL;
 
             // A RESOLUTION IS A COMMAND TO SCALE: pass-through holds a source
             // off the resolution just chosen, so choosing one leaves it, and
             // before the change or the next pass routes the source back.
-            uopt->presetPreference = wanted;
+            chooseOutputMode(wanted);
             uopt->preferScalingRgbhv = 1;
             applyPassThroughPreference();
             changeOutputResolution();
@@ -5575,18 +5564,17 @@ void handleType2Command(char argument)
         case 's':
         case 'L': {
             if (argument == 'f')
-                uopt->presetPreference = Output960P; //Output960P; // 1280x960
+                chooseOutputMode(&Tv5725::Mode960p);
             if (argument == 'g')
-                uopt->presetPreference = Output720P; // 1280x720
+                chooseOutputMode(&Tv5725::Mode720p);
             if (argument == 'h')
-                uopt->presetPreference = Output480P; // 720x480
+                chooseOutputMode(&Tv5725::Mode480p);
             if (argument == 'j')
-                uopt->presetPreference = Output576P; // 768x576
+                chooseOutputMode(&Tv5725::Mode576p);
             if (argument == 'p')
-                uopt->presetPreference = Output1024P; // 1280x1024
+                chooseOutputMode(&Tv5725::Mode1024p);
             if (argument == 's')
-                uopt->presetPreference = Output1080P; // 1920x1080
-            // if (argument == 'L')
+                chooseOutputMode(&Tv5725::Mode1080p);
 
             // A RESOLUTION IS A COMMAND TO SCALE. Pass-through is the one thing
             // that can hold a source off the resolution just chosen -- it hands
@@ -6565,9 +6553,7 @@ void startWebserver()
     server.on("/output", HTTP_GET, [](AsyncWebServerRequest *request) {
         if (!request->hasParam("res")) {
             const Tv5725::OutputMode *const now = geometry.outputMode();
-            const Tv5725::OutputMode *const asked =
-                Tv5725::OutputMode::forPreference(
-                    (Tv5725::PresetPreference)uopt->presetPreference);
+            const Tv5725::OutputMode *const asked = chosenOutputMode();
             char body[160];
             snprintf_P(body, sizeof(body),
                 PSTR("{\"mode\":\"%s\",\"requested\":\"%s\",\"passThrough\":%s}"),
@@ -6581,15 +6567,14 @@ void startWebserver()
         const String value = request->getParam("res")->value();
         const Tv5725::OutputMode *const wanted =
             Tv5725::OutputMode::fromName(value.c_str());
-        Tv5725::PresetPreference preference = Tv5725::Output1080P;
-        if (!Tv5725::OutputMode::preferenceFor(wanted, preference)) {
+        if (wanted == NULL) {
             request->send(400, "application/json",
                 PSTR("{\"error\":\"unknown res: 1920x1080 1280x1024 1280x960 "
                      "1280x720 768x576 720x480\"}"));
             return;
         }
 
-        pendingOutputPreference = (int8_t)preference;
+        pendingOutputMode = wanted;
         char body[64];
         snprintf_P(body, sizeof(body), PSTR("{\"queued\":\"%s\"}"),
             wanted->name());
@@ -7531,7 +7516,8 @@ void saveUserPrefs()
     if (!f) {
         return;
     }
-    f.write(uopt->presetPreference + '0');
+    for (uint8_t i = 0; i < OutputResolutionBytes - 1; ++i)
+        f.write((uint8_t)uopt->outputResolution[i]);
     f.write(uopt->enableFrameTimeLock + '0');
     f.write(uopt->presetSlot);
     f.write(uopt->frameTimeLockMethod + '0');
@@ -7808,7 +7794,7 @@ static void handleRemoteKey()
 
             /////////new
             // loadDefaultUserOptions();
-            loadComputedPreset(Tv5725::OutputChoice(Output480P)); 
+            loadComputedPreset(&Tv5725::Mode480p); 
             doPostPresetLoadSteps();
             GBS::VDS_DIS_HB_ST::write(0x00);
             GBS::VDS_DIS_HB_SP::write(0xffff);

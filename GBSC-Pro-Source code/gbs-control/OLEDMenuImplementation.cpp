@@ -53,6 +53,7 @@ extern WebSocketsServer webSocket;
 extern OLEDMenuManager oledMenu;
 extern FrameTimeLock frameTimeLock;
 extern Tv5725::VideoPath geometry;
+extern void chooseOutputMode(const Tv5725::OutputMode *mode);
 unsigned long oledMenuFreezeStartTime;
 unsigned long oledMenuFreezeTimeoutInMS;
 
@@ -120,23 +121,23 @@ bool resolutionMenuHandler(OLEDMenuManager *manager, OLEDMenuItem *item, OLEDMen
     display->drawString(OLED_MENU_WIDTH / 2, 16, item->str);
     display->drawXbm((OLED_MENU_WIDTH - TEXT_LOADED_WIDTH) / 2, OLED_MENU_HEIGHT / 2, IMAGE_ITEM(TEXT_LOADED));
     display->display();
-    PresetPreference preset = PresetPreference::Output1080P;
+    const Tv5725::OutputMode *chosen = &Tv5725::Mode1080p;
     switch (item->tag)
     {
     case MT_1280x960:
-        preset = PresetPreference::Output960P;
+        chosen = &Tv5725::Mode960p;
         break;
     case MT1280x1024:
-        preset = PresetPreference::Output1024P;
+        chosen = &Tv5725::Mode1024p;
         break;
     case MT1280x720:
-        preset = PresetPreference::Output720P;
+        chosen = &Tv5725::Mode720p;
         break;
     case MT1920x1080:
-        preset = PresetPreference::Output1080P;
+        chosen = &Tv5725::Mode1080p;
         break;
     case MT_480s576:
-        preset = PresetPreference::Output480P;
+        chosen = &Tv5725::Mode480p;
         break;
     // MT_BYPASS names no resolution, and the branch below skips it: handing the
     // source to the panel is stored on its own, not in this field.
@@ -145,7 +146,7 @@ bool resolutionMenuHandler(OLEDMenuManager *manager, OLEDMenuItem *item, OLEDMen
     }
     if (item->tag != MT_BYPASS)
     {
-        uopt->presetPreference = preset;
+        chooseOutputMode(chosen);
         if (scalingRgbhv())
         {
             Tv5725::RgbhvOutput::chooseBypass();

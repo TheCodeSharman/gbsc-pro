@@ -385,26 +385,11 @@ static void dumpGrid()
     }
 }
 
-TEST_CASE("the output mode comes from the user's preference, not from the chip")
+TEST_CASE("480p and 576p are separate modes, neither of them a rate")
 {
-    // The mode arrives explicitly rather than being read back from
-    // GBS::VDS_VSYNC_RST, whose only writer is the preset table it replaces.
-    CHECK((OutputMode::forPreference(Output1080P) == &Mode1080p));
-    CHECK((OutputMode::forPreference(Output1024P) == &Mode1024p));
-    CHECK((OutputMode::forPreference(Output960P) == &Mode960p));
-    CHECK((OutputMode::forPreference(Output720P) == &Mode720p));
-}
-
-TEST_CASE("480p and 576p are separate preferences, neither of them a rate")
-{
-    // Output480P used to mean 480 active lines at 60 Hz and 576 at 50, so on a
-    // 50 Hz source there was no way to ask for 480p at all: the preference was
-    // itself the switch. They are two preferences now, and choosing between
-    // them by field rate is Tv5725::OutputChoice's -- the same shape as 960
-    // against 1024, and as escapable.
-    CHECK((OutputMode::forPreference(Output480P) == &Mode480p));
-    CHECK((OutputMode::forPreference(Output576P) == &Mode576p));
-
+    // One of them used to mean 480 active lines at 60 Hz and 576 at 50, so on a
+    // 50 Hz source there was no way to ask for 480p at all: the choice was
+    // itself the switch.
     CHECK(Mode480p.activeLines() == 480);
     CHECK(Mode480p.frameLines() == 525);    // 480 + 9 front + 6 sync + 30 back
     // 625 lines at 50 Hz is carried as VESA 800x600@56, not as CEA 576p, so the
@@ -432,26 +417,6 @@ TEST_CASE("forFrameHeight never answers bypass")
     // ModeBypass for a frame height of zero would make a chip with no raster
     // indistinguishable from one deliberately in bypass.
     CHECK((OutputMode::forFrameHeight(0) == 0));
-}
-
-TEST_CASE("a preference that is not a resolution resolves to no mode")
-{
-    // 0 leaves the caller to fall back rather than silently solving the wrong
-    // raster. Both values are cast rather than named because neither enumerator
-    // exists: 6 was OutputDownscale, which went with the preset tables, and 10
-    // was OutputBypass, which went because handing the source to the panel is
-    // not a resolution.
-    CHECK((OutputMode::forPreference((PresetPreference)6) == 0));
-    CHECK((OutputMode::forPreference((PresetPreference)10) == 0));
-}
-
-TEST_CASE("a custom preset resolves to no mode, because its bytes are the mode")
-{
-    // OutputCustomized is not a resolution -- it means "load the one I saved",
-    // and that file's own frame height is the answer. The caller reads it back,
-    // which is the last place that inherits on purpose; it goes when a saved
-    // slot records the inputs to the calculation instead of a register dump.
-    CHECK((OutputMode::forPreference(OutputCustomized) == 0));
 }
 
 int main(int argc, char **argv)
@@ -801,22 +766,3 @@ TEST_CASE("an unknown output name selects nothing")
     CHECK(OutputMode::fromName(0) == (const OutputMode *)0);
 }
 
-TEST_CASE("a mode names the preference that selects it")
-{
-    // The stored preference is what survives a boot, so a request that names a
-    // mode has to reach one. Derived from forPreference(), not a second table.
-    PresetPreference found = OutputCustomized;
-    CHECK(OutputMode::preferenceFor(&Mode1080p, found));
-    CHECK(found == Output1080P);
-    CHECK(OutputMode::preferenceFor(&Mode576p, found));
-    CHECK(found == Output576P);
-    CHECK(OutputMode::preferenceFor(&Mode480p, found));
-    CHECK(found == Output480P);
-}
-
-TEST_CASE("pass-through is not a preference")
-{
-    PresetPreference found = Output1080P;
-    CHECK_FALSE(OutputMode::preferenceFor(&ModeBypass, found));
-    CHECK_FALSE(OutputMode::preferenceFor(0, found));
-}

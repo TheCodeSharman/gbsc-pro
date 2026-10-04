@@ -8,7 +8,7 @@ namespace Tv5725 {
 // One flag: whether the output in force is scaling RGBHV.
 //
 // **NOTHING HERE READS AN OUTPUT RESOLUTION OR A FRAMING, WHICH THE NAME
-// SUGGESTS.** OutputChoice answers the resolution, and the standard byte's
+// SUGGESTS.** The chosen output mode answers the resolution, and the standard byte's
 // vocabulary that was the rest of this class is gone with the byte. The flag
 // is engine mode state and belongs to Tv5725::VideoPath.
 // docs/video-source-acquisition.md

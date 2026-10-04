@@ -4,20 +4,6 @@
 
 using Ascii8 = uint8_t;
 
-/// Output resolution requested by user, *given to* applyPresets(). Defined by
-/// OutputMode, which is the one thing that resolves a preference to a raster,
-/// and re-exported here because the sketch names it unqualified. An enumerator
-/// added there and not listed here fails at its first use site rather than
-/// silently reading as a different value.
-using Tv5725::PresetPreference;
-using Tv5725::Output960P;
-using Tv5725::Output480P;
-using Tv5725::OutputCustomized;
-using Tv5725::Output720P;
-using Tv5725::Output1024P;
-using Tv5725::Output1080P;
-using Tv5725::Output576P;
-
 enum INPUT_PresetPreference : uint8_t {
   MT_RGBs   ,
   MT_RGsB   ,
@@ -58,13 +44,18 @@ enum TVMODE_PresetPreference : uint8_t {
     
 };
 
+// Fixed width, because the preferences file is a flat byte stream. The
+// longest name a mode reports is nine characters.
+static const uint8_t OutputResolutionBytes = 10;
+
 // userOptions holds user preferences / customizations
 // userOptions 保存用户偏好/自定义设置
 struct userOptions
 {
-    // 0 - normal, 1 - x480/x576, 2 - customized, 3 - 1280x720, 4 - 1280x1024, 5 - 1920x1080,
-    // 10 - bypass
-    PresetPreference presetPreference;
+    // The output mode the user chose, as the mode names itself -- "1920x1080".
+    // OutputMode::fromName() resolves it; nothing between here and the engine
+    // carries a code for it.
+    char outputResolution[OutputResolutionBytes];
     // INPUT_/SETTING_/TVMODE_presetPreference were here: three members the OLED
     // menu assigned and NOTHING ever read, in RAM only -- not saved, not
     // broadcast, not branched on. The enums stay; the OLED uses them as locals,
@@ -90,7 +81,6 @@ struct userOptions
 };
 
 
-#include "src/tv5725/OutputChoice.h"
 #include "src/tv5725/DisplayClock.h"
 
 // runTimeOptions holds system variables

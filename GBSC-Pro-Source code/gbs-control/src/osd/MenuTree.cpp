@@ -211,7 +211,7 @@ const char *passThroughState(const MenuContext &context)
 
 // Pass Through sits with the resolutions because that is where a user looks for
 // it: it is the other destination the picture can have, even though
-// OutputChoice cannot express it and the preference behind it lives under
+// an output mode cannot express it and the preference behind it lives under
 // System Settings. Choosing any resolution above LEAVES it.
 const MenuItem Resolution[] = {
     MenuItem::action("1920x1080", 's'),

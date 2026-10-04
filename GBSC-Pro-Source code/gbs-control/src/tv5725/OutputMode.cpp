@@ -100,27 +100,6 @@ const OutputMode *OutputMode::transmittableFor(const OutputMode *asked,
     return 0;
 }
 
-const OutputMode *OutputMode::forPreference(PresetPreference presetPreference)
-{
-    if (presetPreference == Output1080P)
-        return &Mode1080p;
-    if (presetPreference == Output1024P)
-        return &Mode1024p;
-    if (presetPreference == Output960P)
-        return &Mode960p;
-    if (presetPreference == Output720P)
-        return &Mode720p;
-
-    // 480p and 576p are separate preferences: a preference names a resolution
-    // and nothing else, so either is selectable whatever the source runs at.
-    if (presetPreference == Output480P)
-        return &Mode480p;
-    if (presetPreference == Output576P)
-        return &Mode576p;
-
-    return 0;
-}
-
 const OutputMode *OutputMode::fromName(const char *name)
 {
     if (name == NULL)
@@ -129,20 +108,6 @@ const OutputMode *OutputMode::fromName(const char *name)
         if (strcmp(name, Scaled[i]->name()) == 0)
             return Scaled[i];
     return NULL;
-}
-
-bool OutputMode::preferenceFor(const OutputMode *mode, PresetPreference &found)
-{
-    if (mode == NULL || mode->isBypass())
-        return false;
-    for (uint8_t p = 0; p <= Output576P; ++p) {
-        const PresetPreference candidate = (PresetPreference)p;
-        if (forPreference(candidate) == mode) {
-            found = candidate;
-            return true;
-        }
-    }
-    return false;
 }
 
 const OutputMode *OutputMode::forFrameHeight(uint16_t frameLines)
