@@ -468,7 +468,7 @@ diagnosing "the unit" while able to observe roughly a third of it.
   `ASW_01 = 0, HS_IN = SOGIN` — it selects the dedicated HSync pin over
   sync-on-green), and the only one raising `asw_01` and `asw_04` together.
 - **Both MCUs persist "which input", separately, and neither can read the other
-  back.** The ESP keeps `SeleInputSource` in `/preferencesv2.txt`; the HC32 keeps
+  back.** The ESP keeps the `input` setting in `/preferences.txt`; the HC32 keeps
   `asw_01..04` in its own flash and restores them via `Video_ReadNot2()`. The ESP
   reconciles them at boot: `applySavedInputSource()` (
   after `calibrateAdcOffset()` and `setResetParameters()` so neither overwrites
@@ -711,13 +711,15 @@ mistake that has been made and cost a wrong diagnosis — bypass produces a work
   survived 311 -> 524 -> 311 unchanged at 1822 with the picture rolling, and
   `/sc?~` restored 2250 at once. **Judge the divider against the source**, not
   against whether it moved.
-- **Check the preferences before diagnosing anything.** A short read of
-  `/preferencesv2.txt` silently yields a full set of defaults, and one evening
-  produced three separate investigations with this single cause: the custom
-  preset "not loading" (`presetPreference` 5 means it was never looked for),
-  FrameSync "broken" (`enableFrameTimeLock` 0 means it never ran), and the input
-  not applying. Read byte 0 first — 2 is a saved setting, 5 is defaults:
-  `fs_read(host, "/preferencesv2.txt")`.
+- **Check the settings before diagnosing anything.** One evening produced three
+  separate investigations with a single cause -- a short read of the preferences
+  yielding a full set of defaults: the custom preset "not loading", FrameSync
+  "broken" (`frame-time-lock` 0 means it never ran), and the input not applying.
+  `/preferences.txt` is **keyed text** now, so it is read rather than decoded --
+  `read_settings(host)` for a dict, `setting(host, "input")` for one value -- and
+  a missing key costs its own setting only. **A file that does not reach its `end`
+  line is one the boot refused**, and a refused boot refuses every save
+  afterwards, "restore defaults" included. `docs/preferences-file.md`.
 - **USB backfeeds power.** A "power cycle" with the USB cable attached does not
   drop the rails, so the MS9288A and HC32F460 never reset. Pull mains *and* USB,
   and wait. Several apparent power-cycle results were nothing of the kind.
