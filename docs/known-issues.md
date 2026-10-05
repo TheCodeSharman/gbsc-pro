@@ -2941,30 +2941,34 @@ signal while every other register read correct. So a recovery that is reached
 for on a unit with no picture is also a way to arrive at one, and the toggle
 belongs after every `/sc?~` rather than only when the symptom appears.
 
-### The defaults signature cannot tell a wiped preferences file from a chosen one
+### ~~The defaults signature cannot tell a wiped preferences file from a chosen one~~
 
-`test_firmware.py::test_bootlog_reports_the_preferences_read` fails on the bench
-unit, and the guard rather than the unit is what needs deciding.
+**Closed.** The question this asked -- what discriminator separates a defaulted
+load from a correctly configured one -- the keyed file answers directly, and the
+guard asks it now.
 
-It reads `presetPreference=5 frameTimeLock=0 suspect=0` and asserts that the
-pair 5/0 must never appear with `suspect=0`, on the grounds that 5/0 is the
-defaults signature and a clean read should not produce it. But **`Output1080P`
-IS 5 and it is also `OutputChoice::ScaledDefault`**, and `enableFrameTimeLock` 0
-is the default too -- so 5/0 is equally what a unit deliberately set to 1080p
-with frame time lock off holds. The signature cannot separate the two.
+The entry recorded that `presetPreference=5 frameTimeLock=0 suspect=0` cannot
+distinguish the two, because `Output1080P` IS 5 and is also the default. That
+reasoning stands; what changed is that the trace no longer carries a value
+signature at all. The boot log reads:
 
-What the file actually holds, read at boot: 39 bytes of 39, `plausible=1`,
-`first=[35 30 41 30]` -- ASCII `5`, `0`, `A`, `0`. So byte 0 genuinely is 5,
-byte 1 is 0 and the slot is the default `A`. `SeleInputSource` reads 2, from the
-same block of the same file, so the read is faithful rather than defaulted.
+```
+PREFS: attempt 1 t=6944ms size=840 applied=34 end=1
+PREFS: loaded output=1920x1080 frameTimeLock=0 slot=65 SeleInputSource=2 suspect=0
+```
 
-`loadDefaultUserOptions()` does not touch `SeleInputSource` -- it is a global of
-its own, not part of `userOptions` -- so a saved input cannot be used to prove
-the rest was not defaulted.
+`applied` counts the keys a line actually set, and a defaulted load sets none,
+so **a boot that reaches the file's end with `suspect=0` and applied nothing is
+the regression** and nothing else is. `test_bootlog_reports_the_preferences_read`
+asserts that, and it had been failing only because it still matched the
+positional file's `got=`/`plausible=` wording.
 
-What would settle it: set a preference that is NOT the default, cold boot, and
-see whether it survives. If it does, the file is sound and the guard needs a
-discriminator that is not a value every correct unit may hold.
+**A non-default preference survives a WARM reset**, measured: `line-filter` set
+to 1 through `/uc?m`, the unit restarted over HTTP -- gone and back in 8.6 s --
+and it came up with `line-filter = 1` and `VDS_D_RAM_BYPS` 0, the filter in
+circuit. So the file is written and read faithfully. **This does not settle the
+cold-boot question**, which is a power-up race on the SPI flash and needs mains
+and USB pulled; nothing here was tested that way.
 
 ### A composite source can be acquired on the separate-sync configuration
 
