@@ -1018,7 +1018,7 @@ TEST_CASE("the per-load setup leaves the sync mode the sync type chose")
     Wire.poison(Poisons[0]);
     SyncProcessor::applyForSyncType(false, false);
 
-    SyncProcessor::prepare(false, false, false);
+    SyncProcessor::prepare(false, false);
 
     CHECK(SyncProcessor::SP_SOG_MODE::read() == 0u);
 }
@@ -1029,7 +1029,7 @@ TEST_CASE("the per-load setup leaves the coast enable the sync type chose")
     Wire.poison(Poisons[0]);
     SyncProcessor::applyForSyncType(false, false);
 
-    SyncProcessor::prepare(false, false, false);
+    SyncProcessor::prepare(false, false);
 
     CHECK(SyncProcessor::SP_NO_COAST_REG::read() == 1u);
 }
@@ -1048,7 +1048,7 @@ TEST_CASE("the per-load setup leaves the overflow protect the sync type chose")
     Wire.poison(Poisons[0]);
     SyncProcessor::applyForSyncType(false, false);
 
-    SyncProcessor::prepare(false, false, false);
+    SyncProcessor::prepare(false, false);
 
     CHECK(SyncProcessor::SP_H_PROTECT::read() == 0u);
 }
@@ -1083,4 +1083,76 @@ TEST_CASE("the sync type writes the pulse width difference with the coast")
     // source the engine cannot count. docs/known-issues.md
     CHECK(wasWritten<SyncProcessor::SP_DLT_REG>(true));
     CHECK(applied<SyncProcessor::SP_DLT_REG>(true) >= 0x70);
+}
+
+// The clamp and the coast window are readied for DETECTION, which is the only
+// path that measures a source through them with nothing writing them
+// afterwards. The per-load setup writes neither: the solve places both.
+// ../docs/investigations/the-detection-defaults-are-not-the-preset-paths.md
+
+template <typename Field>
+static bool prepareWrote(bool csync, bool serrated = false)
+{
+    uint32_t under[2];
+    for (int i = 0; i < 2; ++i) {
+        Wire.reset();
+        Wire.poison(Poisons[i]);
+        SyncProcessor::prepare(csync, serrated);
+        under[i] = Field::read();
+    }
+    return under[0] == under[1];
+}
+
+TEST_CASE("readying for detection places a coast window to count within")
+{
+    Wire.reset();
+
+    SyncProcessor::prepareForDetection();
+
+    CHECK(SyncProcessor::SP_H_CST_ST::read() == 0x10u);
+    CHECK(SyncProcessor::SP_H_CST_SP::read() == 0x100u);
+}
+
+TEST_CASE("readying for detection holds the clamp off the reference clock")
+{
+    Wire.reset();
+    Wire.poison(Poisons[0]);
+
+    SyncProcessor::prepareForDetection();
+
+    CHECK(SyncProcessor::SP_CLP_SRC_SEL::read() == 0u);
+    CHECK(SyncProcessor::SP_NO_CLAMP_REG::read() == 1u);
+    CHECK(SyncProcessor::SP_CLAMP_MANUAL::read() == 0u);
+    CHECK(SyncProcessor::SP_HCST_AUTO_EN::read() == 0u);
+}
+
+// s5_55 carries the auto-coast enable beside the two polarity auto-corrects,
+// which only the separate-sync branch writes -- so a byte write here would put
+// the chip's own polarity correct in force on a csync source.
+TEST_CASE("readying for detection leaves the polarity auto-correct alone")
+{
+    uint32_t under[2];
+    for (int i = 0; i < 2; ++i) {
+        Wire.reset();
+        Wire.poison(Poisons[i]);
+        SyncProcessor::prepareForDetection();
+        under[i] = SyncProcessor::SP_HS_POL_ATO::read() * 2
+                   + SyncProcessor::SP_VS_POL_ATO::read();
+    }
+
+    CHECK(under[0] != under[1]);
+}
+
+TEST_CASE("the per-load setup leaves the coast window to the solve")
+{
+    CHECK_FALSE(prepareWrote<SyncProcessor::SP_H_CST_ST>(false));
+    CHECK_FALSE(prepareWrote<SyncProcessor::SP_H_CST_SP>(false));
+    CHECK_FALSE(prepareWrote<SyncProcessor::SP_HCST_AUTO_EN>(false));
+}
+
+TEST_CASE("the per-load setup leaves the clamp to the window that places it")
+{
+    CHECK_FALSE(prepareWrote<SyncProcessor::SP_CLAMP_MANUAL>(false));
+    CHECK_FALSE(prepareWrote<SyncProcessor::SP_CLP_SRC_SEL>(false));
+    CHECK_FALSE(prepareWrote<SyncProcessor::SP_NO_CLAMP_REG>(false));
 }

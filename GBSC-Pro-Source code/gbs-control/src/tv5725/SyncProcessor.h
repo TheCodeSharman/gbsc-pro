@@ -274,15 +274,24 @@ public:
 
     // The per-load sync processor setup that does not follow the sync type.
     // `serrated` is a 15 kHz csync source whose vertical interval carries
-    // equalisation pulses; `rgbhvRoute` suppresses the clamp and protection
-    // setup that an RGBHV route owns itself.
+    // equalisation pulses.
     //
     // The sync-type fields are NOT written here. SP_SOG_MODE, the coast pair,
     // SP_NO_COAST_REG and SP_DIS_SUB_COAST are applyForSyncType()'s, and writing
     // them from a second place left a separate-sync source configured for csync
     // -- the sync processor then counts nothing and detection refuses the input.
     // docs/investigations/sp-sog-mode-had-two-owners.md
-    static void prepare(bool csync, bool serrated, bool rgbhvRoute);
+    //
+    // Nor are the clamp and the coast window, which are prepareForDetection()'s:
+    // on this path the solve places both afterwards.
+    static void prepare(bool csync, bool serrated);
+
+    // The clamp and the coast window an UNMEASURED source is counted through.
+    // Detection reads the sync processor, and boot's zeroAll() leaves it with no
+    // window to count within -- STATUS_SYNC_PROC_HTOTAL then reads a number that
+    // does not move when the divider is written and latched by hand.
+    // docs/investigations/the-detection-defaults-are-not-the-preset-paths.md
+    static void prepareForDetection();
 
     // The sync processor's half of entering pass-through: the coast pair off,
     // and the four polarity and swap bits put back rather than inherited,

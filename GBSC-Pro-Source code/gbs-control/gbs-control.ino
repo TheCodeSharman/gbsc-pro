@@ -1332,9 +1332,7 @@ static Tv5725::HdBypass::SourceSyncEdges sourceSyncEdges()
 void prepareSyncProcessor()
 {
     Tv5725::SyncProcessor::prepare(Tv5725::SyncMeasurement::isCsync(),
-                                   sourceHasSerratedSync(),
-                                   rgbhvBypass()
-                                       || geometry.scalingRgbhvInForce());
+                                   sourceHasSerratedSync());
 }
 
 void goLowPowerWithInputDetection()
@@ -1351,7 +1349,8 @@ void goLowPowerWithInputDetection()
     GBS::DAC_RGBS_PWDNZ::write(0);
 
     setResetParameters();
-    prepareSyncProcessor(); 
+    prepareSyncProcessor();
+    Tv5725::SyncProcessor::prepareForDetection();
     delay(100);
     rto->isInLowPowerMode = true;
 }
@@ -3747,12 +3746,14 @@ void setup()
         // BEFORE detection, which runs below and cannot measure a source
         // through a sync processor left at zeros: with the coast and the delta
         // registers clear, STATUS_SYNC_PROC_HTOTAL reads a number that does not
-        // move when the divider is written and latched by hand. The full
-        // bring-up runs after the last setResetParameters(), which is too late
-        // for this, and this block survives it -- SFTRST_SYNC_RSTZ is not one of
-        // the six that call holds.
+        // move when the divider is written and latched by hand. init() carries
+        // the delta register and prepareForDetection() the coast window. The
+        // full bring-up runs after the last setResetParameters(), which is too
+        // late for this, and this block survives it -- SFTRST_SYNC_RSTZ is not
+        // one of the six that call holds.
         Tv5725::SyncProcessor::init();
         prepareSyncProcessor();
+        Tv5725::SyncProcessor::prepareForDetection();
 
         uint8_t productId = GBS::CHIP_ID_PRODUCT::read();
         uint8_t revisionId = GBS::CHIP_ID_REVISION::read();
