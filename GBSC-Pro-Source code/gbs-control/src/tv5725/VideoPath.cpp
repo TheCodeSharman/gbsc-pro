@@ -115,14 +115,14 @@ void VideoPath::showOutput(bool show)
 {
     showing_ = show;
 
-    // The power path takes the whole output down and only a preset load ever
-    // wrote these two back, so a source that returns without one leaves a dark
+    // The power path takes the whole output down, and this is the only thing
+    // that puts the two back: a source that returns without it leaves a dark
     // panel with every geometry register correct. Written unconditionally,
     // because neither is what the encoder locks to -- the pad is, and it keeps
     // its own owner below for that reason.
     if (show) {
-        Chip::OUT_SYNC_CNTRL::write(1);
-        Chip::DAC_RGBS_PWDNZ::write(1);
+        Chip::enableOutputSync();
+        Chip::powerDacs();
     }
 
     if (!output_.usable() || mode_ == 0 || mode_->isBypass()) {

@@ -2371,7 +2371,6 @@ void doPostPresetLoadSteps()
         }
 
         Tv5725::SyncProcessor::holdClamp();
-        Tv5725::Chip::enableOutputSync();
 
         if (Tv5725::Adc::inputIsComponent()) {
             applyYuvPatches();
@@ -2467,9 +2466,6 @@ void doPostPresetLoadSteps()
 
         Tv5725::SyncProcessor::clampFromReferenceClock();
         Tv5725::SyncProcessor::applyDefaultClampWindow();
-
-        Tv5725::Chip::powerDacs();
-
 
         Tv5725::SyncProcessor::setHsyncOverflowProtect(false);
 

@@ -825,6 +825,11 @@ TEST_CASE("entering bypass leaves nothing to solve")
     // bits -- the pad the encoder locks to, OUT_SYNC_CNTRL and the DAC power.
     CHECK(registersWritten() == 3);
     CHECK(Wire.touched[0][0x49]);   // PAD_SYNC_OUT_ENZ
+
+    // Named rather than counted: this is the only writer of the two on the
+    // pass-through route, so a count of three is satisfied by any three bits.
+    CHECK(Chip::OUT_SYNC_CNTRL::read() == 1);
+    CHECK(Chip::DAC_RGBS_PWDNZ::read() == 1);
 }
 
 TEST_CASE("a mode with no timings is given up on, not asked about forever")
