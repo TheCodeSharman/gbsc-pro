@@ -4,6 +4,7 @@
 
 #include "../../options.h"
 #include "../tv5725/ColourBalance.h"
+#include "../tv5725/PictureOptions.h"
 #include "../videosource/VideoSourceSelection.h"
 
 namespace Prefs {
@@ -59,10 +60,11 @@ bool sameText(const char *a, const char *b)
 }  // namespace
 
 Settings::Settings(userOptions &options, avOptions &av,
-                   Tv5725::ColourBalance &colour, uint8_t &volume,
+                   Tv5725::ColourBalance &colour,
+                   Tv5725::PictureOptions &picture, uint8_t &volume,
                    uint8_t &legacyInput, uint8_t &brightnessSet)
-    : options_(options), av_(av), colour_(colour), volume_(volume),
-      legacyInput_(legacyInput), brightnessSet_(brightnessSet)
+    : options_(options), av_(av), colour_(colour), picture_(picture),
+      volume_(volume), legacyInput_(legacyInput), brightnessSet_(brightnessSet)
 {
 }
 
@@ -129,15 +131,26 @@ void Settings::eachScalerSetting(SettingVisitor &visit)
 
     visit.number("frame-time-lock", options_.enableFrameTimeLock, 1, 0);
     visit.number("frame-time-lock-method", options_.frameTimeLockMethod, 1, 0);
-    visit.number("auto-gain", options_.enableAutoGain, 1, 0);
     visit.number("scanlines", options_.wantScanlines, 1, 0);
     visit.number("scanline-strength", options_.scanlineStrength, 0x60, 0x30);
     visit.number("component-output", options_.wantOutputComponent, 1, 0);
     visit.number("deinterlace-mode", options_.deintMode, 2, 0);
-    visit.number("line-filter", options_.wantVdsLineFilter, 1, 0);
-    visit.number("peaking", options_.wantPeaking, 1, 1);
-    visit.number("sharpness", options_.wantSharpness, 1, 0);
-    visit.number("step-response", options_.wantStepResponse, 1, 1);
+    uint8_t lineFilter = picture_.lineFilter();
+    uint8_t peaking = picture_.peaking();
+    uint8_t sharpness = picture_.sharpness();
+    uint8_t stepResponse = picture_.stepResponse();
+    uint8_t autoGain = picture_.autoGain();
+    visit.number("auto-gain", autoGain, 1,
+                 Tv5725::PictureOptions::AutoGainDefault);
+    visit.number("line-filter", lineFilter, 1,
+                 Tv5725::PictureOptions::LineFilterDefault);
+    visit.number("peaking", peaking, 1, Tv5725::PictureOptions::PeakingDefault);
+    visit.number("sharpness", sharpness, 1,
+                 Tv5725::PictureOptions::SharpnessDefault);
+    visit.number("step-response", stepResponse, 1,
+                 Tv5725::PictureOptions::StepResponseDefault);
+    picture_.adopt(lineFilter, peaking, sharpness, stepResponse, autoGain);
+
     visit.number("six-tap", options_.wantTap6, 1, 1);
     visit.number("scale-rgbhv", options_.preferScalingRgbhv, 1, 0);
     visit.number("pal-force-60", options_.PalForce60, 1, 0);

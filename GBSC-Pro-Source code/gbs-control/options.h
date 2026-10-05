@@ -64,18 +64,13 @@ struct userOptions
     Ascii8 presetSlot;
     uint8_t enableFrameTimeLock;   //启用帧时间锁定
     uint8_t frameTimeLockMethod;  //帧时间锁定方法
-    uint8_t enableAutoGain;   //启用自动增益
     uint8_t wantScanlines;    //要扫描线
     uint8_t wantOutputComponent;  //要输出组件
     uint8_t deintMode;        //非int模式
-    uint8_t wantVdsLineFilter;  //想要 VdsLine过滤器
-    uint8_t wantPeaking;   //峰值
-    uint8_t wantSharpness;
     uint8_t wantTap6;
     uint8_t preferScalingRgbhv;
     uint8_t PalForce60;
     uint8_t disableExternalClockGenerator;  //禁用外部时钟生成器
-    uint8_t wantStepResponse;
     uint8_t enableCalibrationADC;  //启用校准 ADC
     uint8_t scanlineStrength;   //扫描线强度
 };

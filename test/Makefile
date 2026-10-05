@@ -280,7 +280,8 @@ settings:
 	  -o "$(OUT)/test_settings" \
 	  "$(HERE)/test_settings.cpp" src/prefs/Settings.cpp \
 	  src/prefs/SettingVisitor.cpp \
-	  src/tv5725/ColourBalance.cpp src/tv5725/VideoProcessor.cpp \
+	  src/tv5725/ColourBalance.cpp src/tv5725/PictureOptions.cpp \
+	  src/tv5725/VideoProcessor.cpp \
 	  src/videosource/VideoSourceSelection.cpp
 	@"$(OUT)/test_settings"
 

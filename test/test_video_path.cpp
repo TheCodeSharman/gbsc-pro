@@ -2641,3 +2641,40 @@ TEST_CASE("the next setup forgets what the last one established")
 
     CHECK_FALSE(engine.scalingRgbhvInForce());
 }
+
+TEST_CASE("the picture filters are applied from held state, not handed in")
+{
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+
+    Wire.reset();
+    engine.pictureOptions().setLineFilter(true);
+    engine.applyPictureFilters();
+    CHECK(VideoProcessor::VDS_D_RAM_BYPS::read() == 0);
+
+    engine.pictureOptions().setLineFilter(false);
+    engine.applyPictureFilters();
+    CHECK(VideoProcessor::VDS_D_RAM_BYPS::read() == 1);
+}
+
+TEST_CASE("the output filters are applied from held state, and 1080p still wins")
+{
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+
+    engine.pictureOptions().setStepResponse(true);
+
+    Wire.reset();
+    engine.setOutputMode(&Mode720p);
+    engine.applyOutputPictureFilters();
+    CHECK(VideoProcessor::VDS_UV_STEP_BYPS::read() == 0);
+
+    Wire.reset();
+    engine.setOutputMode(&Mode1080p);
+    engine.applyOutputPictureFilters();
+    CHECK(VideoProcessor::VDS_UV_STEP_BYPS::read() == 1);
+}

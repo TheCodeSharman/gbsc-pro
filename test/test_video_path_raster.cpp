@@ -732,7 +732,8 @@ TEST_CASE("the picture filter phase puts the user's choices in force")
     FramingTable framings;
     VideoPath engine(clock, sampling, framings, inputFormatter);
 
-    engine.applyPictureFilters(true, false);
+    engine.pictureOptions().adopt(true, false, false, false, false);
+    engine.applyPictureFilters();
 
     CHECK(Tv5725::VideoProcessor::VDS_D_RAM_BYPS::read() == 0);
     CHECK(Tv5725::VideoProcessor::VDS_PK_Y_H_BYPS::read() == 1);
@@ -747,16 +748,18 @@ TEST_CASE("the output picture filters take the 1080p question from the held mode
     SettledEngine settled;
 
     SUBCASE("at 1080p the step response is refused and the high gain drops") {
+        settled.engine.pictureOptions().adopt(false, false, false, true, false);
         settled.engine.setOutputMode(&Mode1080p);
-        settled.engine.applyOutputPictureFilters(false, true);
+        settled.engine.applyOutputPictureFilters();
 
         CHECK(Tv5725::VideoProcessor::VDS_PK_LH_GAIN::read() == 0x0A);
         CHECK(Tv5725::VideoProcessor::VDS_UV_STEP_BYPS::read() == 1);
     }
 
     SUBCASE("below it the step response is honoured") {
+        settled.engine.pictureOptions().adopt(false, false, false, true, false);
         settled.engine.setOutputMode(&Mode720p);
-        settled.engine.applyOutputPictureFilters(false, true);
+        settled.engine.applyOutputPictureFilters();
 
         CHECK(Tv5725::VideoProcessor::VDS_PK_LH_GAIN::read() == 0x18);
         CHECK(Tv5725::VideoProcessor::VDS_UV_STEP_BYPS::read() == 0);

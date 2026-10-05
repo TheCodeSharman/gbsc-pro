@@ -79,19 +79,21 @@ void VideoPath::applyFrameBufferRequests()
     FrameBuffer::applyRequestModes();
 }
 
-void VideoPath::applyPictureFilters(bool lineFilter, bool peaking)
+void VideoPath::applyPictureFilters()
 {
-    VideoProcessor::setLineFilter(lineFilter);
-    VideoProcessor::setPeaking(peaking);
+    VideoProcessor::setLineFilter(picture_.lineFilter());
+    VideoProcessor::setPeaking(picture_.peaking());
     VideoProcessor::setSixTapFilter(true);
 }
 
-void VideoPath::applyOutputPictureFilters(bool sharpness, bool stepResponse)
+void VideoPath::applyOutputPictureFilters()
 {
     const bool at1080p = mode_ == &Mode1080p;
-    VideoProcessor::setSharpness(sharpness, at1080p);
-    VideoProcessor::setStepResponse(stepResponse && !at1080p);
+    VideoProcessor::setSharpness(picture_.sharpness(), at1080p);
+    VideoProcessor::setStepResponse(picture_.stepResponse() && !at1080p);
 }
+
+PictureOptions &VideoPath::pictureOptions() { return picture_; }
 
 const PanAndZoom &VideoPath::framing() const { return framing_; }
 

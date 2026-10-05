@@ -30,6 +30,7 @@ struct avOptions;
 
 namespace Tv5725 {
 class ColourBalance;
+class PictureOptions;
 }
 
 namespace Prefs {
@@ -45,7 +46,8 @@ public:
     };
 
     Settings(userOptions &options, avOptions &av, Tv5725::ColourBalance &colour,
-             uint8_t &volume, uint8_t &legacyInput, uint8_t &brightnessSet);
+             Tv5725::PictureOptions &picture, uint8_t &volume,
+             uint8_t &legacyInput, uint8_t &brightnessSet);
 
     // Every setting to its default: what a unit with no file comes up on, and
     // what a retried read starts from.
@@ -77,6 +79,7 @@ private:
     userOptions &options_;
     avOptions &av_;
     Tv5725::ColourBalance &colour_;
+    Tv5725::PictureOptions &picture_;
     uint8_t &volume_;
     uint8_t &legacyInput_;
     uint8_t &brightnessSet_;

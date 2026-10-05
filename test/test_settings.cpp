@@ -20,6 +20,7 @@ FakeTwoWire Wire;
 #include "../GBSC-Pro-Source code/gbs-control/options.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/prefs/Settings.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/ColourBalance.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/PictureOptions.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/videosource/VideoSourceSelection.h"
 
 void tv5725Log(const char *) {}
@@ -29,6 +30,7 @@ struct Stored {
     userOptions options;
     avOptions av;
     Tv5725::ColourBalance colour;
+    Tv5725::PictureOptions picture;
     uint8_t volume;
     uint8_t legacyInput;
     uint8_t brightnessSet;
@@ -36,7 +38,8 @@ struct Stored {
 
     Stored()
         : volume(0), legacyInput(0), brightnessSet(0),
-          settings(options, av, colour, volume, legacyInput, brightnessSet)
+          settings(options, av, colour, picture, volume, legacyInput,
+                   brightnessSet)
     {
         VideoSourceSelection::forgetSelection();
         settings.defaults();
@@ -102,14 +105,14 @@ TEST_CASE("a saved file read back gives the settings it was written from")
 TEST_CASE("a missing key takes its default and leaves every other alone")
 {
     Stored read;
-    read.options.wantPeaking = 0;
+    read.picture.setPeaking(false);
     read.options.enableFrameTimeLock = 1;
 
     read.settings.defaults();
     read.load("frame-time-lock = 1\n");
 
     CHECK(read.options.enableFrameTimeLock == 1);
-    CHECK(read.options.wantPeaking == 1);
+    CHECK(read.picture.peaking());
 }
 
 TEST_CASE("an unknown key is skipped and the settings around it still apply")
@@ -178,7 +181,7 @@ TEST_CASE("a value past its bound reads as the default")
 
     CHECK(read.options.deintMode == 0);
     CHECK(read.volume == 0);
-    CHECK(read.options.wantPeaking == 1);
+    CHECK(read.picture.peaking());
 }
 
 TEST_CASE("a value that is not a number reads as the default")

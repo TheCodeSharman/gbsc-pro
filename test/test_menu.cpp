@@ -711,10 +711,10 @@ TEST_CASE("an item says what its option is currently set to")
 {
     Unit unit;
 
-    unit.options.wantVdsLineFilter = 1;
+    unit.solved.engine.pictureOptions().setLineFilter(true);
     CHECK(std::string(item("Line filter").valueText(unit.context)) == "ON");
 
-    unit.options.wantVdsLineFilter = 0;
+    unit.solved.engine.pictureOptions().setLineFilter(false);
     CHECK(std::string(item("Line filter").valueText(unit.context)) == "OFF");
 }
 
@@ -879,16 +879,16 @@ TEST_CASE("every picture option says what it is set to")
 {
     Unit unit;
 
-    unit.options.enableAutoGain = 1;
+    unit.solved.engine.pictureOptions().setAutoGain(true);
     CHECK(std::string(item("ADC gain").valueText(unit.context)) == "ON");
 
     unit.options.wantScanlines = 0;
     CHECK(std::string(item("Scanlines").valueText(unit.context)) == "OFF");
 
-    unit.options.wantPeaking = 1;
+    unit.solved.engine.pictureOptions().setPeaking(true);
     CHECK(std::string(item("Peaking").valueText(unit.context)) == "ON");
 
-    unit.options.wantStepResponse = 0;
+    unit.solved.engine.pictureOptions().setStepResponse(false);
     CHECK(std::string(item("Step response").valueText(unit.context)) == "OFF");
 }
 
@@ -912,10 +912,10 @@ TEST_CASE("sharpness reports the preference rather than the gain it writes")
     // writes the resting gain.
     Unit unit;
 
-    unit.options.wantSharpness = 1;
+    unit.solved.engine.pictureOptions().setSharpness(true);
     CHECK(std::string(item("Sharpness").valueText(unit.context)) == "ON");
 
-    unit.options.wantSharpness = 0;
+    unit.solved.engine.pictureOptions().setSharpness(false);
     CHECK(std::string(item("Sharpness").valueText(unit.context)) == "OFF");
 }
 
@@ -1326,8 +1326,8 @@ TEST_CASE("a dead option is not described")
 TEST_CASE("a row carries what its option is currently set to")
 {
     Unit unit;
-    unit.options.wantVdsLineFilter = 1;
-    unit.options.wantPeaking = 0;
+    unit.solved.engine.pictureOptions().setLineFilter(true);
+    unit.solved.engine.pictureOptions().setPeaking(false);
 
     MenuCursor cursor = cursorOn("Picture Settings", "Line filter");
 
@@ -1557,7 +1557,7 @@ TEST_CASE("an item that leads nowhere is not marked")
 TEST_CASE("a rule of hyphens leads from the label to the value")
 {
     Unit unit;
-    unit.options.wantVdsLineFilter = 1;
+    unit.solved.engine.pictureOptions().setLineFilter(true);
 
     MenuCursor cursor = cursorOn("Picture Settings", "Line filter");
 
@@ -1820,7 +1820,7 @@ static void drawOnPanel(const MenuPage &page, const MenuContext &context)
 TEST_CASE("the panel draws the level, the selected row and what it is set to")
 {
     Unit unit;
-    unit.options.wantPeaking = 1;
+    unit.solved.engine.pictureOptions().setPeaking(true);
 
     drawOnPanel(cursorOn("Picture Settings", "Peaking").page(), unit.context);
 

@@ -6,6 +6,7 @@
 #include "../tv5725/HdBypass.h"
 #include "../tv5725/OutputMode.h"
 #include "../tv5725/Nudge.h"
+#include "../tv5725/PictureOptions.h"
 #include "../tv5725/VideoPath.h"
 #include "MenuContext.h"
 
@@ -15,9 +16,14 @@ namespace {
 
 const char *onOff(uint8_t value) { return value ? "ON" : "OFF"; }
 
+const Tv5725::PictureOptions &picture(const MenuContext &context)
+{
+    return context.controls().engine().pictureOptions();
+}
+
 const char *autoGainText(const MenuContext &context)
 {
-    return onOff(context.options().enableAutoGain);
+    return onOff(picture(context).autoGain());
 }
 
 const char *scanlinesText(const MenuContext &context)
@@ -27,22 +33,22 @@ const char *scanlinesText(const MenuContext &context)
 
 const char *lineFilterText(const MenuContext &context)
 {
-    return onOff(context.options().wantVdsLineFilter);
+    return onOff(picture(context).lineFilter());
 }
 
 const char *peakingText(const MenuContext &context)
 {
-    return onOff(context.options().wantPeaking);
+    return onOff(picture(context).peaking());
 }
 
 const char *sharpnessText(const MenuContext &context)
 {
-    return onOff(context.options().wantSharpness);
+    return onOff(picture(context).sharpness());
 }
 
 const char *stepResponseText(const MenuContext &context)
 {
-    return onOff(context.options().wantStepResponse);
+    return onOff(picture(context).stepResponse());
 }
 
 // A balance reads as the number the chain's overlay drew, three digits wide.

@@ -18,6 +18,7 @@
 #include "OutputMode.h"
 #include "OutputTiming.h"
 #include "PanAndZoom.h"
+#include "PictureOptions.h"
 #include "Aspect.h"
 #include "InputScale.h"
 #include "ColourBalance.h"
@@ -77,18 +78,20 @@ public:
     // How the capture and playback stages ask for memory.
     void applyFrameBufferRequests();
 
-    // The display scaler's picture filters, as the user chose them. They arrive
-    // as arguments because the preference is the user option store's and not a
-    // fact about the source -- the engine applies a choice it does not hold.
+    // The display scaler's picture filters, as the user chose them.
     //
-    // The six-tap filter is forced ON and takes no argument, which overrides
-    // the preference the web UI reports. ../../../../docs/known-issues.md
-    void applyPictureFilters(bool lineFilter, bool peaking);
+    // The six-tap filter is forced ON, which overrides the preference the web
+    // UI reports. ../../../../docs/known-issues.md
+    void applyPictureFilters();
 
     // The two that follow the OUTPUT mode rather than the source, so an output
-    // change re-applies these alone. Whether the output is 1080p is this
-    // class's own fact, so the caller passes the preferences and nothing else.
-    void applyOutputPictureFilters(bool sharpness, bool stepResponse);
+    // change re-applies these alone.
+    void applyOutputPictureFilters();
+
+    // The user's picture filters, which a load must not put back to default --
+    // so they live here beside the colour and the framing, and the preferences
+    // pass adopts them rather than owning them.
+    PictureOptions &pictureOptions();
 
     // The shape the picture is shown in. Defaulted from the raster the source
     // matched, replaced by whatever the user last chose for that source, and
@@ -565,6 +568,7 @@ private:
     Aspect aspect_;
     InputScale inputScale_;
     ColourBalance colour_;
+    PictureOptions picture_;
     // The capturable region the last solve ran against, per axis: the
     // denominator a press converts its units into a proportion with.
     uint16_t usableHorizontal_, usableVertical_;

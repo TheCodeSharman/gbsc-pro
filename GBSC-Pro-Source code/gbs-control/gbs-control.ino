@@ -739,7 +739,8 @@ static const char SettingsFilePath[] = "/preferences.txt";
 // does not show two settings files and leave the live one in doubt.
 static const char LegacySettingsPath[] = "/preferencesv2.txt";
 
-Prefs::Settings settings(uopts, avopts, geometry.colour(), Volume,
+Prefs::Settings settings(uopts, avopts, geometry.colour(),
+                         geometry.pictureOptions(), Volume,
                          SeleInputSource, BriorCon);
 
 // The framing table, in its own file. Separate from the settings because it is
@@ -2275,7 +2276,7 @@ static void changeOutputResolution()
         return;
     }
 
-    geometry.applyOutputPictureFilters(uopt->wantSharpness, uopt->wantStepResponse);
+    geometry.applyOutputPictureFilters();
 
     // The raster moved, so the ratio the frequency lock steers by is stale.
     frameSync.cleanup();
@@ -2373,12 +2374,12 @@ void doPostPresetLoadSteps()
         // row. docs/investigations/the-decimators-filter.md
         geometry.inputTimingsChanged(Tv5725::Adc::OversampleAsClockAllows);
 
-        Tv5725::Adc::armGainMeasurement(uopt->enableAutoGain == 1);
+        Tv5725::Adc::armGainMeasurement(geometry.pictureOptions().autoGain());
 
         Tv5725::Adc::applyHeldOffset();
 
-        geometry.applyPictureFilters(uopt->wantVdsLineFilter, uopt->wantPeaking);
-        geometry.applyOutputPictureFilters(uopt->wantSharpness, uopt->wantStepResponse);
+        geometry.applyPictureFilters();
+        geometry.applyOutputPictureFilters();
 
         frameSync.cleanup();
         frameTimeLock.forgiveFailures();
@@ -2706,7 +2707,7 @@ void enterHdBypass()
 
     restartAfterBypassSwitch();
 
-    Tv5725::Adc::armGainMeasurement(uopt->enableAutoGain == 1);
+    Tv5725::Adc::armGainMeasurement(geometry.pictureOptions().autoGain());
     Tv5725::SyncOnGreen::putInForce();
 
     // The branch that sends a source here clears
@@ -3353,7 +3354,7 @@ void updateWebSocketData()
             if (uopt->wantTap6) {
                 toSend[4] |= (1 << 3);
             }
-            if (uopt->wantStepResponse) {
+            if (geometry.pictureOptions().stepResponse()) {
                 toSend[4] |= (1 << 4);
             }
 
@@ -4008,9 +4009,8 @@ void loop()
         // change reached without a preset load would otherwise leave the
         // peaking and the line filter at nothing.
         // docs/investigations/an-acquisition-without-a-preset-load-emits-a-flat-field.md
-        geometry.applyPictureFilters(uopt->wantVdsLineFilter, uopt->wantPeaking);
-        geometry.applyOutputPictureFilters(uopt->wantSharpness,
-                                           uopt->wantStepResponse);
+        geometry.applyPictureFilters();
+        geometry.applyOutputPictureFilters();
 
         // Rate steer last, after raster, clock and windows. The solve moved the
         // raster, so the ratio the frequency lock steers by is stale -- and
@@ -4039,7 +4039,7 @@ void loop()
     // other drift until a count is answered twice or not at all.
     if (rto->sourceDisconnected == false && rto->syncWatcherEnabled == true
         && inputAcquisition.runAdvanced()) {
-        if (uopt->enableAutoGain == 1 && !rto->sourceDisconnected && inputAcquisition.sourceIsPresent() && Tv5725::SyncProcessor::clampPlaced() && inputAcquisition.acquiredPasses() > 90 && Tv5725::Chip::hasPower()) {
+        if (geometry.pictureOptions().autoGain() && !rto->sourceDisconnected && inputAcquisition.sourceIsPresent() && Tv5725::SyncProcessor::clampPlaced() && inputAcquisition.acquiredPasses() > 90 && Tv5725::Chip::hasPower()) {
             if (Tv5725::Adc::dividerLatched(Tv5725::SyncProcessor::lineSamples())) {
                 const Tv5725::TestBus::Hold held;
                 Tv5725::Adc::DEC_TEST_SEL::write(1);
@@ -4309,8 +4309,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                             GBS::HD_V_OFFSET::write(GBS::HD_V_OFFSET::read() + 0x24);
                         }; // SerialMprintln("on");
                     } else {
-                        geometry.applyOutputPictureFilters(
-                            uopt->wantSharpness, uopt->wantStepResponse);
+                        geometry.applyOutputPictureFilters();
                         // The luma offset is the balance's, so leaving the view
                         // asks it rather than putting back a saved copy.
                         applyColourBalance();
@@ -4382,15 +4381,15 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     saveUserPrefs();
                     break;
                 case 'T':; // SerialMprint(F("auto gain "));
-                    if (uopt->enableAutoGain == 0) {
-                        uopt->enableAutoGain = 1;
+                    if (!geometry.pictureOptions().autoGain()) {
+                        geometry.pictureOptions().setAutoGain(true);
 
                         // Turning it ON restarts the search, where a preset
                         // load keeps whatever the loop settled on.
                         Tv5725::Adc::forgetGain();
                         Tv5725::Adc::armGainMeasurement(true);
                     } else {
-                        uopt->enableAutoGain = 0;
+                        geometry.pictureOptions().setAutoGain(false);
                         Tv5725::Adc::armGainMeasurement(false);
                     }
                     saveUserPrefs();
@@ -4517,11 +4516,11 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     Tv5725::MemoryBus::restart();
                     break;
                 case 'f':; // SerialMprint(F("peaking "));
-                    if (uopt->wantPeaking == 0) {
-                        uopt->wantPeaking = 1;
+                    if (!geometry.pictureOptions().peaking()) {
+                        geometry.pictureOptions().setPeaking(true);
                         Tv5725::VideoProcessor::setPeaking(true);
-                    } else if (!uopt->wantSharpness) {
-                        uopt->wantPeaking = 0;
+                    } else if (!geometry.pictureOptions().sharpness()) {
+                        geometry.pictureOptions().setPeaking(false);
                         Tv5725::VideoProcessor::setPeaking(false);
                     }
                     saveUserPrefs();
@@ -4837,9 +4836,9 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                 } break;
                 case 'V': {
                     ; // SerialMprint(F("step response "));
-                    uopt->wantStepResponse = !uopt->wantStepResponse;
-                    geometry.applyOutputPictureFilters(uopt->wantSharpness,
-                                                       uopt->wantStepResponse);
+                    geometry.pictureOptions().setStepResponse(
+                        !geometry.pictureOptions().stepResponse());
+                    geometry.applyOutputPictureFilters();
                     saveUserPrefs();
                 } break;
                 case ':':
@@ -5223,17 +5222,19 @@ void handleType2Command(char argument)
             cycleAspect();
             break;
         case 'm':; // SerialMprint(F("Line Filter: "));
-            uopt->wantVdsLineFilter = !uopt->wantVdsLineFilter;
-            Tv5725::VideoProcessor::setLineFilter(uopt->wantVdsLineFilter);
+            geometry.pictureOptions().setLineFilter(
+                !geometry.pictureOptions().lineFilter());
+            Tv5725::VideoProcessor::setLineFilter(
+                geometry.pictureOptions().lineFilter());
             saveUserPrefs();
             break;
         case 'n':; // SerialMprint(F("ADC gain++ : "));
-            uopt->enableAutoGain = 0;
+            geometry.pictureOptions().setAutoGain(false);
             Tv5725::Adc::stepGain(-1);
             ; // SerialMprintln(GBS::ADC_RGCTRL::read(), HEX);
             break;
         case 'o':; // SerialMprint(F("ADC gain-- : "));
-            uopt->enableAutoGain = 0;
+            geometry.pictureOptions().setAutoGain(false);
             Tv5725::Adc::stepGain(+1);
             ; // SerialMprintln(GBS::ADC_RGCTRL::read(), HEX);
             break;
@@ -5346,9 +5347,9 @@ void handleType2Command(char argument)
             saveUserPrefs();
             break;
         case 'W':
-            uopt->wantSharpness = uopt->wantSharpness ? 0 : 1;
-            geometry.applyOutputPictureFilters(uopt->wantSharpness,
-                                               uopt->wantStepResponse);
+            geometry.pictureOptions().setSharpness(
+                !geometry.pictureOptions().sharpness());
+            geometry.applyOutputPictureFilters();
             saveUserPrefs();
             break;
         // The colour balance. These six used to step VDS_Y_OFST, VDS_U_OFST and
@@ -6540,9 +6541,12 @@ void startWebserver()
         slotName.toCharArray(slotsObject.slot[slotIndex].name, sizeof(slotsObject.slot[slotIndex].name));
         slotsObject.slot[slotIndex].scanlines = uopt->wantScanlines;
         slotsObject.slot[slotIndex].scanlinesStrength = uopt->scanlineStrength;
-        slotsObject.slot[slotIndex].wantVdsLineFilter = uopt->wantVdsLineFilter;
-        slotsObject.slot[slotIndex].wantStepResponse = uopt->wantStepResponse;
-        slotsObject.slot[slotIndex].wantPeaking = uopt->wantPeaking;
+        slotsObject.slot[slotIndex].wantVdsLineFilter =
+            geometry.pictureOptions().lineFilter();
+        slotsObject.slot[slotIndex].wantStepResponse =
+            geometry.pictureOptions().stepResponse();
+        slotsObject.slot[slotIndex].wantPeaking =
+            geometry.pictureOptions().peaking();
 
         File slotsBinaryOutputFile = LittleFS.open(SLOTS_FILE, "w");
         slotsBinaryOutputFile.write((byte *)&slotsObject, sizeof(slotsObject));
@@ -7069,15 +7073,14 @@ bool applySelectedSlot()
         const SlotMeta &meta = slotsObject.slot[slot];
         uopt->wantScanlines = meta.scanlines;
         uopt->scanlineStrength = meta.scanlinesStrength;
-        uopt->wantVdsLineFilter = meta.wantVdsLineFilter;
-        uopt->wantStepResponse = meta.wantStepResponse;
-        uopt->wantPeaking = meta.wantPeaking;
+        geometry.pictureOptions().setLineFilter(meta.wantVdsLineFilter);
+        geometry.pictureOptions().setStepResponse(meta.wantStepResponse);
+        geometry.pictureOptions().setPeaking(meta.wantPeaking);
 
         if (!uopt->wantScanlines)
             disableScanlines();
-        geometry.applyPictureFilters(uopt->wantVdsLineFilter, uopt->wantPeaking);
-        geometry.applyOutputPictureFilters(uopt->wantSharpness,
-                                           uopt->wantStepResponse);
+        geometry.applyPictureFilters();
+        geometry.applyOutputPictureFilters();
     } else if (f) {
         f.close();
     }
