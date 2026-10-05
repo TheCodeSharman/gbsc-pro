@@ -1317,9 +1317,9 @@ and release, the scanlines and the re-lock in flight. The two acts outside
 `delayLock`, so the gate withheld nothing that the other re-lock path did not
 already do unguarded. One report, one response.
 
-**10. The RGBHV block**, to `PresetLoad` and `OutputChoice`, with the preset load
-becoming an injected action. The largest single piece, and the one that carried
-most of the standard byte.
+**10. The RGBHV block**, to `RgbhvOutput` for what the source is entitled to and
+`VideoPath` for what the output is doing. The largest single piece, and the one
+that carried most of the standard byte.
 
 **THE RASTER A SOURCE IS RUNNING HAS TO BE ESTABLISHED BY THE MEASUREMENT, NOT
 BY THE SOLVE.** `HdBypass`'s arms each carried a vertical blanking constant per
@@ -1833,15 +1833,14 @@ so a per-standard branch could be diffed on a bench with no source for it, and
 there are no per-standard branches left. `docs/testing.md` keeps what the
 facility learnt that is true of any trace comparison.
 
-**`Tv5725::PresetLoad` DID NOT SURVIVE AS A CONCEPT**, only as one flag. Keeping
-it with a byte-free signature would have preserved the idea that a load is
-chosen by classifying the source, which is the thing being retired. What is left
-is `scalingRgbhvInForce()` and its two setters -- engine mode state that belongs
-to `VideoPath`, and **not** `RgbhvOutput::isScaling()`, which says what the
-source is entitled to where this says what the last load enabled; the
-bypass-refused path sets them opposite. The 280/380 line buckets, the count a
-preset was chosen for and the instance half went earlier, none of them load
-bearing.
+**`Tv5725::PresetLoad` IS DELETED.** Keeping it with a byte-free signature would
+have preserved the idea that a load is chosen by classifying the source, which
+is the thing being retired. Its one surviving flag is
+`VideoPath::scalingRgbhvInForce()`, written by `setScalingRgbhv()` -- engine
+mode state, and **not** `RgbhvOutput::isScaling()`, which says what the source
+is entitled to where this says what the output is doing; the bypass-refused
+path sets them opposite. The 280/380 line buckets, the count a preset was
+chosen for and the instance half went earlier, none of them load bearing.
 
 **The engine no longer reads `PLLAD_MD` as an input.**
 `SourceMeasurement::adopt()` was the one place it did; it is `holdDivider()`

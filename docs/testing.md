@@ -117,7 +117,7 @@ and a test is not a build artefact.
 Two kinds:
 
 **Pure arithmetic** — `MemoryWindow`, `SdramTimings`, `OutputMode`, `SourceMeasurement`,
-`DisplayClock`, `PresetLoad`. No chip, no Arduino. This is where most logic
+`DisplayClock`. No chip, no Arduino. This is where most logic
 should live, and the pure/register split in `src/tv5725/` exists largely to put
 it there.
 

@@ -82,4 +82,4 @@ already in force. RGBHV with composite sync does not acquire on either build --
 
 `GBS_OPTION_SCALING_RGBHV` was a third spelling, in s1_2c, an address
 RD-5725-1.1 does not document. It has no readers and no declaration left:
-`PresetLoad` holds the state instead.
+`VideoPath` holds the state instead.
