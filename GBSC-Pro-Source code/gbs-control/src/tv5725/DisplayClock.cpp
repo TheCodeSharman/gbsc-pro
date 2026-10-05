@@ -171,8 +171,8 @@ uint32_t DisplayClock::reset()
 
 void DisplayClock::applyPllSkew()
 {
-    GBS::PLL_R::write(1);
-    GBS::PLL_S::write(2);
+    PLL_R::write(1);
+    PLL_S::write(2);
 }
 
 uint32_t DisplayClock::hzNow() const { return hzNow_; }

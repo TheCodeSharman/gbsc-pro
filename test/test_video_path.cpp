@@ -1629,6 +1629,50 @@ TEST_CASE("leaving pass-through measures from the reference clock")
     CHECK(Adc::dividerInForce() == Adc::BringUpDivider);
 }
 
+TEST_CASE("leaving pass-through configures the blocks it has just reset")
+{
+    // Chip::resetVideoBlocks() runs AFTER the bring-up on this path, so it
+    // discards the block configuration the bring-up established -- which is
+    // what the block reset is for. Whatever the reset takes away has to be put
+    // back after it, or the scaling path carries video through blocks nothing
+    // has configured and emits a dark field with every geometry register
+    // correct.
+    // ../docs/investigations/an-acquisition-without-a-preset-load-emits-a-flat-field.md
+    seedBenchSource();
+    seedPassThroughSource();
+
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+    VideoSourceAcquisition acquisition(sampling, engine);
+
+    engine.setOutputMode(benchMode());
+    engine.inputTimingsChanged(4);
+    REQUIRE(pollUntilSolved(acquisition));
+
+    engine.setOutputMode(&ModeBypass);
+
+    // What resetVideoBlocks() does to them on the part, which no fake bus can.
+    DisplayClock::PLL_R::write(0);
+    DisplayClock::PLL_S::write(0);
+    Adc::DEC_IDREG_EN::write(0);
+    Adc::DEC_WEN_MODE::write(0);
+    FrameBuffer::CAP_STATUS_SEL::write(0);
+    FrameBuffer::PB_REQ_SEL::write(0);
+    FrameBuffer::PB_CUT_REFRESH::write(0);
+
+    engine.setOutputMode(benchMode());
+
+    CHECK(DisplayClock::PLL_R::read() == 1);
+    CHECK(DisplayClock::PLL_S::read() == 2);
+    CHECK(Adc::DEC_IDREG_EN::read() == 1);
+    CHECK(Adc::DEC_WEN_MODE::read() == 1);
+    CHECK(FrameBuffer::CAP_STATUS_SEL::read() == 1);
+    CHECK(FrameBuffer::PB_REQ_SEL::read() == 3);
+    CHECK(FrameBuffer::PB_CUT_REFRESH::read() == 1);
+}
+
 TEST_CASE("bypass keeps the line rate it last measured")
 {
     // Bypass does not measure, so the held rate is the one from the mode that

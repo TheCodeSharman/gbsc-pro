@@ -33,6 +33,8 @@ FakeTwoWire Wire;
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Adc.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/BringUp.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Chip.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/DisplayClock.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/FrameBuffer.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/InputFormatter.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SyncProcessor.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/VideoProcessor.h"
@@ -483,4 +485,42 @@ TEST_CASE("the sync processor's retime window starts where it always starts")
     // SP_RT_HS_SP is 93% of PLLAD_MD and belongs to SourceMeasurement, which is
     // why only one of the pair is here.
     CHECK(WRITTEN(Tv5725::SyncProcessor::SP_RT_HS_ST) == 0);
+}
+
+// A boot whose detection claims the source on its first pass never loads a
+// preset, so anything reached only from doPostPresetLoadSteps() is never
+// established at all -- and the picture is a dark field with the sync path, the
+// divider and the whole geometry solve reading correct.
+// docs/investigations/an-acquisition-without-a-preset-load-emits-a-flat-field.md
+TEST_CASE("the bring-up establishes the clock group")
+{
+    CHECK(WRITTEN(Tv5725::Adc::PLLAD_LEN) == 1);
+    CHECK(WRITTEN(Tv5725::Adc::PLLAD_R) == 3);
+    CHECK(WRITTEN(Tv5725::Adc::PLLAD_S) == 3);
+    CHECK(WRITTEN(Tv5725::Adc::DEC_IDREG_EN) == 1);
+    CHECK(WRITTEN(Tv5725::Adc::DEC_WEN_MODE) == 1);
+    CHECK(WRITTEN(Tv5725::VideoProcessor::VDS_IN_DREG_BYPS) == 0);
+}
+
+// **THE DISPLAY PLL'S SKEW IS NOT THE BRING-UP'S, AND PUTTING IT HERE BLANKS
+// THE OUTPUT.** Measured: with DisplayClock::applyPllSkew() in the bring-up a
+// boot on `vga` emits nothing, with every register correct, the sync pad
+// driven, the DACs powered and the raster solved at 1917x1124 -- and /sc?#
+// restores it. Without it the same boot is clean at spread 109.6. It belongs
+// with the display clock's own setup, which runs once a clock has been chosen,
+// and nothing a block reset takes away includes it.
+TEST_CASE("the bring-up leaves the display PLL's skew alone")
+{
+    CHECK(WRITTEN(Tv5725::DisplayClock::PLL_R) == NotWritten);
+    CHECK(WRITTEN(Tv5725::DisplayClock::PLL_S) == NotWritten);
+}
+
+TEST_CASE("the bring-up establishes the frame buffer's request modes")
+{
+    CHECK(WRITTEN(Tv5725::FrameBuffer::PB_CUT_REFRESH) == 1);
+    CHECK(WRITTEN(Tv5725::FrameBuffer::RFF_LREQ_CUT) == 0);
+    CHECK(WRITTEN(Tv5725::FrameBuffer::CAP_REQ_OVER) == 0);
+    CHECK(WRITTEN(Tv5725::FrameBuffer::CAP_STATUS_SEL) == 1);
+    CHECK(WRITTEN(Tv5725::FrameBuffer::PB_REQ_SEL) == 3);
+    CHECK(WRITTEN(Tv5725::FrameBuffer::RFF_WFF_OFFSET) == 0);
 }

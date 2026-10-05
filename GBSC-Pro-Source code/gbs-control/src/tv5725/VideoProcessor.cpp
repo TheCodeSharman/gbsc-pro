@@ -169,6 +169,8 @@ void VideoProcessor::init()
     VDS_BLUE_UGAIN::write(0xB);                  // s3_73[7:4]
     VDS_BLUE_VGAIN::write(0x5);                  // s3_74[3:0]
     VDS_BLUE_Y_LEV::write(0x0);                  // s3_74[7:4]
+
+    clockInputOnFallingEdge();
 }
 
 void VideoProcessor::applyFreeRunTiming()

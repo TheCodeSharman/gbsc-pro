@@ -18,6 +18,8 @@
 
 #include <stdint.h>
 
+#include "Tv5725.h"
+
 namespace Clock {
 class ClockGen;
 }
@@ -26,6 +28,10 @@ namespace Tv5725 {
 
 class DisplayClock {
 public:
+    typedef UReg<0x00, 0x43, 0, 2> PLL_R;                             // R[1:0] Skew control for testing
+
+    typedef UReg<0x00, 0x43, 2, 2> PLL_S;                             // S[1:0] Skew control for testing
+
     // The highest display clock Tvia documents as tested: its own current
     // measurement reads "162MHz 32bit memory, 108MHz Display clock", and
     // DS-5725-3.2 Table 15 rates CLKOUT at 108 MHz / 20pF.

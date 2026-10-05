@@ -101,6 +101,9 @@ void FrameBuffer::init()
     // deinterlacer still overrides it when it is switched on.
     RFF_FETCH_NUM::write(1);
     WFF_FF_STA_INV::write(1);
+
+    applyRequestModes();
+    writeFifoLineOffset(0);
 }
 
 void FrameBuffer::applyRequestModes()

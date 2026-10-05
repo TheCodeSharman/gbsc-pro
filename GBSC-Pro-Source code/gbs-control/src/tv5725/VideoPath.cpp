@@ -665,6 +665,11 @@ void VideoPath::configureScalingPath()
     // branch, which the route above is what selects.
     Chip::resetVideoBlocks();
 
+    // After the reset, because the reset is what takes them away. The bring-up
+    // above establishes both and runs before it.
+    applyClockGroup();
+    applyFrameBufferRequests();
+
     // The decimator's matrix, which pass-through takes out because the HD bypass
     // channel converts for itself. Which one the source wants is held by the
     // class that selected the connector, so it is asked rather than handed in.

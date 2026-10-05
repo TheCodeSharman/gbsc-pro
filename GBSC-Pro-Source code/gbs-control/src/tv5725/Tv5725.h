@@ -407,10 +407,6 @@ public:
 
     typedef UReg<0x00, 0x43, 0, 8> PLL648_CONTROL_03;
 
-    typedef UReg<0x00, 0x43, 0, 2> PLL_R;                             // R[1:0] Skew control for testing
-
-    typedef UReg<0x00, 0x43, 2, 2> PLL_S;                             // S[1:0] Skew control for testing
-
     typedef UReg<0x00, 0x43, 4, 1> PLL_LEN;                           // LEN Lock Enable
 
     typedef UReg<0x00, 0x43, 5, 1> PLL_VCORST;                        // VCORST VCO control voltage reset bit

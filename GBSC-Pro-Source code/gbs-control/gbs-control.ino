@@ -4117,6 +4117,17 @@ void loop()
     }
 
     if (inputAcquisition.poll(millis())) {
+        // The user's picture options, stated again because the mode change
+        // reset the video blocks that carry them. They cannot live with the
+        // bring-up, which has no way to know what was chosen -- so they are
+        // the one part of the setup the sketch still has to supply, and a mode
+        // change reached without a preset load would otherwise leave the
+        // peaking and the line filter at nothing.
+        // docs/investigations/an-acquisition-without-a-preset-load-emits-a-flat-field.md
+        geometry.applyPictureFilters(uopt->wantVdsLineFilter, uopt->wantPeaking);
+        geometry.applyOutputPictureFilters(uopt->wantSharpness,
+                                           uopt->wantStepResponse);
+
         // Rate steer last, after raster, clock and windows. The solve moved the
         // raster, so the ratio the frequency lock steers by is stale -- and
         // re-establishing it here is the only thing that does: the

@@ -699,8 +699,8 @@ TEST_CASE("the clock group phase puts every one of its settings in force")
     CHECK(Tv5725::Adc::PLLAD_S::read() == 3);
     CHECK(Tv5725::Adc::DEC_IDREG_EN::read() == 1);
     CHECK(Tv5725::Adc::DEC_WEN_MODE::read() == 1);
-    CHECK(GBS::PLL_R::read() == 1);
-    CHECK(GBS::PLL_S::read() == 2);
+    CHECK(Tv5725::DisplayClock::PLL_R::read() == 1);
+    CHECK(Tv5725::DisplayClock::PLL_S::read() == 2);
 }
 
 TEST_CASE("the frame buffer phase puts every one of its request modes in force")

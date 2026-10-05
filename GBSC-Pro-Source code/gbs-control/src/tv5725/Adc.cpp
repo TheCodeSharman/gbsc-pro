@@ -138,6 +138,10 @@ void Adc::init()
     PLLAD_ICP::write(PllChargePump);             // s5_17[2:0]
     PA_ADC_LOCKOFF::write(0x0);                  // s5_18[6:6]
     PA_SP_LOCKOFF::write(0x0);                   // s5_19[6:6]
+
+    enablePll();
+    applyPllLoopFilter();
+    applyDecimatorModes();
 }
 
 void Adc::latch()
