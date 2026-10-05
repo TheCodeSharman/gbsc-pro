@@ -234,13 +234,29 @@ and by a lot.** Three of the largest contested writers cannot execute here:
 That is despite `enableFrameTimeLock` being 1 and `frameTimeLockMethod` 0 in
 the preferences — the option is on, the clock generator simply takes priority.
 
-**And the 41 writes in `doPostPresetLoadSteps()` are redundant, not
-conflicting.** All of them sit above the `geometry.modeChanged()` at the end of
-the same function, and the engine writes every field they touch when `poll()`
-solves, so it overwrites all 41. That is now asserted rather than assumed by
-`test_a_preset_load_leaves_the_engines_values_not_the_sketchs` — which compares
-the registers after a preset load against the engine re-solving the same
-framing alone, so the sketch winning any of them would show as a difference.
+**The 41 writes in `doPostPresetLoadSteps()` that land on engine-owned fields
+are redundant, not conflicting**, and
+`test_a_preset_load_leaves_the_engines_values_not_the_sketchs` asserts it:
+it compares the registers after a preset load against the engine re-solving the
+same framing alone, so the sketch winning any of them would show as a
+difference.
+
+**DO NOT READ THAT AS COVERING EVERY WRITE IN THE FUNCTION.** The claim that
+the engine overwrites every field `doPostPresetLoadSteps()` touches is
+**refuted**: fifteen sat at their reset defaults after the engine had solved,
+which is how the flat field went four sessions undiagnosed —
+`an-acquisition-without-a-preset-load-emits-a-flat-field.md`. The test is blind
+to exactly that case, and not by oversight: a field the sketch writes and the
+engine never touches reads the same in both rounds, so it passes while the
+sketch is the only writer there is.
+
+The two populations are different and the distinction is the whole of it. A
+field the engine owns is safe for the sketch to write on the way past, because
+the solve lands after. A field **only** the sketch writes has no owner at all
+on any path that reaches a picture without a preset load — and the migration
+is removing that path. Those go to the subsystem that owns the block:
+`Tv5725::<Subsystem>::init()` for a constant, the engine for anything derived
+from a measurement.
 
 So the genuinely live conflicts are the user-action paths — `moveHS()`,
 `moveVS()`, `handleRemoteKey()`, `web_service()` — and the raw
