@@ -659,14 +659,17 @@ public:
     // The H counter's overflow protection. Nothing on the board measures
     // whether it is helping, so the ladder tries the other setting
     // periodically -- which is the toggle rather than a read and a write.
+    //
+    // applyForSyncType() is the one owner of the value a setup leaves: with no
+    // measurement to settle it, a second writer is a disagreement nothing can
+    // adjudicate.
+    // ../../../../docs/investigations/the-overflow-protect-had-four-writers.md
     static void setHsyncOverflowProtect(bool wanted);
     static void toggleHsyncOverflowProtect();
 
-    // Whether coast is inverted, and whether the sub coast runs. Each names
-    // what is wanted rather than the register, which for the second is a
-    // disable.
+    // Whether coast is inverted. Names what is wanted rather than the
+    // register.
     static void setCoastInvert(bool wanted);
-    static void setSubCoast(bool wanted);
 
     // HSOUT/VSOUT, taken away while a mode change is outstanding and given back
     // once the source is acquired.
@@ -685,6 +688,13 @@ public:
     // ../../../../docs/investigations/encoder-stale-timing.md
     static void disableOutput();
     static void enableOutput();
+
+private:
+    // Whether the sub coast runs -- the coast WITHIN a line. Names what is
+    // wanted rather than the register, which is a disable. The source's
+    // serration is what decides it and applyForSyncType() is where that is
+    // asked, so there is nowhere outside this class it can be answered from.
+    static void setSubCoast(bool wanted);
 };
 
 }  // namespace Tv5725

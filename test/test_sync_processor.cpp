@@ -1034,6 +1034,25 @@ TEST_CASE("the per-load setup leaves the coast enable the sync type chose")
     CHECK(SyncProcessor::SP_NO_COAST_REG::read() == 1u);
 }
 
+// The H counter's overflow protect follows the sync type, and nothing on the
+// board measures whether it is helping -- so the recovery ladder's toggle is
+// the only thing entitled to move it afterwards. Measured on the bench at
+// 320x256@50 and 640x480@60, both on composite sync, with automation frozen
+// and the bit alternated: margins identical to the pixel, spread within 0.1,
+// STATUS_SYNC_PROC_HTOTAL at the divider with sd 0.00 either way. A setting
+// with no measurable effect is one that must have a single owner, because
+// nothing can tell which writer won.
+TEST_CASE("the per-load setup leaves the overflow protect the sync type chose")
+{
+    Wire.reset();
+    Wire.poison(Poisons[0]);
+    SyncProcessor::applyForSyncType(false, false);
+
+    SyncProcessor::prepare(false, false, false);
+
+    CHECK(SyncProcessor::SP_H_PROTECT::read() == 0u);
+}
+
 // The sub coast is the coast WITHIN a line: SP_H_CST_ST/SP_H_CST_SP mask a
 // window of the retiming so a serration cannot be taken for the line's hsync.
 // A source with its own hsync needs none, and the default window masks exactly

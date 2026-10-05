@@ -2320,7 +2320,6 @@ void doPostPresetLoadSteps()
             Tv5725::Adc::choosePhaseSyncProcessor(8);
         }
 
-        Tv5725::SyncProcessor::setHsyncOverflowProtect(false);
         Tv5725::SyncProcessor::setCoastInvert(false);
         if (!Tv5725::VideoRoute::isHdBypassChannel() && !geometry.scalingRgbhvInForce()) {
             inputAcquisition.applySyncProcessorDynamic(0);
@@ -2422,13 +2421,9 @@ void doPostPresetLoadSteps()
         Tv5725::SyncProcessor::clampFromReferenceClock();
         Tv5725::SyncProcessor::applyDefaultClampWindow();
 
-        Tv5725::SyncProcessor::setHsyncOverflowProtect(false);
-
         if (Tv5725::SyncMeasurement::isCsync()) {
             Tv5725::SyncProcessor::selectExternalSync(1);
         }
-
-        Tv5725::SyncProcessor::forgetPositions();
 
         if (Tv5725::VideoRoute::isHdBypassChannel()) {
                     Tv5725::Interrupts::acknowledgeAll();
@@ -4066,20 +4061,10 @@ void loop()
     }
 
     if (geometry.scalerCarriesVideo() && rto->syncWatcherEnabled
-        && !Tv5725::SyncProcessor::coastPlaced()) {
-        if (inputAcquisition.acquiredPasses() >= 7) {
-            if (inputAcquisition.sourceIsPresent()) {
-                inputAcquisition.placeCoastWindow(0);
-                if (Tv5725::SyncProcessor::coastPlaced()) {
-                    if (sourceHasSerratedSync()) 
-                    {
-
-                        Tv5725::SyncProcessor::setSubCoast(true);
-                        Tv5725::SyncProcessor::setHsyncOverflowProtect(false);
-                    }
-                }
-            }
-        }
+        && !Tv5725::SyncProcessor::coastPlaced()
+        && inputAcquisition.acquiredPasses() >= 7
+        && inputAcquisition.sourceIsPresent()) {
+        inputAcquisition.placeCoastWindow(0);
     }
 
     if (inputAcquisition.sourceIsPresent() && (inputAcquisition.acquiredPasses() >= 4) &&

@@ -236,7 +236,6 @@ void SyncProcessor::prepare(bool csync, bool serrated, bool rgbhvRoute)
         clampFromReferenceClock();
         holdClamp();
         applyDefaultCoastWindow();
-        setHsyncOverflowProtect(true);
         SP_HCST_AUTO_EN::write(0);
     }
 
