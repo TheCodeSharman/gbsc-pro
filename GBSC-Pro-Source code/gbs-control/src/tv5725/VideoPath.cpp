@@ -79,6 +79,28 @@ void VideoPath::applyFrameBufferRequests()
     FrameBuffer::applyRequestModes();
 }
 
+void VideoPath::restartAndLatch()
+{
+    Chip::resetVideoBlocks();
+
+    Adc::restartPll();
+
+    // Neither window describes this source until it is measured again, and the
+    // restart above is what invalidates them.
+    SyncProcessor::forgetPositions();
+
+    applyClockGroup();
+    applyFrameBufferRequests();
+
+    // The phase adjusters take their value again on the restart, and then the
+    // whole group goes in on one edge.
+    Adc::applyPhases();
+    Adc::latch();
+
+    SyncProcessor::clampFromReferenceClock();
+    SyncProcessor::applyDefaultClampWindow();
+}
+
 void VideoPath::applyPictureFilters()
 {
     VideoProcessor::setLineFilter(picture_.lineFilter());

@@ -78,6 +78,17 @@ public:
     // How the capture and playback stages ask for memory.
     void applyFrameBufferRequests();
 
+    // Put everything already chosen in force: the video blocks and the ADC PLL
+    // are restarted, the clock group and the memory requests written, the phase
+    // adjusters re-taken, the group latched, and the clamp timed off the 27 MHz
+    // reference at its default place.
+    //
+    // THE LATCH IS LAST, AND THE ORDER IS MEASURED. PLLAD_LAT loads MD, ND, KS,
+    // CKOS and ICP together on a rising edge, so anything writing the group
+    // after it leaves the part clocking at the old value with every register
+    // reading back correct.
+    void restartAndLatch();
+
     // The display scaler's picture filters, as the user chose them.
     //
     // The six-tap filter is forced ON, which overrides the preference the web

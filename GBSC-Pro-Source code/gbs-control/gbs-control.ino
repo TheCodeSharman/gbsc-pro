@@ -2359,37 +2359,7 @@ void doPostPresetLoadSteps()
         inputAcquisition.placeClampWindow();
 
 
-        Tv5725::Chip::resetVideoBlocks();
-
-        Tv5725::Adc::restartPll();
-        Tv5725::SyncProcessor::forgetPositions();
-        geometry.applyClockGroup();
-
-        // **DO NOT DISABLE CAP_SAFE_GUARD_EN HERE.** Tv5725::FrameBuffer
-        // owns that bit and switches it ON; a write here runs later in this
-        // same function and wins, leaving the capture buffer unbounded.
-        //
-        // Upstream disabled it against a memory map whose capture buffer
-        // started at 0x100000, only 356 KB below the guard address, where a
-        // large capture could genuinely trip it. MemoryWindow puts the guard at
-        // the top of the address space with the engine clamping the capture
-        // below it, so nothing but a real overrun reaches it.
-
-        geometry.applyFrameBufferRequests();
-        // PB_CAP_OFFSET = PB_FETCH_NUM + 4 was here for standards 3 and 4.
-        // Both halves of that pair are Tv5725::Memory's: the offset is
-        // MemoryWindow::strideFor(the output line) and the fetch is computed
-        // against it, so deriving one from the other after the fact could
-        // only fight the model. VideoPath::write() sets both.
-
-        // applyClockGroup() wrote the group PLLAD_LAT loads on a rising edge,
-        // and the decimator modes beside it -- so the adjusters take their
-        // value again on the restart applyPhases() ends with.
-        Tv5725::Adc::applyPhases();
-        Tv5725::Adc::latch();
-
-        Tv5725::SyncProcessor::clampFromReferenceClock();
-        Tv5725::SyncProcessor::applyDefaultClampWindow();
+        geometry.restartAndLatch();
 
         if (Tv5725::SyncMeasurement::isCsync()) {
             Tv5725::SyncProcessor::selectExternalSync(1);

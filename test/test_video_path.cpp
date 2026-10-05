@@ -2709,3 +2709,36 @@ TEST_CASE("the colour path takes the input's space and the output's option")
               == ColourSpace::ComponentOutputCosGain);
     }
 }
+
+TEST_CASE("the restart latches the ADC group after writing it")
+{
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+
+    Wire.reset();
+    engine.restartAndLatch();
+
+    // PLLAD_LAT loads MD, ND, KS, CKOS and ICP on a rising edge, and the loop
+    // filter at s5_16 and the decimator modes at s5_1e/s5_1f go with the tap --
+    // so an edge taken before them leaves the part running on what it held.
+    int lastGroupWrite = -1, lastRisingEdge = -1;
+    bool latchHigh = false;
+    for (size_t i = 0; i < Wire.trace.size(); ++i) {
+        const FakeTwoWire::Traced &write = Wire.trace[i];
+        if (write.segment != 5)
+            continue;
+        if (write.reg == 0x16 || write.reg == 0x1E || write.reg == 0x1F)
+            lastGroupWrite = (int)i;
+        if (write.reg == 0x11) {
+            const bool high = (write.value & 0x80) != 0;
+            if (high && !latchHigh)
+                lastRisingEdge = (int)i;
+            latchHigh = high;
+        }
+    }
+
+    CHECK(lastGroupWrite >= 0);
+    CHECK(lastRisingEdge > lastGroupWrite);
+}
