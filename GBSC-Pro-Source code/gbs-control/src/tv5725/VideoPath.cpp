@@ -73,7 +73,6 @@ void VideoPath::applyClockGroup()
 void VideoPath::applyFrameBufferRequests()
 {
     FrameBuffer::applyRequestModes();
-    FrameBuffer::writeFifoLineOffset(0);
 }
 
 void VideoPath::applyPictureFilters(bool lineFilter, bool peaking)

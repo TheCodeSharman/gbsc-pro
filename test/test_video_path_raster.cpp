@@ -711,12 +711,17 @@ TEST_CASE("the frame buffer phase puts every one of its request modes in force")
     FramingTable framings;
     VideoPath engine(clock, sampling, framings, inputFormatter);
 
+    // The read FIFO's line offset is NOT among them. Tv5725::Deinterlacer owns
+    // it, as a matched pair with RFF_FETCH_NUM -- 0x100 engaged, 1 not -- and a
+    // third value written here is a second owner stamping over that choice.
+    Tv5725::FrameBuffer::RFF_WFF_OFFSET::write(0x100);
+
     engine.applyFrameBufferRequests();
 
     CHECK(Tv5725::FrameBuffer::PB_CUT_REFRESH::read() == 1);
     CHECK(Tv5725::FrameBuffer::CAP_STATUS_SEL::read() == 1);
     CHECK(Tv5725::FrameBuffer::PB_REQ_SEL::read() == 3);
-    CHECK(Tv5725::FrameBuffer::RFF_WFF_OFFSET::read() == 0);
+    CHECK(Tv5725::FrameBuffer::RFF_WFF_OFFSET::read() == 0x100);
 }
 
 TEST_CASE("the picture filter phase puts the user's choices in force")

@@ -522,5 +522,8 @@ TEST_CASE("the bring-up establishes the frame buffer's request modes")
     CHECK(WRITTEN(Tv5725::FrameBuffer::CAP_REQ_OVER) == 0);
     CHECK(WRITTEN(Tv5725::FrameBuffer::CAP_STATUS_SEL) == 1);
     CHECK(WRITTEN(Tv5725::FrameBuffer::PB_REQ_SEL) == 3);
-    CHECK(WRITTEN(Tv5725::FrameBuffer::RFF_WFF_OFFSET) == 0);
+
+    // Tv5725::Deinterlacer's, paired with RFF_FETCH_NUM, and set on every mode
+    // change through disableMotionAdapt(). A value here is a second owner.
+    CHECK(WRITTEN(Tv5725::FrameBuffer::RFF_WFF_OFFSET) == NotWritten);
 }

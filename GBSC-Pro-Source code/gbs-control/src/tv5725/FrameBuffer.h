@@ -277,9 +277,6 @@ public:
     // whether the refresh generator runs.
     static void applyRequestModes();
 
-    // The line stride the read and write FIFOs advance by. The deinterlacer
-    // sets its own while it is running.
-    static void writeFifoLineOffset(uint16_t offset);
 };
 
 }  // namespace Tv5725
