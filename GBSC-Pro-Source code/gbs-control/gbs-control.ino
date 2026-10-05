@@ -2313,28 +2313,7 @@ void doPostPresetLoadSteps()
             }
         }
 
-        // **THE SAMPLING DIVIDER.** PLLAD_MD, IF_HSYNC_RST and SP_RT_HS_SP are
-        // ONE quantity in three registers, and Tv5725::SourceMeasurement is the
-        // single owner of all three. Tv5725::Adc writes the divider and latches
-        // it, so the write-before-latch ordering is no longer this caller's.
-        //
-        // The source is about to change mode, and nothing measurable about it
-        // is true yet. Everything the solve needs that cannot be re-derived
-        // later goes with the message; loop() drives the rest once the source
-        // has settled into the new mode.
-        //
-        // The most the clock can carry, for every source: the decimators undo
-        // the faster tap so the same samples a line reach the pipeline either
-        // way, and they filter. applySampleRate() clamps it to the crossover
-        // row. docs/investigations/the-decimators-filter.md
-        geometry.inputTimingsChanged(Tv5725::Adc::OversampleAsClockAllows);
-
-        Tv5725::Adc::armGainMeasurement(geometry.pictureOptions().autoGain());
-
-        Tv5725::Adc::applyHeldOffset();
-
-        geometry.applyPictureFilters();
-        geometry.applyOutputPictureFilters();
+        geometry.armSolveForSource();
 
         frameSync.cleanup();
         frameTimeLock.forgiveFailures();

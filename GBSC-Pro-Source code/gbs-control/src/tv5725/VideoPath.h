@@ -99,6 +99,12 @@ public:
     // separator read and the first measurement are taken through it.
     void putSeparatorAndPhasesInForce();
 
+    // Arm the solve for a source whose timings are about to move, and put the
+    // ADC's gain and offset and the picture filters in force with it. The
+    // oversampling asked for is the most the clock allows; the solve itself
+    // lands once the source has settled.
+    void armSolveForSource();
+
     // The display scaler's picture filters, as the user chose them.
     //
     // The six-tap filter is forced ON, which overrides the preference the web

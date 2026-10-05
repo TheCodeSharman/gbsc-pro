@@ -737,6 +737,17 @@ void VideoPath::putSeparatorAndPhasesInForce()
     forgetPreviousSource();
 }
 
+void VideoPath::armSolveForSource()
+{
+    inputTimingsChanged(Adc::OversampleAsClockAllows);
+
+    Adc::armGainMeasurement(picture_.autoGain());
+    Adc::applyHeldOffset();
+
+    applyPictureFilters();
+    applyOutputPictureFilters();
+}
+
 SourceKey VideoPath::arrivingKey() const
 {
     return SourceKey(sampling_.sourceLines(), sampling_.fieldRateHz(),

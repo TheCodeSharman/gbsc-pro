@@ -2764,3 +2764,25 @@ TEST_CASE("putting the separator in force uses the level held, choosing none")
     CHECK(SyncOnGreen::ADC_SOGCTRL::read() == searched);
     CHECK(Adc::PA_SP_S::read() == Adc::SetupPhaseSyncProcessor);
 }
+
+TEST_CASE("arming the solve takes auto gain from the held option")
+{
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+
+    SUBCASE("auto gain wanted arms the measurement path") {
+        engine.pictureOptions().setAutoGain(true);
+        Wire.reset();
+        engine.armSolveForSource();
+        CHECK(Adc::DEC_TEST_ENABLE::read() == 1);
+    }
+
+    SUBCASE("auto gain off takes it out of force") {
+        engine.pictureOptions().setAutoGain(false);
+        Wire.reset();
+        engine.armSolveForSource();
+        CHECK(Adc::DEC_TEST_ENABLE::read() == 0);
+    }
+}
