@@ -1303,7 +1303,7 @@ measurement of it. A count that matches the source says the arriving signal is
 intact; one that cannot be made to settle on the right path says it is not, and
 that is the one that needs power.
 
-### An acquisition that completes without a preset load emits a flat field
+### FIXED: an acquisition that completes without a preset load emits a flat field
 
 **Reproduced on demand, 4 of 4 boots.** Which input the settings file names at
 power-up decides it: stored as `ypbpr` the picture is a dark, flat or banded
@@ -1372,8 +1372,12 @@ scales solved.
 with the count steady at 270 where the source is 260. A steady count is not a
 locked one, and because it is steady the escalation ladder never fires.
 
-**Open:** what `applyPresets()` does beyond the fields. Waiting does not cure
-it -- the field goes from luma 23 to fully black over minutes.
+**FIXED** by `Tv5725::MemoryBus::restart()` on the engine's mode change. The
+SDRAM controller and both FIFOs are laid out for the capture geometry a mode
+change computes, `ResetSDRAM()` was a free function in the sketch that only a
+preset load reached, and a boot whose detection claims the source on its first
+pass loads none. A `ypbpr` boot was 6 of 6 faulted and is 4 of 4 clean;
+composite sync on `vga` comes up with a picture.
 `docs/investigations/an-acquisition-without-a-preset-load-emits-a-flat-field.md`.
 
 ### The boot selects an input differently from every other caller

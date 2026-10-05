@@ -10,10 +10,16 @@ the source and returns where the RGB branch calls `applyPresets()`.
 Anything that reaches `applyPresets()` cures it, with no input change and no
 register written by hand.
 
-**The cure is a transition, not a value.** Writing every differing register back
-does not work, in either direction, and neither does establishing them at
-bring-up: nine of the fifteen are correct at boot since that change and the
-picture is unchanged. What `applyPresets()` supplies beyond them is still open.
+**The cure is a transition, not a value**, which is why writing every differing
+register back fails in both directions. It is the SDRAM restart: the controller
+and both FIFOs are laid out for the capture geometry a mode change computes, and
+only a preset load ever ran it. `Tv5725::MemoryBus::restart()` is that
+transition and `VideoPath::solveFromMeasurement()` now runs it once the windows
+are written.
+
+**Measured: a `ypbpr` boot was 6 of 6 faulted and is 4 of 4 clean**, at cast
+0.03 spread 92.4 luma 94.4 against a cured unit's 92.4 / 94.4. `vga` on
+composite sync comes up with a picture where it was black until `/sc?#`.
 
 ## The chain
 
@@ -165,7 +171,8 @@ skew belongs with the display clock's own setup rather than with a bring-up
 that runs before a clock has been chosen. Nothing a block reset takes away
 includes it. A test asserts the bring-up leaves both alone.
 
-Four further candidates were tried on a faulted boot and none cures it:
+Four further candidates were tried on a faulted boot and none cures it, which
+is what pointed at a transition rather than a value:
 
 | tried | result |
 |---|---|
@@ -175,8 +182,9 @@ Four further candidates were tried on a faulted boot and none cures it:
 | waiting several minutes | gets worse -- flat at luma 23 becomes fully black |
 
 Every block reset reads released, both pads enabled, and both scales solved. So
-what `applyPresets()` supplies is still a transition and not a value, and it is
-not the block reset.
+what `applyPresets()` supplies is a transition and not a value, and it is not
+the block reset -- it is the SDRAM restart beside it, which `resetVideoBlocks()`
+does not perform and no register carries.
 
 ## The family is one fault
 
