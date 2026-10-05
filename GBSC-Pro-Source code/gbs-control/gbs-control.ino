@@ -2461,8 +2461,6 @@ void doPostPresetLoadSteps()
         inputAcquisition.placeClampWindow();
 
 
-        Tv5725::VideoProcessor::applyFrameSequencing();
-
         Tv5725::Chip::resetVideoBlocks();
 
         Tv5725::Adc::restartPll();

@@ -171,6 +171,7 @@ void VideoProcessor::init()
     VDS_BLUE_Y_LEV::write(0x0);                  // s3_74[7:4]
 
     clockInputOnFallingEdge();
+    applyFrameSequencing();
 }
 
 void VideoProcessor::applyFreeRunTiming()

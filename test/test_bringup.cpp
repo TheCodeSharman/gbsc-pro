@@ -509,6 +509,16 @@ TEST_CASE("the bring-up establishes the clock group")
 // restores it. Without it the same boot is clean at spread 109.6. It belongs
 // with the display clock's own setup, which runs once a clock has been chosen,
 // and nothing a block reset takes away includes it.
+// Three constants with one writer, reached only from doPostPresetLoadSteps() --
+// so a path that puts a picture up without loading a preset left the VDS
+// sequencing its frames from nothing.
+TEST_CASE("the bring-up establishes the VDS frame sequencing")
+{
+    CHECK(WRITTEN(Tv5725::VideoProcessor::VDS_FRAME_RST) == 4);
+    CHECK(WRITTEN(Tv5725::VideoProcessor::VDS_FRAME_NO) == 1);
+    CHECK(WRITTEN(Tv5725::VideoProcessor::VDS_FR_SELECT) == 1);
+}
+
 TEST_CASE("the bring-up leaves the display PLL's skew alone")
 {
     CHECK(WRITTEN(Tv5725::DisplayClock::PLL_R) == NotWritten);
