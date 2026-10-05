@@ -99,8 +99,10 @@ void Chip::enterHdBypass()
     GBS::PLL_LEN::write(1);
 
     routeToHdBypass();
-    OUT_SYNC_SEL::write(1);
+    channelDrivesOutputSync();
 }
+
+void Chip::channelDrivesOutputSync() { OUT_SYNC_SEL::write(1); }
 
 void Chip::routeToHdBypass()
 {

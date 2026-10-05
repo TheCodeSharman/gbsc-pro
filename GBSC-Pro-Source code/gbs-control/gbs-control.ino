@@ -2297,23 +2297,7 @@ void doPostPresetLoadSteps()
 
         Tv5725::SyncProcessor::holdClamp();
 
-        geometry.applyColourPath();
-
-        if (Tv5725::VideoRoute::isHdBypassChannel()) {
-            Tv5725::Chip::OUT_SYNC_SEL::write(1);
-        }
-
-        Tv5725::Adc::choosePhaseSyncProcessor(8);
-
-        // The level is NOT chosen here. VideoSourceAcquisition::acquireSeparatorLevel()
-        // owns it, seeds from Adc::inputIsComponent() and then searches -- so a
-        // value stated here is a second owner writing a final answer where the
-        // engine writes a starting point. Whatever is held goes in force
-        // because the separator read below is taken through it.
-        Tv5725::SyncOnGreen::apply();
-        Tv5725::Adc::applyPhases();
-
-        geometry.forgetPreviousSource();
+        geometry.putSeparatorAndPhasesInForce();
         rto->sourceDisconnected = false;
         Tv5725::Chip::holdPower(true);
 

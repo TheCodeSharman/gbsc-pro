@@ -225,10 +225,13 @@ public:
     // that reads wrong. ../../../docs/preset-load-clobber.md
     static void dacsFollowInput();
 
-    // The DACs on the HD bypass channel. It leaves OUT_SYNC_SEL alone: the
-    // switch writes it 1 and then 2 for interlaced SD, so the standard has the
-    // last word on it and this would undo that.
+    // The DACs on the HD bypass channel. It leaves OUT_SYNC_SEL alone, which
+    // channelDrivesOutputSync() below is what writes.
     static void routeToHdBypass();
+
+    // HSOUT and VSOUT taken from the bypass channel rather than from the VDS.
+    // routeToScaler() is the other half of the pair and writes it back.
+    static void channelDrivesOutputSync();
 
     // The video datapath blocks, pulsed through reset and released. On the
     // bypass channel they are left held: nothing scaled is running, so

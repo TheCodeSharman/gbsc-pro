@@ -13,6 +13,7 @@ const uint16_t Adc::BringUpDivider;
 const uint32_t Adc::BringUpLineRateHz;
 const uint16_t Adc::LatchedSamplesTolerance;
 const uint8_t Adc::NeutralOffset;
+const uint8_t Adc::SetupPhaseSyncProcessor;
 const uint8_t Adc::AutoGainInitial;
 
 namespace {

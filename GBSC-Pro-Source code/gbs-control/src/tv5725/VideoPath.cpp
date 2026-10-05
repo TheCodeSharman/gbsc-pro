@@ -23,9 +23,11 @@
 #include "SamplingClock.h"
 #include "OutputMode.h"
 #include "ModeDetect.h"
+#include "SyncOnGreen.h"
 #include "SyncProcessor.h"
 #include "SyncMeasurement.h"
 #include "VideoProcessor.h"
+#include "VideoRoute.h"
 
 namespace Tv5725 {
 
@@ -719,6 +721,20 @@ void VideoPath::configureScalingPath()
     // The decimator's matrix, which pass-through takes out because the HD bypass
     // channel converts for itself.
     applyColourPath();
+}
+
+void VideoPath::putSeparatorAndPhasesInForce()
+{
+    applyColourPath();
+
+    if (VideoRoute::isHdBypassChannel())
+        Chip::channelDrivesOutputSync();
+
+    Adc::choosePhaseSyncProcessor(Adc::SetupPhaseSyncProcessor);
+    SyncOnGreen::apply();
+    Adc::applyPhases();
+
+    forgetPreviousSource();
 }
 
 SourceKey VideoPath::arrivingKey() const

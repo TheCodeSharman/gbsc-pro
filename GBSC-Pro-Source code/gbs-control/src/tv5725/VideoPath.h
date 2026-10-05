@@ -89,6 +89,16 @@ public:
     // reading back correct.
     void restartAndLatch();
 
+    // Everything that has to be on the chip before the source is measured
+    // through it: the colour path, the channel's output sync, the separator
+    // level and both phase adjusters, and the previous source's positions
+    // forgotten.
+    //
+    // THE SEPARATOR LEVEL IS NOT CHOSEN HERE. VideoSourceAcquisition searches
+    // it against the source; whatever is held goes in force, because the
+    // separator read and the first measurement are taken through it.
+    void putSeparatorAndPhasesInForce();
+
     // The display scaler's picture filters, as the user chose them.
     //
     // The six-tap filter is forced ON, which overrides the preference the web

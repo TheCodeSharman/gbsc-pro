@@ -32,6 +32,7 @@ FakeTwoWire Wire;
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/ModeDetect.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SyncMeasurement.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/OutputMode.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SyncOnGreen.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SyncProcessor.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Tv5725.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/VideoProcessor.h"
@@ -2741,4 +2742,25 @@ TEST_CASE("the restart latches the ADC group after writing it")
 
     CHECK(lastGroupWrite >= 0);
     CHECK(lastRisingEdge > lastGroupWrite);
+}
+
+TEST_CASE("putting the separator in force uses the level held, choosing none")
+{
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+
+    // The level is VideoSourceAcquisition's, searched against the source. A
+    // value stated in the setup would be a second owner writing a final answer
+    // over a starting point -- and the separator read that follows is taken
+    // through whatever is in force here.
+    const uint8_t searched = SyncOnGreen::DefaultLevel + 3;
+    SyncOnGreen::choose(searched);
+
+    Wire.reset();
+    engine.putSeparatorAndPhasesInForce();
+
+    CHECK(SyncOnGreen::ADC_SOGCTRL::read() == searched);
+    CHECK(Adc::PA_SP_S::read() == Adc::SetupPhaseSyncProcessor);
 }

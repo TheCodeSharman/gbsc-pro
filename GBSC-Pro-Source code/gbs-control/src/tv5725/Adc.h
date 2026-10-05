@@ -252,6 +252,11 @@ public:
     // The widest phase the five-bit field carries.
     static const uint8_t PhaseMax = 31;
 
+    // Where a setup starts the sync processor's adjuster, before acquirePhase()
+    // searches. Not an answer: it is what the separator read and the first
+    // measurement are taken through.
+    static const uint8_t SetupPhaseSyncProcessor = 8;
+
     // Where in the ADC clock the sample is taken, in 32 steps. Two adjusters,
     // and they are not interchangeable: PA_ADC moves the sample, PA_SP moves
     // what the sync processor retimes against.
