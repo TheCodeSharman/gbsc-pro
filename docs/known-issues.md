@@ -3903,6 +3903,26 @@ entries resolve the raster match in time is open.
 
 ## Costs time rather than correctness
 
+### The bench's recorded margins are a BOOT figure, and a re-acquisition moves them
+
+On `vga` at 320x256@50 into 1080p, with `/geometry` byte-identical either way,
+`picstate.py` reads the vertical margins as **2/0 and a height of 1078 after a
+boot**, and **0/10 and a height of 1070 after a `/sc?~` or a source mode
+change**. Seven boots and three re-acquisitions, no exceptions, across three
+builds. The horizontal pair is 242/254 throughout and the spread stays
+109.1..109.5.
+
+The capture window is identical in both -- `ov` 72, `ev` 512, `cv` 624 -- so
+nothing the board emits moved. It is the sink placing its own window when the
+link acquires, which `investigations/the-shown-window-is-latched-at-lock.md`
+carries.
+
+What it costs is a false regression: `242/254/2/0` is the figure a bench note
+records, and a frame scored after a `/sc?~` reports eight rows missing from the
+bottom against it. **Score a boot against a boot.** What would settle whether
+the two placements are the sink's alone is the same reading taken on a second
+display.
+
 ### `locked_steadily()` cannot be satisfied by an interlaced source, so six tests ERROR
 
 `gbs_unit.locked_steadily()` requires `STATUS_SYNC_PROC_VTOTAL` to read the
