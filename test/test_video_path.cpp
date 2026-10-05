@@ -2786,3 +2786,34 @@ TEST_CASE("arming the solve takes auto gain from the held option")
         CHECK(Adc::DEC_TEST_ENABLE::read() == 0);
     }
 }
+
+TEST_CASE("the sync path follows the held sync type on every route")
+{
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+
+    // Unconditional, and not only on the scaling-RGBHV route: a source that
+    // never reaches this keeps whatever path the last one left, and a
+    // separate-sync source left on sync-on-green counts nothing at all.
+    SUBCASE("composite sync puts the separator in the path") {
+        SyncMeasurement::set(true);
+        Wire.reset();
+        engine.configureSyncPath();
+
+        CHECK(SyncProcessor::SP_SOG_MODE::read() == 1);
+        CHECK(SyncProcessor::SP_EXT_SYNC_SEL::read() == 1);
+        CHECK(ModeDetect::MD_SEL_VGA60::read() == 0);
+    }
+
+    SUBCASE("separate sync takes it out again") {
+        SyncMeasurement::set(false);
+        Wire.reset();
+        engine.configureSyncPath();
+
+        CHECK(SyncProcessor::SP_SOG_MODE::read() == 0);
+        CHECK(SyncProcessor::SP_EXT_SYNC_SEL::read() == 0);
+        CHECK(ModeDetect::MD_SEL_VGA60::read() == 1);
+    }
+}

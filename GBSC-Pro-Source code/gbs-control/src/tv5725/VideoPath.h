@@ -105,6 +105,14 @@ public:
     // lands once the source has settled.
     void armSolveForSource();
 
+    // The chip put on the sync arrangement the held sync type names, and then
+    // given the per-load setup that does not follow it.
+    //
+    // UNCONDITIONAL, AND NOT ONLY ON THE SCALING-RGBHV ROUTE. A source that
+    // never reaches this keeps whatever path the last one left, and a
+    // separate-sync source left on sync-on-green counts nothing at all.
+    void configureSyncPath();
+
     // The display scaler's picture filters, as the user chose them.
     //
     // The six-tap filter is forced ON, which overrides the preference the web

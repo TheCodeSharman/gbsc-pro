@@ -737,6 +737,25 @@ void VideoPath::putSeparatorAndPhasesInForce()
     forgetPreviousSource();
 }
 
+void VideoPath::configureSyncPath()
+{
+    // Only where something held the blocks and so discarded their
+    // configuration. Boot brings the chip up, so a mode change does not repeat
+    // it.
+    if (BringUp::armed())
+        BringUp::init(inputFormatter_);
+
+    const bool csync = SyncMeasurement::isCsync();
+
+    ModeDetect::applySyncType(csync ? ModeDetect::Csync
+                                    : ModeDetect::SeparateSync);
+
+    Chip::enableClockInputPad();
+
+    SyncProcessor::applyForSyncType(csync, sampling_.hasSerratedSync());
+    SyncProcessor::prepare(csync, sampling_.hasSerratedSync());
+}
+
 void VideoPath::armSolveForSource()
 {
     inputTimingsChanged(Adc::OversampleAsClockAllows);

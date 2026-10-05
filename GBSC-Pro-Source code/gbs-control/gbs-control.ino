@@ -2261,27 +2261,9 @@ void doPostPresetLoadSteps()
     // configuration -- low power and the RGBHV watchdog through
     // setResetParameters(), and setOutModeHdBypass(). Boot brings the chip up,
     // so a mode change does not repeat it.
-    if (Tv5725::BringUp::armed())
-        Tv5725::BringUp::init(inputFormatter);
+    geometry.configureSyncPath();
 
-    // Beside ModeDetect::init() inside that block and travelling with it: both
-    // depend on runtime state rather than on any table.
-    Tv5725::ModeDetect::applySyncType(Tv5725::SyncMeasurement::isCsync()
-                                          ? Tv5725::ModeDetect::Csync
-                                          : Tv5725::ModeDetect::SeparateSync);
-
-    // if(Info_sate == 0)
     {
-        Tv5725::Chip::enableClockInputPad();
-
-        // BEFORE prepareSyncProcessor(), which is the per-load setup that does
-        // not follow the sync type. Asked on every route rather than only the
-        // scaling-RGBHV one: a source that never reaches it keeps whatever sync
-        // path the last one left, and a separate-sync source left on
-        // sync-on-green counts nothing at all.
-        Tv5725::SyncProcessor::applyForSyncType(Tv5725::SyncMeasurement::isCsync(),
-                                                sourceSampling.hasSerratedSync());
-        prepareSyncProcessor();
         if (scalingRgbhv()) {
             if (Tv5725::SyncMeasurement::isCsync()) {
                 Tv5725::SyncOnGreen::choose(24);
