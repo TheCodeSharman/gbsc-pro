@@ -112,6 +112,15 @@ Seam: move it one subsystem at a time -- each group of writes becomes that
 class's `apply...()`, called in the same order. The order is the risk, so change
 nothing about it in the same commit as a move.
 
+**The four blocking waits are gone, and none of them became a state anywhere.**
+Instrumented on the unit before removal, they were dead: the 2002 ms wait for
+hsync is entered with hsync already active on every path including the boot, the
+separator walk its timeout arms is unreachable, the 30 ms precedes placements
+that are undone twice before the function returns, and the 400 ms follows a
+reset release the part needs no settle for. A vga boot's preset load went from
+615 ms to 188 ms.
+`investigations/the-preset-path-waits-for-nothing.md`.
+
 ### 5. The recovery ladder's entry
 
 `runSourceRecovery()` is already thin and gates on a 500 ms interval. Moving it
