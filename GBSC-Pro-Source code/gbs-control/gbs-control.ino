@@ -2436,10 +2436,6 @@ void doPostPresetLoadSteps()
         frameSync.cleanup();
         frameTimeLock.forgiveFailures();
 
-        // ONE SETTLE FOR EVERY SOURCE. Nothing measurable about the source is
-        // true here -- the mode change was armed a hundred lines above -- so
-        // waiting for it to become so is the acquisition layer's.
-        delay(30);
         inputAcquisition.placeCoastWindow(0);
         inputAcquisition.placeClampWindow();
 
@@ -2492,22 +2488,6 @@ void doPostPresetLoadSteps()
             geometry.setOutputMode(&Tv5725::ModeBypass);
 
             return;
-        }
-
-        if (!Tv5725::PresetLoad::scalingRgbhvInForce()) {
-            unsigned long timeout = millis();
-            while ((!Tv5725::SyncProcessor::hsyncActive()) && (millis() - timeout < 2002)) {
-                delay(4);
-                handleWiFi(0);
-                inputAcquisition.applySyncProcessorDynamic(0);
-            }
-            timeout = millis() - timeout;
-            if (timeout >= 1500) {
-                if (Tv5725::SyncOnGreen::level() >= 7) {
-                    inputAcquisition.acquireSeparatorLevel();
-                    delay(300);
-                }
-            }
         }
 
         inputAcquisition.placeClampWindow();
@@ -2609,10 +2589,8 @@ void applyPresets()
     // byte excluded -- 5, 6, 7, 13 and 15 -- were the values that used to be
     // routed to the channel from here, and pass-through is not chosen here any
     // more. A block left held shows nothing whatever the preset writes.
-    boolean waitExtra = 0;
     if (Tv5725::VideoRoute::isHdBypassChannel() || rgbhvBypass()
         || !inputAcquisition.sourceIsPresent()) {
-        waitExtra = 1;
         GBS::SFTRST_IF_RSTZ::write(1);
         GBS::SFTRST_VDS_RSTZ::write(1);
         GBS::SFTRST_DEC_RSTZ::write(1);
@@ -2684,10 +2662,6 @@ void applyPresets()
         rto->isValidForScalingRGBHV = true;
     }
 
-    if (waitExtra) {
-
-        delay(400);
-    }
     doPostPresetLoadSteps();
 }
 
