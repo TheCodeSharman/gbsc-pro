@@ -172,6 +172,7 @@ void VideoProcessor::init()
 
     clockInputOnFallingEdge();
     applyFrameSequencing();
+    applyFreeRunTiming();
 }
 
 void VideoProcessor::applyFreeRunTiming()

@@ -2446,8 +2446,6 @@ void doPostPresetLoadSteps()
         frameSync.cleanup();
         frameTimeLock.forgiveFailures();
 
-        Tv5725::VideoProcessor::applyFreeRunTiming();
-
         // ONE SETTLE FOR EVERY SOURCE. Nothing measurable about the source is
         // true here -- the mode change was armed a hundred lines above -- so
         // waiting for it to become so is the acquisition layer's.

@@ -548,3 +548,12 @@ TEST_CASE("the bring-up clears the ADC's undocumented registers")
     CHECK(WRITTEN(Tv5725::Adc::ADC_UNUSED_66) == 0);
     CHECK(WRITTEN(Tv5725::Adc::ADC_UNUSED_67) == 0);
 }
+
+TEST_CASE("the bring-up establishes the free-run output timing")
+{
+    // VDS_FLOCK_EN with VDS_SYNC_EN, 0/0 free run. One writer, reached only
+    // from doPostPresetLoadSteps(), so an acquisition that loads no preset ran
+    // the output timing off whatever the two bits held.
+    CHECK(WRITTEN(Tv5725::VideoProcessor::VDS_SYNC_EN) == 0);
+    CHECK(WRITTEN(Tv5725::VideoProcessor::VDS_FLOCK_EN) == 0);
+}
