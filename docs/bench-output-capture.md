@@ -53,6 +53,25 @@ With all four healthy and the panel still dark, the encoder is next
 (`PAD_SYNC_OUT_ENZ` toggled 1 then 0), and a full power cycle -- mains *and*
 USB -- after that.
 
+## IT DELIVERS BLACK FOR SECONDS AFTER THE LINK RE-ACQUIRES
+
+Anything that re-acquires the HDMI link -- a boot, an input change, a sync-type
+round trip -- leaves the dongle delivering black frames after `/geometry`
+already reports `acquired`. Measured on a vga boot: black at 1.1, 1.9, 2.7, 3.5
+and 4.3 s, the picture at 5.1 s. Other transitions clear inside a second.
+
+**TWO SCORES TAKEN BACK TO BACK ARE BOTH INSIDE THAT WINDOW**, which is how a
+healthy unit reads as a regression twice in a row: `picstate.py` run twice is
+two grabs a few seconds apart, and both land in the dead period. Poll until the
+frame is not flat, with a ceiling, rather than scoring a fixed number of times:
+
+```python
+for _ in range(15):
+    s = picstate.score(hdmi_capture.frames(1, dev)[0])
+    if not s["flat"]:
+        break
+```
+
 ## The unseated HDMI input, which is the last resort
 
 With its input unseated the dongle stays enumerated, reports 1920x1080 at 60 fps,
@@ -86,6 +105,44 @@ reaching for it first is how a real fault gets a session spent on the cable.
 
 A second sink on a separate output would corroborate; this one is a second
 *view* of a single input.
+
+## IT READS NOTHING IN PASS-THROUGH, AND THAT IS THE LINK RATHER THAN THE PICTURE
+
+Measured with the RiscPC at `MODE X800 Y600 C256 F60` and `/uc?x`: every frame
+is pure black, `max 0` over the whole raster, while `DAC_RGBS_BYPS2DAC` and
+`OUT_SYNC_SEL` read 1, `OUT_SYNC_CNTRL` and `DAC_RGBS_PWDNZ` read 1 and
+`PAD_SYNC_OUT_ENZ` reads 0.
+
+**The discriminator is the television OSD, and it needs no camera.** The
+STV9426's overlay is keyed into the video at U13, downstream of everything the
+scaler does, so a link carrying anything at all carries it. Opened with
+`/menu?key=menu` -- the route answers `"open":true` -- the capture is still
+`max 0`. Nothing is arriving, so the black is not a picture the board failed to
+draw.
+
+So **the capture cannot judge pass-through**, and a black frame taken there is
+not evidence about the board. The television is the instrument for that route,
+which is what `CLAUDE.md` already says about using bypass as a second view.
+
+**Which side refuses the mode is not established.** The dongle scales whatever
+arrives, so the size is not what stops it, which leaves the encoder declining to
+transmit a raster this sink's EDID does not offer -- the open question at the
+foot of this page. What would settle it is one photograph of the television in
+the same state, and the television was not read in the run above.
+
+## `tv-snap` READS THE DONGLE WHEN NO CAMERA IS ATTACHED
+
+It picks the first `/dev/v4l/by-id/*-video-index0` that is not the laptop's own
+camera, so with no bench webcam plugged in it selects the capture dongle --
+and then applies the saved rectification, a lens and perspective correction
+calibrated for a camera pointed at a panel. The result looks like a keystoned
+photograph of the television and is the HDMI frame, warped.
+
+**So it is not a second view of anything while that is true.** Check what it
+reports as its device before reading one as corroboration: a frame that
+disagrees with `hdmi_capture.py` about whether there is a picture is the same
+dongle read seconds apart, which is the re-acquisition window above rather
+than two instruments agreeing or disagreeing.
 
 ## What it retires
 
