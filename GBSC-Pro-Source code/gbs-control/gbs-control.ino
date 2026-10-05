@@ -1170,7 +1170,6 @@ void setResetParameters()
     GBS::ADC_POWDZ::write(1);
     Tv5725::SyncOnGreen::putInForce();
     Tv5725::BringUp::holdAllBlocks();
-    Tv5725::Gpio::init();
     GBS::DAC_RGBS_PWDNZ::write(0);
     GBS::PLL648_CONTROL_01::write(0x00);
     GBS::IF_SEL_ADC_SYNC::write(1);
@@ -2401,7 +2400,6 @@ void doPostPresetLoadSteps()
 
         setAdcParametersGainAndOffset();
 
-        Tv5725::Gpio::init();
         geometry.forgetPreviousSource();
         rto->sourceDisconnected = false;
         Tv5725::Chip::holdPower(true);
@@ -2433,8 +2431,6 @@ void doPostPresetLoadSteps()
         // way, and they filter. applySampleRate() clamps it to the crossover
         // row. docs/investigations/the-decimators-filter.md
         geometry.inputTimingsChanged(Tv5725::Adc::OversampleAsClockAllows);
-
-        Tv5725::Adc::applyReferenceTrim();
 
         applyStoredAdcGain();
 
@@ -2494,8 +2490,7 @@ void doPostPresetLoadSteps()
         Tv5725::SyncProcessor::forgetPositions();
 
         if (Tv5725::VideoRoute::isHdBypassChannel()) {
-            Tv5725::Interrupts::enableEverySource();
-            Tv5725::Interrupts::acknowledgeAll();
+                    Tv5725::Interrupts::acknowledgeAll();
 
             // Video routes around the VDS here, so the mode change armed above
             // has no solve coming and the freeze it took would never be
@@ -2536,8 +2531,7 @@ void doPostPresetLoadSteps()
 
         Tv5725::SyncOnGreen::putInForce();
 
-        Tv5725::Interrupts::enableEverySource();
-        Tv5725::Interrupts::acknowledgeAll();
+            Tv5725::Interrupts::acknowledgeAll();
 
         // OutputComponentOrVGA();
 

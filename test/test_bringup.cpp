@@ -35,7 +35,9 @@ FakeTwoWire Wire;
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Chip.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/DisplayClock.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/FrameBuffer.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Gpio.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/InputFormatter.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Interrupts.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SyncProcessor.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/VideoProcessor.h"
 
@@ -556,4 +558,39 @@ TEST_CASE("the bring-up establishes the free-run output timing")
     // the output timing off whatever the two bits held.
     CHECK(WRITTEN(Tv5725::VideoProcessor::VDS_SYNC_EN) == 0);
     CHECK(WRITTEN(Tv5725::VideoProcessor::VDS_FLOCK_EN) == 0);
+}
+
+TEST_CASE("the pin mux is the bring-up's")
+{
+    // s0_52..54, whose only writer anywhere is Gpio::init(). The sketch called
+    // it twice more, once inside a function that holds every block and arms the
+    // bring-up and once at the end of a preset load.
+    CHECK(WRITTEN(Tv5725::Gpio::GPIO_SEL_0) == 1);
+    CHECK(WRITTEN(Tv5725::Gpio::GPIO_SEL_3) == 0);
+    CHECK(WRITTEN(Tv5725::Gpio::GPIO_EN_0) == 0);
+    CHECK(WRITTEN(Tv5725::Gpio::GPIO_VAL_7) == 0);
+}
+
+TEST_CASE("the ADC's reference trim is the bring-up's")
+{
+    // The six fields Adc::applyReferenceTrim() writes. Only calibrateAdcOffset()
+    // disagrees, leaving ADC_TR_RSEL 0, and it runs once in setup() ahead of
+    // setResetParameters() -- so after boot nothing moves them and a preset
+    // load restating them restated the bring-up.
+    CHECK(WRITTEN(Tv5725::Adc::ADC_TA_EN) == 0);
+    CHECK(WRITTEN(Tv5725::Adc::ADC_TA_CTRL) == 1);
+    CHECK(WRITTEN(Tv5725::Adc::ADC_TR_RSEL) == 2);
+    CHECK(WRITTEN(Tv5725::Adc::ADC_TR_ISEL) == 0);
+    CHECK(WRITTEN(Tv5725::Adc::ADC_CKBS) == 0);
+    CHECK(WRITTEN(Tv5725::Adc::ADC_TEST) == 9);
+}
+
+TEST_CASE("every interrupt source is unmasked by the bring-up")
+{
+    // s0_59, all eight bits. Nothing anywhere writes one of them 0, so the mask
+    // is a constant and a preset load restating it restated the bring-up.
+    // setResetParameters() still writes it, inside its own pulse of
+    // SFTRST_INT_RSTZ, where no bring-up has yet re-run.
+    CHECK(WRITTEN(Tv5725::Interrupts::INT_ENABLE0) == 1);
+    CHECK(WRITTEN(Tv5725::Interrupts::INT_ENABLE7) == 1);
 }
