@@ -1053,10 +1053,34 @@ def test_unit_survives_a_hostile_pllad(host, source):
 
 # --- the boot log ------------------------------------------------------------
 
+def _settled_settings(host):
+    """The settings file once it reads WHOLE.
+
+    A save rewrites the file in place and is not atomic, so a read taken on a
+    guessed delay lands mid-write and comes back short -- which reads as a file
+    the loader would refuse rather than as a read taken too early.
+    """
+    return wait_for(lambda: read_settings(host), timeout=15.0, interval=0.5)
+
+
 def _toggle_frame_time_lock(host):
-    """/uc?5 toggles frame time lock and saves the whole file as a side effect."""
+    """/uc?5 toggles frame time lock and saves the whole file as a side effect.
+
+    Queued for loop(), so the only thing that says both the toggle and its save
+    landed is the VALUE having moved in the file.
+    """
+    was = _settled_settings(host)
     get(host, "/uc?5")
-    time.sleep(2.5)
+
+    def moved():
+        now = read_settings(host)
+        if not now:
+            return None
+        if was and now.get("frame-time-lock") == was.get("frame-time-lock"):
+            return None
+        return now
+
+    return wait_for(moved, timeout=15.0, interval=0.5)
 
 
 def test_a_save_writes_a_settings_file_the_next_boot_will_accept(host):
@@ -1108,29 +1132,33 @@ def test_bootlog_reports_the_preferences_read(host):
     )
 
     assert "PREFS:" in body, f"no preferences trace in the boot log:\n{body}"
-    assert re.search(r"PREFS: attempt \d+ .*got=\d+ .*plausible=[01]", body), (
-        f"the per-attempt read line is missing or reshaped:\n{body}"
+    attempt = re.search(
+        r"PREFS: attempt \d+ .*size=(\d+) applied=(\d+) end=([01])", body
     )
+    assert attempt, f"the per-attempt read line is missing or reshaped:\n{body}"
+
     loaded = re.search(
-        r"PREFS: loaded presetPreference=(\d+) frameTimeLock=(\d+).*suspect=([01])",
-        body,
+        r"PREFS: loaded output=(\S*) frameTimeLock=(\d+).*suspect=([01])", body
     )
     assert loaded, f"no 'PREFS: loaded' summary line:\n{body}"
 
-    preference, lock, suspect = (int(g) for g in loaded.groups())
-    print(f"\nboot log: presetPreference={preference} frameTimeLock={lock} "
-          f"suspect={suspect}")
+    size, applied, reached_end = (int(g) for g in attempt.groups())
+    output, lock, suspect = (loaded.group(1), int(loaded.group(2)),
+                             int(loaded.group(3)))
+    print(f"\nboot log: size={size} applied={applied} end={reached_end} "
+          f"output={output} frameTimeLock={lock} suspect={suspect}")
 
-    # The defaults signature. Not asserted as a failure on its own -- a unit that
-    # genuinely has no settings yet reads this way -- but it must never appear
-    # while the loader believes it read the file, because that combination is
-    # exactly the wipe that cost two sessions.
-    if preference == 5 and lock == 0:
-        assert suspect == 1, (
-            "the boot loaded presetPreference=5 with frameTimeLock=0 -- the "
-            "defaults signature -- while reporting suspect=0, meaning it read "
-            "the file successfully and still ended up on defaults. Something "
-            "wrote them. This is the 290b0a7 regression"
+    # The regression this exists for: the loader says it read the file and the
+    # unit still came up on defaults. A keyed file can say so directly --
+    # `applied` counts the keys a line actually set and a defaulted load sets
+    # none -- where the positional file offered only a value signature, and
+    # Output1080P is 5 AND the default, so a correctly configured unit held it
+    # too. docs/known-issues.md.
+    if suspect == 0 and reached_end == 1:
+        assert applied > 0, (
+            f"the boot reached the file's end with suspect=0 and applied "
+            f"{applied} keys, so it read the file successfully and still took "
+            "every default. Something wiped them"
         )
 
 
@@ -1149,12 +1177,12 @@ def test_settings_survive_a_round_trip(host):
     _toggle_frame_time_lock(host)
     _toggle_frame_time_lock(host)
 
-    before = read_settings(host)
+    before = _settled_settings(host)
     assert before is not None, f"{SETTINGS_PATH} does not read whole"
 
     try:
         _toggle_frame_time_lock(host)
-        middle = read_settings(host)
+        middle = _settled_settings(host)
         assert middle is not None, "the file went malformed mid-toggle"
         assert middle["frame-time-lock"] != before["frame-time-lock"], (
             "/uc?5 did not change frame-time-lock (it stayed "
@@ -1168,7 +1196,7 @@ def test_settings_survive_a_round_trip(host):
     finally:
         _toggle_frame_time_lock(host)
 
-    after = read_settings(host)
+    after = _settled_settings(host)
     assert after == before, (
         f"the settings did not round-trip.\n  before {before!r}\n  after  {after!r}"
     )
