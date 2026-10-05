@@ -3294,6 +3294,12 @@ void calibrateAdcOffset()
     }
 
     Tv5725::Adc::holdOffset(redOffset, greenOffset, blueOffset);
+
+    // The measurement path this routine switched on, switched off again. The
+    // auto-gain feature is its only other user and states it for itself; every
+    // other borrowed field has an owner that runs without a preset load.
+    // docs/investigations/what-the-adc-calibration-borrows.md
+    Tv5725::Adc::enableGainMeasurement(false);
 }
 
 // What a stored output mode and pass-through preference have to tell the
