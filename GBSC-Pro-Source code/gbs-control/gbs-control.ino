@@ -4097,26 +4097,19 @@ void loop()
     if ((rto->applyPresetDoneStage == 1) &&
         ((inputAcquisition.acquiredPasses() > 35 && inputAcquisition.acquiredPasses() < 45) ||
          !rto->syncWatcherEnabled)) {
-        if (rto->applyPresetDoneStage == 1) {
-
-            GBS::DAC_RGBS_PWDNZ::write(1); 
-            if (!rto->syncWatcherEnabled) {
-                inputAcquisition.placeClampWindow();
-                Tv5725::SyncProcessor::releaseClamp();
-            }
-
-            if (rto->displayClock.driving()) {
-                if (!Tv5725::VideoRoute::isHdBypassChannel())
-                    rto->displayClock.handOver();
-                frameSync.matchRate(sourceSampling.settledFieldRateHz());
-            }
-            rto->applyPresetDoneStage = 0;
+        if (!rto->syncWatcherEnabled) {
+            inputAcquisition.placeClampWindow();
+            Tv5725::SyncProcessor::releaseClamp();
         }
-    } 
+
+        if (rto->displayClock.driving()) {
+            if (!Tv5725::VideoRoute::isHdBypassChannel())
+                rto->displayClock.handOver();
+            frameSync.matchRate(sourceSampling.settledFieldRateHz());
+        }
+        rto->applyPresetDoneStage = 0;
+    }
     else if (rto->applyPresetDoneStage == 1 && (inputAcquisition.acquiredPasses() > 35)) {
-
-        GBS::DAC_RGBS_PWDNZ::write(1);  // 
-
         frameSync.matchRate(sourceSampling.settledFieldRateHz());
         rto->applyPresetDoneStage = 0;
     }
