@@ -418,13 +418,68 @@ therefore invisible to any check that compares names.
       modifier cannot be set** — the `/uc?L` handler is commented out — which is
       filed in `known-issues.md` rather than fixed here.
 
-   4. **The phases move onto `VideoPath` one per commit**, in dependency
-      order — configure the sync path, put the separator and the phases in
-      force, solve for the source, place the windows and latch, the csync
-      tail, release the clamp. Those with no sketch-state dependency first.
+   4. ~~**The phases move onto `VideoPath` one per commit.**~~ Done, with one
+      phase left partly in the sketch and the reason measured.
+      `configureSyncPath()`, `putSeparatorAndPhasesInForce()`,
+      `armSolveForSource()` and `restartAndLatch()` are the four that moved;
+      `doPostPresetLoadSteps()` goes from 50 live statements to 20.
+
+      **Two of the six phases were redundant writes rather than work.** The
+      csync tail wrote `SP_EXT_SYNC_SEL` 1 where `applyForSyncType()` had
+      already written it from the same held predicate earlier in the same
+      function, and nothing between them touches the field — the only writers
+      in the tree are that function's two branches, `selectExternalSync()` and
+      the probe's own save and restore. The scaling-RGBHV branch chose the
+      sync processor's phase at the value
+      `putSeparatorAndPhasesInForce()` chooses unconditionally, with nothing
+      applying a phase in between. Both are deleted, and the bench confirms
+      the field each wrote: `SP_EXT_SYNC_SEL` reads 1 on `SYNC 1` without the
+      tail.
+
+      **The "release the clamp" phase has not moved and two of its statements
+      cannot yet.** `SyncProcessor::releaseClampIfPlaced()` took the one
+      conditional the sketch wrote out twice — in the load and in the sync
+      watcher — over two fields that block owns. What is left reads
+      `rto->syncWatcherEnabled` and `rto->applyPresetDoneStage`, which stage 6
+      gives owners, and calls the acquisition layer twice.
+
+      **AND `configureSyncPath()` COULD NOT TAKE THE `scalingRgbhv()` GATE,
+      BECAUSE THE INCLUDE DIRECTION IS ONE-WAY.** `src/videosource/` includes
+      `src/tv5725/` and nothing goes back, so a `Tv5725::` class cannot ask
+      `VideoSourceSelection` which connector is selected. `RgbhvOutput::
+      isScaling()` is the half that is reachable; `sourceIsRgbhv()` is not.
+      The owner that sees both is `VideoSourceAcquisition`, which stage 7
+      hands the detection half of `applyPresets()` to — so that gate and
+      `applySyncProcessorDynamic()` wait for it rather than for a flag.
+
+      **One claim the sketch carried did not survive the move.** The comment
+      over `applyForSyncType()` said it had to run BEFORE `prepare()`. The two
+      write disjoint bits of the two bytes they share, and the one field both
+      reach, `SP_H_PULSE_IGNOR`, takes the same value from either —
+      `prepare()` ignores serration on separate sync and the csync branch of
+      `applyForSyncType()` does not write it at all. Swapping them leaves the
+      whole host suite green. What IS supported is the other half of the same
+      comment, which the engine now states: the arrangement is applied on
+      every route, unconditionally.
+
+      The acceptance reading was clean on every commit — the oracle quiet on
+      `vga-sync0` and `vga-sync1`, and a full 1536-register diff across the
+      whole stage of six bytes, every one solved from the measured rate, the
+      phase search, or written by the oracle's own test-bus read. The clamp
+      commit measured ZERO of 1536.
    5. **The two bodies converge**, leaving-pass-through becoming a prefix
       rather than a second function. **This is where the duplication dies**;
       stage 4 only stages for it.
+
+      Stage 4 names the one that is left: `configureSyncPath()` writes the
+      sync arrangement, and so does `VideoPath::applySyncType()`, which
+      `establishSyncType()` reaches on every engine-driven mode change. The
+      two are not interchangeable as they stand — `applySyncType()` is
+      guarded by `syncTypeApplied_` and adds the path's settle delay, where a
+      load has to write the path whatever is held. `reapplySyncTypeInForce()`
+      is the unconditional form and returns false where nothing has been
+      applied yet, which is exactly the case the load's own comment warns
+      about.
    6. **The three `rto->` flags get owners.** `applyPresetDoneStage` carries
       three things that are not DAC power — the clamp placement with the sync
       watcher off, the display-clock handover, and the rate match.
