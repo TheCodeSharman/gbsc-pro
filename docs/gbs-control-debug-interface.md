@@ -102,6 +102,18 @@ Two of the `/sc` commands bite:
 - `/uc?1` is the big hammer. It clears a wedged config, and it also destroys a
   working setup.
 
+**`/restart` IS QUEUED FOR `loop()` LIKE EVERY OTHER COMMAND**, so the unit is
+still up when it answers. Polling until a route responds therefore succeeds on
+the unit that has not restarted yet, and `/bootlog` then returns the PREVIOUS
+boot -- which reads as a boot identical to the last one down to the
+millisecond. Wait for a route to FAIL first, then for it to come back:
+
+```sh
+curl -s "http://$ip/restart"
+until ! curl -s -m 3 "http://$ip/version" >/dev/null; do sleep 1; done
+until curl -s -m 4 "http://$ip/version" >/dev/null; do sleep 2; done
+```
+
 ## Freezing the firmware
 
 For a targeted register experiment, the firmware is the confound: a source mode
