@@ -1,13 +1,19 @@
-# The YPbPr detection branch skips the preset load
+# An acquisition without a preset load emits a flat field
 
 A boot that lands on `ypbpr` emits a dark, flat or banded green field while the
-sync path, the divider and the solved geometry are all correct. The cause is on
-the TV5725 and in this firmware: **detection's YPbPr branch claims the source
-and returns without a preset load**, so `doPostPresetLoadSteps()` never runs and
-the chip is left half configured.
+sync path, the divider and the solved geometry are all correct. So does `vga` on
+composite sync. The cause is on the TV5725 and in this firmware: **an
+acquisition that completes without a preset load leaves the chip half
+configured**, and detection's YPbPr branch is one way to reach it -- it claims
+the source and returns where the RGB branch calls `applyPresets()`.
 
 Anything that reaches `applyPresets()` cures it, with no input change and no
 register written by hand.
+
+**The cure is a transition, not a value.** Writing every differing register back
+does not work, in either direction, and neither does establishing them at
+bring-up: nine of the fifteen are correct at boot since that change and the
+picture is unchanged. What `applyPresets()` supplies beyond them is still open.
 
 ## The chain
 
@@ -98,6 +104,79 @@ separate defect.
   family.
 - **That the sixteen fields are a defect of their own.** They are what the
   missing preset load would have written.
+
+## IT IS NOT A YPbPr FAULT. IT IS AN ACQUISITION WITHOUT A PRESET LOAD
+
+`vga` on **composite sync** does the same thing. `SYNC 1` on the RISC PC, which
+re-applies the mode so the sync type reaches VIDC20, leaves the output black with
+`STATUS_SYNC_PROC_VTOTAL` 308, `HTOTAL` 2200 against `PLLAD_MD` 2200 and the
+engine reporting `acquired` -- and `/sc?#` restores it to `spread 106.1 luma
+77.2`. `SYNC 0` recovers on its own, because separate-sync `vga` is what
+detection's RGB branch claims and that branch loads a preset.
+
+So the condition is not the connector. It is **an acquisition that completes
+without a preset load**, and the YPbPr branch is one way to reach it.
+
+## The boot spends its whole early life with the ADC PLL free-running
+
+With `BOOTLOG_BYTES=8192` the boot log carries the state rather than running out
+inside it. From the first measurement to the end of the log, every pass:
+
+    sampling: 270 lines x 60.0 Hz -> line rate 16270
+    duty: 242 pulse / 2200 divider, htotal 3258, negative, UNLOCKED
+
+The source is 259/260 lines at 59.93 Hz. `htotal` 3258 against a divider of
+2200 is the ADC PLL running free: 3258 x 15644 Hz is 51.0 MHz. The count reads
+270 rather than 260 because the sync processor counts in ADC clocks and the ADC
+is not locked to the line.
+
+This is the same free-running VCO state
+`a-ypbpr-detection-that-succeeds-first-pass-skips-the-preparation.md` measured at
+1704 samples against a 1448 divider, 53.6 MHz. There it was cleared by
+`SyncRecovery::FullReset` after 25..32 s. Here it is not: the count is *steady*
+at 270, so the steadiness run agrees, the engine reaches `acquired`, and the
+escalation ladder it would need stops at the first rung.
+
+**A steady count is not a locked one**, and the engine's own state machine says
+so -- `SourceUnlocked` exists for exactly this and `Adc::dividerLatched()` is
+what decides it. By the time the state is polled over HTTP the count has come
+back to 2200 and the state reads `acquired`, so the window in which the two
+disagree is only visible from the boot log.
+
+## What the bring-up fix reached, and what it did not
+
+Establishing the decimator modes and the frame buffer's request modes at
+bring-up, and stating the user's picture options whenever a mode change
+completes, puts **nine of the fifteen** fields right at boot -- `DEC_IDREG_EN`,
+`DEC_WEN_MODE`, `CAP_STATUS_SEL`, `PB_REQ_SEL`, `PB_CUT_REFRESH`,
+`VDS_D_RAM_BYPS`, `VDS_PK_LB_GAIN`, `VDS_PK_LH_GAIN`, `VDS_UV_STEP_BYPS`.
+**The picture is still a flat field.**
+
+### The display PLL's skew must NOT be put in the bring-up
+
+`PLL_R` and `PLL_S` are two of the sixteen, and establishing them there
+**blanks the output on a `vga` boot**: nothing emitted, with every register
+correct, the sync pad driven, the DACs powered and the raster solved at
+1917x1124, where the same boot without it is clean at spread 109.6. `/sc?#`
+restores it, so it reads exactly like the fault above and is a different one.
+
+The display PLL is where "black with every register correct" lives, and its
+skew belongs with the display clock's own setup rather than with a bring-up
+that runs before a clock has been chosen. Nothing a block reset takes away
+includes it. A test asserts the bring-up leaves both alone.
+
+Four further candidates were tried on a faulted boot and none cures it:
+
+| tried | result |
+|---|---|
+| `DEC_TEST_ENABLE` 1 -> 0, which `calibrateAdcOffset()` leaves on | no change |
+| `VDS_FRAME_RST`/`VDS_FRAME_NO`/`VDS_FR_SELECT`, the frame sequencing | no change |
+| the memory blocks pulsed through `resetVideoBlocks()`'s own sequence by hand | no change |
+| waiting several minutes | gets worse -- flat at luma 23 becomes fully black |
+
+Every block reset reads released, both pads enabled, and both scales solved. So
+what `applyPresets()` supplies is still a transition and not a value, and it is
+not the block reset.
 
 ## The family is one fault
 

@@ -1303,12 +1303,18 @@ measurement of it. A count that matches the source says the arriving signal is
 intact; one that cannot be made to settle on the right path says it is not, and
 that is the one that needs power.
 
-### A boot that lands on `ypbpr` skips the preset load and comes up green
+### An acquisition that completes without a preset load emits a flat field
 
 **Reproduced on demand, 4 of 4 boots.** Which input the settings file names at
 power-up decides it: stored as `ypbpr` the picture is a dark, flat or banded
 green field; stored as `vga` it is clean, and selecting `ypbpr` afterwards is
 clean too. Same input, same cable, same source.
+
+**AND IT IS NOT A YPbPr FAULT.** `vga` on composite sync does the same thing --
+`SYNC 1` on the RISC PC leaves the output black with `VTOTAL` 308 and `HTOTAL`
+2200 against the divider, and `/sc?#` restores it. The condition is an
+acquisition that completes without a preset load; separate-sync `vga` is clean
+only because detection's RGB branch is the one that loads one.
 
 **Detection's YPbPr branch claims the source and returns without a preset
 load.** `detectAndSwitchToActiveInput()`'s RGB branch calls `applyPresets()`
@@ -1351,11 +1357,24 @@ values: the phases run block resets and re-seed the display clock. That negative
 is what kept the sixteen fields filed as a defect of their own; they are the
 symptom.
 
-**Open:** where the setup belongs. The phases are `Tv5725::VideoPath` methods
-already and the engine resets the video blocks without re-configuring them, so
-collapsing the two branches' difference is one answer and moving the phases onto
-the engine's own mode change is the other.
-`docs/investigations/the-ypbpr-detection-branch-skips-the-preset-load.md`.
+**THE BRING-UP NOW ESTABLISHES NINE OF THE FIFTEEN AND THE PICTURE IS
+UNCHANGED**, so what `applyPresets()` supplies is a transition and not a value.
+The display PLL's skew is deliberately not among them: establishing `PLL_R` and
+`PLL_S` there blanks a `vga` boot outright, which is a separate fault wearing
+the same signature.
+Also refuted on a faulted boot: `DEC_TEST_ENABLE` cleared, the frame-sequencing
+trio written, and the memory blocks pulsed through `resetVideoBlocks()`'s own
+sequence by hand. Every block reset reads released, both pads enabled, both
+scales solved.
+
+**The boot spends its early life with the ADC PLL free-running** -- `htotal`
+3258 against a divider of 2200, 51.0 MHz, for the whole of an 8 KB boot log,
+with the count steady at 270 where the source is 260. A steady count is not a
+locked one, and because it is steady the escalation ladder never fires.
+
+**Open:** what `applyPresets()` does beyond the fields. Waiting does not cure
+it -- the field goes from luma 23 to fully black over minutes.
+`docs/investigations/an-acquisition-without-a-preset-load-emits-a-flat-field.md`.
 
 ### The boot selects an input differently from every other caller
 

@@ -4,7 +4,7 @@
 the TV5725: detection's YPbPr branch claims the source without a preset load, so
 `doPostPresetLoadSteps()` never runs. `/sc?#` cures it without reaching the HC32
 at all, and selecting `rgbs` bounces `ADC_INPUT_SEL` without curing anything.
-`the-ypbpr-detection-branch-skips-the-preset-load.md` is the current page.
+`an-acquisition-without-a-preset-load-emits-a-flat-field.md` is the current page.
 
 This one is kept for the measurements that stand and for why they read the way
 they did. The fifteen fields below are the sixteen the missing phases write;
