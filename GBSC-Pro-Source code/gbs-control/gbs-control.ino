@@ -2263,88 +2263,85 @@ void doPostPresetLoadSteps()
     // so a mode change does not repeat it.
     geometry.configureSyncPath();
 
-    {
-        if (scalingRgbhv()) {
-            if (Tv5725::SyncMeasurement::isCsync()) {
-                Tv5725::SyncOnGreen::choose(24);
-            }
-            Tv5725::Adc::choosePhaseAdc(16);
-            Tv5725::Adc::choosePhaseSyncProcessor(8);
-        }
-
-        Tv5725::SyncProcessor::setCoastInvert(false);
-        if (!Tv5725::VideoRoute::isHdBypassChannel() && !geometry.scalingRgbhvInForce()) {
-            inputAcquisition.applySyncProcessorDynamic(0);
-        }
-
-        Tv5725::SyncProcessor::holdClamp();
-
-        geometry.putSeparatorAndPhasesInForce();
-        rto->sourceDisconnected = false;
-        Tv5725::Chip::holdPower(true);
-
-
-
+    if (scalingRgbhv()) {
         if (Tv5725::SyncMeasurement::isCsync()) {
-            if (Tv5725::TestBus::readHigh() == 0) {
-                delay(4);
-                if (Tv5725::TestBus::readHigh() == 0) {
-                    inputAcquisition.acquireSeparatorLevel();
-                    delay(4);
-                }
-            }
+            Tv5725::SyncOnGreen::choose(24);
         }
+        Tv5725::Adc::choosePhaseAdc(Tv5725::Adc::MidField);
+    }
 
-        geometry.armSolveForSource();
-
-        frameSync.cleanup();
-        frameTimeLock.forgiveFailures();
-
-        inputAcquisition.placeCoastWindow(0);
-        inputAcquisition.placeClampWindow();
-
-
-        geometry.restartAndLatch();
-
-        if (Tv5725::VideoRoute::isHdBypassChannel()) {
-                    Tv5725::Interrupts::acknowledgeAll();
-
-            // Video routes around the VDS here, so the mode change armed above
-            // has no solve coming and the freeze it took would never be
-            // released.
-            geometry.setOutputMode(&Tv5725::ModeBypass);
-
-            return;
-        }
-
-        inputAcquisition.placeClampWindow();
-        if (Tv5725::SyncProcessor::clampPlaced()) {
-            if (Tv5725::SyncProcessor::clampHeld()) {
-                Tv5725::SyncProcessor::releaseClamp();
-            }
-        }
-
+    Tv5725::SyncProcessor::setCoastInvert(false);
+    if (!Tv5725::VideoRoute::isHdBypassChannel() && !geometry.scalingRgbhvInForce()) {
         inputAcquisition.applySyncProcessorDynamic(0);
+    }
 
-        if (!rto->syncWatcherEnabled) {
-            Tv5725::SyncProcessor::releaseClamp();
+    Tv5725::SyncProcessor::holdClamp();
+
+    geometry.putSeparatorAndPhasesInForce();
+    rto->sourceDisconnected = false;
+    Tv5725::Chip::holdPower(true);
+
+
+
+    if (Tv5725::SyncMeasurement::isCsync()) {
+        if (Tv5725::TestBus::readHigh() == 0) {
+            delay(4);
+            if (Tv5725::TestBus::readHigh() == 0) {
+                inputAcquisition.acquireSeparatorLevel();
+                delay(4);
+            }
         }
+    }
 
+    geometry.armSolveForSource();
+
+    frameSync.cleanup();
+    frameTimeLock.forgiveFailures();
+
+    inputAcquisition.placeCoastWindow(0);
+    inputAcquisition.placeClampWindow();
+
+
+    geometry.restartAndLatch();
+
+    if (Tv5725::VideoRoute::isHdBypassChannel()) {
         Tv5725::Interrupts::acknowledgeAll();
 
-        // Pass-through is not decided here. It is a statement about the
-        // measured source, and this runs at the end of a preset load with
-        // whatever the PREVIOUS source measured still held --
-        // VideoSourceAcquisition::passSourceThrough() owns it and re-answers it
-        // from each measurement. docs/video-source-acquisition.md
-        rto->applyPresetDoneStage = 1;
+        // Video routes around the VDS here, so the mode change armed above
+        // has no solve coming and the freeze it took would never be
+        // released.
+        geometry.setOutputMode(&Tv5725::ModeBypass);
 
-        // Capture stays frozen: it is released by the poll() that lands the
-        // windows, seconds from now once the source has settled into the new
-        // mode. Releasing it here shows the previous mode's geometry against
-        // the new source until then.
-
+        return;
     }
+
+    inputAcquisition.placeClampWindow();
+    if (Tv5725::SyncProcessor::clampPlaced()) {
+        if (Tv5725::SyncProcessor::clampHeld()) {
+            Tv5725::SyncProcessor::releaseClamp();
+        }
+    }
+
+    inputAcquisition.applySyncProcessorDynamic(0);
+
+    if (!rto->syncWatcherEnabled) {
+        Tv5725::SyncProcessor::releaseClamp();
+    }
+
+    Tv5725::Interrupts::acknowledgeAll();
+
+    // Pass-through is not decided here. It is a statement about the
+    // measured source, and this runs at the end of a preset load with
+    // whatever the PREVIOUS source measured still held --
+    // VideoSourceAcquisition::passSourceThrough() owns it and re-answers it
+    // from each measurement. docs/video-source-acquisition.md
+    rto->applyPresetDoneStage = 1;
+
+    // Capture stays frozen: it is released by the poll() that lands the
+    // windows, seconds from now once the source has settled into the new
+    // mode. Releasing it here shows the previous mode's geometry against
+    // the new source until then.
+
 }
 
 void applyPresets()

@@ -252,6 +252,9 @@ public:
     // The widest phase the five-bit field carries.
     static const uint8_t PhaseMax = 31;
 
+    // The mid of the field, which is what a caller with nothing to search gets.
+    static const uint8_t MidField = 16;
+
     // Where a setup starts the sync processor's adjuster, before acquirePhase()
     // searches. Not an answer: it is what the separator read and the first
     // measurement are taken through.

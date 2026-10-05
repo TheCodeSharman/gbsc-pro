@@ -13,6 +13,7 @@ const uint16_t Adc::BringUpDivider;
 const uint32_t Adc::BringUpLineRateHz;
 const uint16_t Adc::LatchedSamplesTolerance;
 const uint8_t Adc::NeutralOffset;
+const uint8_t Adc::MidField;
 const uint8_t Adc::SetupPhaseSyncProcessor;
 const uint8_t Adc::AutoGainInitial;
 
@@ -217,9 +218,6 @@ uint8_t halfSampleOn(uint8_t phase)
     return (uint8_t)((phase + 16) & Adc::PhaseMax);
 }
 
-// The mid of the field, which is what a caller with nothing to search gets.
-const uint8_t MidField = 16;
-
 // The middle of the widest run of phases the sweep counted clean, wrapping.
 //
 // **A MAXIMUM IS DECIDED BY ONE OUTLIER.** Scoring the worst window and taking
@@ -250,7 +248,7 @@ uint8_t middleOfWidestCleanRun(const uint8_t *dither)
         }
     }
     if (bestLength == 0)
-        return MidField;
+        return Adc::MidField;
     return (uint8_t)((bestStart + bestLength / 2) & Adc::PhaseMax);
 }
 
