@@ -316,6 +316,78 @@ therefore invisible to any check that compares names.
    by one — one entry, then it stops — without shuffling the framings with them.
    It did that with the register dumps too.
 
+8. **Give `VideoPath::setOutputMode()`'s third arm a body.** The configure acts
+   for a source live in `doPostPresetLoadSteps()`, a sketch function only a
+   preset load reaches, and the engine's own mode change runs none of them.
+
+   `video-source-acquisition.md` states the principle this breaks — an
+   asymmetry between entering and leaving pass-through is what lets one arm
+   acquire steps the other lacks, and the leave path was once missing the
+   bring-up, the block restart and the colour matrix. Counted 2026-10-05:
+
+   | | acts |
+   |---|---|
+   | `VideoPath::configureScalingPath()`, the leaving arm | 9 |
+   | `doPostPresetLoadSteps()`, what a load runs | 50 live statements |
+   | in both | **5** — `BringUp::init`, `Chip::resetVideoBlocks`, `applyClockGroup`, `applyFrameBufferRequests`, the colour matrix |
+   | only in the leaving arm | 4 — `Chip::routeToScaler`, `installReferenceSamplingClock`, `applyScan`, `SyncProcessor::reset` |
+   | only in the load | the remaining forty-odd |
+
+   So this step is not "move fifty lines". It is to give the ordinary
+   mode-change arm the body it never had, after which `configureScalingPath()`
+   is the subset it already is and the two collapse.
+
+   **What blocks it.** Nothing owns the ORDER: the sequence exists only as the
+   function's layout, and four of its constraints are measured — the latch
+   last, raster then clock then windows then rate steer, the divider before the
+   latch, `SyncProcessor::prepare()` before the windows. Beyond that the body
+   reads three `rto->` flags (`sourceDisconnected`, `syncWatcherEnabled`,
+   `applyPresetDoneStage`) and five `uopt->` picture options, and calls two
+   sketch helpers — `applyColourPath()`, which is the colour matrix plus the
+   component-mixing option, and `sourceHasSerratedSync()`, which is already
+   `SourceMeasurement::hasSerratedSync()` and so costs nothing.
+
+   The stages, each one commit run and each verifiable on its own:
+
+   1. **The acceptance reading becomes a tool.** The nine valid
+      sync-processor fields, `/geometry` and `picstate.score()` on a named
+      path, diffed against a saved baseline. Every stage below needs it.
+      `SP_PRE_COAST`/`SP_POST_COAST` are excluded by construction — they are
+      the recovery ladder's, so a post-acquisition reading reports whether the
+      ladder ran. `known-issues.md`.
+   2. **The picture options become held engine state**, written by the
+      preferences load and by the OLED, IR and web handlers alike, read by the
+      mode change. Host-testable entire.
+   3. **The colour path and the serration question move**, which retires both
+      sketch helpers.
+   4. **The phases move onto `VideoPath` one per commit**, in dependency
+      order — configure the sync path, put the separator and the phases in
+      force, solve for the source, place the windows and latch, the csync
+      tail, release the clamp. Those with no sketch-state dependency first.
+   5. **The two bodies converge**, leaving-pass-through becoming a prefix
+      rather than a second function. **This is where the duplication dies**;
+      stage 4 only stages for it.
+   6. **The three `rto->` flags get owners.** `applyPresetDoneStage` carries
+      three things that are not DAC power — the clamp placement with the sync
+      watcher off, the display-clock handover, and the rate match.
+   7. **`applyPresets()` splits** along the line this page already draws: its
+      configure half is `loadComputedPreset()`, and the detection sweep around
+      it — the sync-type probe, three `SFTRST_*_RSTZ` releases and an
+      `Adc::selectInput(1)/(0)` hunt with two `delay(100)`s — belongs to
+      `VideoSourceAcquisition`, which owns detection already. Its five callers
+      then each name which half they wanted.
+   8. **Delete** `doPostPresetLoadSteps()`, `applyPresets()`,
+      `loadComputedPreset()`, `prepareSyncProcessor()`, `applyColourPath()`
+      and `applyPresetDoneStage`.
+
+   **A FULL 1536-REGISTER DIFF IS REQUIRED AT EACH END OF EVERY STAGE, AND THE
+   TEST THAT LOOKS LIKE THE SAFETY NET CANNOT REPLACE IT.**
+   `test_a_preset_load_leaves_the_engines_values_not_the_sketchs` is blind to a
+   field only the sketch writes, which is the population this step moves:
+   fifteen sat at their reset defaults after the engine had solved, and that is
+   how the flat field went four sessions undiagnosed.
+   `investigations/an-acquisition-without-a-preset-load-emits-a-flat-field.md`.
+
 Step 5 is the milestone that triggers a review pass over `dev`, a
 simplification, and resequencing into logical commits for main. **It is done,
 and so is step 7, so the review is due now.**

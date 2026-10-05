@@ -1670,6 +1670,13 @@ directions are arms of this one call, and a resolution arriving from the user
 leaves pass-through by exactly the route the measurement does -- which it did not
 before, and the raster it solved landed on a chip whose VDS was still held.
 
+**THE ASYMMETRY IS STILL LIVE, AND IT IS NOW THE THIRD ARM THAT IS SHORT.**
+Leaving pass-through runs `configureScalingPath()`, nine acts; an ordinary mode
+change configures nothing at all and returns, because the configure acts for a
+source sit in `doPostPresetLoadSteps()` in the sketch, which only a preset load
+reaches. The two bodies share five acts. Retiring that function into this call
+is step 8 of `chip-initialisation.md`, which carries the count and the stages.
+
 `ModeBypass` is a real `OutputMode` with `frameLines() == 0`, so pass-through is
 expressible as an argument without going back into `PresetPreference`, where it
 destroyed the resolution the user chose. **Nothing holds it separately**: the
