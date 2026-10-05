@@ -3907,6 +3907,49 @@ entries resolve the raster match in time is open.
 
 ## Costs time rather than correctness
 
+### A sync-type excursion leaves two registers behind, and a re-acquisition does not clear them
+
+A `SYNC 1` round trip on the bench RISC PC leaves `ADC_SOGCTRL` at **11**
+against the 12 a `/sc?~` settles on, and `MADPT_VTAP2_COEFF` at **4** against
+`Deinterlacer::init()`'s 6. Measured across all 1536 registers, with two
+readings of one settled state differing in **zero** bytes as the control, so
+neither is dither.
+
+Both stick. A source mode round trip on `SYNC 0` re-acquires and restores
+NEITHER; `/sc?~` restores both at once. The mechanism is that nothing on the
+separate-sync path rewrites either — `acquireSeparatorLevel()` runs only in the
+csync branch of the load, and the deinterlacer is steered only where the source
+is interlaced — so whatever the csync visit left is simply carried.
+
+**The cost is to measurement rather than to the picture.** A 1536-register diff
+that crosses a sync-type excursion reports two fields that belong to the
+excursion and not to whatever is under test, which is two candidate regressions
+per comparison. Re-detect with `/sc?~` before the second reading, or subtract
+the pair.
+
+What is unsettled is whether either SHOULD be re-derived per acquisition.
+`ADC_SOGCTRL` is a searched value and arguably should survive; `MADPT_VTAP2_COEFF`
+describes a deinterlacer the separate-sync source is not using.
+
+### A register snapshot taken straight after the oracle catches a solve in flight
+
+`configure_oracle.py` reads the test bus and takes a capture burst, which costs
+seconds, and the engine re-solves whenever the measured field rate wobbles — it
+does so every few tens of seconds on the bench RISC PC at 320x256@50. A
+`snapdiff.py --save` queued behind the oracle therefore lands inside the arm
+about half the time.
+
+The signature is `PAD_SYNC_OUT_ENZ` **0 -> 1** or `VDS_DIS_VB_ST` **1121 -> 42**
+sitting among the rate-derived fields: the arm takes the sync pad and the
+display aperture away before the first register it moves, and
+`presentWhenSettled()` gives both back. Seen three times in one session, each
+time reading as a regression in the geometry.
+
+**Read `PAD_SYNC_OUT_ENZ` and `VDS_DIS_VB_ST` before believing a diff.** Pad
+driven and aperture open is the settled state; anything else is a snapshot of a
+machine mid-change. Polling the pair until they settle costs about fifteen
+seconds.
+
 ### The bench's recorded margins are a BOOT figure, and a re-acquisition moves them
 
 On `vga` at 320x256@50 into 1080p, with `/geometry` byte-identical either way,
