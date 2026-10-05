@@ -1217,33 +1217,6 @@ void setResetParameters()
     userCommand = '@';
 }
 
-// void OutputComponentOrVGA()
-// {
-
-//   if (uopt->wantOutputComponent)
-//   {
-//     GBS::VDS_SYNC_LEV::write(0x80);
-//     GBS::VDS_CONVT_BYPS::write(1);
-//     GBS::OUT_SYNC_CNTRL::write(0);
-//   }
-//   else
-//   {
-//     GBS::VDS_SYNC_LEV::write(0);
-//     GBS::VDS_CONVT_BYPS::write(0);
-//     GBS::OUT_SYNC_CNTRL::write(1); 
-//   }
-
-//   if (!isCustomPreset)
-//   {
-//     {
-//       applyYuvPatches();
-//     }
-//     {
-//       applyRGBPatches();
-//     }
-//   }
-// }
-
 void applyComponentColorMixing()
 {
     GBS::VDS_UCOS_GAIN::write(0x19);
@@ -1328,23 +1301,19 @@ void applyColourBalance()
                 geometry.colour().lumaGain());
 }
 
-void applyYuvPatches()
+// The colour path the SELECTED INPUT is due. Detection used to key this off
+// which sync it had just found, which is the same answer read from a proxy:
+// Adc::selectInput() records what it put the mux on, and every route that moves
+// the mux goes through it.
+void applyColourPath()
 {
-    Tv5725::ColourSpace::applyYuv(geometry.colour());
+    if (Tv5725::Adc::inputIsComponent())
+        Tv5725::ColourSpace::applyYuv(geometry.colour());
+    else
+        Tv5725::ColourSpace::applyRgb(geometry.colour());
 
-    if (uopt->wantOutputComponent) 
-    {
+    if (uopt->wantOutputComponent)
         applyComponentColorMixing();
-    }
-}
-
-void applyRGBPatches()
-{
-    Tv5725::ColourSpace::applyRgb(geometry.colour());
-
-    if (uopt->wantOutputComponent) {
-        applyComponentColorMixing();
-    }
 }
 
 // What the sync processor reports about the source's sync edges, by name. The
@@ -1764,7 +1733,7 @@ uint8_t inputAndSyncDetect()
     {
         rto->sourceDisconnected = false;
         rto->isInLowPowerMode = false; 
-        applyRGBPatches();
+        applyColourPath();
         if (VideoSourceSelection::selected() == InfoRGBs || VideoSourceSelection::selected() == InfoRGsB) {
         }
 
@@ -1773,7 +1742,7 @@ uint8_t inputAndSyncDetect()
     {
         rto->isInLowPowerMode = false; 
         rto->sourceDisconnected = false;
-        applyYuvPatches();
+        applyColourPath();
         // GBS::VDS_CONVT_BYPS::write(0);
         // GBS::PIP_CONVT_BYPS::write(0);
         if (VideoSourceSelection::selected() == InfoYUV || VideoSourceSelection::selected() == InfoSV || VideoSourceSelection::selected() == InfoAV) {
@@ -1784,6 +1753,7 @@ uint8_t inputAndSyncDetect()
     {
         rto->isInLowPowerMode = false; 
         rto->sourceDisconnected = false;
+        applyColourPath();
         Tv5725::RgbhvOutput::chooseBypass();
 
         return 3;
@@ -2372,11 +2342,7 @@ void doPostPresetLoadSteps()
 
         Tv5725::SyncProcessor::holdClamp();
 
-        if (Tv5725::Adc::inputIsComponent()) {
-            applyYuvPatches();
-        } else {
-            applyRGBPatches();
-        }
+        applyColourPath();
 
         if (Tv5725::VideoRoute::isHdBypassChannel()) {
             Tv5725::Chip::OUT_SYNC_SEL::write(1);
@@ -2502,8 +2468,6 @@ void doPostPresetLoadSteps()
         Tv5725::SyncOnGreen::putInForce();
 
             Tv5725::Interrupts::acknowledgeAll();
-
-        // OutputComponentOrVGA();
 
         // Pass-through is not decided here. It is a statement about the
         // measured source, and this runs at the end of a preset load with
@@ -2750,14 +2714,8 @@ void enterHdBypass()
     GBS::PA_SP_BYPSZ::write(1);
     Tv5725::SyncProcessor::forgetPositions();
 
-    // The ADC's sense of what arrives on R, G and B, which the preset load used
-    // to choose. applyColourPath() runs after it and wins on the matrix bits;
-    // applyStoredAdcGain() below puts back the gain applyYuv() overwrites.
-    if (Tv5725::Adc::inputIsComponent()) {
-        applyYuvPatches();
-    } else {
-        applyRGBPatches();
-    }
+    // The ADC's sense of what arrives on R, G and B.
+    applyColourPath();
 
     Tv5725::HdBypass::enterFor(Tv5725::Adc::inputIsComponent(),
                                Tv5725::SyncMeasurement::isCsync(),
