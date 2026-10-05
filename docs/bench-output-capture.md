@@ -62,15 +62,35 @@ and 4.3 s, the picture at 5.1 s. Other transitions clear inside a second.
 
 **TWO SCORES TAKEN BACK TO BACK ARE BOTH INSIDE THAT WINDOW**, which is how a
 healthy unit reads as a regression twice in a row: `picstate.py` run twice is
-two grabs a few seconds apart, and both land in the dead period. Poll until the
-frame is not flat, with a ceiling, rather than scoring a fixed number of times:
+two grabs a few seconds apart, and both land in the dead period.
+
+## AND IT DELIVERS BLACK INSIDE A SETTLED STREAM, WITH THE BOARD UNCHANGED
+
+A black frame is not evidence at any time, not only after a transition.
+Measured on `vga` at composite sync, each grab paired with the board's own state
+in one window: a picture, then five consecutive black frames, then a picture
+again, with `PAD_SYNC_OUT_ENZ` 0, `DAC_RGBS_PWDNZ` 1, `SFTRST_MEM_RSTZ` 1,
+`VDS_VSCALE` 485 and `state: acquired` identical throughout and the sync
+processor counting 308/309 across all of it. Video cannot have stopped and
+restarted with every one of those unchanged, so the dongle dropped it.
+
+**THE FORTY WARM-UP FRAMES ARE NOT ALWAYS ENOUGH EITHER**, so re-opening the
+device per grab does not escape it: of three bursts of twelve consecutive frames
+taken in one open, one came back with frames 1, 2 and 4 black and the rest a
+picture. Re-opening also costs the forty discarded frames again.
+
+So take a BURST in one open and use the first frame that is not flat, retrying
+the burst with a ceiling before calling a field flat:
 
 ```python
-for _ in range(15):
-    s = picstate.score(hdmi_capture.frames(1, dev)[0])
-    if not s["flat"]:
+for frame in hdmi_capture.frames(12, dev):
+    scored = picstate.score(frame)
+    if not scored["flat"]:
         break
 ```
+
+`configure_oracle.settled_picture()` is that loop with the retry and the
+ceiling, injectable so it is testable without a dongle.
 
 ## The unseated HDMI input, which is the last resort
 

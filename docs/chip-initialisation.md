@@ -349,12 +349,29 @@ therefore invisible to any check that compares names.
 
    The stages, each one commit run and each verifiable on its own:
 
-   1. **The acceptance reading becomes a tool.** The nine valid
-      sync-processor fields, `/geometry` and `picstate.score()` on a named
-      path, diffed against a saved baseline. Every stage below needs it.
-      `SP_PRE_COAST`/`SP_POST_COAST` are excluded by construction — they are
-      the recovery ladder's, so a post-acquisition reading reports whether the
-      ladder ran. `known-issues.md`.
+   1. ~~**The acceptance reading becomes a tool.**~~ Done.
+      `tools/gbsc-pro-hwtest/configure_oracle.py` takes the nine valid
+      sync-processor fields, the `/geometry` the engine solved, the source's own
+      measurement and `picstate.score()` on a named path, and
+      `--save`/`--against` diff it. **What the engine COMPUTED is an oracle and
+      what it MEASURED is context**: a solved value moving is a FAIL and exits
+      1, a measured one is a NOTE. Four pairs are excluded by construction —
+      the coast pair and the polarity-auto pair, each for its own reason in
+      `known-issues.md`, read and printed but never compared.
+
+      Two things it had to be taught, both measured. **A field placed from the
+      line rate moves when the held count alternates by one** — 312 lines put
+      `SP_H_CST_SP` at 1672 and 313 at 1666, on both inputs — and a count
+      alternating by one is the same source, so the tolerance for those is one
+      line of the count. **And a black capture is not a flat field**, which is
+      why the picture is scored off a burst rather than a grab;
+      `bench-output-capture.md` carries what the dongle does.
+
+      Verified quiet on an untouched unit, across a sync-type round trip, across
+      an input round trip, and against the readings recorded a session earlier —
+      zero FAILs on all three paths, the ±1 count the only difference. Loud on a
+      baseline from another path, which it refuses to compare rather than diff.
+      `snapshots/configure-oracle-2026-10-05.json` is the step-8 reference.
    2. **The picture options become held engine state**, written by the
       preferences load and by the OLED, IR and web handlers alike, read by the
       mode change. Host-testable entire.
