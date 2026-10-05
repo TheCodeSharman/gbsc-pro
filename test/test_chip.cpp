@@ -338,6 +338,34 @@ TEST_CASE("powering the DACs leaves the sync pad where the arm put it")
     CHECK(Chip::PAD_SYNC_OUT_ENZ::read() == 1);
 }
 
+// The teardown is the same shape in reverse. Taking the sync pad away is the
+// arm's, and a teardown that took it would leave the arm with nothing to give
+// back.
+
+TEST_CASE("disabling the output sync leaves the sync pad where the arm put it")
+{
+    fresh();
+    Chip::OUT_SYNC_CNTRL::write(1);
+    Chip::PAD_SYNC_OUT_ENZ::write(0);
+
+    Chip::disableOutputSync();
+
+    CHECK(Chip::OUT_SYNC_CNTRL::read() == 0);
+    CHECK(Chip::PAD_SYNC_OUT_ENZ::read() == 0);
+}
+
+TEST_CASE("unpowering the DACs leaves the sync pad where the arm put it")
+{
+    fresh();
+    Chip::DAC_RGBS_PWDNZ::write(1);
+    Chip::PAD_SYNC_OUT_ENZ::write(0);
+
+    Chip::unpowerDacs();
+
+    CHECK(Chip::DAC_RGBS_PWDNZ::read() == 0);
+    CHECK(Chip::PAD_SYNC_OUT_ENZ::read() == 0);
+}
+
 TEST_CASE("the clock input pad is enabled by clearing its disable")
 {
     fresh();

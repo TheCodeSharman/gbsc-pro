@@ -1154,8 +1154,8 @@ void setResetParameters()
 
     frameSync.cleanup();
 
-    GBS::OUT_SYNC_CNTRL::write(0);
-    GBS::DAC_RGBS_PWDNZ::write(0);
+    Tv5725::Chip::disableOutputSync();
+    Tv5725::Chip::unpowerDacs();
     Tv5725::Adc::applyReferenceTrim();
     GBS::ADC_CLK_PA::write(0);
     GBS::ADC_SOGEN::write(1); 
@@ -1169,7 +1169,6 @@ void setResetParameters()
     GBS::ADC_POWDZ::write(1);
     Tv5725::SyncOnGreen::putInForce();
     Tv5725::BringUp::holdAllBlocks();
-    GBS::DAC_RGBS_PWDNZ::write(0);
     GBS::PLL648_CONTROL_01::write(0x00);
     GBS::IF_SEL_ADC_SYNC::write(1);
     GBS::PLLAD_VCORST::write(1);
@@ -1345,8 +1344,8 @@ void goLowPowerWithInputDetection()
     bootLogPrintf("LOWPOWER: entered at t=%lums (no sync found)\n",
         (unsigned long)millis());
 
-    GBS::OUT_SYNC_CNTRL::write(0);
-    GBS::DAC_RGBS_PWDNZ::write(0);
+    Tv5725::Chip::disableOutputSync();
+    Tv5725::Chip::unpowerDacs();
 
     setResetParameters();
     prepareSyncProcessor();

@@ -63,6 +63,10 @@ void Chip::enableOutputSync() { OUT_SYNC_CNTRL::write(1); }
 
 void Chip::powerDacs() { DAC_RGBS_PWDNZ::write(1); }
 
+void Chip::disableOutputSync() { OUT_SYNC_CNTRL::write(0); }
+
+void Chip::unpowerDacs() { DAC_RGBS_PWDNZ::write(0); }
+
 void Chip::outputDown()
 {
     OUT_SYNC_CNTRL::write(0);

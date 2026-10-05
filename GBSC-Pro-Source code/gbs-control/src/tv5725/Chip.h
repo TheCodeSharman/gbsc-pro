@@ -184,6 +184,11 @@ public:
     // The RGBS DACs. Narrower than outputUp() for the same reason.
     static void powerDacs();
 
+    // The same two, taken down without the sync pad. A teardown that took the
+    // pad would leave presentWhenSettled() with nothing to give back.
+    static void disableOutputSync();
+    static void unpowerDacs();
+
     // The DAC routes are ALTERNATIVES, and nothing outside this class clears
     // any of them, so each one clears the others. Two set at once sums the
     // paths at the DACs: the black level lifts and the colours desaturate while
