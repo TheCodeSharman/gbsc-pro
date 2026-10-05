@@ -133,15 +133,17 @@ void Settings::eachScalerSetting(SettingVisitor &visit)
     visit.number("frame-time-lock-method", options_.frameTimeLockMethod, 1, 0);
     visit.number("scanlines", options_.wantScanlines, 1, 0);
     visit.number("scanline-strength", options_.scanlineStrength, 0x60, 0x30);
-    visit.number("component-output", options_.wantOutputComponent, 1, 0);
     visit.number("deinterlace-mode", options_.deintMode, 2, 0);
     uint8_t lineFilter = picture_.lineFilter();
     uint8_t peaking = picture_.peaking();
     uint8_t sharpness = picture_.sharpness();
     uint8_t stepResponse = picture_.stepResponse();
     uint8_t autoGain = picture_.autoGain();
+    uint8_t outputComponent = picture_.outputComponent();
     visit.number("auto-gain", autoGain, 1,
                  Tv5725::PictureOptions::AutoGainDefault);
+    visit.number("component-output", outputComponent, 1,
+                 Tv5725::PictureOptions::OutputComponentDefault);
     visit.number("line-filter", lineFilter, 1,
                  Tv5725::PictureOptions::LineFilterDefault);
     visit.number("peaking", peaking, 1, Tv5725::PictureOptions::PeakingDefault);
@@ -149,7 +151,12 @@ void Settings::eachScalerSetting(SettingVisitor &visit)
                  Tv5725::PictureOptions::SharpnessDefault);
     visit.number("step-response", stepResponse, 1,
                  Tv5725::PictureOptions::StepResponseDefault);
-    picture_.adopt(lineFilter, peaking, sharpness, stepResponse, autoGain);
+    picture_.setLineFilter(lineFilter);
+    picture_.setPeaking(peaking);
+    picture_.setSharpness(sharpness);
+    picture_.setStepResponse(stepResponse);
+    picture_.setAutoGain(autoGain);
+    picture_.setOutputComponent(outputComponent);
 
     visit.number("six-tap", options_.wantTap6, 1, 1);
     visit.number("scale-rgbhv", options_.preferScalingRgbhv, 1, 0);

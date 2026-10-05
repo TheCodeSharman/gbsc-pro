@@ -18,6 +18,7 @@ public:
         SharpnessDefault = 0,
         StepResponseDefault = 1,
         AutoGainDefault = 0,
+        OutputComponentDefault = 0,
     };
 
     PictureOptions();
@@ -27,15 +28,14 @@ public:
     void setSharpness(bool want);
     void setStepResponse(bool want);
     void setAutoGain(bool want);
+    void setOutputComponent(bool want);
 
     bool lineFilter() const;
     bool peaking() const;
     bool sharpness() const;
     bool stepResponse() const;
     bool autoGain() const;
-
-    void adopt(bool lineFilter, bool peaking, bool sharpness,
-               bool stepResponse, bool autoGain);
+    bool outputComponent() const;
 
 private:
     bool lineFilter_;
@@ -43,6 +43,7 @@ private:
     bool sharpness_;
     bool stepResponse_;
     bool autoGain_;
+    bool outputComponent_;
 };
 
 }  // namespace Tv5725

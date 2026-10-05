@@ -22,6 +22,7 @@ FakeTwoWire Wire;
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Aspect.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/BringUp.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Chip.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/ColourSpace.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/FrameBuffer.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/videosource/VideoSourceAcquisition.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/VideoPath.h"
@@ -2677,4 +2678,34 @@ TEST_CASE("the output filters are applied from held state, and 1080p still wins"
     engine.setOutputMode(&Mode1080p);
     engine.applyOutputPictureFilters();
     CHECK(VideoProcessor::VDS_UV_STEP_BYPS::read() == 1);
+}
+
+TEST_CASE("the colour path takes the input's space and the output's option")
+{
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+
+    SUBCASE("an RGB input with no component output keeps the input's gains") {
+        Wire.reset();
+        engine.pictureOptions().setOutputComponent(false);
+        engine.applyColourPath();
+
+        CHECK(ColourSpace::DEC_MATRIX_BYPS::read() == 0);
+        CHECK(VideoProcessor::VDS_UCOS_GAIN::read() == ColourSpace::UCosGain);
+        CHECK(VideoProcessor::VDS_VCOS_GAIN::read() == ColourSpace::VCosGain);
+    }
+
+    SUBCASE("a component output re-takes the gains over the input's space") {
+        Wire.reset();
+        engine.pictureOptions().setOutputComponent(true);
+        engine.applyColourPath();
+
+        CHECK(ColourSpace::DEC_MATRIX_BYPS::read() == 0);
+        CHECK(VideoProcessor::VDS_UCOS_GAIN::read()
+              == ColourSpace::ComponentOutputCosGain);
+        CHECK(VideoProcessor::VDS_VCOS_GAIN::read()
+              == ColourSpace::ComponentOutputCosGain);
+    }
 }

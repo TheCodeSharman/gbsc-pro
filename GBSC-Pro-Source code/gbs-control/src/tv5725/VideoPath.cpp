@@ -93,6 +93,17 @@ void VideoPath::applyOutputPictureFilters()
     VideoProcessor::setStepResponse(picture_.stepResponse() && !at1080p);
 }
 
+void VideoPath::applyColourPath()
+{
+    if (Adc::inputIsComponent())
+        ColourSpace::applyYuv(colour_);
+    else
+        ColourSpace::applyRgb(colour_);
+
+    if (picture_.outputComponent())
+        ColourSpace::applyComponentOutput(colour_);
+}
+
 PictureOptions &VideoPath::pictureOptions() { return picture_; }
 
 const PanAndZoom &VideoPath::framing() const { return framing_; }
@@ -684,12 +695,8 @@ void VideoPath::configureScalingPath()
     applyFrameBufferRequests();
 
     // The decimator's matrix, which pass-through takes out because the HD bypass
-    // channel converts for itself. Which one the source wants is held by the
-    // class that selected the connector, so it is asked rather than handed in.
-    if (Adc::inputIsComponent())
-        ColourSpace::applyYuv(colour_);
-    else
-        ColourSpace::applyRgb(colour_);
+    // channel converts for itself.
+    applyColourPath();
 }
 
 SourceKey VideoPath::arrivingKey() const

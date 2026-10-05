@@ -124,3 +124,22 @@ TEST_CASE("neither half touches the ADC PLL or the capture window")
     CHECK_FALSE(wasWritten<InputFormatter::IF_HB_ST2>(ColourSpace::applyYuv));
     CHECK_FALSE(wasWritten<InputFormatter::IF_HB_ST2>(ColourSpace::applyRgb));
 }
+
+// A component OUTPUT is a modifier on whichever space the source arrives in,
+// not a third space: it re-takes the two chroma gains and the balance's rest
+// and leaves the R-Y select and the matrix bypasses the input chose.
+TEST_CASE("a component output re-takes the chroma gains")
+{
+    CHECK(after<VideoProcessor::VDS_UCOS_GAIN>(ColourSpace::applyComponentOutput)
+          == ColourSpace::ComponentOutputCosGain);
+    CHECK(after<VideoProcessor::VDS_VCOS_GAIN>(ColourSpace::applyComponentOutput)
+          == ColourSpace::ComponentOutputCosGain);
+}
+
+TEST_CASE("a component output leaves the input's own space alone")
+{
+    CHECK_FALSE(wasWritten<Adc::ADC_RYSEL_R>(ColourSpace::applyComponentOutput));
+    CHECK_FALSE(wasWritten<ColourSpace::DEC_MATRIX_BYPS>(
+        ColourSpace::applyComponentOutput));
+    CHECK_FALSE(wasWritten<Adc::ADC_RGCTRL>(ColourSpace::applyComponentOutput));
+}

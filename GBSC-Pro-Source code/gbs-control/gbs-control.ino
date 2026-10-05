@@ -1021,15 +1021,6 @@ static boolean bypassCanBeDisplayed()
     return Tv5725::HdBypass::suitsLineRate(sourceSampling.lineRateHz());
 }
 
-// A 15 kHz line whose vertical interval carries equalisation and serration
-// pulses. The rate alone does not say so, and the coast settings below break the
-// horizontal count on a source that has none.
-// docs/investigations/serrated-sync-is-not-line-rate.md
-static boolean sourceHasSerratedSync()
-{
-    return sourceSampling.hasSerratedSync();
-}
-
 void zeroAll()
 {
     writeOneByte(0xF0, 0);
@@ -1217,15 +1208,6 @@ void setResetParameters()
     userCommand = '@';
 }
 
-void applyComponentColorMixing()
-{
-    GBS::VDS_UCOS_GAIN::write(0x19);
-    GBS::VDS_VCOS_GAIN::write(0x19);
-
-    geometry.colour().restFor(Tv5725::ColourBalance::ComponentOutput);
-    geometry.colour().apply();
-}
-
 void toggleIfAutoOffset()
 {
     if (GBS::IF_AUTO_OFST_EN::read() == 0) {
@@ -1305,17 +1287,6 @@ void applyColourBalance()
 // which sync it had just found, which is the same answer read from a proxy:
 // Adc::selectInput() records what it put the mux on, and every route that moves
 // the mux goes through it.
-void applyColourPath()
-{
-    if (Tv5725::Adc::inputIsComponent())
-        Tv5725::ColourSpace::applyYuv(geometry.colour());
-    else
-        Tv5725::ColourSpace::applyRgb(geometry.colour());
-
-    if (uopt->wantOutputComponent)
-        applyComponentColorMixing();
-}
-
 // What the sync processor reports about the source's sync edges, by name. The
 // polarity bits are only meaningful beside their ACT bit, which is why the pair
 // travels together.
@@ -1332,7 +1303,7 @@ static Tv5725::HdBypass::SourceSyncEdges sourceSyncEdges()
 void prepareSyncProcessor()
 {
     Tv5725::SyncProcessor::prepare(Tv5725::SyncMeasurement::isCsync(),
-                                   sourceHasSerratedSync());
+                                   sourceSampling.hasSerratedSync());
 }
 
 void goLowPowerWithInputDetection()
@@ -1732,7 +1703,7 @@ uint8_t inputAndSyncDetect()
     {
         rto->sourceDisconnected = false;
         rto->isInLowPowerMode = false; 
-        applyColourPath();
+        geometry.applyColourPath();
         if (VideoSourceSelection::selected() == InfoRGBs || VideoSourceSelection::selected() == InfoRGsB) {
         }
 
@@ -1741,7 +1712,7 @@ uint8_t inputAndSyncDetect()
     {
         rto->isInLowPowerMode = false; 
         rto->sourceDisconnected = false;
-        applyColourPath();
+        geometry.applyColourPath();
         // GBS::VDS_CONVT_BYPS::write(0);
         // GBS::PIP_CONVT_BYPS::write(0);
         if (VideoSourceSelection::selected() == InfoYUV || VideoSourceSelection::selected() == InfoSV || VideoSourceSelection::selected() == InfoAV) {
@@ -1752,7 +1723,7 @@ uint8_t inputAndSyncDetect()
     {
         rto->isInLowPowerMode = false; 
         rto->sourceDisconnected = false;
-        applyColourPath();
+        geometry.applyColourPath();
         Tv5725::RgbhvOutput::chooseBypass();
 
         return 3;
@@ -2309,7 +2280,7 @@ void doPostPresetLoadSteps()
         // path the last one left, and a separate-sync source left on
         // sync-on-green counts nothing at all.
         Tv5725::SyncProcessor::applyForSyncType(Tv5725::SyncMeasurement::isCsync(),
-                                                sourceHasSerratedSync());
+                                                sourceSampling.hasSerratedSync());
         prepareSyncProcessor();
         if (scalingRgbhv()) {
             if (Tv5725::SyncMeasurement::isCsync()) {
@@ -2326,7 +2297,7 @@ void doPostPresetLoadSteps()
 
         Tv5725::SyncProcessor::holdClamp();
 
-        applyColourPath();
+        geometry.applyColourPath();
 
         if (Tv5725::VideoRoute::isHdBypassChannel()) {
             Tv5725::Chip::OUT_SYNC_SEL::write(1);
@@ -2696,7 +2667,7 @@ void enterHdBypass()
     Tv5725::SyncProcessor::forgetPositions();
 
     // The ADC's sense of what arrives on R, G and B.
-    applyColourPath();
+    geometry.applyColourPath();
 
     Tv5725::HdBypass::enterFor(Tv5725::Adc::inputIsComponent(),
                                Tv5725::SyncMeasurement::isCsync(),

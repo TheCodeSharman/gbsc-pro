@@ -88,6 +88,11 @@ public:
     // change re-applies these alone.
     void applyOutputPictureFilters();
 
+    // The ADC's sense of what arrives on R, G and B, and what the chosen output
+    // does to the chroma on the way out. Which space the source arrives in is
+    // held by the class that selected the connector, so it is asked.
+    void applyColourPath();
+
     // The user's picture filters, which a load must not put back to default --
     // so they live here beside the colour and the framing, and the preferences
     // pass adopts them rather than owning them.

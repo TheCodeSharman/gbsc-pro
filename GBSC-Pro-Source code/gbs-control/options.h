@@ -65,7 +65,6 @@ struct userOptions
     uint8_t enableFrameTimeLock;   //启用帧时间锁定
     uint8_t frameTimeLockMethod;  //帧时间锁定方法
     uint8_t wantScanlines;    //要扫描线
-    uint8_t wantOutputComponent;  //要输出组件
     uint8_t deintMode;        //非int模式
     uint8_t wantTap6;
     uint8_t preferScalingRgbhv;
