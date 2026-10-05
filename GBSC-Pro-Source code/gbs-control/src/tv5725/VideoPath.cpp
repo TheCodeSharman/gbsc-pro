@@ -18,6 +18,7 @@
 #include "FramingLine.h"
 #include "HdBypass.h"
 #include "InputFormatter.h"
+#include "MemoryBus.h"
 #include "MemoryWindow.h"
 #include "SamplingClock.h"
 #include "OutputMode.h"
@@ -570,6 +571,13 @@ VideoPath::PollOutcome VideoPath::solveFromMeasurement()
     // chose, and every window is sized against the raster it lands on.
     displayClock_.reset();
     solveWindows();
+
+    // After the windows, because what the controller is laid out for is the
+    // geometry this solve just wrote -- the stride and the fetch among it. A
+    // mode change is the only thing that restarts it: a framing press
+    // re-solves the same windows, and reprogramming the playback FIFO under a
+    // picture being read out of it flickers.
+    MemoryBus::restart();
 
     modePending_ = false;
     return PollSolved;

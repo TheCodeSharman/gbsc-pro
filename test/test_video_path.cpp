@@ -26,6 +26,7 @@ FakeTwoWire Wire;
 #include "../GBSC-Pro-Source code/gbs-control/src/videosource/VideoSourceAcquisition.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/VideoPath.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/InputFormatter.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/MemoryBus.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SamplingClock.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/ModeDetect.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SyncMeasurement.h"
@@ -377,8 +378,10 @@ static void checkBenchGeometry()
     // that would put them back. s1_03..s1_0a are the scaling-down block's eight
     // segment increments, written with the scan because what an IF unit IS is
     // one fact with how the line is counted -- idle at a unity ratio, and
-    // written anyway rather than cached against what was last sent.
-    CHECK(registersWritten() == 92);
+    // written anyway rather than cached against what was last sent. s4_00 is
+    // MEM_INI_REG, pulsed once the windows are written because the SDRAM
+    // controller and both FIFOs are laid out for the geometry this solve chose.
+    CHECK(registersWritten() == 93);
     CHECK(Wire.touched[0][0x49]);   // PAD_SYNC_OUT_ENZ
 
     // Three of those are the measurement rather than the geometry: timing the
@@ -1627,6 +1630,55 @@ TEST_CASE("leaving pass-through measures from the reference clock")
     engine.setOutputMode(benchMode());
 
     CHECK(Adc::dividerInForce() == Adc::BringUpDivider);
+}
+
+// The SDRAM controller is laid out for the capture geometry a mode change
+// computes -- the stride, the fetch and both FIFOs -- so one that leaves it
+// holding the previous mode's layout emits a flat field with every
+// configuration register reading correct. ResetSDRAM() was the sketch's and the
+// engine had no way to reach it.
+// ../docs/investigations/an-acquisition-without-a-preset-load-emits-a-flat-field.md
+TEST_CASE("a source mode change restarts the frame buffer's memory")
+{
+    seedBenchSource();
+
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+    VideoSourceAcquisition acquisition(sampling, engine);
+
+    engine.setOutputMode(benchMode());
+    engine.inputTimingsChanged(4);
+    MemoryBus::MEM_INI_REG::write(0x5A);
+
+    REQUIRE(pollUntilSolved(acquisition));
+
+    CHECK(MemoryBus::MEM_INI_REG::read() == 0x82);
+}
+
+// And a framing press is not one. Reprogramming the playback FIFO while the
+// picture is being read out of it flickers even when the value written is
+// identical, so the restart belongs to the mode change and to nothing that
+// re-solves the windows alone.
+TEST_CASE("a pan does not restart the frame buffer's memory")
+{
+    seedBenchSource();
+
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+    VideoSourceAcquisition acquisition(sampling, engine);
+
+    engine.setOutputMode(benchMode());
+    engine.inputTimingsChanged(4);
+    REQUIRE(pollUntilSolved(acquisition));
+
+    MemoryBus::MEM_INI_REG::write(0x5A);
+    engine.pan(8, 0);
+
+    CHECK(MemoryBus::MEM_INI_REG::read() == 0x5A);
 }
 
 TEST_CASE("leaving pass-through configures the blocks it has just reset")

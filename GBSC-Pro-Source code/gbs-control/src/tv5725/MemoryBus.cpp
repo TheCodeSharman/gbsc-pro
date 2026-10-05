@@ -134,4 +134,12 @@ void MemoryBus::init()
     MEM_FF_TOP_FF_SEL::write(1);         // s4_5b[7:7]
 }
 
+void MemoryBus::restart()
+{
+    MEM_INI_REG::write(0x02);
+    SDRAM_RESET_SIGNAL::write(1);
+    SDRAM_RESET_SIGNAL::write(0);
+    MEM_INI_REG::write(0x82);
+}
+
 }  // namespace Tv5725

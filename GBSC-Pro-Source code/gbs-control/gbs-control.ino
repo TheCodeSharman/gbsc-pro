@@ -1937,13 +1937,6 @@ void resetPLL()
     Tv5725::SyncProcessor::forgetPositions();
 }
 
-void ResetSDRAM()
-{
-    GBS::MEM_INI_REG::write(0x02);
-    GBS::SDRAM_RESET_SIGNAL::write(1);
-    GBS::SDRAM_RESET_SIGNAL::write(0);
-    GBS::MEM_INI_REG::write(0x82);
-}
 
 
 
@@ -2493,10 +2486,6 @@ void doPostPresetLoadSteps()
         // against it, so deriving one from the other after the fact could
         // only fight the model. VideoPath::write() sets both.
 
-        if (!Tv5725::VideoRoute::isHdBypassChannel()) {
-            ResetSDRAM();
-        }
-
         Tv5725::SyncOnGreen::putInForce();
 
         Tv5725::SyncProcessor::clampFromReferenceClock();
@@ -2759,7 +2748,7 @@ static void restartAfterBypassSwitch()
     Tv5725::Chip::resetVideoBlocks();
     Tv5725::SyncProcessor::reset();
     delay(2);
-    ResetSDRAM();
+    Tv5725::MemoryBus::restart();
     delay(2);
     Tv5725::Adc::restartPll();
     Tv5725::SyncProcessor::forgetPositions();
@@ -4423,7 +4412,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                 case 'q':
                     Tv5725::Chip::resetVideoBlocks();
                     delay(2);
-                    ResetSDRAM();
+                    Tv5725::MemoryBus::restart();
                     delay(2);
                     Tv5725::Adc::restartPhaseAdjusters();
                     break;
@@ -4647,7 +4636,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     }
                     break;
                 case 'u':
-                    ResetSDRAM();
+                    Tv5725::MemoryBus::restart();
                     break;
                 case 'f':; // SerialMprint(F("peaking "));
                     if (uopt->wantPeaking == 0) {
@@ -5341,7 +5330,7 @@ void handleType2Command(char argument)
                         break;
                 }
                 GBS::PLL_MS::write(PLL_MS);
-                ResetSDRAM();
+                Tv5725::MemoryBus::restart();
                 if (memClock != 10) {
                     ; // SerialMprint(F("SDRAM clock: "));
                     ; // SerialMprint(memClock);

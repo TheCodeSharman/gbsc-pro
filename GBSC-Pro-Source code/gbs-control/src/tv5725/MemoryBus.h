@@ -300,6 +300,15 @@ public:
     // the address mapping, the arbitration and the board's delay trim.
     static void init();
 
+    // Re-initialise the part: the mode register, a reset pulse, then the
+    // refresh running again. The controller and both FIFOs are laid out for the
+    // capture geometry in force, so a mode change leaves them holding the
+    // previous mode's layout until this runs.
+    //
+    // A PULSE, so it is a transition and not a state: writing MEM_INI_REG to
+    // the value it already holds does nothing.
+    static void restart();
+
     // Run the bus off the FBCLK pin instead of the derived clock. Bypass takes
     // the frame buffer out of the video path, so what clocks it stops mattering
     // and the pad's own return path is what the bypass switches ask for.
