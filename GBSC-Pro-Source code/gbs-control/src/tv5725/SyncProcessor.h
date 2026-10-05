@@ -318,6 +318,12 @@ public:
     static void releaseClamp();
     static bool clampHeld();
 
+    // Let the clamp go, but only where a measurement has placed its window --
+    // released over a window nothing measured, the clamp samples the wrong part
+    // of the line. The held check is what keeps it off the bus on the passes
+    // where it is already released.
+    static void releaseClampIfPlaced();
+
     // Where the clamp sits before anything has measured the back porch.
     static void applyDefaultClampWindow();
 

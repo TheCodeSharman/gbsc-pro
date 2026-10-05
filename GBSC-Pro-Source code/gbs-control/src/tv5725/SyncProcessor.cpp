@@ -99,6 +99,12 @@ bool SyncProcessor::clampHeld()
     return SP_NO_CLAMP_REG::read() == 1;
 }
 
+void SyncProcessor::releaseClampIfPlaced()
+{
+    if (clampPlaced() && clampHeld())
+        releaseClamp();
+}
+
 void SyncProcessor::applyDefaultClampWindow()
 {
     SP_CS_CLP_ST::write(32);

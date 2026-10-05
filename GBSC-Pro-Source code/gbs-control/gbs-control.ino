@@ -2316,11 +2316,7 @@ void doPostPresetLoadSteps()
     }
 
     inputAcquisition.placeClampWindow();
-    if (Tv5725::SyncProcessor::clampPlaced()) {
-        if (Tv5725::SyncProcessor::clampHeld()) {
-            Tv5725::SyncProcessor::releaseClamp();
-        }
-    }
+    Tv5725::SyncProcessor::releaseClampIfPlaced();
 
     inputAcquisition.applySyncProcessorDynamic(0);
 
@@ -3949,11 +3945,7 @@ void loop()
     if (inputAcquisition.sourceIsPresent() && (inputAcquisition.acquiredPasses() >= 4) &&
         !Tv5725::SyncProcessor::clampPlaced() && rto->syncWatcherEnabled) {
         inputAcquisition.placeClampWindow();
-        if (Tv5725::SyncProcessor::clampPlaced()) {
-            if (Tv5725::SyncProcessor::clampHeld()) {
-                Tv5725::SyncProcessor::releaseClamp();
-            }
-        }
+        Tv5725::SyncProcessor::releaseClampIfPlaced();
     }
 
 

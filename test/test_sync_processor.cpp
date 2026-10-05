@@ -1156,3 +1156,28 @@ TEST_CASE("the per-load setup leaves the clamp to the window that places it")
     CHECK_FALSE(prepareWrote<SyncProcessor::SP_CLP_SRC_SEL>(false));
     CHECK_FALSE(prepareWrote<SyncProcessor::SP_NO_CLAMP_REG>(false));
 }
+
+TEST_CASE("the clamp is released only once it has been placed")
+{
+    steadyLine(431);
+
+    SUBCASE("a placed clamp is let go") {
+        SyncProcessor::forgetPositions();
+        REQUIRE(SyncProcessor::acquireClampWindow(
+            false, false, SyncProcessor::clampLineFor(false, BenchLineRateHz, 2250), 0));
+        SyncProcessor::holdClamp();
+
+        SyncProcessor::releaseClampIfPlaced();
+
+        CHECK(SyncProcessor::SP_NO_CLAMP_REG::read() == 0);
+    }
+
+    SUBCASE("an unplaced clamp stays held, because nothing has measured it") {
+        SyncProcessor::forgetPositions();
+        SyncProcessor::holdClamp();
+
+        SyncProcessor::releaseClampIfPlaced();
+
+        CHECK(SyncProcessor::SP_NO_CLAMP_REG::read() == 1);
+    }
+}
