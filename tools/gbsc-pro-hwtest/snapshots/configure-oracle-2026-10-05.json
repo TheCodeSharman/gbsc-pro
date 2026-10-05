@@ -1,0 +1,167 @@
+{
+ "vga-sync0": {
+  "context": {
+   "PLLAD_MD": 2200,
+   "SP_SOG_MODE": 0,
+   "STATUS_SYNC_PROC_HTOTAL": 2200,
+   "STATUS_SYNC_PROC_VTOTAL": 311
+  },
+  "excluded": {
+   "SP_HS_POL_ATO": 1,
+   "SP_POST_COAST": 0,
+   "SP_PRE_COAST": 0,
+   "SP_VS_POL_ATO": 1
+  },
+  "geometry": {
+   "aspect": 13333,
+   "ch": 1101,
+   "cv": 624,
+   "eh": 688,
+   "ev": 512,
+   "fh": 98,
+   "fv": 1,
+   "lineRateHz": 15625,
+   "lowLineRate": true,
+   "oh": 237,
+   "ov": 72,
+   "peh": 6249,
+   "pev": 8205,
+   "poh": 2153,
+   "pov": 1154,
+   "present": true,
+   "shaped": true,
+   "state": "acquired"
+  },
+  "oracle": {
+   "SP_CLAMP_MANUAL": 1,
+   "SP_CLP_SRC_SEL": 0,
+   "SP_CS_CLP_SP": 27,
+   "SP_CS_CLP_ST": 23,
+   "SP_EXT_SYNC_SEL": 0,
+   "SP_HCST_AUTO_EN": 0,
+   "SP_H_CST_SP": 1672,
+   "SP_H_CST_ST": 16,
+   "SP_NO_CLAMP_REG": 0
+  },
+  "picture": {
+   "bottom": 0,
+   "flat": false,
+   "left": 242,
+   "luma": 81.2400508466921,
+   "right": 254,
+   "spread": 109.37360382080078,
+   "top": 2
+  },
+  "settled": true
+ },
+ "vga-sync1": {
+  "context": {
+   "PLLAD_MD": 2200,
+   "SP_SOG_MODE": 1,
+   "STATUS_SYNC_PROC_HTOTAL": 2200,
+   "STATUS_SYNC_PROC_VTOTAL": 308
+  },
+  "excluded": {
+   "SP_HS_POL_ATO": 1,
+   "SP_POST_COAST": 6,
+   "SP_PRE_COAST": 7,
+   "SP_VS_POL_ATO": 1
+  },
+  "geometry": {
+   "aspect": 13333,
+   "ch": 1101,
+   "cv": 624,
+   "eh": 688,
+   "ev": 512,
+   "fh": 100,
+   "fv": 1,
+   "lineRateHz": 15625,
+   "lowLineRate": true,
+   "oh": 237,
+   "ov": 72,
+   "peh": 6249,
+   "pev": 8205,
+   "poh": 2153,
+   "pov": 1154,
+   "present": true,
+   "shaped": true,
+   "state": "acquired"
+  },
+  "oracle": {
+   "SP_CLAMP_MANUAL": 1,
+   "SP_CLP_SRC_SEL": 0,
+   "SP_CS_CLP_SP": 18,
+   "SP_CS_CLP_ST": 14,
+   "SP_EXT_SYNC_SEL": 1,
+   "SP_HCST_AUTO_EN": 0,
+   "SP_H_CST_SP": 1672,
+   "SP_H_CST_ST": 16,
+   "SP_NO_CLAMP_REG": 0
+  },
+  "picture": {
+   "bottom": 0,
+   "flat": false,
+   "left": 314,
+   "luma": 76.99627209803492,
+   "right": 254,
+   "spread": 105.93318939208984,
+   "top": 0
+  },
+  "settled": true
+ },
+ "ypbpr-480i": {
+  "context": {
+   "PLLAD_MD": 2200,
+   "SP_SOG_MODE": 1,
+   "STATUS_SYNC_PROC_HTOTAL": 2200,
+   "STATUS_SYNC_PROC_VTOTAL": 260
+  },
+  "excluded": {
+   "SP_HS_POL_ATO": 0,
+   "SP_POST_COAST": 6,
+   "SP_PRE_COAST": 7,
+   "SP_VS_POL_ATO": 0
+  },
+  "geometry": {
+   "aspect": 13333,
+   "ch": 1101,
+   "cv": 520,
+   "eh": 951,
+   "ev": 485,
+   "fh": 105,
+   "fv": 1,
+   "lineRateHz": 15584,
+   "lowLineRate": true,
+   "oh": 150,
+   "ov": 35,
+   "peh": 8638,
+   "pev": 9327,
+   "poh": 1362,
+   "pov": 673,
+   "present": true,
+   "shaped": true,
+   "state": "acquired"
+  },
+  "oracle": {
+   "SP_CLAMP_MANUAL": 0,
+   "SP_CLP_SRC_SEL": 0,
+   "SP_CS_CLP_SP": 43,
+   "SP_CS_CLP_ST": 39,
+   "SP_EXT_SYNC_SEL": 1,
+   "SP_HCST_AUTO_EN": 0,
+   "SP_H_CST_SP": 1676,
+   "SP_H_CST_ST": 16,
+   "SP_NO_CLAMP_REG": 0
+  },
+  "picture": {
+   "bottom": 50,
+   "flat": false,
+   "left": 301,
+   "luma": 94.57404925855656,
+   "right": 285,
+   "spread": 92.7973861694336,
+   "top": 13
+  },
+  "settled": true
+ }
+}
