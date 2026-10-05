@@ -70,7 +70,6 @@ static unsigned long Tim_Resolution = 0, Tim_Resolution_Start = 0;
 #include "src/tv5725/FramingSaveTimer.h"
 #include "src/tv5725/Controls.h"
 #include "src/tv5725/ControlSteps.h"
-#include "src/tv5725/PresetLoad.h"
 #include "src/tv5725/FrameBuffer.h"
 #include "src/tv5725/InputFormatter.h"
 #include "src/tv5725/HdBypass.h"
@@ -1084,7 +1083,7 @@ void loadComputedPreset(const Tv5725::OutputMode *chosen)
   // The load rewrites the scanline stages, so whatever was applied is gone.
   Tv5725::Deinterlacer::forgetScanlines();
   Tv5725::Deinterlacer::forgetSteering();
-  Tv5725::PresetLoad::forgetScalingRgbhv();
+  geometry.setScalingRgbhv(false);
 
   frameSync.cleanup();
 
@@ -1096,7 +1095,7 @@ void loadComputedPreset(const Tv5725::OutputMode *chosen)
   if (rto->isValidForScalingRGBHV)
   {
     Tv5725::RgbhvOutput::chooseScaling();
-    Tv5725::PresetLoad::rememberScalingRgbhv();
+    geometry.setScalingRgbhv(true);
   }
 }
 
@@ -1142,7 +1141,7 @@ void setResetParameters()
 
     Tv5725::Adc::forgetGain();
 
-    Tv5725::PresetLoad::forgetScalingRgbhv();
+    geometry.setScalingRgbhv(false);
 
     // The reference line WHOLE, path registers included. The scan and the line
     // it is sized for are one setting, and the reference divider cannot be
@@ -1335,7 +1334,7 @@ void prepareSyncProcessor()
     Tv5725::SyncProcessor::prepare(Tv5725::SyncMeasurement::isCsync(),
                                    sourceHasSerratedSync(),
                                    rgbhvBypass()
-                                       || Tv5725::PresetLoad::scalingRgbhvInForce());
+                                       || geometry.scalingRgbhvInForce());
 }
 
 void goLowPowerWithInputDetection()
@@ -2323,7 +2322,7 @@ void doPostPresetLoadSteps()
 
         Tv5725::SyncProcessor::setHsyncOverflowProtect(false);
         Tv5725::SyncProcessor::setCoastInvert(false);
-        if (!Tv5725::VideoRoute::isHdBypassChannel() && !Tv5725::PresetLoad::scalingRgbhvInForce()) {
+        if (!Tv5725::VideoRoute::isHdBypassChannel() && !geometry.scalingRgbhvInForce()) {
             inputAcquisition.applySyncProcessorDynamic(0);
         }
 
@@ -2721,7 +2720,7 @@ void enterHdBypass()
     // rto->isValidForScalingRGBHV in RAM only, and outside the low-power path
     // nothing else clears the register -- so without this the bit says the
     // opposite of the truth, and several sites read it back to decide things.
-    Tv5725::PresetLoad::forgetScalingRgbhv();
+    geometry.setScalingRgbhv(false);
 
     delay(200);
 

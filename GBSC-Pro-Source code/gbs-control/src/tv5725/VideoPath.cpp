@@ -47,7 +47,7 @@ VideoPath::VideoPath(DisplayClock &displayClock, SourceMeasurement &sampling,
       solvePending_(false), modePending_(false), modeOversample_(4),
       heldDivider_(0), fullFraming_(false), installedRateHz_(0),
       mode_(0),
-      showing_(false),
+      showing_(false), scalingRgbhv_(false),
       syncOut_(false), syncOutEver_(false),
       encoderLinePx_(0), encoderFrameLines_(0), encoderFieldRateHz_(0),
       encoderKnown_(false) {}
@@ -60,6 +60,10 @@ void VideoPath::forgetPreviousSource()
     Deinterlacer::forgetScanlines();
     Deinterlacer::forgetSteering();
 }
+
+bool VideoPath::scalingRgbhvInForce() const { return scalingRgbhv_; }
+
+void VideoPath::setScalingRgbhv(bool scaling) { scalingRgbhv_ = scaling; }
 
 void VideoPath::applyClockGroup()
 {

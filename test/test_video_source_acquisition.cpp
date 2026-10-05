@@ -340,7 +340,7 @@ TEST_CASE("the engine arms itself when the source line count changes")
     // trigger a classification: the sketch reloads a preset when getVideoMode()
     // reports a different STANDARD, and two RISC OS modes that are nothing alike
     // can share one -- a 311-line and a 524-line RGBHV source are both filed
-    // under PresetLoad::ScalingRgbhvStandard.
+    // under the one scaling-RGBHV standard.
     //
     // Measured on the bench: a 524 -> 311 return reloaded its preset,
     // GBS_PRESET_ID 5 -> 21, and still held PLLAD_MD 1124 sixty seconds later

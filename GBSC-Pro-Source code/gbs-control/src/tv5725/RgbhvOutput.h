@@ -12,9 +12,9 @@ namespace Tv5725 {
 // mode yet, which is what sends it through the sync watcher's steering block
 // rather than past it.
 //
-// Not Tv5725::PresetLoad's scaling-RGBHV flag either, which says a preset is
-// loaded. That answers whether the last load enabled scaling; this answers what
-// the source is entitled to, and the bypass-refused path sets them opposite.
+// Not VideoPath::scalingRgbhvInForce() either. That answers whether the output
+// in force is scaling; this answers what the source is entitled to, and the
+// bypass-refused path sets them opposite.
 // docs/investigations/the-rgbhv-question-is-two-questions.md
 class RgbhvOutput {
 public:

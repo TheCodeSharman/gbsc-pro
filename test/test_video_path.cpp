@@ -2601,3 +2601,43 @@ TEST_CASE("a reset puts the shape back as well as the framing")
 
     CHECK(engine.aspect() == defaulted);
 }
+
+// Whether the output in force is scaling RGBHV. Not RgbhvOutput::isScaling(),
+// which says what the source is entitled to: the bypass-refused path sets the
+// two opposite.
+// docs/investigations/the-rgbhv-question-is-two-questions.md
+
+TEST_CASE("nothing is scaling RGBHV until a setup says so")
+{
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+
+    CHECK_FALSE(engine.scalingRgbhvInForce());
+}
+
+TEST_CASE("a setup that establishes scaling RGBHV is remembered")
+{
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+
+    engine.setScalingRgbhv(true);
+
+    CHECK(engine.scalingRgbhvInForce());
+}
+
+TEST_CASE("the next setup forgets what the last one established")
+{
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+    engine.setScalingRgbhv(true);
+
+    engine.setScalingRgbhv(false);
+
+    CHECK_FALSE(engine.scalingRgbhvInForce());
+}

@@ -388,6 +388,16 @@ public:
     // goes on to scale.
     bool scalerCarriesVideo() const;
 
+    // Whether the output in force is scaling RGBHV, which the sync processor's
+    // preparation and its dynamic settings both ask. State rather than a chip
+    // register: it lived in s1_2c, an address RD-5725-1.1 does not document.
+    //
+    // Not RgbhvOutput::isScaling(), which says what the SOURCE is entitled to
+    // -- the bypass-refused path sets the two opposite.
+    // ../../../../docs/investigations/the-rgbhv-question-is-two-questions.md
+    bool scalingRgbhvInForce() const;
+    void setScalingRgbhv(bool scaling);
+
     // Whether the line doubler is in the capture path. Decided here, because
     // what decides it is whether the doubled frame fits the raster -- and
     // written to three blocks, InputFormatter, VideoProcessor and Deinterlacer,
@@ -609,6 +619,7 @@ private:
     // says a solve has chosen one at all.
     OutputWindow output_;
     bool showing_;
+    bool scalingRgbhv_;
 
     // The sync pad as this has it. Held, so the pad is written only when it
     // moves: every write of it that changes nothing still costs nothing, but a
