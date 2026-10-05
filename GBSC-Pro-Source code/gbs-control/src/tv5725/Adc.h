@@ -203,8 +203,8 @@ public:
     typedef UReg<0x05, 0x66, 0, 8> ADC_UNUSED_66;
     typedef UReg<0x05, 0x67, 0, 16> ADC_UNUSED_67;
 
-    // s5_64..67, which RD-5725-1.1 names and describes nothing of. Cleared at
-    // every setup because a preset table used to.
+    // s5_64..67, which RD-5725-1.1 names and describes nothing of. Cleared by
+    // the bring-up and by nothing else.
     static void clearUnusedRegisters();
 
     // Lock enable, after the PLL has been taken out of reset.

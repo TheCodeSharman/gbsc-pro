@@ -537,3 +537,14 @@ TEST_CASE("the bring-up establishes the frame buffer's request modes")
     // change through disableMotionAdapt(). A value here is a second owner.
     CHECK(WRITTEN(Tv5725::FrameBuffer::RFF_WFF_OFFSET) == NotWritten);
 }
+
+TEST_CASE("the bring-up clears the ADC's undocumented registers")
+{
+    // s5_64..67, which RD-5725-1.1 names and describes nothing of. Written 0
+    // by every preset table and by nothing else, so an acquisition that loads
+    // no preset leaves whatever the last session put there.
+    CHECK(WRITTEN(Tv5725::Adc::ADC_UNUSED_64) == 0);
+    CHECK(WRITTEN(Tv5725::Adc::ADC_UNUSED_65) == 0);
+    CHECK(WRITTEN(Tv5725::Adc::ADC_UNUSED_66) == 0);
+    CHECK(WRITTEN(Tv5725::Adc::ADC_UNUSED_67) == 0);
+}

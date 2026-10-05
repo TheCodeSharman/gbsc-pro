@@ -1142,10 +1142,6 @@ void setResetParameters()
 
     Tv5725::Adc::forgetGain();
 
-    GBS::ADC_UNUSED_64::write(0);
-    GBS::ADC_UNUSED_65::write(0);
-    GBS::ADC_UNUSED_66::write(0);
-    GBS::ADC_UNUSED_67::write(0);
     Tv5725::PresetLoad::forgetScalingRgbhv();
 
     // The reference line WHOLE, path registers included. The scan and the line
@@ -2357,7 +2353,6 @@ void doPostPresetLoadSteps()
 
     // if(Info_sate == 0)
     {
-        Tv5725::Adc::clearUnusedRegisters();
         Tv5725::Chip::enableClockInputPad();
 
         // BEFORE prepareSyncProcessor(), which is the per-load setup that does

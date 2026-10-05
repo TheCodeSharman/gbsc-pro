@@ -142,6 +142,7 @@ void Adc::init()
     enablePll();
     applyPllLoopFilter();
     applyDecimatorModes();
+    clearUnusedRegisters();
 }
 
 void Adc::latch()
