@@ -1180,7 +1180,8 @@ void setResetParameters()
     Tv5725::Chip::padsToResetState();
     Tv5725::HdBypass::init();
     Tv5725::ModeDetect::init();
-    Tv5725::Adc::applyOffset(0x40, 0x40, 0x40);
+    Tv5725::Adc::applyOffset(Tv5725::Adc::NeutralOffset, Tv5725::Adc::NeutralOffset,
+                             Tv5725::Adc::NeutralOffset);
     GBS::SP_PRE_COAST::write(9);
     GBS::SP_POST_COAST::write(18);  
     GBS::SP_NO_COAST_REG::write(0); 
@@ -2260,8 +2261,6 @@ void debugPinProbe()
 void debugPinProbe() {}
 #endif
 
-#define AUTO_GAIN_INIT 0x48
-
 // The user picked a different output resolution. Not a source event: the rate
 // and the divider the last solve measured still describe the source, so the
 // engine re-solves raster, clock and windows from what it holds and nothing is
@@ -2285,18 +2284,6 @@ static void changeOutputResolution()
     frameSync.cleanup();
     frameSync.clearFrequency();
     frameSync.matchRate(sourceSampling.settledFieldRateHz());
-}
-
-// Put the stored analog gain back, or start the auto-gain loop from its initial
-// value. Spelled out at two sites in two different shapes.
-void applyStoredAdcGain()
-{
-    if (uopt->enableAutoGain != 1) {
-        Tv5725::Adc::enableGainMeasurement(false);
-        return;
-    }
-    Tv5725::Adc::applyHeldGain(AUTO_GAIN_INIT);
-    Tv5725::Adc::enableGainMeasurement(true);
 }
 
 void doPostPresetLoadSteps()
@@ -2358,9 +2345,6 @@ void doPostPresetLoadSteps()
         Tv5725::SyncOnGreen::apply();
         Tv5725::Adc::applyPhases();
 
-
-        Tv5725::Adc::applyOffset(0x40, 0x40, 0x40);
-
         geometry.forgetPreviousSource();
         rto->sourceDisconnected = false;
         Tv5725::Chip::holdPower(true);
@@ -2393,7 +2377,7 @@ void doPostPresetLoadSteps()
         // row. docs/investigations/the-decimators-filter.md
         geometry.inputTimingsChanged(Tv5725::Adc::OversampleAsClockAllows);
 
-        applyStoredAdcGain();
+        Tv5725::Adc::armGainMeasurement(uopt->enableAutoGain == 1);
 
         Tv5725::Adc::applyHeldOffset();
 
@@ -2730,7 +2714,7 @@ void enterHdBypass()
 
     restartAfterBypassSwitch();
 
-    applyStoredAdcGain();
+    Tv5725::Adc::armGainMeasurement(uopt->enableAutoGain == 1);
     Tv5725::SyncOnGreen::putInForce();
 
     // The branch that sends a source here clears
@@ -4423,14 +4407,14 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                 case 'T':; // SerialMprint(F("auto gain "));
                     if (uopt->enableAutoGain == 0) {
                         uopt->enableAutoGain = 1;
-                        Tv5725::Adc::holdGain(AUTO_GAIN_INIT, AUTO_GAIN_INIT,
-                                              AUTO_GAIN_INIT);
-                        Tv5725::Adc::enableGainMeasurement(true);
-                        ; // SerialMprintln("on");
+
+                        // Turning it ON restarts the search, where a preset
+                        // load keeps whatever the loop settled on.
+                        Tv5725::Adc::forgetGain();
+                        Tv5725::Adc::armGainMeasurement(true);
                     } else {
                         uopt->enableAutoGain = 0;
-                        Tv5725::Adc::enableGainMeasurement(false);
-                        ; // SerialMprintln("off");
+                        Tv5725::Adc::armGainMeasurement(false);
                     }
                     saveUserPrefs();
                     break;

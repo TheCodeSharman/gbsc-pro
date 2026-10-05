@@ -12,6 +12,8 @@ const uint16_t Adc::DividerMax;
 const uint16_t Adc::BringUpDivider;
 const uint32_t Adc::BringUpLineRateHz;
 const uint16_t Adc::LatchedSamplesTolerance;
+const uint8_t Adc::NeutralOffset;
+const uint8_t Adc::AutoGainInitial;
 
 namespace {
 uint8_t atLeastOneOversample(uint8_t oversample)
@@ -566,12 +568,19 @@ void Adc::holdGain(uint8_t r, uint8_t g, uint8_t b)
     applyGain(r, g, b);
 }
 
-void Adc::applyHeldGain(uint8_t initial)
+void Adc::applyHeldGain()
 {
     if (gain_[0] == 0)
-        holdGain(initial, initial, initial);
+        holdGain(AutoGainInitial, AutoGainInitial, AutoGainInitial);
     else
         applyGain(gain_[0], gain_[1], gain_[2]);
+}
+
+void Adc::armGainMeasurement(bool wanted)
+{
+    if (wanted)
+        applyHeldGain();
+    enableGainMeasurement(wanted);
 }
 
 void Adc::stepGain(int8_t by)
@@ -594,6 +603,8 @@ void Adc::applyHeldOffset()
 {
     if (offset_[0] != 0 && offset_[1] != 0 && offset_[2] != 0)
         applyOffset(offset_[0], offset_[1], offset_[2]);
+    else
+        applyOffset(NeutralOffset, NeutralOffset, NeutralOffset);
 }
 
 void Adc::forgetOffset() { offset_[0] = offset_[1] = offset_[2] = 0; }

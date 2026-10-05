@@ -535,23 +535,32 @@ public:
     // Arm the path the gain is measured through.
     static void enableGainMeasurement(bool on);
 
+    // Where the auto-gain search starts a channel it has not measured.
+    static const uint8_t AutoGainInitial = 0x48;
+
+    // Put the auto-gain loop in or out of force. The preference is the user
+    // option store's, so it arrives as an argument; everything it implies --
+    // which gain the loop starts from, and the measurement path -- is here.
+    static void armGainMeasurement(bool wanted);
+
     // THE STORED CALIBRATION. The gain the auto-gain loop settles on and the
     // black level the offset calibration measures are facts about this board
     // and this input that only the ADC can establish, so the block that
     // measures them is what holds them. Zero means unmeasured.
     //
-    // The two sides differ in what unmeasured costs, which is why only one of
-    // them takes a starting value: the gain search has a sensible place to
-    // begin and the caller states it, while an unmeasured offset is left alone
-    // because 0x40 is the neutral point and 0 is a rail.
+    // Unmeasured, each falls back to a value this class states:
+    // AutoGainInitial for the gain, NeutralOffset for the offset, so no caller
+    // writes a default before asking.
     static void holdGain(uint8_t r, uint8_t g, uint8_t b);
-    static void applyHeldGain(uint8_t initial);
 
     // One step of the manual control, taken from what is IN FORCE rather than
     // from the held value: the colour space writes these registers too, and
     // the user is adjusting the picture in front of them.
     static void stepGain(int8_t by);
     static void forgetGain();
+
+    // Mid scale, which is what an uncalibrated offset wants: 0 is a rail.
+    static const uint8_t NeutralOffset = 0x40;
 
     static void holdOffset(uint8_t r, uint8_t g, uint8_t b);
     static void applyHeldOffset();
@@ -560,6 +569,8 @@ public:
 private:
     // How many taps above the post divider a ratio asks for: one per doubling.
     static uint8_t stepsFor(uint8_t oversample);
+
+    static void applyHeldGain();
 
     static uint8_t phaseSyncProcessor_;
     static uint8_t phaseAdc_;
