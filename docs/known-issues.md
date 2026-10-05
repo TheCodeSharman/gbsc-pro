@@ -4168,6 +4168,25 @@ patch: one fact -- what an RGBHV source's output is -- stored where two writers
 can disagree, with no check that they do not.
 `docs/video-source-acquisition.md`.
 
+### The component-output option persists but nothing can set it
+
+`component-output` is a saved preference, the web UI draws a toggle for it, and
+`VideoPath::applyColourPath()` has a live branch behind it that re-takes the
+chroma gains and the balance's rest. **The handler that would set it is
+commented out in full** -- `/uc?L` in the sketch -- so the only way to reach 1
+is to hand-edit `/preferences.txt`, and the web UI's switch reports a state
+nothing it does can change.
+
+So the branch is reachable and untested, and the toggle is a control that lies.
+Measured on the bench with the option 0: the gains read 0x1C/0x29, which is the
+input space with the modifier correctly idle.
+
+Three ways out and no evidence to choose between them: restore the handler and
+find out what a component output does on this board, delete the option and the
+branch, or leave the branch and make the web UI stop offering a switch. What
+the commented-out code also did -- forcing 720p and reloading a preset -- says
+the original was more than a colour change, so restoring it is not a one-liner.
+
 ## The frame time lock arms itself on a cold boot with the option off
 
 **Measured once, on a true cold boot, and not explained.** `/framesync` came up

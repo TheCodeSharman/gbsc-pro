@@ -395,8 +395,29 @@ therefore invisible to any check that compares names.
       and none of them a filter register. A `/uc?m` toggle flips the register,
       persists, and survives a real boot.
 
-   3. **The colour path and the serration question move**, which retires both
-      sketch helpers.
+   3. ~~**The colour path and the serration question move.**~~ Done.
+      `VideoPath::applyColourPath()` is the one of them, and the leaving-
+      pass-through arm calls it rather than carrying its own copy of the matrix
+      half — so the two arms no longer differ by the component-output modifier.
+
+      `VDS_UCOS_GAIN` and `VDS_VCOS_GAIN` had two writers, `ColourSpace` and the
+      sketch's mixer. `ColourSpace::applyComponentOutput()` owns the pair now,
+      and a component output is stated as a MODIFIER on the space the source
+      arrived in rather than a third space: it re-takes the chroma gains and the
+      balance's rest and leaves the R-Y select, the matrix bypasses and the ADC
+      gain alone.
+
+      `wantOutputComponent` joins `PictureOptions`, and the positional `adopt()`
+      goes — six booleans in a row is a mis-ordering waiting to happen.
+      `sourceHasSerratedSync()` was a forwarder to a fact `SourceMeasurement`
+      owns, so its callers ask the owner.
+
+      Verified across the flash: six bytes differ over all 1536 registers, every
+      one solved from the measured rate, the phase search or the last
+      measurement, and not one colour field among them. **The option behind the
+      modifier cannot be set** — the `/uc?L` handler is commented out — which is
+      filed in `known-issues.md` rather than fixed here.
+
    4. **The phases move onto `VideoPath` one per commit**, in dependency
       order — configure the sync path, put the separator and the phases in
       force, solve for the source, place the windows and latch, the csync
