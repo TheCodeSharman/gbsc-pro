@@ -2361,10 +2361,6 @@ void doPostPresetLoadSteps()
 
         geometry.restartAndLatch();
 
-        if (Tv5725::SyncMeasurement::isCsync()) {
-            Tv5725::SyncProcessor::selectExternalSync(1);
-        }
-
         if (Tv5725::VideoRoute::isHdBypassChannel()) {
                     Tv5725::Interrupts::acknowledgeAll();
 
