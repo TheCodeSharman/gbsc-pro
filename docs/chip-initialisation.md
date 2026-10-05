@@ -372,9 +372,29 @@ therefore invisible to any check that compares names.
       zero FAILs on all three paths, the ±1 count the only difference. Loud on a
       baseline from another path, which it refuses to compare rather than diff.
       `snapshots/configure-oracle-2026-10-05.json` is the step-8 reference.
-   2. **The picture options become held engine state**, written by the
-      preferences load and by the OLED, IR and web handlers alike, read by the
-      mode change. Host-testable entire.
+   2. ~~**The picture options become held engine state.**~~ Done.
+      `Tv5725::PictureOptions` holds the line filter, peaking, sharpness, the
+      step response and auto gain, owned by `VideoPath` beside the colour
+      balance and the framing — a load must not put any of the three back to
+      default. `applyPictureFilters()` and `applyOutputPictureFilters()` lose
+      their arguments and read it, and the 1080p rule stays in the class that
+      holds the mode.
+
+      **The preferences pass ADOPTS them**, through locals, the shape
+      `ColourBalance` already uses, so each key's name, bound and default is
+      still stated once — `SettingVisitor`'s own reason for existing. The
+      default is `PictureOptions`' constant now, referenced by the visit rather
+      than copied into it. `userOptions` loses all five, so nothing is left to
+      disagree with: the OSD reads the engine through `Controls`, the `/uc?`
+      handlers write it, and a slot restore writes it too.
+
+      Verified across the flash on the bench. The persisted keys and defaults
+      are unchanged and a stored file carries over — 34 keys either side, none
+      lost, new or changed. A full 1536-register diff shows five bytes
+      differing, every one solved from the measured rate or the phase search
+      and none of them a filter register. A `/uc?m` toggle flips the register,
+      persists, and survives a real boot.
+
    3. **The colour path and the serration question move**, which retires both
       sketch helpers.
    4. **The phases move onto `VideoPath` one per commit**, in dependency
