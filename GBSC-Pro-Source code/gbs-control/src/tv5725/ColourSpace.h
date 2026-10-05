@@ -18,6 +18,11 @@ class ColourSpace {
 public:
     typedef UReg<0x05, 0x1F, 2, 1> DEC_MATRIX_BYPS;
 
+    // The ADC gain each colour space wants, measured on the emitted frame.
+    // docs/investigations/the-adc-gain-is-the-colour-spaces.md
+    static const uint8_t ComponentGain = 0x33;
+    static const uint8_t RgbGain = 0x7B;
+
     static void applyYuv(ColourBalance &balance);
     static void applyRgb(ColourBalance &balance);
 };

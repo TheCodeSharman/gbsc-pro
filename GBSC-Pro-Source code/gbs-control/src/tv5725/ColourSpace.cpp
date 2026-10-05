@@ -2,6 +2,9 @@
 
 namespace Tv5725 {
 
+const uint8_t ColourSpace::ComponentGain;
+const uint8_t ColourSpace::RgbGain;
+
 void ColourSpace::applyYuv(ColourBalance &balance)
 {
     Adc::ADC_RYSEL_R::write(1);
@@ -13,12 +16,9 @@ void ColourSpace::applyYuv(ColourBalance &balance)
     VideoProcessor::VDS_UCOS_GAIN::write(0x1C);
     VideoProcessor::VDS_VCOS_GAIN::write(0x29);
 
-    // Overwritten later in the same load by the gain the ADC settles on --
-    // 0x7B on the bench, against the 0x33 written here. Kept because removing a
-    // write whose effect is invisible is a change this move cannot justify.
-    Adc::ADC_RGCTRL::write(0x33);
-    Adc::ADC_GGCTRL::write(0x33);
-    Adc::ADC_BGCTRL::write(0x33);
+    Adc::ADC_RGCTRL::write(ComponentGain);
+    Adc::ADC_GGCTRL::write(ComponentGain);
+    Adc::ADC_BGCTRL::write(ComponentGain);
 
     balance.restFor(ColourBalance::Component);
     balance.apply();
@@ -34,6 +34,10 @@ void ColourSpace::applyRgb(ColourBalance &balance)
 
     VideoProcessor::VDS_UCOS_GAIN::write(0x1C);
     VideoProcessor::VDS_VCOS_GAIN::write(0x29);
+
+    Adc::ADC_RGCTRL::write(RgbGain);
+    Adc::ADC_GGCTRL::write(RgbGain);
+    Adc::ADC_BGCTRL::write(RgbGain);
 
     balance.restFor(ColourBalance::Rgb);
     balance.apply();

@@ -98,17 +98,23 @@ TEST_CASE("component carries an offset on every channel and RGB carries none")
     CHECK(after<VideoProcessor::VDS_V_OFST>(ColourSpace::applyRgb) == 0x00);
 }
 
-TEST_CASE("only component sets the ADC gains, and RGB leaves them alone")
+TEST_CASE("the ADC gain follows the colour space, both ways")
 {
-    CHECK(after<Adc::ADC_RGCTRL>(ColourSpace::applyYuv) == 0x33);
-    CHECK(after<Adc::ADC_GGCTRL>(ColourSpace::applyYuv) == 0x33);
-    CHECK(after<Adc::ADC_BGCTRL>(ColourSpace::applyYuv) == 0x33);
+    // Measured on the emitted frame, sweeping the register under each: on
+    // component it moves the picture and ComponentGain is the first value that
+    // clips nothing, where the preset path's 0x7B costs 7% of full scale; on
+    // RGB the register is inert across 0x33..0x98.
+    // docs/investigations/the-adc-gain-is-the-colour-spaces.md
+    CHECK(after<Adc::ADC_RGCTRL>(ColourSpace::applyYuv) == ColourSpace::ComponentGain);
+    CHECK(after<Adc::ADC_GGCTRL>(ColourSpace::applyYuv) == ColourSpace::ComponentGain);
+    CHECK(after<Adc::ADC_BGCTRL>(ColourSpace::applyYuv) == ColourSpace::ComponentGain);
 
-    // The RGB half never wrote them, so a move that starts writing 0 here would
-    // be a behaviour change wearing the clothes of an extraction.
-    CHECK_FALSE(wasWritten<Adc::ADC_RGCTRL>(ColourSpace::applyRgb));
-    CHECK_FALSE(wasWritten<Adc::ADC_GGCTRL>(ColourSpace::applyRgb));
-    CHECK_FALSE(wasWritten<Adc::ADC_BGCTRL>(ColourSpace::applyRgb));
+    // Stated rather than inherited. Nothing else writes it on a path that
+    // reaches a picture, so without this a source arriving on RGB after a
+    // component one keeps the component gain.
+    CHECK(after<Adc::ADC_RGCTRL>(ColourSpace::applyRgb) == ColourSpace::RgbGain);
+    CHECK(after<Adc::ADC_GGCTRL>(ColourSpace::applyRgb) == ColourSpace::RgbGain);
+    CHECK(after<Adc::ADC_BGCTRL>(ColourSpace::applyRgb) == ColourSpace::RgbGain);
 }
 
 TEST_CASE("neither half touches the ADC PLL or the capture window")

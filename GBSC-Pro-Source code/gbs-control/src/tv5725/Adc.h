@@ -14,8 +14,8 @@ namespace Tv5725 {
 // PLLAD_ND is here at 0 and is a different thing: latched by the same edge,
 // but not rate.
 //
-// ADC_AUTO_OFST_EN = 0 leaves the offsets to setAdcParametersGainAndOffset() and
-// the auto-gain loop, which are per source and belong in the sketch.
+// ADC_AUTO_OFST_EN = 0 leaves the offsets to the sketch and the gain to
+// ColourSpace and the auto-gain loop, all of which are per source.
 // ADC_TR_RSEL, ADC_TR_ISEL, ADC_TA_CTRL and ADC_TEST are analog trim and test
 // selects with no derivation available -- what all twelve tables shipped.
 class Adc {

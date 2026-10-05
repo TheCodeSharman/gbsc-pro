@@ -1180,7 +1180,7 @@ void setResetParameters()
     Tv5725::Chip::padsToResetState();
     Tv5725::HdBypass::init();
     Tv5725::ModeDetect::init();
-    setAdcParametersGainAndOffset();
+    Tv5725::Adc::applyOffset(0x40, 0x40, 0x40);
     GBS::SP_PRE_COAST::write(9);
     GBS::SP_POST_COAST::write(18);  
     GBS::SP_NO_COAST_REG::write(0); 
@@ -1345,12 +1345,6 @@ void applyRGBPatches()
     if (uopt->wantOutputComponent) {
         applyComponentColorMixing();
     }
-}
-
-void setAdcParametersGainAndOffset()
-{
-    Tv5725::Adc::applyOffset(0x40, 0x40, 0x40);
-    Tv5725::Adc::applyGain(0x7B, 0x7B, 0x7B);
 }
 
 // What the sync processor reports about the source's sync edges, by name. The
@@ -2398,7 +2392,7 @@ void doPostPresetLoadSteps()
         Tv5725::SyncOnGreen::putInForce();
 
 
-        setAdcParametersGainAndOffset();
+        Tv5725::Adc::applyOffset(0x40, 0x40, 0x40);
 
         geometry.forgetPreviousSource();
         rto->sourceDisconnected = false;
