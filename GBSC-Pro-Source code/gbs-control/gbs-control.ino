@@ -2353,8 +2353,10 @@ void doPostPresetLoadSteps()
         // The level is NOT chosen here. VideoSourceAcquisition::acquireSeparatorLevel()
         // owns it, seeds from Adc::inputIsComponent() and then searches -- so a
         // value stated here is a second owner writing a final answer where the
-        // engine writes a starting point. putInForce() carries whatever is held.
-        Tv5725::SyncOnGreen::putInForce();
+        // engine writes a starting point. Whatever is held goes in force
+        // because the separator read below is taken through it.
+        Tv5725::SyncOnGreen::apply();
+        Tv5725::Adc::applyPhases();
 
 
         Tv5725::Adc::applyOffset(0x40, 0x40, 0x40);
@@ -2428,7 +2430,11 @@ void doPostPresetLoadSteps()
         // against it, so deriving one from the other after the fact could
         // only fight the model. VideoPath::write() sets both.
 
-        Tv5725::SyncOnGreen::putInForce();
+        // applyClockGroup() wrote the group PLLAD_LAT loads on a rising edge,
+        // and the decimator modes beside it -- so the adjusters take their
+        // value again on the restart applyPhases() ends with.
+        Tv5725::Adc::applyPhases();
+        Tv5725::Adc::latch();
 
         Tv5725::SyncProcessor::clampFromReferenceClock();
         Tv5725::SyncProcessor::applyDefaultClampWindow();
@@ -2465,9 +2471,7 @@ void doPostPresetLoadSteps()
             Tv5725::SyncProcessor::releaseClamp();
         }
 
-        Tv5725::SyncOnGreen::putInForce();
-
-            Tv5725::Interrupts::acknowledgeAll();
+        Tv5725::Interrupts::acknowledgeAll();
 
         // Pass-through is not decided here. It is a statement about the
         // measured source, and this runs at the end of a preset load with
