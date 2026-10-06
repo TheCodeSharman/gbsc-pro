@@ -62,13 +62,21 @@ GEOMETRY = ("oh", "eh", "ov", "ev", "ch", "cv", "fh", "fv",
 
 PICTURE = ("left", "right", "top", "bottom", "spread", "luma", "flat")
 
+# The framing the user tuned, in ten-thousandths of the capturable region. It is
+# re-adopted from the capture on every solve rather than computed from the
+# source, so it rounds whenever that region moves -- 673/9327 against one 480i
+# landing and 670/9330 against the other. A framing actually LOST moves the
+# window's units beside it, and those are the oracle.
+FRAMING_PROPORTIONS = ("poh", "peh", "pov", "pev")
+
 # Per group, the keys the engine COMPUTED. Everything else in a group is
 # something it measured, or something the link placed, and moving is a question
 # rather than an answer.
 COMPUTED = {
     "oracle": set(ORACLE),
     "context": {"PLLAD_MD"},
-    "geometry": set(GEOMETRY) - {"lineRateHz", "lowLineRate"},
+    "geometry": set(GEOMETRY) - {"lineRateHz", "lowLineRate"}
+               - set(FRAMING_PROPORTIONS),
     "picture": {"flat"},
 }
 
@@ -85,6 +93,18 @@ TOLERANCE = {"spread": 1.0, "luma": 1.0}
 RATE_DERIVED = ("PLLAD_MD", "SP_H_CST_ST", "SP_H_CST_SP",
                 "SP_CS_CLP_ST", "SP_CS_CLP_SP")
 
+# The capture window's own units, placed from the HELD count -- which lands on
+# either member of an alternating pair and cannot be read back, because
+# STATUS_SYNC_PROC_VTOTAL samples the register rather than reporting what the
+# solve used. Measured on the 480i Wii: cv 520 / ev 485 on one landing and 522 /
+# 487 on the other, two of three acquisitions of one source on one image, with
+# the geometry steady at whichever it landed on through 48 reads. One line of the
+# count is the tolerance, the same shape as the rate-derived group above.
+COUNT_DERIVED = ("ov", "ev", "cv", "fv")
+
+# A slack of one held line, whichever reason the key has for needing it.
+PER_LINE = RATE_DERIVED + COUNT_DERIVED
+
 # Read and printed, never compared. The docstring says why.
 EXCLUDED = ("SP_PRE_COAST", "SP_POST_COAST", "SP_HS_POL_ATO", "SP_VS_POL_ATO")
 
@@ -100,7 +120,7 @@ CAPTURE_POLL_S = 1.0
 
 
 def _moved(key, was, now, lines):
-    if key in RATE_DERIVED and lines:
+    if key in PER_LINE and lines:
         slack = abs(was) / float(lines) + 1.0
     else:
         slack = TOLERANCE.get(key)

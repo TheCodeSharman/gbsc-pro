@@ -157,3 +157,30 @@ def test_a_switch_is_exact_and_tolerates_nothing():
     got = failures(reading(oracle={"SP_EXT_SYNC_SEL": 0}),
                    reading(oracle={"SP_EXT_SYNC_SEL": 1}))
     assert [d.key for d in got] == ["SP_EXT_SYNC_SEL"]
+
+
+# The 480i Wii, two acquisitions of one source on one image: the held count
+# lands on either member of the alternating pair and the capture window follows
+# it. Measured cv 520 / ev 485 against one and 522 / 487 against the other, with
+# the framing proportions rounding by three ten-thousandths beside them.
+INTERLACED = {"STATUS_SYNC_PROC_VTOTAL": 259, "SP_SOG_MODE": 1}
+LANDED = {"ov": 35, "ev": 485, "cv": 520, "fv": 1, "pov": 673, "pev": 9327}
+ALTERNATED = dict(LANDED, ev=487, cv=522, pov=670, pev=9330)
+
+
+def test_a_held_count_one_line_apart_is_within_the_capture_windows_tolerance():
+    was = reading(context=INTERLACED, geometry=LANDED)
+    now = reading(context=INTERLACED, geometry=ALTERNATED)
+    assert not failures(was, now)
+
+
+def test_the_framing_proportions_note_rather_than_fail_because_a_solve_rounds_them():
+    was = reading(context=INTERLACED, geometry=LANDED)
+    now = reading(context=INTERLACED, geometry=ALTERNATED)
+    assert sorted(d.key for d in notes(was, now)) == ["pev", "pov"]
+
+
+def test_a_capture_height_further_than_one_line_out_still_fails():
+    was = reading(context=INTERLACED, geometry=LANDED)
+    now = reading(context=INTERLACED, geometry=dict(LANDED, cv=540))
+    assert [d.key for d in failures(was, now)] == ["cv"]
