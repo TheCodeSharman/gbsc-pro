@@ -33,12 +33,23 @@ Steady at 311 thereafter. The sync-type probe answers in 2-3 ms once the source
 is up, and the solve costs about ten milliseconds, so **nothing about acquiring
 a source takes minutes**.
 
-**The Wii's output mode decides whether it acquires at all.** At 480p it
-acquires and holds -- 524 lines x 59.80 Hz in 15.2 s, `PLLAD_MD` 1096 against
-`STATUS_SYNC_PROC_HTOTAL` 1096, `HPERIOD_IF` 214, a clean picture. At 480i it
-never reaches `acquired`: the field count alternates 259/260 by construction and
-the steadiness run needs four identical samples, so the solve never completes and
-the picture rolls while every register reads correct.
+**Every Wii output mode acquires, and 480i lands on either member of its
+alternating count.** At 480p it holds 524 lines x 59.80 Hz in 15.2 s, `PLLAD_MD`
+1096 against `STATUS_SYNC_PROC_HTOTAL` 1096, `HPERIOD_IF` 214, a clean picture.
+At 480i the field count alternates 259/260 by construction and
+`SteadyRun::agree()` takes a pair alternating by one as agreeing, so it acquires
+and holds -- measured over four input round trips, every one of them.
+
+**WHICH MEMBER IT HELD CANNOT BE READ BACK, AND THE GEOMETRY IS WHAT SHOWS IT.**
+`STATUS_SYNC_PROC_VTOTAL` samples the register rather than reporting what the
+solve used -- 260 in 31 reads and 259 in 17 over 100 s -- while the capture
+window sits perfectly still at whichever landing the solve took: `cv` 520 and
+`ev` 485 against the 259 landing, 522 and 487 against the 260 one, steady across
+48 reads. Measured over three input round trips on one image, two landed on 522
+and one on 520. **So a vertical geometry two units apart on this source is the
+same source**, and the framing proportions round by three ten-thousandths beside
+it -- `pov`/`pev` 673/9327 against one landing and 670/9330 against the other.
+`configure_oracle.py` absorbs both.
 `docs/investigations/mode-detect-answers-before-any-measurement.md`.
 
 **THOSE NUMBERS ARE THE SCALING PATH, AND 480p QUALIFIES FOR PASS-THROUGH.**

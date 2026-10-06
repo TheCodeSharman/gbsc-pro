@@ -469,17 +469,42 @@ therefore invisible to any check that compares names.
       commit measured ZERO of 1536.
    5. **The two bodies converge**, leaving-pass-through becoming a prefix
       rather than a second function. **This is where the duplication dies**;
-      stage 4 only stages for it.
+      stage 4 only stages for it. **The sync arrangement is done; the bodies
+      are not.**
 
-      Stage 4 names the one that is left: `configureSyncPath()` writes the
-      sync arrangement, and so does `VideoPath::applySyncType()`, which
-      `establishSyncType()` reaches on every engine-driven mode change. The
-      two are not interchangeable as they stand — `applySyncType()` is
-      guarded by `syncTypeApplied_` and adds the path's settle delay, where a
-      load has to write the path whatever is held. `reapplySyncTypeInForce()`
-      is the unconditional form and returns false where nothing has been
-      applied yet, which is exactly the case the load's own comment warns
-      about.
+      ~~The sync arrangement had two writers inside the engine.~~ Done.
+      `putSyncTypeInForce()` is the write and the guard is the caller's: a
+      mode change skips a path already in force, a load writes it whatever is
+      held. What the load could not do before is RECORD what it put there, so
+      `reapplySyncTypeInForce()` returned false after one and a coast changed
+      through `/sc?` reached nothing. The load settles now as well, where its
+      own test-bus read for the separator level used to be taken on a path
+      that had just moved; and it says which arrangement it applied, the route
+      that was invisible.
+
+      **The two bodies both run in one load that leaves pass-through, so the
+      shared steps execute twice.** `applyPresets()` puts the route back to the
+      scaler before `loadComputedPreset()`, so by the time the load reaches
+      `VideoSourceAcquisition::setOutputResolution()` the pass-through test is
+      already false while the engine still holds `ModeBypass` — which is what
+      `VideoPath::setOutputMode()` reads as leaving. `configureScalingPath()`
+      therefore runs inside the load, and `restartAndLatch()` runs after it, so
+      `Chip::resetVideoBlocks()`, `applyClockGroup()` and
+      `applyFrameBufferRequests()` each run twice, with the bring-up and the
+      colour matrix beside them.
+
+      **What blocks the prefix is that the restart is not part of the
+      bring-up.** `configureScalingPath()` restarts the blocks because it has
+      just reconfigured them, and `restartAndLatch()` restarts them at the end
+      of the load for the same reason — so the shared three cannot simply move
+      into a prefix without putting the load's restart before its
+      configuration. And the leaving arm's other three steps
+      (`Chip::routeToScaler()`, `Adc::installReferenceSamplingClock()`, the
+      reference `applyScan()`) have sketch equivalents spread across
+      `applyPresets()`, `loadComputedPreset()` and the input selector, so
+      making the prefix unconditional changes what every load does rather than
+      only what a leaving one does. That is a behaviour change on both inputs,
+      not a refactor.
    6. **The three `rto->` flags get owners.** `applyPresetDoneStage` carries
       three things that are not DAC power — the clamp placement with the sync
       watcher off, the display-clock handover, and the rate match.
