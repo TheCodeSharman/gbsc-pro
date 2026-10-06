@@ -2276,6 +2276,46 @@ TEST_CASE("reacquiring the sync type reports what the source carries")
     CHECK(engine.reacquireSyncType());
 }
 
+// WHICH OWNER LAST HAD THE PATH CANNOT BE READ OFF A DUMP, so every route that
+// applies it says so. The load was the silent one.
+TEST_CASE("a load says which arrangement it put in force")
+{
+    seedBenchSource();
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+
+    SyncMeasurement::set(true);
+    g_logLines.clear();
+    engine.configureSyncPath();
+
+    CHECK(loggedContaining("sync arrangement: composite or SOG"));
+}
+
+// A LOAD APPLIES THE PATH, it does not write it beside an application. The
+// coast pair reaches the chip only through one, so a load that records nothing
+// as in force leaves the next change of the pair with nothing to re-apply.
+TEST_CASE("a coast changed after a load reaches the chip")
+{
+    seedBenchSource();
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+
+    SyncMeasurement::set(true);
+    engine.configureSyncPath();
+    REQUIRE(SyncProcessor::SP_PRE_COAST::read() == 7);
+
+    SyncProcessor::overrideCoast(12, 12);
+    engine.reapplySyncTypeInForce();
+    const uint32_t applied = SyncProcessor::SP_PRE_COAST::read();
+    SyncProcessor::forgetCoastOverride();
+
+    CHECK(applied == 12);
+}
+
 TEST_CASE("a coast changed on a settled source reaches the chip")
 {
     seedBenchSource();

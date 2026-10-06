@@ -292,7 +292,6 @@ public:
     // and a held answer reapplied to the other one leaves the sync processor
     // watching pins the selected source does not drive.
     void establishSyncType(uint8_t chosenFor);
-    void applySyncType(bool csync);
 
     // The hsync pulse, taken by the layer that measures and handed over. THE
     // ENGINE READS NOTHING BACK: every window it solves, now and on every
@@ -459,6 +458,16 @@ public:
     void applyChosenSampling(uint16_t divider, uint8_t oversample);
 
 private:
+
+    // Skips a path the chip is already on, which is what a mode change wants:
+    // applying one in force costs the settle and changes nothing.
+    void applySyncType(bool csync);
+
+    // THE ONE WRITER OF THE SYNC ARRANGEMENT, and it settles. The guard belongs
+    // to the caller -- a mode change reuses what is in force, a load writes the
+    // path whatever is held -- and what is in force is recorded here, which is
+    // the only thing that can tell the two apart.
+    void putSyncTypeInForce(bool csync);
 
     // The raster is the held one, never a read-back.
     bool solveWindows();

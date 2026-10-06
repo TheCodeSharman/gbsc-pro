@@ -747,12 +747,11 @@ void VideoPath::configureSyncPath()
 
     const bool csync = SyncMeasurement::isCsync();
 
-    ModeDetect::applySyncType(csync ? ModeDetect::Csync
-                                    : ModeDetect::SeparateSync);
-
     Chip::enableClockInputPad();
 
-    SyncProcessor::applyForSyncType(csync, sampling_.hasSerratedSync());
+    // Whatever is held, which is what makes this the load's application of the
+    // path rather than a write beside one.
+    putSyncTypeInForce(csync);
     SyncProcessor::prepare(csync, sampling_.hasSerratedSync());
 }
 
@@ -836,9 +835,7 @@ bool VideoPath::reapplySyncTypeInForce()
     if (!syncTypeApplied_)
         return false;
 
-    const bool csync = syncTypeInForce_;
-    syncTypeApplied_ = false;
-    applySyncType(csync);
+    putSyncTypeInForce(syncTypeInForce_);
     return true;
 }
 
@@ -870,12 +867,15 @@ void VideoPath::establishSyncType(uint8_t chosenFor)
     applySyncType(SyncMeasurement::syncType(syncProbe_));
 }
 
-// The settle is what makes this worth skipping: applying the path the chip is
-// already on costs half a second and changes nothing.
 void VideoPath::applySyncType(bool csync)
 {
     if (syncTypeApplied_ && csync == syncTypeInForce_)
         return;
+    putSyncTypeInForce(csync);
+}
+
+void VideoPath::putSyncTypeInForce(bool csync)
+{
     syncTypeApplied_ = true;
     syncTypeInForce_ = csync;
 
@@ -883,9 +883,14 @@ void VideoPath::applySyncType(bool csync)
     // several other paths also write, so which owner last had it cannot be read
     // off a dump -- and a source measured through the wrong one reports a clean
     // count for the source on the other connector.
-    char line[56];
-    snprintf(line, sizeof(line), "sync arrangement: %s for input %u",
-             csync ? "composite or SOG" : "separate", (unsigned)syncTypeChosenFor_);
+    const char *const arrangement = csync ? "composite or SOG" : "separate";
+    char line[64];
+    if (syncTypeChosenFor_ == NoSelectionSeen)
+        snprintf(line, sizeof(line), "sync arrangement: %s, for no input yet",
+                 arrangement);
+    else
+        snprintf(line, sizeof(line), "sync arrangement: %s for input %u",
+                 arrangement, (unsigned)syncTypeChosenFor_);
     tv5725Log(line);
 
     SyncProcessor::applyForSyncType(csync, sampling_.hasSerratedSync());
