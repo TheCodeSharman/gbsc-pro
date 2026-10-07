@@ -31,11 +31,21 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from gbs_unit import locked_steadily, read_fields, wait_for
 
-# Tv5725::InputFormatter::NoHeadBlanking, ::LineDoubleReset and
-# ::DoubledTailBlanking.
+# Tv5725::InputFormatter::NoHeadBlanking and ::DoubledTailBlanking.
 NO_HEAD_BLANKING = 2
-LINE_DOUBLE_RESET = 272
 DOUBLED_TAIL_BLANKING = 96
+
+# What the doubled path's FIFO reset may be, in ADC samples -- a BAND rather than
+# the firmware's chosen value, because a copy of that value is what this file
+# carried while the firmware moved it and nothing said so.
+#
+# The band is the measurement: what each doubled mode wants splits by field rate,
+# 137..152 at 50 Hz against 175..179 at 60 Hz, over every doubled mode the bench
+# can reach. One value has to take all of them, so any value inside the band is a
+# legitimate choice and 272 -- out by 127, and what every scaling table shipped --
+# is not.
+# docs/investigations/the-line-doubler-resets-the-fifo-late.md
+LINE_DOUBLE_RESET_BAND = (137, 179)
 
 # Where a progressive line goes black: 16 leaves the picture whole and 18 blanks
 # it entirely, measured at 320x256@70 with IF_HBIN_SP at NO_HEAD_BLANKING.
@@ -55,11 +65,26 @@ def solved(host):
 
 
 def test_head_blanking_follows_the_scan_mode(solved):
-    expected = (NO_HEAD_BLANKING if solved["IF_LD_RAM_BYPS"] == 1
-                else LINE_DOUBLE_RESET)
-    assert solved["IF_HBIN_SP"] == expected, (
-        f"IF_LD_RAM_BYPS {solved['IF_LD_RAM_BYPS']} wants IF_HBIN_SP {expected}, "
-        f"reads {solved['IF_HBIN_SP']}")
+    """IF_HBIN_SP is the smallest window the part accepts on a progressive line,
+    and the doubled path's FIFO reset on a doubled one.
+
+    The doubled case is asserted as a band, not a value: the firmware picks one
+    count for every doubled mode and the band is what those modes measured, so a
+    re-tune inside it is a choice rather than a regression.
+    """
+    if solved["IF_LD_RAM_BYPS"] == 1:
+        assert solved["IF_HBIN_SP"] == NO_HEAD_BLANKING, (
+            f"progressive wants IF_HBIN_SP {NO_HEAD_BLANKING}, reads "
+            f"{solved['IF_HBIN_SP']}: any other value crops the left of the "
+            f"picture on top of the capture window's own crop")
+        return
+
+    low, high = LINE_DOUBLE_RESET_BAND
+    assert low <= solved["IF_HBIN_SP"] <= high, (
+        f"line-doubled wants IF_HBIN_SP in {low}..{high}, reads "
+        f"{solved['IF_HBIN_SP']}: the reset is the doubled path's whole origin "
+        f"term, so a reset late by N samples captures the source's line N "
+        f"samples early and every window the solve places goes with it")
 
 
 def test_head_blanking_does_not_reach_into_the_capture(solved):
@@ -88,9 +113,9 @@ def test_the_tail_blanking_follows_the_scan_mode(solved):
 def test_a_progressive_line_keeps_the_tail_blanking_below_the_black_screen(solved):
     """The bound, rather than the value, so it survives a change to the constant.
 
-    A doubled line takes the guard against IF_HBIN_SP 272 and loses nothing. A
-    progressive one has IF_HBIN_SP at 2, and there the same field blanks the
-    whole line instead of its tail.
+    A doubled line takes the guard against a raised IF_HBIN_SP and loses
+    nothing. A progressive one has IF_HBIN_SP at 2, and there the same field
+    blanks the whole line instead of its tail.
     """
     if solved["IF_LD_RAM_BYPS"] != 1:
         pytest.skip("line-doubled: the tail guard is what this scan mode is for")
