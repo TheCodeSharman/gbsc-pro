@@ -482,29 +482,58 @@ therefore invisible to any check that compares names.
       that had just moved; and it says which arrangement it applied, the route
       that was invisible.
 
-      **The two bodies both run in one load that leaves pass-through, so the
-      shared steps execute twice.** `applyPresets()` puts the route back to the
-      scaler before `loadComputedPreset()`, so by the time the load reaches
+      **The two bodies both run in one load that leaves pass-through.**
+      `applyPresets()` puts the route back to the scaler before
+      `loadComputedPreset()`, so by the time the load reaches
       `VideoSourceAcquisition::setOutputResolution()` the pass-through test is
       already false while the engine still holds `ModeBypass` — which is what
       `VideoPath::setOutputMode()` reads as leaving. `configureScalingPath()`
-      therefore runs inside the load, and `restartAndLatch()` runs after it, so
-      `Chip::resetVideoBlocks()`, `applyClockGroup()` and
-      `applyFrameBufferRequests()` each run twice, with the bring-up and the
-      colour matrix beside them.
+      therefore runs inside the load and `restartAndLatch()` runs after it.
 
-      **What blocks the prefix is that the restart is not part of the
-      bring-up.** `configureScalingPath()` restarts the blocks because it has
-      just reconfigured them, and `restartAndLatch()` restarts them at the end
-      of the load for the same reason — so the shared three cannot simply move
-      into a prefix without putting the load's restart before its
-      configuration. And the leaving arm's other three steps
-      (`Chip::routeToScaler()`, `Adc::installReferenceSamplingClock()`, the
-      reference `applyScan()`) have sketch equivalents spread across
-      `applyPresets()`, `loadComputedPreset()` and the input selector, so
-      making the prefix unconditional changes what every load does rather than
-      only what a leaving one does. That is a behaviour change on both inputs,
-      not a refactor.
+      **WHAT DUPLICATES IS THE CONFIGURATION AND NOT THE RESTART, AND THE
+      EARLIER READING OF THIS STAGE IS WRONG.** Measured on the fake bus, which
+      carries the write order no final-state read can see:
+
+      | | times a leaving load runs it |
+      |---|---|
+      | the memory chain pulsed from a RUNNING state | **1** |
+      | `applyClockGroup()` | **2** — four writes to `s0_43` |
+
+      Entering pass-through leaves the memory chain HELD, so the leaving arm's
+      `Chip::resetVideoBlocks()` writes 0 over bits already 0 and only its
+      release does anything. The one real pulse is the load's tail, after the
+      configuration rather than before it, which is where it belongs. The clock
+      group, the frame buffer requests, the bring-up and the colour matrix are
+      the ones in both bodies. `test_video_path.cpp` carries both counts.
+
+      So the stage buys a dozen redundant register writes per leaving load, not
+      a second disruption of the video chain.
+
+      **What blocks the prefix is that `setOutputMode()`'s leaving arm has to be
+      SELF-SUFFICIENT**, which is a stronger constraint than the restart not
+      being part of the bring-up. Callers reach the arm directly with nothing
+      following, and three cases pin it: "an acquisition without a preset load
+      emits a flat field" in `test_video_path.cpp`, and the two in
+      `test_video_source_acquisition.cpp` that read `SFTRST_VDS_RSTZ` back after
+      a bare `setOutputMode()`. Moving the restart out of the arm and into
+      `VideoSourceAcquisition`'s leaving branch fails all three. **The engine
+      cannot tell whether anything follows it; only the caller can**, and the
+      `false` the arm returns is where that knowledge already is.
+
+      So the prefix has to be a SECOND ACT the caller composes — the load and
+      `changeOutputResolution()` taking the prefix and finishing themselves,
+      `resolveFromSource()` and the direct callers taking the whole arm — rather
+      than a rearrangement inside `setOutputMode()`. The three callers of
+      `setOutputResolution()` all suit it: the load and `changeOutputResolution()`
+      both end with `restartAndLatch()` by another route, and the boot caller
+      never takes the leaving arm at all because `mode_` is still 0 there.
+
+      And the leaving arm's other three steps (`Chip::routeToScaler()`,
+      `Adc::installReferenceSamplingClock()`, the reference `applyScan()`) have
+      sketch equivalents spread across `applyPresets()`, `loadComputedPreset()`
+      and the input selector, so making the prefix unconditional changes what
+      every load does rather than only what a leaving one does. That is a
+      behaviour change on both inputs, not a refactor.
    6. **The three `rto->` flags get owners.** `applyPresetDoneStage` carries
       three things that are not DAC power — the clamp placement with the sync
       watcher off, the display-clock handover, and the rate match.

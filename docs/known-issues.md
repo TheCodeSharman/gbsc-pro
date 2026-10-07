@@ -2607,38 +2607,48 @@ mechanisms, which is also why subtracting `syncUnits` unconditionally is wrong
 in both directions.
 `investigations/a-flip-test-cannot-tell-a-captured-tail-from-stale-memory.md`.
 
-### `test_capture_origin.py` compares a live sync width against a latched one
+### ~~`test_capture_origin.py` compares a live sync width against a latched one~~
 
-`VideoSourceLine::forDuty()` takes `ceilf(units * duty)` from the
-`STATUS_SYNC_PROC_HLOW_LEN` reading the engine held **at solve time**, and the
-test reads the register **now**. One ADC sample of drift between the two puts
-the expected first capturable unit one out, and the test reports a defect that
-is not there.
+**Closed, and the mechanism was not drift.** The engine does not divide
+`STATUS_SYNC_PROC_HLOW_LEN` by the divider at all:
+`SyncProcessor::hsyncPulseSamples()` folds the count against its complement and
+subtracts `InvertedPulseWidthSamples` where the source is high-active, so the
+raw ratio is five samples wide on every such source and the disagreement is
+systematic rather than a sample of drift.
 
-Measured at 320x256@50, `PLLAD_MD` 2200, `IF_HSYNC_RST` 1100: `HLOW_LEN` reads a
-steady 156 over six samples, which is 79 units, while the engine reports a first
-capture of 100 -- the 78 that 155 gives. `/sc?U` re-solves from the source as it
-reads now and both tests pass, `capturableOn` moving 999 -> 998.
+Measured at 320x256@50, `PLLAD_MD` 2200, `STATUS_SYNC_PROC_HSPOL` 1: the
+register reads 156 and the engine used **151**, which places 76 units where the
+raw reading derives 79. That is the whole of the three-unit gap, and it survives
+a re-solve because nothing about it is stale -- `/sc?U` leaves `fh` at 98 and
+the register at 156, three times.
 
-So a failure here is only a finding if it survives a re-solve. The fix is for
-the test to take the engine's own reading rather than a fresh one, which
-`/geometry` does not currently publish.
+`/geometry` reports the solved interval as `sh`/`sv` now and the test reads it,
+so the two cases check what they are for -- the head blanking term applied to
+the doubled path and only to it -- against the engine's own measurement.
 
-### Three hardware tests carry their own copy of a firmware constant
+**The earlier reading of this entry was a different magnitude and is
+superseded**: one unit against a `HLOW_LEN` of 155 is what a re-solve moved, and
+the three units are the polarity correction. A `/sc?U` that appears to clear a
+failure here is moving the solve, not settling the question.
 
-`test_if_head_blanking.py` declares `LINE_DOUBLE_RESET = 272` where
+### ~~Three hardware tests carry their own copy of a firmware constant~~
+
+**Closed.** `test_if_head_blanking.py` declared `LINE_DOUBLE_RESET = 272` where
 `InputFormatter::LineDoubleReset` is **160**, so
-`test_head_blanking_follows_the_scan_mode` fails on the bench's line-doubled
-source: `IF_HBIN_SP` reads 160 and the test wants 272. The firmware moved the
+`test_head_blanking_follows_the_scan_mode` failed on the bench's line-doubled
+source: `IF_HBIN_SP` reads 160 and the test wanted 272. The firmware moved the
 doubled path's origin and the copy did not, which is the hazard a copied fact
-carries -- the test reads as a firmware defect and is a stale constant.
+carries -- the test read as a firmware defect and was a stale constant.
 
-`test_capture_origin.py`'s two failures are beside it and are NOT the same
-thing: the first capture it computes is **3 units** past what the engine reports
-(101 against 98, `HLOW_LEN` 156, `PLLAD_MD` 2200), where the entry below
-attributes a **one** unit disagreement to a live sync width read against a
-latched one, and `/sc?U` does not clear it. Which of the two numbers is right
-has not been measured.
+The case asserts the band the modes measured rather than the value the firmware
+picked, 137..179, so it still catches 272 without holding a copy that can go
+stale again. `test_capture_origin.py`'s two failures were the entry above and
+not this.
+
+**Only one of the three was a genuine copy.** `test_membus.py` and
+`test_inrange.py` also carry 272, and neither is a mirror of the constant -- it
+is an arbitrary input to a pure arithmetic function and a plausible bench state
+for a range checker, so both pass and neither follows the firmware.
 
 ### The capture starts in a different place, and the mechanism this was filed against is gone
 
