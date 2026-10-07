@@ -215,11 +215,36 @@ Measured on the bench, Wii in 576i on `ypbpr`, with the repair in:
 and the engine pays for no rate measurement. Only two passes complete in those
 nine seconds.
 
-**The rungs that help are all gated behind `FirstAcquisitionGraceMs`**, which is
-15 s, so the SOG floor and the coast window -- the two settings that decide
-whether the sync processor follows a sync-on-green source -- cannot be reached
-any earlier however wrong they are. The engine is waiting for a recovery to do
-what the selection should have configured.
+**~~The rungs that help are all gated behind `FirstAcquisitionGraceMs`.~~**
+**Fixed, and it was not the whole fault.** The grace held the ladder's position
+at 0 for its whole 15 s, so the configuring rungs could not be reached however
+wrong the settings were. It now advances through them during the grace and
+clamps below `SyncRecovery::firstDisruptivePass()`, the re-probe, so each fires
+once and the rungs that restart the ADC PLL, reset the sync processor block or
+move the ADC input stay behind the window -- which is what it was protecting.
+
+Measured after: `recovery: coast window` moves from 40.49 s to **3.43 s** and
+the configuring rungs complete by 4.68 s. `vga` got FASTER with it, `sync pad:
+driven` at 5.30 s against 6.49 s.
+
+**THE WALL CLOCK ON `ypbpr` DID NOT MOVE, AND THE REASON IS THE COUNT.** The
+early rungs get the source producing readings and the readings are wrong:
+**270/271 lines at 60.1..61.5 Hz**, where the Wii in 480i is 259/260 at
+59.94 Hz. A divider is installed from one of them, `rateFollowsCount()` then
+answers `line rate 0` to every correct reading, and the ladder climbs to
+`FullReset` at 28.35 s, which clears it in under a second -- `source acquired:
+260 lines` at 30.0 s. So the remaining cost is a sync processor counting the
+wrong number, not a setting that was withheld.
+
+**`RestartSamplingClock` at 60 is not it either**, measured again here: it fired
+at 19.16 s and the count stayed 270/271. Only the block resets inside
+`FullReset` move it, which is the same conclusion the YPbPr first-pass entry
+reached by another route.
+
+**Do not re-file this as the grace.** The next question is which of
+`FullReset`'s eight acts moves the count -- `SyncProcessor::reset()` and
+`ModeDetect::reset()` are the two nothing else does -- and whether either can
+run at selection time without tearing down a path still solving.
 
 **The second half is the held rate.** The garbage readings taken while the
 source cannot be followed are accepted, a divider is installed from one of them,
