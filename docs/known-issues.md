@@ -277,11 +277,44 @@ So the recovery is the SEQUENCE rather than any one of its acts, and the
 97-line one. `ADC_SOGCTRL` moving 13 -> 14 shortly before the count comes right
 is a coincidence of the ladder's order, not the cause.
 
-**What is left to try**: the acts in combination, and `reacquireSeparator(false)`,
-which walks the separator rather than stepping it once and is the only part of
-`FullReset` no register write reproduces. `SyncOnGreen::liftOffFloor()` cannot
-reach it -- it returns early above `LowestSteppable` 2 and the level is 13, so
-the `lift SOG floor` rung the console prints on this source is a no-op.
+**~~What is left to try: the acts in combination.~~ FOUND, and it was
+`SP_H_PULSE_IGNOR` with two writers.** The PLL free-ran because the sync
+separator was fed a threshold chosen for another source, so the hsync reaching
+the ADC PLL was not a usable reference. Two defects, both fixed:
+
+- `SyncProcessor::applyForSyncType()`'s **csync branch never wrote the field**,
+  and the separate-sync branch does -- so a source selected after a
+  separate-sync one ran on `OwnVsyncPulseIgnore` 0xff.
+- `applySeparationThresholds()` **wrote it back from a serration it could not
+  know**, the outgoing source's. Measured over three selections from the bench
+  mode: 0x6b at 1.6 s on all three, and on one of them 0x02 at 3.3 s, after
+  which the lock read 0 and the count went to 270/271 for the rest of the
+  window. **That is this fault's intermittency, and it was a second writer
+  rather than a flaky part.**
+
+Measured after, six round trips from the bench mode: **6 of 6, 2.9..4.4 s**.
+
+**A SINGLE-FIELD POKE IN THE STALL DOES NOT SHOW THIS, which is why the
+refutations above stand and are not evidence against it.** Writing 0x6b into a
+live wedge leaves the count at 270/271 -- the threshold has to be right BEFORE
+the separator tries to lock, not after. Preventing a wedge and recovering one
+are different questions, and only the first is answered here.
+
+**WHAT REMAINS IS WHICH csync VALUE A SELECTION WRITES.**
+`hasSerratedSync()` is `lowLineRate() && isCsync()`, so a selection reads the
+source being LEFT: a 15 kHz predecessor yields the serrated value and a 37.9 kHz
+one does not. Measured from the RISC PC at 800x600@60, the first `ypbpr` trip
+takes **27.6 s** and the second 2.5 s.
+
+Separating it needs the SUB COAST's serration split from the pulse ignore's.
+`applyForSyncType()` opens with `setSubCoast(serrated)`, so one boolean carries
+both facts -- and forcing it true for an unmeasured source regressed `vga` from
+3.2..6.3 s to **10.4..16.8 s**, measured, which is why no reference constant is
+in the tree.
+
+`SyncOnGreen::liftOffFloor()` is also recorded as a no-op on this source: it
+returns early above `LowestSteppable` 2 and the level is 13, so the `lift SOG
+floor` rung the console prints here does nothing.
 
 **The second half is the held rate.** The garbage readings taken while the
 source cannot be followed are accepted, a divider is installed from one of them,
