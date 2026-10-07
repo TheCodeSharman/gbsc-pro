@@ -1302,8 +1302,7 @@ static Tv5725::HdBypass::SourceSyncEdges sourceSyncEdges()
 
 void prepareSyncProcessor()
 {
-    Tv5725::SyncProcessor::prepare(Tv5725::SyncMeasurement::isCsync(),
-                                   sourceSampling.hasSerratedSync());
+    Tv5725::SyncProcessor::prepare(Tv5725::SyncMeasurement::isCsync());
 }
 
 void goLowPowerWithInputDetection()

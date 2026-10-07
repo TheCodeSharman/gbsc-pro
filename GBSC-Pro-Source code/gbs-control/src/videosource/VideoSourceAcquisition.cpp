@@ -963,7 +963,6 @@ void VideoSourceAcquisition::applySyncProcessorDynamic(bool hunting)
     source.pathSource =
         VideoSourceSelection::isRgbhv(VideoSourceSelection::selected())
         || Tv5725::VideoRoute::isHdBypassChannel();
-    source.serrated = sampling_.lowLineRate() && Tv5725::SyncMeasurement::isCsync();
 
     Tv5725::SyncProcessor::applyDynamic(source);
 }

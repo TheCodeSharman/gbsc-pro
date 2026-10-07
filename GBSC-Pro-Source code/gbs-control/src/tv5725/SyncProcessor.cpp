@@ -53,15 +53,12 @@ bool coastOverridden_ = false;
 uint8_t preCoastOverride_ = 0;
 uint8_t postCoastOverride_ = 0;
 const uint8_t OwnVsyncPulseIgnore = 0xff;
-const uint8_t SerratedPulseIgnore = 0x6b;
-const uint8_t UnserratedPulseIgnore = 0x02;
+const uint8_t CsyncPulseIgnore = 0x6b;
 const uint8_t WidestUsefulPulseIgnore = 0x33;
 
-// What the search asks for while nothing is counting: the least the field can
-// hide, so every pulse reaches the separator. The H timer beside it is measured
-// as a don't-care across its whole range and is here to be written from one
-// place rather than because a value was chosen.
-const uint8_t SearchPulseIgnore = 0x02;
+// The H timer the search asks for, measured as a don't-care across its whole
+// range and here to be written from one place rather than because a value was
+// chosen.
 const uint8_t SearchHTimerValue = 0x3a;
 
 }  // namespace
@@ -154,13 +151,9 @@ uint8_t SyncProcessor::postCoastLines()
     return coastOverridden_ ? postCoastOverride_ : CompositePostCoastLines;
 }
 
-void SyncProcessor::applyPulseIgnore(bool csync, bool serrated)
+void SyncProcessor::applyPulseIgnore(bool csync)
 {
-    if (!csync)
-        SP_H_PULSE_IGNOR::write(OwnVsyncPulseIgnore);
-    else
-        SP_H_PULSE_IGNOR::write(serrated ? SerratedPulseIgnore
-                                         : UnserratedPulseIgnore);
+    SP_H_PULSE_IGNOR::write(csync ? CsyncPulseIgnore : OwnVsyncPulseIgnore);
 }
 
 void SyncProcessor::applyPulseWidthDifference()
@@ -186,7 +179,7 @@ void SyncProcessor::widenCoastForSerration()
 void SyncProcessor::applyForSearch(bool csync)
 {
     applyPulseWidthDifference();
-    SP_H_PULSE_IGNOR::write(SearchPulseIgnore);
+    applyPulseIgnore(csync);
     applyDefaultCoastWindow();
     SP_H_COAST::write(0);
     SP_H_TIMER_VAL::write(SearchHTimerValue);
@@ -212,7 +205,7 @@ void SyncProcessor::applyDynamic(const Dynamic &source)
         applySeparationThresholds(source.csync);
     } else if (source.present) {
         applyPulseWidthDifference();
-        applyPulseIgnore(source.csync, source.serrated);
+        applyPulseIgnore(source.csync);
     }
 }
 
@@ -222,13 +215,13 @@ void SyncProcessor::applyDefaultCoastWindow()
     SP_H_CST_SP::write(0x100);
 }
 
-void SyncProcessor::prepare(bool csync, bool serrated)
+void SyncProcessor::prepare(bool csync)
 {
     SP_SOG_P_ATO::write(0);
     SP_JITTER_SYNC::write(0);
 
     applyPulseWidthDifference();
-    applyPulseIgnore(csync, serrated);
+    applyPulseIgnore(csync);
 
     SP_H_TOTAL_EQ_THD::write(3);
 
@@ -284,7 +277,7 @@ void SyncProcessor::applyForSyncType(bool csync, bool serrated)
         SP_PRE_COAST::write(preCoastLines());
         SP_POST_COAST::write(postCoastLines());
         applyPulseWidthDifference();
-        applyPulseIgnore(csync, serrated);
+        applyPulseIgnore(csync);
         SP_SYNC_BYPS::write(0);
         SP_HS_LOOP_SEL::write(0);
         SP_H_PROTECT::write(1);
@@ -296,7 +289,7 @@ void SyncProcessor::applyForSyncType(bool csync, bool serrated)
         SP_NO_COAST_REG::write(1);
         SP_PRE_COAST::write(0);
         SP_POST_COAST::write(0);
-        applyPulseIgnore(csync, false);
+        applyPulseIgnore(csync);
         SP_SYNC_BYPS::write(0);
         SP_HS_POL_ATO::write(1);
         SP_VS_POL_ATO::write(1);

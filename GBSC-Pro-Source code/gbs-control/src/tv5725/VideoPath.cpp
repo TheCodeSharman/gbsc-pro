@@ -758,7 +758,7 @@ void VideoPath::configureSyncPath()
     // Whatever is held, which is what makes this the load's application of the
     // path rather than a write beside one.
     putSyncTypeInForce(csync, sampling_.hasSerratedSync());
-    SyncProcessor::prepare(csync, sampling_.hasSerratedSync());
+    SyncProcessor::prepare(csync);
 }
 
 void VideoPath::armSolveForSource()

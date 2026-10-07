@@ -267,14 +267,12 @@ public:
     // off the chip -- docs/sync-type-selection.md, because STATUS_SYNC_PROC_VSACT
     // only reports correctly once the type is already right.
     //
-    // `serrated` comes in because the sub coast follows the arrangement as much
-    // as the coast pair does, and a serrated source is a csync one by
-    // definition.
+    // `serrated` comes in for the sub coast alone -- the coast WITHIN a line,
+    // which only a source carrying serrations needs. The separation threshold
+    // beside it does NOT key on it: see applyPulseIgnore().
     static void applyForSyncType(bool csync, bool serrated);
 
     // The per-load sync processor setup that does not follow the sync type.
-    // `serrated` is a 15 kHz csync source whose vertical interval carries
-    // equalisation pulses.
     //
     // The sync-type fields are NOT written here. SP_SOG_MODE, the coast pair,
     // SP_NO_COAST_REG and SP_DIS_SUB_COAST are applyForSyncType()'s, and writing
@@ -284,7 +282,7 @@ public:
     //
     // Nor are the clamp and the coast window, which are prepareForDetection()'s:
     // on this path the solve places both afterwards.
-    static void prepare(bool csync, bool serrated);
+    static void prepare(bool csync);
 
 
     // The clamp and the coast window an UNMEASURED source is counted through.
@@ -383,26 +381,31 @@ public:
     // docs/investigations/the-pulse-ignore-value-is-measured-not-chosen.md
     static void applyPulseWidthDifference();
 
-    // How short a horizontal pulse must be to be ignored. Three states, each
-    // measured, and no two interchangeable -- the value that reads a serrated
-    // source stops a high-rate one locking at all, and the one that reads a
-    // high-rate source counts a serrated one's equalisation pulses as lines.
+    // How short a horizontal pulse must be to be ignored. The SYNC TYPE
+    // decides it and nothing else: a source carrying its own vertical sync has
+    // no serration to discriminate and every pulse can be ignored, while a
+    // composite one needs the threshold placed on its actual pulse width.
     //
-    // `serrated` is the source, not the sync type: a composite-sync source at
-    // 40 kHz carries no vertical interval to coast over and wants the narrow
-    // threshold, the same as it would on separate sync.
+    // ONE VALUE SERVES EVERY COMPOSITE SOURCE, which is what lets a selection
+    // write it. 107 is what reads a serrated source, and on the RISC PC's
+    // unserrated composite sync 2 and 107 are indistinguishable -- measured
+    // frozen, with controls, at 15 kHz and at 37.9 kHz. Keying it on serration
+    // instead read the source being LEFT, so the Wii took the narrow threshold
+    // whenever its predecessor ran above 15 kHz and the separator never locked.
     // docs/investigations/the-pulse-ignore-value-is-measured-not-chosen.md
-    static void applyPulseIgnore(bool csync, bool serrated);
+    // docs/investigations/the-risc-pc-composite-sync-is-not-serrated.md
+    static void applyPulseIgnore(bool csync);
 
     // Configure the separator to HUNT for a source rather than to read one it
-    // has already found: ignore only the shortest pulses, coast on the default
-    // window without the sub coast, and forget both placements so whatever
-    // locks is measured for itself rather than against the source before.
+    // has already found: coast on the default window without the sub coast, and
+    // forget both placements so whatever locks is measured for itself rather
+    // than against the source before.
     //
-    // It separates on the SAME threshold a settled source is read with. The two
-    // values this alternated between are measured identical on a source with
-    // its own vertical sync and four lines apart on a serrated one, where the
-    // lower of them is the wrong answer.
+    // IT SEPARATES ON THE SAME THRESHOLD AND PULSE WIDTH A SETTLED SOURCE IS
+    // READ WITH, and a value of its own here does not stay here. The count that
+    // ends the search is also what stops anything writing the threshold, so a
+    // search value becomes what the source is then read with -- measured as
+    // thirteen seconds of a count 11 lines high with the ADC PLL unlocked.
     // docs/investigations/the-pulse-ignore-value-is-measured-not-chosen.md
     static void applyForSearch(bool csync);
 
@@ -420,7 +423,6 @@ public:
         bool hunting;
         bool csync;
         bool pathSource;
-        bool serrated;
     };
 
     static void applyDynamic(const Dynamic &source);
