@@ -360,10 +360,9 @@ public:
     static uint8_t preCoastLines();
     static uint8_t postCoastLines();
 
-    // Coast further, and ignore fewer short pulses, for a serrated source whose
-    // sync has gone. Equalisation pulses sit either side of the vertical
-    // interval, so the coast has to cover more lines than the sync type asked
-    // for and a pulse-ignore wide enough to hide a real pulse has to come down.
+    // Coast further for a serrated source whose sync has gone. Equalisation
+    // pulses sit either side of the vertical interval, so the coast has to cover
+    // more lines than the sync type asked for.
     static void widenCoastForSerration();
 
     // Coast further either side of the vertical interval, and nothing else.
@@ -685,9 +684,6 @@ public:
     static void setHsyncOverflowProtect(bool wanted);
     static void toggleHsyncOverflowProtect();
 
-    // Whether coast is inverted. Names what is wanted rather than the
-    // register.
-    static void setCoastInvert(bool wanted);
 
     // HSOUT/VSOUT, taken away while a mode change is outstanding and given back
     // once the source is acquired.
@@ -708,6 +704,10 @@ public:
     static void enableOutput();
 
 private:
+    // Whether the coast gate is inverted. applyDynamic() is the one owner: the
+    // value is a pure function of whether the source can be counted yet.
+    static void setCoastInvert(bool wanted);
+
     // Whether the sub coast runs -- the coast WITHIN a line. Names what is
     // wanted rather than the register, which is a disable. The source's
     // serration is what decides it and applyForSyncType() is where that is

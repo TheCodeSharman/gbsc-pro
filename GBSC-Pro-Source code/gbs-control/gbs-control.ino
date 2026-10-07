@@ -2269,7 +2269,6 @@ void doPostPresetLoadSteps()
         Tv5725::Adc::choosePhaseAdc(Tv5725::Adc::MidField);
     }
 
-    Tv5725::SyncProcessor::setCoastInvert(false);
     if (!Tv5725::VideoRoute::isHdBypassChannel() && !geometry.scalingRgbhvInForce()) {
         inputAcquisition.applySyncProcessorDynamic(0);
     }

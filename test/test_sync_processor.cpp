@@ -273,27 +273,25 @@ TEST_CASE("widening the coast covers more lines either side of the interval")
     CHECK(SyncProcessor::SP_POST_COAST::read() == 9);
 }
 
-TEST_CASE("a pulse-ignore wide enough to hide a real pulse is halved")
+TEST_CASE("widening the coast leaves the separation threshold to its owner")
 {
-    Wire.reset();
-    Wire.poison(Poisons[0]);
-    SyncProcessor::SP_H_PULSE_IGNOR::write(0x6b);
+    // IT WAS A SECOND WRITER, AND IT DERIVED ITS VALUE BY READING THE FIELD
+    // BACK -- halving whatever it found, so the value depended on how many times
+    // the rung had run. applyPulseIgnore() is the owner and the threshold is a
+    // pure function of the sync type; 107 is the value measured to serve every
+    // composite source, and nothing measured asks for 53.
+    //
+    // The coast LENGTHS either side of the interval are a different field and
+    // stay this one's.
+    for (uint32_t standing : {(uint32_t)0x6b, (uint32_t)0x32}) {
+        Wire.reset();
+        Wire.poison(Poisons[0]);
+        SyncProcessor::SP_H_PULSE_IGNOR::write(standing);
 
-    SyncProcessor::widenCoastForSerration();
+        SyncProcessor::widenCoastForSerration();
 
-    CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 0x6b / 2);
-}
-
-TEST_CASE("a pulse-ignore already narrow is left where it is")
-{
-    // Halving it again reaches a width that lets ringing through as sync.
-    Wire.reset();
-    Wire.poison(Poisons[0]);
-    SyncProcessor::SP_H_PULSE_IGNOR::write(0x32);
-
-    SyncProcessor::widenCoastForSerration();
-
-    CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 0x32);
+        CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == standing);
+    }
 }
 
 // Resetting the sync processor. A pulse, so the final state proves nothing and
@@ -746,27 +744,32 @@ TEST_CASE("the search coasts on the default window and over no sub coast")
     CHECK(SyncProcessor::SP_H_COAST::read() == 0);
 }
 
-TEST_CASE("a composite source coasts inverted while it is searched for")
+TEST_CASE("the search coasts the way every composite source is read")
 {
-    Wire.reset();
-    SyncProcessor::setCoastInvert(false);
-
-    SyncProcessor::applyForSearch(true);
-
-    CHECK(SyncProcessor::SP_COAST_INV_REG::read() == 1);
-}
-
-TEST_CASE("a source with its own sync has its coast inversion left alone")
-{
+    // THE INVERTED COAST GATES THE ACTIVE LINE INSTEAD OF THE VERTICAL
+    // INTERVAL, so the block counts a serrated source's serration pulses as
+    // lines and the hsync reaching the ADC PLL is broken every line. Measured on
+    // a ypbpr selection from a 37.9 kHz predecessor: the search's 1 went in at
+    // 2.3 s, the count read 263..268 against the source's 259/260 and
+    // STATUS_SYNC_PROC_HTOTAL 2230..2392 against a 2200 divider for the next
+    // 21 s, and clearing the one field brought the count, the total and
+    // STATUS_MISC_PLLAD_LOCK right on the following sample.
+    //
+    // It latches: the wrong count is what keeps the source searched for, and a
+    // search is the one state that writes the field, so nothing reaches the
+    // clear. The search therefore coasts the way the sync type says, which is
+    // what the threshold and the pulse width difference below already do.
     uint32_t under[2];
-    for (int i = 0; i < 2; ++i) {
-        Wire.reset();
-        Wire.poison(Poisons[i]);
-        SyncProcessor::applyForSearch(false);
-        under[i] = SyncProcessor::SP_COAST_INV_REG::read();
-    }
+    for (bool csync : {false, true}) {
+        for (int i = 0; i < 2; ++i) {
+            Wire.reset();
+            Wire.poison(Poisons[i]);
+            SyncProcessor::applyForSearch(csync);
+            under[i] = SyncProcessor::SP_COAST_INV_REG::read();
+        }
 
-    CHECK(under[0] != under[1]);
+        CHECK(under[0] != under[1]);
+    }
 }
 
 TEST_CASE("the search forgets where the windows were placed")
@@ -851,6 +854,15 @@ static SyncProcessor::Dynamic settled()
     source.csync = false;
     source.pathSource = false;
     return source;
+}
+
+template <typename Field>
+static uint32_t dynamicValue(const SyncProcessor::Dynamic &source)
+{
+    Wire.reset();
+    Wire.poison(Poisons[0]);
+    SyncProcessor::applyDynamic(source);
+    return Field::read();
 }
 
 template <typename Field>
@@ -945,25 +957,41 @@ TEST_CASE("a source neither searched for nor acquired is left alone")
     CHECK_FALSE(dynamicWrites<SyncProcessor::SP_H_PULSE_IGNOR>(source));
 }
 
-TEST_CASE("the coast inversion is cleared for a settled composite-sync source")
+TEST_CASE("the coast inversion follows whether the source can be counted yet")
 {
-    // applyForSearch() sets it, so a source that locks after a search has it
-    // standing.
-    SyncProcessor::Dynamic source = settled();
-    source.csync = true;
+    // IT COMPENSATES FOR A COAST WINDOW STILL AT ITS DEFAULT, which is what a
+    // source with no measured line length has. Measured on a ypbpr selection
+    // from a 37.9 kHz predecessor: uninverted from the start the block counts
+    // nothing at all -- 97, the value it holds when it is not following the
+    // source -- and inverted after a count arrives it counts the serrations as
+    // lines, 263..268 against 259/260, with STATUS_SYNC_PROC_HTOTAL 2230..2392
+    // against a 2200 divider and the ADC PLL unlocked for as long as it stands.
+    //
+    // So it is one value per state and this is the one owner, which is why the
+    // write sits AHEAD of a branch that returns.
+    // ../../docs/investigations/the-search-coast-inversion-outlived-the-search.md
+    SyncProcessor::Dynamic hunting = settled();
+    hunting.csync = true;
+    hunting.searching = true;
+    hunting.present = false;
 
-    Wire.reset();
-    Wire.poison(Poisons[0]);
-    SyncProcessor::applyDynamic(source);
+    CHECK(dynamicValue<SyncProcessor::SP_COAST_INV_REG>(hunting) == 1);
 
-    CHECK(SyncProcessor::SP_COAST_INV_REG::read() == 0);
+    SyncProcessor::Dynamic countable = settled();
+    countable.csync = true;
+
+    CHECK(dynamicValue<SyncProcessor::SP_COAST_INV_REG>(countable) == 0);
 }
 
-TEST_CASE("a separate-sync source's coast inversion is not touched")
+TEST_CASE("a source with its own sync has no coast to invert")
 {
-    SyncProcessor::Dynamic source = settled();
+    for (bool searching : {false, true}) {
+        SyncProcessor::Dynamic source = settled();
+        source.searching = searching;
+        source.present = !searching;
 
-    CHECK_FALSE(dynamicWrites<SyncProcessor::SP_COAST_INV_REG>(source));
+        CHECK_FALSE(dynamicWrites<SyncProcessor::SP_COAST_INV_REG>(source));
+    }
 }
 
 // Whether the block is counting a horizontal sync. Its one register bit, and

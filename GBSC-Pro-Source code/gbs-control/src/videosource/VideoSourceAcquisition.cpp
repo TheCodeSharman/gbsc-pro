@@ -28,7 +28,7 @@ VideoSourceAcquisition::VideoSourceAcquisition(Tv5725::SourceMeasurement &sampli
       detectedMs_(0),
       detectedEver_(false), solvedLines_(0), solvedLineRateHz_(0),
       idle_(Tv5725::SourceMeasurement::SteadySamples),
-      unusableCountArmed_(false), ownVsyncFound_(false),
+      unusableCountArmed_(false), ownVsyncFound_(false), searchApplied_(false), sourceMeasured_(false),
       sourceState_(SourceAbsent),
       solvedLinePeriod_(0), rateRun_(0), recheckPasses_(0),
       firstRateConfirmed_(false),
@@ -592,6 +592,7 @@ bool VideoSourceAcquisition::poll(uint32_t nowMs)
         return false;
 
     bool detectionPass = false;
+    sourceMeasured_ = false;
     const bool solved = runPass(nowMs, detectionPass);
 
     // On the cadence, not per call: loop() polls every time round and the
@@ -629,8 +630,20 @@ bool VideoSourceAcquisition::poll(uint32_t nowMs)
         // Clamped rather than wrapped, so each configuring rung fires once and
         // the position then rests where no rung sits. The disruptive rungs stay
         // behind the window, which is the whole of what it was protecting.
+        //
+        // **A PASS THAT MEASURED THE SOURCE IS PROGRESS, AND PROGRESS IS NOT A
+        // REASON TO ESCALATE.** The count above climbs on every pass that has not
+        // reached an ACQUIRED source, which a healthy selection spends several of:
+        // measured on a ypbpr selection, the engine read 263 lines at 15576 Hz and
+        // installed its divider at 2.16 s, and `coast window at pass 8` reset that
+        // window and halved the separation threshold at 2.18 s -- after which the
+        // count read 271 and STATUS_SYNC_PROC_HTOTAL 3268 against a 2200 divider.
+        //
+        // Bounded by the grace rather than open-ended, so a source that measures
+        // and still never acquires reaches the disruptive rungs as before.
         if (firstAcquisition_) {
-            if (recoveryPosition_ + 1 < SyncRecovery::firstDisruptivePass())
+            if (!sourceMeasured_
+                && recoveryPosition_ + 1 < SyncRecovery::firstDisruptivePass())
                 ++recoveryPosition_;
         } else {
             recoveryPosition_ =
@@ -737,6 +750,8 @@ void VideoSourceAcquisition::keepSourceComing(uint32_t nowMs)
             Tv5725::Adc::forgetPhase();
     }
 
+    takeBackSearchSettings();
+
     if (!sourceIsPresent())
         recoverSource();
     else
@@ -812,6 +827,8 @@ bool VideoSourceAcquisition::runPass(uint32_t nowMs, bool &detectionPass)
             sourceState_ = SourceAbsent;
         return false;
     }
+
+    sourceMeasured_ = true;
 
     moveOutputForMeasuredRate();
 
@@ -950,6 +967,15 @@ void VideoSourceAcquisition::placeClampWindow()
     Tv5725::SyncProcessor::adoptClampPlacement();
 }
 
+void VideoSourceAcquisition::takeBackSearchSettings()
+{
+    if (!searchApplied_ || sourceIsSearching())
+        return;
+
+    searchApplied_ = false;
+    applySyncProcessorDynamic(false);
+}
+
 void VideoSourceAcquisition::applySyncProcessorDynamic(bool hunting)
 {
     if (!Tv5725::Chip::hasPower())
@@ -963,6 +989,9 @@ void VideoSourceAcquisition::applySyncProcessorDynamic(bool hunting)
     source.pathSource =
         VideoSourceSelection::isRgbhv(VideoSourceSelection::selected())
         || Tv5725::VideoRoute::isHdBypassChannel();
+
+    if (hunting && source.searching)
+        searchApplied_ = true;
 
     Tv5725::SyncProcessor::applyDynamic(source);
 }

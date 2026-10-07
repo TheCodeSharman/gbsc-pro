@@ -131,6 +131,16 @@ public:
     // `hunting` asks for the search configuration rather than the settled one.
     void applySyncProcessorDynamic(bool hunting);
 
+    // Take a rung's search configuration back once the source can be counted. The
+    // count that ends the search is also what stops any rung writing it again, so
+    // without this it is what the source is then READ with -- for the 21 s until
+    // the next rung, which is what the coast inversion standing after a count
+    // cost.
+    //
+    // Nothing else reaches it on a component source: the separator tuning that
+    // applies these settings is skipped there.
+    void takeBackSearchSettings();
+
     // Walk the sync separator's level for the source in force, starting from
     // what the input is due: a component source runs sync on green, which is
     // weaker than a dedicated sync line, so it starts one step wider. Nothing
@@ -185,6 +195,7 @@ public:
     // How often the source is counted. Every steadiness run below is counted in
     // these, so loop()'s own rate must not reach them.
     static const uint32_t DetectionIntervalMs = 20;
+
 
     // The least a transition keeps the output sync away. Long enough for the
     // encoder to see the sync go, short enough to stay inside the sink's first
@@ -390,6 +401,11 @@ private:
     // Whether the re-probe rung found the source carrying its own V sync. Proof
     // of a source, so the input toggle leaves the mux alone.
     bool ownVsyncFound_;
+
+    // Whether a rung's search configuration is standing. Held rather than read
+    // back: the chip echoes what it was told, and half these settings are
+    // indistinguishable from the ones a settled source wants.
+    bool searchApplied_;
     SourceState sourceState_;
     uint16_t solvedLinePeriod_;
     uint8_t rateRun_;
@@ -437,6 +453,10 @@ private:
     // since a measurement: the one above climbs legitimately while a source is
     // being acquired and this must not move then.
     uint16_t recoveryPosition_;
+
+    // Whether the pass just run could measure the source's rate. Per pass, not
+    // held: what it gates is whether that pass counts toward escalating.
+    bool sourceMeasured_;
     // Whether the engine has yet had its chance at the source now selected. A
     // component acquisition takes about ten seconds and a pass is 20 ms, so
     // every rung to FullReset falls due DURING an ordinary selection, tearing
@@ -450,6 +470,7 @@ private:
     // block that has wedged is recoverable by nothing else.
     // ../../../../docs/known-issues.md
     static const uint32_t FirstAcquisitionGraceMs = 15000;
+
 
     bool firstAcquisitionTimed_;
     uint32_t firstAcquisitionMs_;

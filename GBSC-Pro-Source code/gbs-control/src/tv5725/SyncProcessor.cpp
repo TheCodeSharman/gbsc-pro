@@ -54,7 +54,6 @@ uint8_t preCoastOverride_ = 0;
 uint8_t postCoastOverride_ = 0;
 const uint8_t OwnVsyncPulseIgnore = 0xff;
 const uint8_t CsyncPulseIgnore = 0x6b;
-const uint8_t WidestUsefulPulseIgnore = 0x33;
 
 // The H timer the search asks for, measured as a don't-care across its whole
 // range and here to be written from one place rather than because a value was
@@ -170,10 +169,6 @@ void SyncProcessor::widenCoast()
 void SyncProcessor::widenCoastForSerration()
 {
     widenCoast();
-
-    const uint8_t ignore = (uint8_t)SP_H_PULSE_IGNOR::read();
-    if (ignore >= WidestUsefulPulseIgnore)
-        SP_H_PULSE_IGNOR::write(ignore / 2);
 }
 
 void SyncProcessor::applyForSearch(bool csync)
@@ -183,13 +178,20 @@ void SyncProcessor::applyForSearch(bool csync)
     applyDefaultCoastWindow();
     SP_H_COAST::write(0);
     SP_H_TIMER_VAL::write(SearchHTimerValue);
-    if (csync)
-        setCoastInvert(true);
     forgetPositions();
 }
 
 void SyncProcessor::applyDynamic(const Dynamic &source)
 {
+    // AHEAD OF THE SEARCHING BRANCH, because the branch returns. The inversion
+    // compensates for a coast window still at its default, which is the state a
+    // source with no measured line length is in: without it the block counts
+    // nothing at all, and with it standing after a count arrives the serrations
+    // are counted as lines and the hsync handed to the ADC PLL will not lock.
+    // ../../../../docs/investigations/the-search-coast-inversion-outlived-the-search.md
+    if (source.csync)
+        setCoastInvert(source.searching);
+
     if (source.searching) {
         if (source.hunting)
             applyForSearch(source.csync);
@@ -197,9 +199,6 @@ void SyncProcessor::applyDynamic(const Dynamic &source)
             applyPulseWidthDifference();
         return;
     }
-
-    if (source.csync)
-        setCoastInvert(false);
 
     if (source.pathSource) {
         applySeparationThresholds(source.csync);
@@ -246,7 +245,6 @@ void SyncProcessor::prepareForDetection()
 
 void SyncProcessor::applyForPassThrough()
 {
-    setCoastInvert(false);
     setSubCoast(false);
 
     // The chip's own polarity auto-correct stays OFF, as it is on the scaling
