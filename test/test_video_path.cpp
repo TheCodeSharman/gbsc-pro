@@ -36,6 +36,7 @@ FakeTwoWire Wire;
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SyncProcessor.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Tv5725.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/VideoProcessor.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/VideoRoute.h"
 
 #include "FrameAt.h"
 #include "RegistersWritten.h"
@@ -2856,4 +2857,127 @@ TEST_CASE("the sync path follows the held sync type on every route")
         CHECK(SyncProcessor::SP_EXT_SYNC_SEL::read() == 0);
         CHECK(ModeDetect::MD_SEL_VGA60::read() == 1);
     }
+}
+
+// --- what a load leaving pass-through does twice ------------------------------
+
+// How many times a register was written across the write trace. Configuration
+// applied twice lands twice, and no final-state read can see the second one --
+// both writes carry the same value.
+static unsigned writesTo(uint8_t segment, uint8_t reg)
+{
+    unsigned writes = 0;
+    for (size_t i = 0; i < Wire.trace.size(); ++i) {
+        const FakeTwoWire::Traced &t = Wire.trace[i];
+        if (t.segment == segment && t.reg == reg)
+            ++writes;
+    }
+    return writes;
+}
+
+// How many times the memory chain was driven into reset FROM A RUNNING STATE.
+// A restart is a pulse rather than a state, so no final-state read can see one
+// -- and the count has to be edges rather than bytes, because s0_46 holds seven
+// reset bits and every field write is a read-modify-write of the whole byte.
+static unsigned chainPulses(bool running)
+{
+    const uint8_t Segment = 0x00;   // SFTRST_MEM_RSTZ, s0_46[3]
+    const uint8_t Register = 0x46;
+    const uint8_t Bit = 3;
+
+    unsigned pulses = 0;
+    for (size_t i = 0; i < Wire.trace.size(); ++i) {
+        const FakeTwoWire::Traced &t = Wire.trace[i];
+        if (t.segment != Segment || t.reg != Register)
+            continue;
+        const bool now = ((t.value >> Bit) & 1) != 0;
+        if (running && !now)
+            ++pulses;
+        running = now;
+    }
+    return pulses;
+}
+
+// PLL_R and PLL_S, the two fields DisplayClock::applyPllSkew() writes and the
+// only ones in s0_43 anything reaches -- so two writes is one applyClockGroup().
+static const uint8_t ClockSkewSegment = 0x00;
+static const uint8_t ClockSkewRegister = 0x43;
+static const unsigned WritesPerClockGroup = 2;
+
+// THE SKETCH'S OWN SEQUENCE, up to the point the load takes over. applyPresets()
+// puts the route back to the scaler before loadComputedPreset(), so the load's
+// setOutputResolution() finds outputIsPassedThrough() already false while
+// VideoPath still holds ModeBypass -- which setOutputMode() reads as LEAVING.
+// configureScalingPath() therefore runs INSIDE the load, and restartAndLatch()
+// runs after it.
+// ../docs/chip-initialisation.md, step 8 stage 5
+struct LeavingLoad {
+    DisplayClock clock;
+    SourceMeasurement sampling;
+    FramingTable framings;
+    VideoPath engine;
+    VideoSourceAcquisition acquisition;
+
+    LeavingLoad()
+        : sampling(inputFormatter),
+          engine(clock, sampling, framings, inputFormatter),
+          acquisition(sampling, engine)
+    {
+        engine.setOutputMode(benchMode());
+        engine.inputTimingsChanged(4);
+        REQUIRE(pollUntilSolved(acquisition));
+
+        engine.setOutputMode(&ModeBypass);
+        REQUIRE(engine.outputMode() == &ModeBypass);
+
+        Tv5725::VideoRoute::toScaler();
+        REQUIRE_FALSE(Tv5725::VideoRoute::isHdBypassChannel());
+    }
+
+    // loadComputedPreset(), then doPostPresetLoadSteps()' tail.
+    void run()
+    {
+        acquisition.setOutputResolution(benchMode());
+        engine.restartAndLatch();
+    }
+};
+
+TEST_CASE("a load leaving pass-through pulses the memory chain once")
+{
+    // The two bodies both restart the blocks, and this is why that is not two
+    // disruptions: entering pass-through leaves the memory chain HELD, so the
+    // leaving arm's resetVideoBlocks() writes 0 over bits already 0 and only
+    // its release does anything. The chain is taken down from a running state
+    // once, by the load's tail, which is where it belongs -- after the
+    // configuration rather than before it.
+    seedBenchSource();
+    LeavingLoad load;
+
+    const bool running = Chip::SFTRST_MEM_RSTZ::read() != 0;
+    Wire.trace.clear();
+    load.run();
+
+    CHECK(chainPulses(running) == 1);
+}
+
+TEST_CASE("a load leaving pass-through applies the clock group twice")
+{
+    // MEASURED, AND THE TARGET IS ONE. This is the duplication step 8 stage 5
+    // exists to remove, and it is the configuration rather than the restart:
+    // the clock group, the frame buffer requests, the bring-up and the colour
+    // matrix are in both bodies, so each lands twice on a load that leaves.
+    //
+    // What blocks the prefix is that setOutputMode()'s leaving arm has to be
+    // SELF-SUFFICIENT -- callers reach it directly with nothing following, and
+    // three cases pin that: the two below in test_video_source_acquisition.cpp
+    // and "an acquisition without a preset load emits a flat field" above. The
+    // engine cannot tell whether anything follows; only the caller can.
+    seedBenchSource();
+    LeavingLoad load;
+
+    Wire.trace.clear();
+    load.run();
+
+    CHECK(writesTo(ClockSkewSegment, ClockSkewRegister)
+          == 2 * WritesPerClockGroup);
 }
