@@ -111,17 +111,34 @@ TEST_CASE("csync coasts around the vertical interval and protects the line")
     CHECK(applied<SyncProcessor::SP_H_PROTECT>(csync) == 1);
 }
 
-TEST_CASE("the three fields csync never wrote are still not written")
+TEST_CASE("the polarity auto-corrects stay the separate-sync branch's")
 {
-    // Adding a write here would be a behaviour change wearing the clothes of a
-    // move. The separate-sync branch owns all three.
+    // Both belong to a source with its own H and V, and pass-through leaves
+    // them off deliberately.
     CHECK_FALSE(wasWritten<SyncProcessor::SP_HS_POL_ATO>(true));
     CHECK_FALSE(wasWritten<SyncProcessor::SP_VS_POL_ATO>(true));
-    CHECK_FALSE(wasWritten<SyncProcessor::SP_H_PULSE_IGNOR>(true));
 
     CHECK(wasWritten<SyncProcessor::SP_HS_POL_ATO>(false));
     CHECK(wasWritten<SyncProcessor::SP_VS_POL_ATO>(false));
+}
+
+TEST_CASE("every sync arrangement writes the pulse ignore it wants")
+{
+    // THE CSYNC BRANCH LEFT IT ON THE PREVIOUS SOURCE'S VALUE. Measured on the
+    // bench, RISC PC on vga then the Wii selected on ypbpr: the arrangement
+    // applied the csync coast 7/6 and SP_DLT_REG 192 while SP_H_PULSE_IGNOR
+    // stayed at 0xff, which is what the separate-sync branch writes. The
+    // recovery ladder repaired it about fifteen seconds later, so the
+    // configuration a selection should have made was a rung's side effect.
+    //
+    // Serration decides the csync value and this function already takes it,
+    // for setSubCoast().
+    CHECK(wasWritten<SyncProcessor::SP_H_PULSE_IGNOR>(true));
     CHECK(wasWritten<SyncProcessor::SP_H_PULSE_IGNOR>(false));
+
+    CHECK(applied<SyncProcessor::SP_H_PULSE_IGNOR>(true, true) == 0x6b);
+    CHECK(applied<SyncProcessor::SP_H_PULSE_IGNOR>(true, false) == 0x02);
+    CHECK(applied<SyncProcessor::SP_H_PULSE_IGNOR>(false) == 0xff);
 }
 
 TEST_CASE("sync-on-green is enabled on both paths")
@@ -491,7 +508,6 @@ TEST_CASE("a source with its own H and V is coasted over nothing and ignores not
 
     CHECK(SyncProcessor::SP_PRE_COAST::read() == 0x00);
     CHECK(SyncProcessor::SP_POST_COAST::read() == 0x00);
-    CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 0xff);
     CHECK(SyncProcessor::SP_DLT_REG::read() == 0x00);
 }
 
@@ -518,7 +534,6 @@ TEST_CASE("a composite source is coasted over its vertical interval")
     CHECK(SyncProcessor::SP_PRE_COAST::read() == 7);
     CHECK(SyncProcessor::SP_POST_COAST::read() == 6);
     CHECK(SyncProcessor::SP_DLT_REG::read() >= 0x70);
-    CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() <= 0x0e);
 }
 
 TEST_CASE("an overridden coast is what the sync type applies")
@@ -1180,4 +1195,26 @@ TEST_CASE("the clamp is released only once it has been placed")
 
         CHECK(SyncProcessor::SP_NO_CLAMP_REG::read() == 1);
     }
+}
+
+TEST_CASE("the dynamic pass leaves the pulse ignore the arrangement chose")
+{
+    // ONE OWNER, AND IT IS THE ARRANGEMENT. The dynamic pass runs on a source
+    // the engine may not have measured yet, so the serration it derives is the
+    // OUTGOING source's -- and writing the pulse ignore from it overwrote the
+    // value the selection had just chosen.
+    //
+    // Measured on the bench over three ypbpr selections from the RISC PC at
+    // 320x256@50: the arrangement wrote 0x6b at 1.6 s on all three, and on one
+    // of them a 0x02 landed at 3.3 s, after which STATUS_MISC_PLLAD_LOCK read 0
+    // and the sync processor counted 270/271 against a 2200 divider for the
+    // rest of the window. The other two held 0x6b and acquired at 3.3 s. That
+    // is the intermittency, and it is a second writer rather than a flaky part.
+    Wire.reset();
+    SyncProcessor::applyForSyncType(true, true);
+    REQUIRE(SyncProcessor::SP_H_PULSE_IGNOR::read() == 0x6b);
+
+    SyncProcessor::applySeparationThresholds(true);
+
+    CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 0x6b);
 }

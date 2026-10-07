@@ -468,13 +468,13 @@ private:
 
     // Skips a path the chip is already on, which is what a mode change wants:
     // applying one in force costs the settle and changes nothing.
-    void applySyncType(bool csync);
+    void applySyncType(bool csync, bool serrated);
 
     // THE ONE WRITER OF THE SYNC ARRANGEMENT, and it settles. The guard belongs
     // to the caller -- a mode change reuses what is in force, a load writes the
     // path whatever is held -- and what is in force is recorded here, which is
     // the only thing that can tell the two apart.
-    void putSyncTypeInForce(bool csync);
+    void putSyncTypeInForce(bool csync, bool serrated);
 
     // The raster is the held one, never a read-back.
     bool solveWindows();

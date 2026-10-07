@@ -286,6 +286,7 @@ public:
     // on this path the solve places both afterwards.
     static void prepare(bool csync, bool serrated);
 
+
     // The clamp and the coast window an UNMEASURED source is counted through.
     // Detection reads the sync processor, and boot's zeroAll() leaves it with no
     // window to count within -- STATUS_SYNC_PROC_HTOTAL then reads a number that

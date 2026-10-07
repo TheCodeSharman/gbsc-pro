@@ -757,7 +757,7 @@ void VideoPath::configureSyncPath()
 
     // Whatever is held, which is what makes this the load's application of the
     // path rather than a write beside one.
-    putSyncTypeInForce(csync);
+    putSyncTypeInForce(csync, sampling_.hasSerratedSync());
     SyncProcessor::prepare(csync, sampling_.hasSerratedSync());
 }
 
@@ -841,7 +841,9 @@ bool VideoPath::reapplySyncTypeInForce()
     if (!syncTypeApplied_)
         return false;
 
-    putSyncTypeInForce(syncTypeInForce_);
+    // A re-apply has a measurement by definition -- it only runs on a source
+    // already in force -- so it takes the measured serration.
+    putSyncTypeInForce(syncTypeInForce_, sampling_.hasSerratedSync());
     return true;
 }
 
@@ -870,17 +872,18 @@ void VideoPath::establishSyncType(uint8_t chosenFor)
     // held value the reset had already replaced with a guess -- measured on the
     // bench as the right arrangement applied on an input change and undone five
     // seconds later when detection dropped to low power.
-    applySyncType(SyncMeasurement::syncType(syncProbe_));
+    applySyncType(SyncMeasurement::syncType(syncProbe_),
+                  sampling_.hasSerratedSync());
 }
 
-void VideoPath::applySyncType(bool csync)
+void VideoPath::applySyncType(bool csync, bool serrated)
 {
     if (syncTypeApplied_ && csync == syncTypeInForce_)
         return;
-    putSyncTypeInForce(csync);
+    putSyncTypeInForce(csync, serrated);
 }
 
-void VideoPath::putSyncTypeInForce(bool csync)
+void VideoPath::putSyncTypeInForce(bool csync, bool serrated)
 {
     syncTypeApplied_ = true;
     syncTypeInForce_ = csync;
@@ -899,7 +902,7 @@ void VideoPath::putSyncTypeInForce(bool csync)
                  arrangement, (unsigned)syncTypeChosenFor_);
     tv5725Log(line);
 
-    SyncProcessor::applyForSyncType(csync, sampling_.hasSerratedSync());
+    SyncProcessor::applyForSyncType(csync, serrated);
     ModeDetect::applySyncType(csync ? ModeDetect::Csync : ModeDetect::SeparateSync);
     delay(SyncProcessor::PathSettleMs);
 }

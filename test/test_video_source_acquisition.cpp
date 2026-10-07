@@ -2815,3 +2815,45 @@ TEST_CASE("a source that never acquires is spared the teardown inside the grace"
     CHECK_FALSE(loggedContaining("recovery: restart sampling clock at pass"));
     CHECK_FALSE(loggedContaining("recovery: full reset at pass"));
 }
+
+TEST_CASE("a csync selection does not inherit the separate-sync pulse ignore")
+{
+    // THE CSYNC BRANCH WROTE EVERY FIELD OF THE ARRANGEMENT BUT THIS ONE, so a
+    // source selected after a separate-sync one ran on 0xff -- the value the
+    // other branch writes. Measured on the bench, RISC PC on vga then the Wii
+    // selected on ypbpr: the coast went to 7/6 and SP_DLT_REG to 192 while
+    // SP_H_PULSE_IGNOR stayed 0xff, and the sync processor counted 270/271
+    // lines with the ADC PLL free-running until the recovery ladder repaired it
+    // about fifteen seconds later.
+    //
+    // **WHICH csync VALUE IS STILL READ FROM THE SOURCE BEING LEFT.**
+    // SourceMeasurement::hasSerratedSync() is lowLineRate() && isCsync(), and a
+    // selection has no measurement of the source arriving -- so a 15 kHz
+    // predecessor yields the serrated value and acquires in 4.7 s, and a
+    // 37.9 kHz one yields the unserrated value and stalls. That is why this
+    // asks only that the field belongs to the arrangement in force.
+    // docs/known-issues.md
+    //
+    // The predecessor is seedPassThroughSource(), 524 lines at 60 Hz, because a
+    // low-rate one cannot tell the two readings apart.
+    seedPassThroughSource();
+    Acquiring unit;
+    unit.path.useSyncTypeProbe(probeOwnVsync);
+
+    VideoSourceSelection::select(VideoSourceSelection::Vga);
+    g_hasOwnVsync = true;
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+    REQUIRE_FALSE(unit.acquisition.sourceLowLineRate());
+    REQUIRE(SyncProcessor::SP_H_PULSE_IGNOR::read() == 0xff);
+
+    VideoSourceSelection::select(VideoSourceSelection::Ypbpr);
+    g_hasOwnVsync = false;
+    for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i)
+        unit.poll();
+
+    REQUIRE(SyncProcessor::SP_SOG_MODE::read() == 1);
+    CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() != 0xff);
+
+    VideoSourceSelection::forgetSelection();
+}

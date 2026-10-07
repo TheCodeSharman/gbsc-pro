@@ -284,6 +284,7 @@ void SyncProcessor::applyForSyncType(bool csync, bool serrated)
         SP_PRE_COAST::write(preCoastLines());
         SP_POST_COAST::write(postCoastLines());
         applyPulseWidthDifference();
+        applyPulseIgnore(csync, serrated);
         SP_SYNC_BYPS::write(0);
         SP_HS_LOOP_SEL::write(0);
         SP_H_PROTECT::write(1);
@@ -485,17 +486,20 @@ bool SyncProcessor::acquireCoastWindow(bool autoCoast, uint32_t lineRateHz)
     return true;
 }
 
+// THE PULSE IGNORE IS NOT HERE, AND THAT IS THE POINT. It is the arrangement's,
+// written by applyForSyncType() on both routes. This pass runs on a source the
+// engine may not have measured, so any serration it derived was the OUTGOING
+// source's -- and writing the field from it undid the selection's own choice
+// intermittently, which read as a flaky ADC PLL.
 void SyncProcessor::applySeparationThresholds(bool csync)
 {
     if (csync) {
         SP_PRE_COAST::write(preCoastLines());
         SP_POST_COAST::write(postCoastLines());
         applyPulseWidthDifference();
-        applyPulseIgnore(true, false);
     } else {
         SP_PRE_COAST::write(0x00);
         SP_POST_COAST::write(0x00);
-        applyPulseIgnore(false, false);
         SP_DLT_REG::write(0x00);
     }
 }
