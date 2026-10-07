@@ -57,12 +57,67 @@ video standard: with a real vertical sync line there are no serrations to
 discriminate and every pulse can be ignored, while a source carrying sync on
 green needs the threshold placed on its actual pulse width.
 
+## One value serves every composite source, and that is why a selection can write it
+
+A SELECTION HAS NO MEASUREMENT OF THE ARRIVING SOURCE, so a threshold keyed on
+serration reads the source being LEFT. Keying it that way cost the Wii its
+acquisition whenever its predecessor ran above 15 kHz.
+
+The way out is that the high-rate case does not need a value of its own.
+Measured on the RISC PC at 800x600@60 with `SYNC 1` -- 37.9 kHz, composite,
+unserrated -- automation frozen, the field written and read back, and a source
+mode round trip so the separator re-locks with the value already in force:
+
+| `SP_H_PULSE_IGNOR` | `STATUS_SYNC_PROC_HTOTAL` vs divider | `STATUS_SYNC_PROC_VTOTAL` x10 |
+|---|---|---|
+| 107, the serrated value | 1438 / 1438 | 623 x9, 664 x1 |
+| 2, the narrow value (control) | 1438 / 1438 | 623 x6, 624 x4 |
+
+**Indistinguishable.** 623 is the expected short count for this mode on
+unserrated composite sync -- `the-risc-pc-composite-sync-is-not-serrated.md`
+-- so the separator is locked and counting correctly on both. That doc measured
+the same indifference at 15 kHz by the same method.
+
+So the field follows the SYNC TYPE alone: `OwnVsyncPulseIgnore` 0xFF where the
+source carries its own vertical sync, and one value for every composite source.
+`UnserratedPulseIgnore` is deleted, and with it the only reason the arrangement
+needed to know a serration it could not measure.
+
+**And the search takes the same value rather than a third.** `applyForSearch()`
+wrote 2 so every pulse reaches the separator while nothing is counting, which
+read as harmless because the search is transient. It is not: the count that
+ends the search is also what stops anything writing the field, so the search
+value is what a source is then READ with. Measured on a `ypbpr` selection from
+a 37.9 kHz predecessor, the field held 2 from the first count for thirteen
+seconds -- the separator reading 271 lines against the source's 260 and
+`STATUS_SYNC_PROC_HTOTAL` 3244 against a 2200 divider -- until the reprobe rung
+re-applied the arrangement. With the search taking the sync type's value the
+3244 state does not occur at all and `HTOTAL` stays within about 2% of the
+divider throughout.
+
+**What it buys is the right COUNT, which a time measurement hides.** Both
+builds flashed in turn, the RISC PC held at 800x600@60, six `ypbpr` selections
+each:
+
+| | before | after |
+|---|---|---|
+| settled on 271/272 lines | 4 of 6 | **0 of 6** |
+| time | 2.0 .. 46.5 s | 24.1 .. 25.4 s |
+
+The old build's 2.0, 2.4 and 2.9 s legs each acquired on 271 or 272 against the
+source's 260, so scoring a leg on time alone ranks the defect first. **It does
+not on its own make the source acquire quickly**, which needs the ADC PLL to
+lock and `../known-issues.md` carries open.
+
 ## What this does not settle
 
-- **Whether the derivation holds outside 15 kHz.** It was measured on one line
-  rate. The formula scales with the measured line and duty, so it should follow,
-  but standards 3 to 7 have no source here to say.
+- **Whether a DERIVED threshold would beat the constant.** The value in force
+  came from a computation over `HPERIOD_IF` and the sync duty, and nothing has
+  compared the two on a source where they differ.
 - **The 0x90 result is a boundary, not a limit.** `WidestUsefulPulseIgnore` is
   0x33, above which `widenCoastForSerration()` halves the value; 0x6B is above
   that and is the correct value on this source, so the constant does not
   describe where the field stops being useful.
+- **The halving is a second value and is not audited.**
+  `widenCoastForSerration()` leaves 53, which has been seen in force on a
+  settled picture without harm and has never been compared against 107.

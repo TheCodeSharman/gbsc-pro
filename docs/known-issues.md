@@ -300,17 +300,74 @@ live wedge leaves the count at 270/271 -- the threshold has to be right BEFORE
 the separator tries to lock, not after. Preventing a wedge and recovering one
 are different questions, and only the first is answered here.
 
-**WHAT REMAINS IS WHICH csync VALUE A SELECTION WRITES.**
-`hasSerratedSync()` is `lowLineRate() && isCsync()`, so a selection reads the
-source being LEFT: a 15 kHz predecessor yields the serrated value and a 37.9 kHz
-one does not. Measured from the RISC PC at 800x600@60, the first `ypbpr` trip
-takes **27.6 s** and the second 2.5 s.
+**~~WHAT REMAINS IS WHICH csync VALUE A SELECTION WRITES.~~ SETTLED: THERE IS
+ONLY ONE.** The threshold no longer asks about serration at all, so a selection
+has nothing to read off the source it is leaving. Two measurements settled it,
+both frozen with a control and with the value in force before the separator
+re-locked: on the RISC PC's unserrated composite sync at 37.9 kHz, 107 and 2
+both count 623 against a 1438 divider, and at 15 kHz the same comparison is
+equally inert. So `UnserratedPulseIgnore` is deleted and a composite source
+takes the serrated value, which is the one the Wii needs.
+`investigations/the-pulse-ignore-value-is-measured-not-chosen.md`.
 
-Separating it needs the SUB COAST's serration split from the pulse ignore's.
-`applyForSyncType()` opens with `setSubCoast(serrated)`, so one boolean carries
-both facts -- and forcing it true for an unmeasured source regressed `vga` from
-3.2..6.3 s to **10.4..16.8 s**, measured, which is why no reference constant is
-in the tree.
+**The sub coast therefore needs no split.** It is the only reader of the
+serration left, which is the job it had before one boolean carried two facts.
+
+**A SEARCH VALUE WAS THE THIRD WRITER, and it was the expensive one.**
+`applyForSearch()` wrote 2 while nothing was counting. The count that ends the
+search is also what stops anything writing the field, so that value is what the
+source is then READ with: measured on a selection from a 37.9 kHz predecessor,
+the field held 2 from the first count for **thirteen seconds**, the separator
+reading 271 lines against the source's 260 and `STATUS_SYNC_PROC_HTOTAL` 3244
+against a 2200 divider. The search takes the sync type's value now, and that
+state does not occur -- `HTOTAL` stays within about 2% of the divider from the
+first count.
+
+**WHAT THE THRESHOLD BOUGHT IS THE RIGHT COUNT, NOT A SHORTER WAIT, AND A TIME
+COMPARISON HIDES THAT.** Both builds flashed in turn, the RISC PC held at
+800x600@60 on `vga`, six `ypbpr` selections each, timed to `state: acquired`:
+
+| | 5bda6ff7e | with one threshold per sync type |
+|---|---|---|
+| settled on 271/272 lines | **4 of 6** | **0 of 6** |
+| settled on 260/261 | 2 of 6 | 5 of 6, the sixth 264 |
+| time | 2.0 .. 46.5 s | 24.1 .. 25.4 s |
+
+**The times above are to `state: acquired` with `/geometry` `cv` inside
+500..545, which is LOOSER than the acceptance test's criterion** --
+`test_acquisition_time.py` waits for the rate to come within
+`RATE_TOLERANCE_HZ` of the rate it learned for that input, and under that one a
+leg still exceeds its 60 s limit: run with `--runxfail` the same session gave
+`trip 1 ypbpr 27.5s; trip 2 ypbpr never`. So 24.1..25.4 s is the time to a
+usable solve, not to a solve that matches the learned rate, and the count
+column is what the comparison rests on.
+
+**THE OLD BUILD'S FAST LEGS WERE THE FAULT, NOT A SUCCESS.** 2.0, 2.4 and
+2.9 s each acquired on a count of 271 or 272 against the source's 260 --
+`/geometry` `cv` 542 and 544, which is twice that count -- so an acceptance
+measured on time alone scores the defect as the best result in the run. Judge a
+`ypbpr` leg on the COUNT it settles on, and only then on how long it took.
+
+**WHAT REMAINS IS THAT THE ADC PLL STILL DOES NOT LOCK UNTIL `FullReset`, AND
+IT IS NOW PRECISELY LOCALISED.** The console says where the 24 s goes:
+`STATUS_SYNC_PROC_HTOTAL` reads 2230..2392 against a 2200 divider and the duty
+line prints `UNLOCKED` on every sample from 5.6 s to 23.2 s, then `recovery:
+full reset at pass 150` runs at 23.9 s and the next duty line is `164 pulse /
+2200 divider, htotal 2200` with no `UNLOCKED` and a source key of 259@59.94.
+
+**The spread is the finding.** 24.1..25.4 s is 1.3 s across six legs where the
+old range spanned 44 s, so the wait is a fixed ladder POSITION rather than a
+flaky part -- the acquisition is gated on reaching pass 150. Every rung before
+it is measured not to help: `coast window` 8, `sync processor dynamic` 27,
+`release capture` 32, `hold clamp` 34, `nudge mode detect` 38, `reprobe sync
+type` 44, `hsync overflow protect` 48 and `restart sampling clock` 60 all run
+and `HTOTAL` keeps reading 2230..2392 `UNLOCKED` through all of them.
+
+So the question is which act of `FullReset` matters, and the candidates are the
+two no earlier rung performs: `reacquireSeparator(false)`, which walks the
+separator rather than stepping it once, and `SyncProcessor::reset()`. The
+single-field refutations above still stand and do not bear on it -- they were
+pokes into a wedge, where this asks what a rung does to one.
 
 `SyncOnGreen::liftOffFloor()` is also recorded as a no-op on this source: it
 returns early above `LowestSteppable` 2 and the level is 13, so the `lift SOG

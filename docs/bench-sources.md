@@ -478,9 +478,14 @@ of what the machine emits, because the ADV chain regenerates it.
   `/sc?~` does not clear it; `/sampleclock?md=2208&os=4` does, at once.
 
   **What is worth having is a higher LINE RATE, and that needs neither.** The
-  RISC PC reaches 40.7 kHz at 800x600@60, which is what established that a
-  composite-sync source at that rate wants the narrow pulse-ignore and does not
-  lock above 0x33 -- `investigations/the-pulse-ignore-value-is-measured-not-chosen.md`.
+  RISC PC reaches 37.9 kHz at 800x600@60, which is what settles what the
+  pulse-ignore threshold costs a high-rate composite source: **nothing.**
+  Measured frozen with a control, the serrated value 107 and the narrow 2 both
+  lock and both count 623 -- `STATUS_SYNC_PROC_HTOTAL` 1438 against a 1438
+  divider either way. An earlier reading here said such a source "wants the
+  narrow pulse-ignore and does not lock above 0x33"; that cited the Wii's
+  15 kHz table as though it were a 40 kHz result, and in that table 0x33 locks
+  too. `investigations/the-pulse-ignore-value-is-measured-not-chosen.md`.
   720p is 45 kHz, so a monitor definition reaches it with no new cable and no
   change of input. VIDC20 cannot do 1080i through an MDF, which has no interlace
   key.
