@@ -348,8 +348,50 @@ column is what the comparison rests on.
 measured on time alone scores the defect as the best result in the run. Judge a
 `ypbpr` leg on the COUNT it settles on, and only then on how long it took.
 
-**WHAT REMAINS IS THAT THE ADC PLL STILL DOES NOT LOCK UNTIL `FullReset`, AND
-IT IS NOW PRECISELY LOCALISED.** The console says where the 24 s goes:
+**~~WHAT REMAINS IS THAT THE ADC PLL STILL DOES NOT LOCK UNTIL `FullReset`.~~
+FOUND, AND IT WAS `SP_COAST_INV_REG` LEFT STANDING BY A RUNG.** The inverted
+coast gate brackets the active line instead of the vertical interval, so the
+block counts the serrations as lines and the hsync reaching the ADC PLL is broken
+every line. `applyForSearch()` set it and `applyDynamic()` returned before the
+line that cleared it -- the same shape, in the same function, as the pulse-ignore
+value fixed one session earlier. Writing the one field to 0 in the stall brings
+the count from 265 to 259/260, `STATUS_SYNC_PROC_HTOTAL` from 2258 to 2200 and
+`STATUS_MISC_PLLAD_LOCK` from 0 to 1 on the following sample, with everything
+else the rung wrote still in force.
+
+**NO ACT OF `FullReset` WAS EVER THE ANSWER.** Its prefix re-applies the dynamic
+settings, and that is where the clear happened -- 21 s late, because
+`applyDynamic()` is reached on the tick only from inside
+`if (!Adc::inputIsComponent())`, so on a component source a rung is the only
+route to it and no rung sits between 27 and 150. The PLL group is byte-identical
+across the stall and the fix.
+`investigations/the-search-coast-inversion-outlived-the-search.md`.
+
+**WHAT IS LEFT IS THE LADDER FIRING INTO A HEALTHY ACQUISITION.** Measured on a
+leg that failed: the engine read 263 lines at 15576 Hz and installed its divider
+at 2.16 s, `recovery: coast window at pass 8` reset that window and discarded the
+placement at 2.18 s, and the count then read 271 with
+`STATUS_SYNC_PROC_HTOTAL` 3268 against a 2200 divider. The first reading lands at
+1.8..2.7 s and pass 8 at 1.84 s, so which comes first is a race decided by
+milliseconds -- which is why one build gives 4.4..6.9 s on some legs and nothing
+within 32 s on others. The escalation position no longer advances on a pass that
+measured the source, which closes the half of the race where a reading arrives
+first; the other half needs the rungs themselves looked at, and the argument is
+that they repeat what a selection already applies.
+
+**A 3 s hold before the first rung does not close it** and makes `vga` slower,
+measured 5.0..17.3 s against 4.1..7.8 s.
+
+**THE PASS-450 RUNG PARKS THE SEPARATOR FULLY OPEN AND ONLY AN ESP RESTART
+CLIMBS OUT.** `ReopenSogSeparator` calls `choose(0)`, which `SyncOnGreen.h`
+already records as "the one value no ratchet can climb back out of". A leg that
+fails for 25 s reaches it, and every leg after that fails too: `ADC_SOGCTRL` 0,
+`STATUS_SYNC_PROC_VTOTAL` 97, `VPERIOD_IF` a correct 524 beside it. `/sc?~` does
+not recover it because the held level is what `apply()` writes back. `/restart`
+does, detection choosing `ComponentLevel`. So a measurement run must cap its legs
+below 25 s or it poisons itself.
+
+**THE OLD READING, FOR REFERENCE.** The console says where the 24 s goes:
 `STATUS_SYNC_PROC_HTOTAL` reads 2230..2392 against a 2200 divider and the duty
 line prints `UNLOCKED` on every sample from 5.6 s to 23.2 s, then `recovery:
 full reset at pass 150` runs at 23.9 s and the next duty line is `164 pulse /
