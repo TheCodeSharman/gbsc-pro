@@ -38,7 +38,8 @@ VideoPath::VideoPath(DisplayClock &displayClock, SourceMeasurement &sampling,
     : displayClock_(displayClock), inputFormatter_(inputFormatter),
       usableHorizontal_(0), usableVertical_(0),
       reachHorizontal_(0), reachVertical_(0),
-      firstHorizontal_(0), firstVertical_(0), activeStartLine_(0),
+      firstHorizontal_(0), firstVertical_(0),
+      syncHorizontal_(0), syncVertical_(0), activeStartLine_(0),
       installedDivider_(0),
       timing_(0.0f),
       sampling_(sampling),
@@ -242,6 +243,11 @@ uint16_t VideoPath::lineUnitsOn(const Axis &axis) const
 uint16_t VideoPath::firstUnitOn(const Axis &axis) const
 {
     return axis.vertical() ? firstVertical_ : firstHorizontal_;
+}
+
+uint16_t VideoPath::syncUnitsOn(const Axis &axis) const
+{
+    return axis.vertical() ? syncVertical_ : syncHorizontal_;
 }
 
 uint16_t VideoPath::reachOn(const Axis &axis) const
@@ -1219,6 +1225,8 @@ bool VideoPath::calculateInputFormatterRegisters(CaptureWindow &capture)
     reachVertical_ = capture.reachOn(AxisVertical);
     firstHorizontal_ = capture.firstUnitOn(AxisHorizontal);
     firstVertical_ = capture.firstUnitOn(AxisVertical);
+    syncHorizontal_ = capture.syncUnitsOn(AxisHorizontal);
+    syncVertical_ = capture.syncUnitsOn(AxisVertical);
     return capture.usable() ? true : fail();
 }
 

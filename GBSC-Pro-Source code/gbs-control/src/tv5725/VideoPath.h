@@ -178,6 +178,13 @@ public:
     // reachOn() is the last unit a window may stop on and firstUnitOn() the
     // earliest it may open.
     uint16_t firstUnitOn(const Axis &axis) const;
+
+    // The sync pulse the solve placed that first unit from, in the same units.
+    // Reported because it cannot be re-derived: the pulse is folded against its
+    // complement and a high-active source has InvertedPulseWidthSamples taken
+    // off it, so the register over the divider is wider than what the solve
+    // used. docs/known-issues.md
+    uint16_t syncUnitsOn(const Axis &axis) const;
     uint16_t reachOn(const Axis &axis) const;
 
     // The source line active video starts on, for a path that plays the
@@ -623,6 +630,7 @@ private:
     uint16_t usableHorizontal_, usableVertical_;
     uint16_t reachHorizontal_, reachVertical_;
     uint16_t firstHorizontal_, firstVertical_;
+    uint16_t syncHorizontal_, syncVertical_;
     uint16_t activeStartLine_;
 
     // The divider this class installed, held rather than read back: the retime

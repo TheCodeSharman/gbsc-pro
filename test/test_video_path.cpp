@@ -2981,3 +2981,29 @@ TEST_CASE("a load leaving pass-through applies the clock group twice")
     CHECK(writesTo(ClockSkewSegment, ClockSkewRegister)
           == 2 * WritesPerClockGroup);
 }
+
+TEST_CASE("the sync units the solve placed the capture from are readable")
+{
+    // The capture's first unit is head blanking plus the sync pulse, and a
+    // caller checking that split cannot re-derive the pulse: the engine folds
+    // the complement and takes InvertedPulseWidthSamples off a high-active
+    // source, so STATUS_SYNC_PROC_HLOW_LEN over the divider is 5 samples wide
+    // and lands 3 units out at the bench divider. Held state, reported, for the
+    // same reason firstUnitOn() is.
+    seedBenchSource();
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+    VideoSourceAcquisition acquisition(sampling, engine);
+
+    engine.setOutputMode(benchMode());
+    engine.inputTimingsChanged(4);
+    REQUIRE(pollUntilSolved(acquisition));
+
+    // The split the capture window actually opened on, which is what a caller
+    // asking "is the head blanking applied to the right scan mode" needs.
+    CHECK(engine.firstUnitOn(AxisHorizontal)
+          == VideoSourceLine::DoubledHeadBlankingUnits
+             + engine.syncUnitsOn(AxisHorizontal));
+}

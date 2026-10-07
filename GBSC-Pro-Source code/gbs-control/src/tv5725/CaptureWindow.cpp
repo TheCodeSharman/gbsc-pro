@@ -64,6 +64,11 @@ uint16_t CaptureWindow::firstUnitOn(const Axis &axis) const
     return firstCapture(lineOn(axis));
 }
 
+uint16_t CaptureWindow::syncUnitsOn(const Axis &axis) const
+{
+    return lineOn(axis).syncUnits();
+}
+
 uint16_t CaptureWindow::reachOn(const Axis &axis) const
 {
     return lastCapture(lineOn(axis));

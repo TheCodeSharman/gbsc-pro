@@ -84,6 +84,10 @@ public:
     uint16_t reachOn(const Axis &axis) const;
     uint16_t capturableOn(const Axis &axis) const;
 
+    // The sync interval firstUnitOn() counted from, which is the rest of that
+    // first unit once the head blanking is taken off it.
+    uint16_t syncUnitsOn(const Axis &axis) const;
+
     // Where a position a video standard states as a fraction of ITS line lands
     // in this counter. The standard counts from the hsync leading edge; the
     // counter is zeroed on whichever edge the chip triggered on, so the two

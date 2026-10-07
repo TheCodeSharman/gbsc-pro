@@ -6199,10 +6199,11 @@ void startWebserver()
     });
 
     server.on("/geometry", HTTP_GET, [](AsyncWebServerRequest *request) {
-        char body[360];
+        char body[400];
         snprintf_P(body, sizeof(body),
             PSTR("{\"oh\":%u,\"eh\":%u,\"ov\":%u,\"ev\":%u,"
                  "\"ch\":%u,\"cv\":%u,\"fh\":%u,\"fv\":%u,"
+                 "\"sh\":%u,\"sv\":%u,"
                  "\"poh\":%d,\"peh\":%d,\"pov\":%d,\"pev\":%d,"
                  "\"lineRateHz\":%lu,\"lowLineRate\":%s,"
                  "\"aspect\":%u,\"shaped\":%s,"
@@ -6218,6 +6219,13 @@ void startWebserver()
             // than re-deriving it from a duty that has moved since.
             geometry.firstUnitOn(Tv5725::AxisHorizontal),
             geometry.firstUnitOn(Tv5725::AxisVertical),
+            // The sync interval that first unit was counted from. Reported
+            // because it cannot be re-derived from the registers: the engine
+            // folds the pulse against its complement and takes
+            // InvertedPulseWidthSamples off a high-active source, so
+            // STATUS_SYNC_PROC_HLOW_LEN over the divider is five samples wide.
+            geometry.syncUnitsOn(Tv5725::AxisHorizontal),
+            geometry.syncUnitsOn(Tv5725::AxisVertical),
             // The proportion itself, in ten-thousandths: the ESP's printf has
             // no %f, and this is the state the framing table stores.
             (int)lrintf(geometry.framing().originOn(Tv5725::AxisHorizontal) * 10000.0f),
