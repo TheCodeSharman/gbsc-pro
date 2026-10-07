@@ -241,10 +241,47 @@ at 19.16 s and the count stayed 270/271. Only the block resets inside
 `FullReset` move it, which is the same conclusion the YPbPr first-pass entry
 reached by another route.
 
-**Do not re-file this as the grace.** The next question is which of
-`FullReset`'s eight acts moves the count -- `SyncProcessor::reset()` and
-`ModeDetect::reset()` are the two nothing else does -- and whether either can
-run at selection time without tearing down a path still solving.
+**Do not re-file this as the grace.**
+
+**THE COUNT IS WRONG BECAUSE THE ADC PLL IS FREE-RUNNING, AND THE GROUP IS NOT
+AT FAULT.** Measured across the stall and the healthy state that follows it, on
+one acquisition: every field of the PLL group is **byte-identical** --
+`PLLAD_MD` 2200, `PLLAD_KS` 2, `PLLAD_CKOS` 0, `PLLAD_ICP` 6, `PLLAD_FS` 1,
+`PLLAD_VCORST` 0, `PLLAD_PDZ` 1, both decimators and both clock enables, and
+`IF_HSYNC_RST` 1100. The only differences are measurements:
+
+| | stalled | healthy |
+|---|---|---|
+| `STATUS_MISC_PLLAD_LOCK` | **0 of 12 reads** | 8 of 12 |
+| `STATUS_SYNC_PROC_HTOTAL` against the 2200 divider | **3241..3252** | 2200 |
+| `STATUS_SYNC_PROC_VTOTAL` | 270/271 | 259/260 |
+
+A count over a thousand out is the honest witness here, and it says the PLL is
+free-running rather than mis-set. `VPERIOD_IF` holds a correct **524**
+throughout, so the input formatter is counting the source's vertical perfectly
+while the sync processor's horizontal is nonsense -- the configuration is right
+and the loop has simply not captured.
+
+**NO SINGLE ACT OF `FullReset` RECOVERS IT.** Each applied by hand in the stall,
+with the ladder's next disruptive rung still seconds away, and the lock read
+back over the following eight seconds:
+
+| applied | lock | `HTOTAL` | count |
+|---|---|---|---|
+| `SFTRST_SYNC_RSTZ` pulse | 0 throughout | 955..3977 | 265..277 |
+| `SFTRST_MODE_RSTZ` pulse | 0 throughout | 1516..3248 | 264..277 |
+| `ADC_SOGCTRL` 13 -> 14 | 0 throughout | 1516..3252 | 270/271 |
+
+So the recovery is the SEQUENCE rather than any one of its acts, and the
+`SFTRST_SYNC_RSTZ` refutation above now holds in this state as well as in the
+97-line one. `ADC_SOGCTRL` moving 13 -> 14 shortly before the count comes right
+is a coincidence of the ladder's order, not the cause.
+
+**What is left to try**: the acts in combination, and `reacquireSeparator(false)`,
+which walks the separator rather than stepping it once and is the only part of
+`FullReset` no register write reproduces. `SyncOnGreen::liftOffFloor()` cannot
+reach it -- it returns early above `LowestSteppable` 2 and the level is 13, so
+the `lift SOG floor` rung the console prints on this source is a no-op.
 
 **The second half is the held rate.** The garbage readings taken while the
 source cannot be followed are accepted, a divider is installed from one of them,
