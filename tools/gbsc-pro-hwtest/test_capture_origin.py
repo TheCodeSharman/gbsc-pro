@@ -25,7 +25,6 @@ docs/investigations/a-standard-mode-loses-both-edges-while-every-stage-measures-
 Read-only: it reads registers and /geometry and presses nothing.
 """
 
-import math
 import os
 import sys
 
@@ -48,8 +47,7 @@ DUTY_MIN, DUTY_MAX = 0.010, 0.152
 # the picture, and 1 is clean with every other register identical.
 FIRST_CAPTURABLE_UNIT = 1
 
-FIELDS = ["PLLAD_MD", "IF_HSYNC_RST", "IF_LD_RAM_BYPS",
-          "STATUS_SYNC_PROC_HLOW_LEN"]
+FIELDS = ["PLLAD_MD", "IF_LD_RAM_BYPS", "STATUS_SYNC_PROC_HLOW_LEN"]
 
 
 @pytest.fixture
@@ -66,11 +64,29 @@ def solved(host):
 
 
 def duty_of(at):
+    """The sync low time as a fraction of the line, STRAIGHT FROM THE REGISTER.
+
+    A plausibility reading only: it is what the counter holds now, uncorrected
+    for polarity, so it says whether a pulse is arriving and not where the
+    engine placed anything. sync_units() is the placed value.
+    """
     return at["STATUS_SYNC_PROC_HLOW_LEN"] / at["PLLAD_MD"] if at["PLLAD_MD"] else 0.0
 
 
 def sync_units(at):
-    return math.ceil((at["IF_HSYNC_RST"] + 1) * duty_of(at))
+    """The sync interval the engine SOLVED against, in IF units.
+
+    Taken from /geometry rather than derived from duty_of(), which cannot
+    reproduce it: SyncProcessor::hsyncPulseSamples() folds the pulse against its
+    complement and takes InvertedPulseWidthSamples off a high-active source, so
+    the register over the divider is five samples wide. Measured at 320x256@50
+    with PLLAD_MD 2200, HSPOL 1: HLOW_LEN 156 derives 79 units where the engine
+    used 151 samples and placed 76.
+
+    Re-deriving it here is also the copy this file is not allowed to carry --
+    the correction is the firmware's and a second copy of it diverges silently.
+    """
+    return at["geometry"]["sh"]
 
 
 def first_capture(at):
