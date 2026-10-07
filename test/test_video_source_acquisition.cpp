@@ -2581,7 +2581,13 @@ TEST_CASE("a first acquisition does not escalate the ladder")
     for (uint16_t i = 0; i < SyncRecovery::CycleLength; ++i)
         unit.poll();
 
-    CHECK_FALSE(loggedContaining("recovery: "));
+    // The three the measurement names, rather than every rung: the grace holds
+    // back what DISTURBS the path and the configuring rungs below the re-probe
+    // run, because withholding those is withholding the acquisition it is
+    // protecting.
+    CHECK_FALSE(loggedContaining("recovery: reprobe sync type at pass"));
+    CHECK_FALSE(loggedContaining("recovery: restart sampling clock at pass"));
+    CHECK_FALSE(loggedContaining("recovery: full reset at pass"));
 }
 
 TEST_CASE("detection giving up on the source releases the ladder")
@@ -2627,7 +2633,9 @@ TEST_CASE("selecting another input gives the new source a first acquisition too"
     for (uint16_t i = 0; i < SyncRecovery::CycleLength; ++i)
         unit.poll();
 
-    CHECK_FALSE(loggedContaining("recovery: "));
+    CHECK_FALSE(loggedContaining("recovery: reprobe sync type at pass"));
+    CHECK_FALSE(loggedContaining("recovery: restart sampling clock at pass"));
+    CHECK_FALSE(loggedContaining("recovery: full reset at pass"));
     VideoSourceSelection::forgetSelection();
 }
 
@@ -2689,12 +2697,14 @@ TEST_CASE("a first acquisition that never completes lets the ladder back in")
     bool fullReset = false;
     for (uint16_t i = 0; i < 7000 / VideoSourceAcquisition::DetectionIntervalMs; ++i) {
         unit.poll();
-        if (unit.acquisition.recoveryDue() != SyncRecovery::None)
+        if (SyncRecovery::positionOf(unit.acquisition.recoveryDue())
+            >= SyncRecovery::firstDisruptivePass())
             escalated = true;
     }
 
-    // A healthy component acquisition is 4.4 to 6.8 s, so nothing has escalated
-    // by then.
+    // A healthy component acquisition is 4.4 to 6.8 s, so nothing has DISTURBED
+    // the path by then. The configuring rungs below the re-probe have run, which
+    // is what gets a sync-on-green source counted at all.
     CHECK_FALSE(escalated);
 
     for (uint16_t i = 0; i < 20000 / VideoSourceAcquisition::DetectionIntervalMs; ++i) {
@@ -2747,4 +2757,61 @@ TEST_CASE("a resolution the encoder cannot transmit gives way to one it can")
 
         CHECK(unit.path.outputMode()->frameLines() == Mode1080p.frameLines());
     }
+}
+
+// --- the grace defers the teardown, not the configuration --------------------
+
+// How far the ladder is driven inside the grace: past the last configuring rung
+// and up to the first that tears down. One pass is DetectionIntervalMs, so this
+// is about two seconds against the grace's fifteen.
+static const uint16_t IntoTheGrace =
+    SyncRecovery::positionOf(SyncRecovery::RestartSamplingClock) + 2;
+
+TEST_CASE("a source that never acquires is still configured inside the grace")
+{
+    // THE WHOLE COST OF A SYNC-ON-GREEN ACQUISITION WAS THIS. Measured on the
+    // bench, Wii on ypbpr in 480i: the ADC PLL locks at the reference divider
+    // inside two seconds and STATUS_SYNC_PROC_VTOTAL then sits at 97 -- the
+    // value it holds when it is not following the source at all -- for 13.65 s
+    // of total console silence, until the grace expires and the ladder runs
+    // passes 2, 8, 27, 32, 34 and 38 in 1.6 s and the source acquires.
+    //
+    // The coast window is the rung that source needs and it tears nothing down,
+    // so the grace has no business deferring it.
+    seedBenchSource();
+    seedLineSamples(BenchDivider);
+    Acquiring unit;
+    unit.acquisition.allowMaintenance(true);
+    unit.start();
+
+    // No count from the outset, so the engine never acquires and the grace
+    // never ends the way an ordinary selection ends it.
+    seedSourceLines(0);
+    g_logLines.clear();
+    for (uint16_t i = 0; i < IntoTheGrace; ++i)
+        unit.poll();
+
+    CHECK(loggedContaining("recovery: coast window at pass"));
+}
+
+TEST_CASE("a source that never acquires is spared the teardown inside the grace")
+{
+    // What the grace is FOR, in its own words: the ladder must not reset the
+    // sync path an ordinary selection is still solving through. A component
+    // selection is a bounded 4.4..6.8 s job and FullReset is the only thing
+    // that resets the sync processor block, so reaching it early turns a slow
+    // acquisition into none.
+    seedBenchSource();
+    seedLineSamples(BenchDivider);
+    Acquiring unit;
+    unit.acquisition.allowMaintenance(true);
+    unit.start();
+
+    seedSourceLines(0);
+    g_logLines.clear();
+    for (uint16_t i = 0; i < IntoTheGrace; ++i)
+        unit.poll();
+
+    CHECK_FALSE(loggedContaining("recovery: restart sampling clock at pass"));
+    CHECK_FALSE(loggedContaining("recovery: full reset at pass"));
 }

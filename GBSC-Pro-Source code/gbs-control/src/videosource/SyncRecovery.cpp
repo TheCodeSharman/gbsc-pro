@@ -48,6 +48,11 @@ const uint8_t RungCount = sizeof(Ladder) / sizeof(Ladder[0]);
 const uint16_t SyncRecovery::FirstEscalationPass;
 const uint16_t SyncRecovery::CycleLength;
 
+uint16_t SyncRecovery::firstDisruptivePass()
+{
+    return positionOf(ReprobeSyncType);
+}
+
 const char *SyncRecovery::nameOf(Step step)
 {
     switch (step) {

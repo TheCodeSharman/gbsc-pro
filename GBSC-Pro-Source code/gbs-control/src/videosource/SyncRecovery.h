@@ -66,6 +66,22 @@ public:
     // the source rather than about the position.
     static Step stepAt(uint16_t passes);
 
+    // The position of the first rung that DISTURBS the sync path rather than
+    // configuring it.
+    //
+    // Below it every rung writes a setting the source may need before it can be
+    // counted at all -- the coast window, the separation thresholds, the clamp,
+    // the mode-detect thresholds. From here up the ladder switches the
+    // separator out to ask its question, restarts the ADC PLL, resets the sync
+    // processor block and moves the ADC input, none of which may happen under a
+    // caller still solving through that path.
+    //
+    // The re-probe is the first because it takes the separator out of circuit
+    // to answer, which the chip latches as a SOG switch. The split is what the
+    // first acquisition's grace defers, so a source is configured promptly and
+    // disturbed only once the grace is over.
+    static uint16_t firstDisruptivePass();
+
     // The position each step occupies, for a caller that wants to say how far
     // the ladder has got. 0 for None.
     static uint16_t positionOf(Step step);

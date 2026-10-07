@@ -618,9 +618,24 @@ bool VideoSourceAcquisition::poll(uint32_t nowMs)
                 firstAcquisition_ = false;
             }
         }
-        if (!firstAcquisition_)
+        // THE GRACE DEFERS THE DISTURBANCE, NOT THE CONFIGURATION. Held at 0 for
+        // the whole window it also withheld the coast window and the
+        // separation thresholds, which a sync-on-green source needs before the
+        // sync processor can count it at all -- so the engine spent the window
+        // waiting for a recovery to do what the selection should have done.
+        // Measured on the Wii in 480i: STATUS_SYNC_PROC_VTOTAL pinned at 97 for
+        // 13.65 s, then passes 2..38 in 1.6 s and acquired.
+        //
+        // Clamped rather than wrapped, so each configuring rung fires once and
+        // the position then rests where no rung sits. The disruptive rungs stay
+        // behind the window, which is the whole of what it was protecting.
+        if (firstAcquisition_) {
+            if (recoveryPosition_ + 1 < SyncRecovery::firstDisruptivePass())
+                ++recoveryPosition_;
+        } else {
             recoveryPosition_ =
                 (uint16_t)((recoveryPosition_ + 1) % SyncRecovery::CycleLength);
+        }
     }
 
     // Ungated: an output left away is a dark panel, and whether maintenance is
