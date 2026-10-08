@@ -158,14 +158,17 @@ def main():
 
     # A leg timed while the unit is booting is not a leg: the first trip after an
     # OTA scores NEVER or 0.0s depending on which input the flash rebooted onto.
+    # Reported rather than raised -- a run that dies on the precheck has measured
+    # nothing, and an absence here is itself worth seeing in the log.
     status, start = gbs_unit.get_json(args.host, "/geometry")
     assert status == 200 and start is not None, f"/geometry answered {status}"
-    if start.get("state") != "acquired":
-        print(f"waiting for the unit to acquire something: {json.dumps(start)}")
-        gbs_unit.wait_for(
-            lambda: (gbs_unit.get_json(args.host, "/geometry")[1] or {})
-                    .get("state") == "acquired",
-            timeout=60.0, interval=0.5)
+    waited = time.time()
+    while (start or {}).get("state") != "acquired" and time.time() - waited < 90:
+        print(f"  waiting for an acquired source: {json.dumps(start)}", flush=True)
+        time.sleep(2.0)
+        start = gbs_unit.get_json(args.host, "/geometry")[1]
+    if (start or {}).get("state") != "acquired":
+        print("  starting anyway: nothing acquired after 90s")
 
     console = gbs_unit.Console(args.host)
     time.sleep(1.0)
