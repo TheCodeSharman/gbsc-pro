@@ -1,8 +1,8 @@
 # The RISC PC's composite sync is a NOR, and carries no serrations
 
-`sourceHasSerratedSync()` is `sourceLowLineRate() && SyncMeasurement::isCsync()`
--- 15 kHz plus composite sync, therefore broadcast structure. Measured on the
-bench source, the structure is not there.
+The serration predicate was `lowLineRate() && isCsync()` -- 15 kHz plus
+composite sync, therefore broadcast structure. Measured on the bench source, the
+structure is not there.
 
 ## The source's datasheet names which composite it emits
 
@@ -51,12 +51,11 @@ on a line whose sync pulse measures `STATUS_SYNC_PROC_HLOW_LEN` 144. **Nothing
 changes.** A signal carrying equalising pulses at half-line spacing could not
 survive that untouched, so the pulses are not there.
 
-**The filter is not applied by the sync type in any case.**
-`SyncProcessor::applyForSyncType()` calls `applyPulseIgnore()` on its
+**The filter used not to be applied by the sync type at all.**
+`SyncProcessor::applyForSyncType()` called `applyPulseIgnore()` on its
 separate-sync branch and not on its csync one, so on a csync source the field
-holds whatever `prepareSyncProcessor()` computed earlier in the load. Measured on
-the bench csync leg it holds 2, the unserrated value, while
-`sourceHasSerratedSync()` is true.
+held whatever the load had computed earlier -- measured on the bench csync leg
+as 2, the unserrated value. Both branches write it now, one value per sync type.
 
 ## The missing lines ARE the vertical sync
 
@@ -185,7 +184,7 @@ Neither is implemented.
 
 ## Coast is binary, not proportional
 
-The coast window is the other setting `sourceHasSerratedSync()` drives. Removing
+The coast window is the other setting the serration predicate drove. Removing
 it costs ten lines and the steadiness with them:
 
 | `SP_PRE_COAST` / `SP_POST_COAST` | `STATUS_SYNC_PROC_VTOTAL` |

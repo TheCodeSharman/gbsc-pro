@@ -40,16 +40,31 @@ So the seven readers of the old predicate divide by which fact they need:
 
 | reader | fact |
 |---|---|
-| `SP_H_PULSE_IGNOR`, the coast widening on sync loss, the SOG level step, `SP_DIS_SUB_COAST` | a serrated line: low line rate **and** csync |
+| `SP_H_PULSE_IGNOR`, `SP_DIS_SUB_COAST` | the sync type alone |
 | the HD bypass htotal doubling, its blanking offset, its line-count measurement | the line rate alone |
 
 `Tv5725::SourceMeasurement::lowLineRate()` answers the second from the held line
-rate. The first is that and `rto->syncTypeCsync`.
+rate. **Nothing reads the two together any more.** The coast widening and the
+SOG level step went with the recovery rungs that were their only callers, and
+the two that remain are a pure function of the sync type, so the compound
+predicate is gone.
 
-## Why the rate is held rather than measured on demand
+## RETRACTED: an unmeasured source must not be configured for nothing
 
-Three of the readers run during a sync loss, when nothing is measurable.
-`lineRateHz()` is the last rate MEASURED and a refusal clears it;
-`heldLineRateHz()` is the last one that passed the cross-check against the line
-count, so it survives the refusal. Unmeasured answers false, so a source that
-has never arrived is configured for nothing.
+That was the conclusion here — *unmeasured answers false, so a source that has
+never arrived is configured for nothing* — and it deadlocked a sync-on-green
+source. The sub-coast is what lets the sync processor count a serrated source at
+all, so withholding it until a measurement arrives withholds it until a
+measurement that cannot be taken without it. A SELECTION has no measurement of
+the source arriving, so it applied the OUTGOING source's answer.
+
+The case this page never measured is an unserrated composite source WITH the
+sub-coast, which is the bench RISC PC on `SYNC 1`. At 800x600@60, the one field
+written by name and everything else untouched: `STATUS_SYNC_PROC_VTOTAL` 623 and
+`STATUS_SYNC_PROC_HTOTAL` 1438 against a 1438 divider, lock held, acquired
+throughout fourteen seconds. **Indifferent.** So there is nothing for the line
+rate to protect.
+
+The separate-sync measurement at the head of this page is untouched by that and
+is what keeps the sub-coast off that path.
+[`the-sub-coast-waited-on-a-measurement-it-made-possible.md`](the-sub-coast-waited-on-a-measurement-it-made-possible.md).
