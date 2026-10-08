@@ -212,16 +212,78 @@ left `STATUS_SYNC_PROC_VTOTAL` at 97..102 and `STATUS_SYNC_PROC_HTOTAL` at
 count came right once the level reached 1..2 -- does not survive a controlled
 walk.
 
-**WHAT REMAINS IS A WRONG DIVIDER, NOT A WITHHELD CONFIGURATION.** A full
+**WHAT REMAINS IS A WRONG SAMPLING GROUP, NOT A WITHHELD CONFIGURATION.** A full
 1536-address `snapdiff.py` across an acquired and a failing leg shows the whole
 sync arrangement byte-identical -- `SP_SOG_MODE` 1, `SP_EXT_SYNC_SEL` 1,
 `SP_DIS_SUB_COAST` 0, coast 7/6, window 16/256, `SP_H_PULSE_IGNOR` 107,
 `SP_DLT_REG` 192, `SP_H_TIMER_VAL` 58, `ADC_SOGCTRL` 14 -- with the difference
 in the SAMPLING group: `PLLAD_MD` 2098 against the 2200 the source wants,
 `PLLAD_KS` 0 against 2, `PLLAD_FS` 0 against 1, both decimators bypassed and
-both clock enables off, which is oversample 1 against oversample 4. So a garbage
-rate was accepted, a divider was installed from it, and the count collapsed
-under it. That is the held-rate half below, and it is the one open half.
+both clock enables off, which is oversample 1 against oversample 4.
+
+**THE STALL IS A FREE-RUNNING ADC PLL, AND THAT IS NOW MEASURED RATHER THAN
+INFERRED.** `Tv5725::SamplingLog` at 25 ms across one whole failing leg, 1057
+samples: `STATUS_MISC_PLLAD_LOCK` 0 in **1057 of 1057**,
+`STATUS_SYNC_PROC_HTOTAL` within 2 of the divider in **0 of 1057**, the count
+97..102, and `VPERIOD_IF` a correct **524 throughout**. So the input formatter
+counts the source's vertical perfectly while the sync processor has no ADC clock
+to count. The same log on settled `vga` is the other way round: `HTOTAL` within 2
+of the divider in 1182 of 1182.
+
+**AND THE FIELD RATE IS TIMED OFF A PIN CARRYING NOTHING.**
+`/samplinglog?rates=120`, which times it from `loop()` exactly as
+`SourceMeasurement` does, gave **98 of 120 readings in 16.1..16.5 Hz** against a
+source running 59.94, median 16.43, the rest 1144..8438 Hz. That is the band
+`VideoSignal.h` records for a pin the source is not driving. Both failing and
+ACQUIRING legs measure that noise, so a leg lives or dies on which sample is
+accepted.
+
+**ONE HALF IS FIXED: the crossover row was sized from the OUTGOING source.**
+`PLLAD_KS` and `PLLAD_FS` come from the line rate alone, and
+`VideoPath::inputTimingsChanged()` re-asserted the divider in force while
+reading the rate off `SourceMeasurement` -- which on an arriving source is the
+rate of the one that left. Measured in a stall: `PLLAD_KS` 1 at the reference
+divider, which is 1400 x 37879 = 53 MHz, where the arriving 22 MHz CKO needs
+row 2. `Adc` holds the rate its group was built from now and every caller hands
+the rate in.
+
+Twenty trips from an 800x600@60 `vga` predecessor, measured to `sync pad:
+driven`, judged on the count first:
+
+| | before | after |
+|---|---|---|
+| `ypbpr` shown a picture | 13 of 20 | **20 of 20** |
+| of those, on the correct count | -- | **20 of 20**, `cv` 518/520/522 |
+| inside 10 s | 2 of 20 | 4 of 20 |
+| spread | 6.1..24.4 s, median 13.9 | 6.8..25.7 s, median 15.5 |
+| `vga` | 20 of 20, median 6.1 s | 19 of 20, median 6.3 s |
+
+**THE RELIABILITY MOVED AND THE CLOCK DID NOT, and the median moving the wrong
+way is why that reads as a wash.** The seven legs that never acquired are now
+slow successes, which lands them in the tail. The times cluster on the act
+intervals: **4 legs on the selection alone** at 6.8..8.9 s, **15 after one
+`Reconfigure` act** at 11.8..19.3 s, and one after two at 25.7 s. So three
+quarters of legs are waiting out a ten-second timer for something
+`reconfigureForSource()` does that a selection does not -- and the `vga` leg
+that never acquired is one leg of twenty, not a pattern.
+
+**THE OTHER HALF IS OPEN: a garbage rate is still accepted.**
+`SourceMeasurement::rateSettled()` returns true once `RateAgreementAttempts`
+readings have been taken whether any two agree or not, and at
+`RateAgreementPerThousand` of 1 two noise readings never agree -- so on a source
+whose pin carries nothing the attempt cap is always what accepts, and it accepts
+an arbitrary sample. Measured on the boot after the fix landed: `PLLAD_MD` 1940
+and `PLLAD_KS` 0 against `/geometry` `lineRateHz` 41808, a group built for 81 MHz
+on a source producing 22 MHz. `/sc?~` cleared it in 15 s.
+`investigations/the-crossover-row-was-sized-from-the-outgoing-source.md` carries
+why `reconciledFrame()` cannot be the gate that refuses it.
+
+**A GROUP RE-ASSERT PLUS THE BLOCK RESETS RECOVERS THE STALL FROM THE ESP IN
+ABOUT TWO SECONDS**, which no act of the ladder achieves in 330 s:
+`/sampleclock?md=1400&os=4` -- the divider already in force -- took a 26 s stall
+to `state: acquired` in **1.9 s**, and `md=2200&os=4` took a 330 s stall in
+5.4 s. Both landed on the count 259/260, `HTOTAL` 2200 against a 2200 divider
+and a measured 59.93 Hz.
 
 ### The old reading, which the fixes above supersede in part
 
