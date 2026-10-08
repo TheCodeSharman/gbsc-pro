@@ -690,129 +690,97 @@ only on a genuinely composite one where the timeout is the right answer.
 | steer the HD bypass vsync window | `steerHdBypassVsyncWindow()`, already extracted |
 | steer the ADC PLL | the band index and its `PLLAD_KS`/`FS`/`ICP` writes |
 
-### The rungs, in the order they are tried
+### The three acts, and what each one is for
 
-`SyncRecovery::stepAt()` answers which rung a pass is due, and
-`VideoSourceAcquisition::runRecovery()` dispatches on the answer. Each step fires
-once at its position; the list cycles at 451, because a source that has been
-switched off and on again needs it to.
+`SyncRecovery::actAt()` answers which act a run of failed passes is due, and
+`VideoSourceAcquisition::runRecovery()` dispatches on the answer. It is a WALL
+CLOCK rather than a pass count: passes are missed wherever `loop()` stalls, so a
+count under-reads how long a source has been missing, and what this is timed
+against is the acquisition BUDGET.
 
-| position | step | extra condition | operation |
-|---|---|---|---|
-| 0, 1 | `None` | -- | the free first pass: one dropped measurement is not a source going away |
-| 2 | `LiftSogFloor` | no mode change in flight, serrated sync | `SyncOnGreen::liftOffFloor()` |
-| 8 | `CoastWindow` | -- | default coast window, widen if serrated, forget positions |
-| 27 | `SyncProcessorDynamic` | -- | `updateSpDynamic(1)` |
-| 32 | `ReleaseCapture` | `STATUS_SYNC_PROC_HSACT` 1 | `FrameBuffer::releaseCapture()` |
-| 34 | `HoldClamp` | YPbPr, `Info_sate` 0 | hold clamp, forget positions |
-| 38 | `NudgeModeDetect` | -- | `ModeDetect::nudge()` |
-| 48 | `HsyncOverflowProtect` | csync | `SyncProcessor::toggleHsyncOverflowProtect()` |
-| 150 | `FullReset` | -- | clear overflow protect, default coast and clamp, `updateSpDynamic(1)`, nudge Mode Detect, re-acquire the SOG level, reset the sync processor, reset Mode Detect |
-| 151 | `ReprobeSyncType` | -- | `VideoPath::reacquireSyncType()`; parks at `0x07fe` if it finds V sync |
-| 413 | `ToggleInput` | `detectionMayChangeInput()` | `Adc::selectOtherInput()`, kept only if it locks within 210 ms |
-| 450 | `ReopenSogSeparator` | -- | `SyncOnGreen::reacquire()` with the separator reopened |
+| after | act | operation |
+|---|---|---|
+| -- | `None` | the budget: a source mode change is shown inside 1.2..2.0 s and a component selection inside 4.4..6.9 s, so nothing is recovered until both have had their chance |
+| 10 s | `Reconfigure` | the sync type re-probed, the search configuration, the clamp window, Mode Detect nudged, the separator walked from the level the input is due, the ADC PLL restarted |
+| 20 s | `ResetBlocks` | a held capture released, `SyncProcessor::reset()`, `ModeDetect::reset()` |
+| 30 s | `MoveInput` | the other ADC input, kept only if it locks within 210 ms |
 
-**NO STEP MAY SIT AT 63.** The board-power check rewrites `noSyncCounter` to it
-when the check at 61 passes, and the next pass increments past, so 63 is never
-a count a step is asked for.
+Then it cycles, because a source that has been switched off and on again needs
+it to.
 
-Two positions were compounded and are now separate. `ReopenSogSeparator` was the
-`% 450` argument handed to `SyncOnGreen::reacquire()` from inside the reset
-block, which is an escalation hiding in another step's parameter.
-`ReprobeSyncType` shared 150 with `FullReset`, so the probe now applies its
-answer after the reset rather than before it.
+**AN ACT IS A SELECTION'S WORTH OF WORK, SO IT GETS A SELECTION'S WORTH OF
+TIME.** The interval is the same budget throughout: an act that has just run has
+not been judged until an acquisition could have completed under it.
 
-**What the ordering does NOT settle is the gate.**
-`sourceIsPresent()` lets the counter ADVANCE where it used to sit pinned at 150,
-and a list tried once per cycle is what makes that survivable rather than what
-makes it safe -- measured before the list, the gate ended at `SP_SOG_MODE` 1
-against a held sync type of separate, `SP_VTOTAL` 97, and no way back.
-`docs/investigations/the-gate-runs-a-ladder-that-is-not-safe-yet.md`.
+**THE ORDER IS WHAT THE FIRST-ACQUISITION GRACE USED TO BE.** A 15 s hold existed
+so the rungs did not tear down a sync path an ordinary selection was still
+solving through. The act that disturbs nothing now comes first and the teardown
+lands at 20 s, past where the grace ended, so there is nothing left for a grace
+to defer.
 
-### Six of the eleven are contained in a seventh
+**A RECOVERY FIRED INTO AN ACQUISITION THAT WAS WORKING.** That is what the
+twelve rungs on a 20 ms pass count did, and it is why the positions are gone
+rather than retuned. Measured on a `ypbpr` leg that then failed:
 
-`FullReset` does all of this in one pass:
+    2.15  sampling: 263 lines x 59.00 Hz -> line rate 15576
+    2.16  sampling: rate 15576 doubled 1 -> divider 2200
+    2.18  recovery: coast window at pass 8
+    2.28  sampling: 269 lines x 70.15 Hz -> line rate 18941
+    2.80  duty: 243 pulse / 2200 divider, htotal 3268, negative, UNLOCKED
 
-    setHsyncOverflowProtect(false)   undoes HsyncOverflowProtect
-    applyDefaultCoastWindow()        CoastWindow
-    applyDefaultClampWindow()
-    updateSpDynamic(1)               SyncProcessorDynamic
-    ModeDetect::nudge()              NudgeModeDetect
-    SyncOnGreen::reacquire(...)      LiftSogFloor and ReopenSogSeparator
-    SyncProcessor::reset()
-    ModeDetect::reset()
+The engine had the source measured and its divider installed, and the rung reset
+the coast window and discarded the placement 20 ms later. The first reading
+lands at 1.8..2.7 s and pass 8 at 1.84 s, so which came first was a race decided
+by milliseconds. Both measured mode changes fired three rungs inside a change
+that completed in 1.2..1.8 s; nothing broke, and nothing was gained.
 
-So the ladder tries FRAGMENTS of one acquisition, one at a time, and eventually
-tries all of it -- and the order the fragments come in is historical rather than
-principled, because they are not alternatives to each other. Only four rungs are
-a genuinely different act: `ReleaseCapture`, which is frame buffer state rather
-than a measurement; `HoldClamp`, which is not the default clamp window;
-`ReprobeSyncType`; and `ToggleInput`, which is an input event and leaves the list
-entirely.
+### What went, and the measurement for each
 
-**The engine does not work in fragments.** A source event measures everything
-from scratch, which is what makes it possible to say what the engine believes
-and why. So the destination is about three states rather than eleven: acquire;
-acquire with the blocks reset first; change the input. `SyncRecovery` preserves
-the eleven deliberately, because a list reproducing today's positions is
-reviewable against today's behaviour -- an intermediate, not the destination.
+A pass was 20 ms, so the 451-position cycle ran in **9.0 s** and the input
+toggle moved the mux every nine seconds -- far from the rarest thing the ladder
+did.
 
-**The argument for keeping cheap early rungs is weaker than it looks.** The
-branch runs only when the source is ALREADY unlocked, so there is no picture
-being protected, which is the usual reason to prefer a nudge over a re-acquire.
-What survives of it is the free first pass -- one dropped measurement, not a
-strategy.
-
-### `0x07fe` is a signal, not a park -- and it needs no replacement
-
-The two sites that write `rto->noSyncCounter = 0x07fe` are commented as stopping
-the escalation before it reaches the input toggle. **That is not what it does.**
-A block further down reads the value:
-
-    if (rto->noSyncCounter >= 0x07fe) {
-        rto->noSyncCounter = 0;
-        printf("No Signal Out\n");
-        rto->HdmiHoldDetection = true;
-    }
-
-So the write is a MESSAGE: announce, set the flag, and **restart the run from
-zero**. The ladder does not stop -- it begins again and reaches the input toggle
-in another 413 passes. It has a second trigger nobody wrote, the counter
-reaching 2046 by counting, about 41 s at the 20 ms tick. One value carries a
-trigger reached two ways, a report, and a state change.
-
-**DECIDED: "no signal" is a STATE, and the search never stops.** A unit with
-nothing to show keeps looking for a displayable input for as long as it has
-none, because the user may plug something in or switch the source on at any
-moment. There is no terminus to design.
-
-That dissolves the value rather than replacing it. Both of its triggers stop
-being events:
-
-| today | becomes |
+| rung | why it went |
 |---|---|
-| the ladder ran out | the cycle wraps, and the input policy gets its turn |
-| a rung found something | `sourceState()` says acquired; there is nothing to promote |
+| `LiftSogFloor` | a no-op on both bench sources: `liftOffFloor()` returned early above `LowestSteppable` 2 and the level is 13. `reacquireSeparator()` walks from the level the input is due, which subsumes it |
+| `CoastWindow`, `HoldClamp` | repeat what a selection applies, and each discards a placement through `forgetPositions()` |
+| `SyncProcessorDynamic` | the tick applies these |
+| `HsyncOverflowProtect` | a blind toggle of a field `applyForSyncType()` owns |
+| `ReopenSogSeparator` | parks the separator where nothing recovers it, below |
 
-**`HdmiHoldDetection` goes with it.** Traced: set true in that block alone,
-cleared by `inputAndSyncDetect()` on finding a source, and read in exactly ONE
-place -- the RGBHV limit-no-sync branch, where it suppresses
-`setResetParameters()`, `prepareSyncProcessor()` and `SyncProcessor::reset()`.
-Its meaning is *we have already given up, stop tearing the chip down again*, and
-an ordered list tried once per cycle runs the destructive rung once by
-construction. The name is also wrong: nothing about it concerns HDMI.
+**THE LAST RUNG BRICKED THE SEPARATOR.** `ReopenSogSeparator` called
+`SyncOnGreen::choose(0)`, which `SyncOnGreen.h` already records as *"the sync
+separator fully open and the one value no ratchet can climb back out of"*. Every
+leg that failed for 25 s reached it, and every leg after that failed too --
+`ADC_SOGCTRL` 0, `STATUS_SYNC_PROC_VTOTAL` 97, and a correct `VPERIOD_IF` beside
+it. `/sc?~` does **not** recover it, because the held level is what `apply()`
+writes back; `/restart` does, detection choosing `ComponentLevel`.
+`Reconfigure`'s separator walk is what recovers it now.
 
-**And the cadence question evaporates.** It looked like a product judgement --
-41 s today against a 451-pass cycle of about 9 s, so a naive move tells the
-television four times sooner. It tells the television nothing: `"No Signal Out"`
-is a console string, and no OSD, web UI or output path renders a no-signal state
-at all. Whenever one is wanted it reads the state rather than catching an event.
+### The search configuration belongs to the selection
 
-**One thing is left to decide, and it is not mechanical:** whether rung 0's
-early return survives. It makes the first failed pass free, so a single dropped
-measurement costs nothing -- but against a run counted in detection passes
-rather than 20 ms ticks, one pass is a different amount of time, and the
-debounce may want to be the run's own.
+`SyncProcessor::Dynamic` carried `searching` and `hunting`, and **nothing a
+caller knows could decide between them**: a source with no measured line length
+wants the windows the search places, whatever the reason it has none. The
+selection asked for the lesser answer -- the pulse-width difference alone -- so
+the only writer of the coast window on a source nothing could count was a rung.
+
+Measured on the Wii in 480i over `ypbpr`: the ADC PLL locks at the reference
+divider inside two seconds and `STATUS_SYNC_PROC_VTOTAL` then sits at 97 -- the
+value it holds when it is not following the source at all -- for **13.65 s** of
+total console silence, until a rung wrote the search configuration and the
+source acquired 1.6 s later.
+
+So it is one fact. `applyDynamic()` gives a searching source the search
+configuration, the selection has it from the outset, and
+`takeBackSearchSettings()` takes it back on the first count.
+
+### "No signal" is a STATE, and the search never stops
+
+A unit with nothing to show keeps looking for a displayable input for as long as
+it has none, because the user may plug something in or switch the source on at
+any moment. There is no terminus to design: the cycle wraps, and
+`sourceState()` is what a caller asks.
 
 ## The order
 

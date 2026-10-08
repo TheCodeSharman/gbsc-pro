@@ -190,7 +190,40 @@ is whether the bias stays unguarded -- it costs the outermost column, and
 removing it does not close the framing defect above.
 
 
-### Sync on green does not follow the source until the ladder's SOG rungs run
+### FIXED in part: sync on green did not follow the source until a recovery ran
+
+**THE SUB-COAST WAITED ON A MEASUREMENT THAT NEEDED THE SUB-COAST, and that is
+closed.** `SP_DIS_SUB_COAST` came from `lowLineRate() && isCsync()`, an
+unmeasured rate answered false, and a selection has no measurement of the source
+arriving -- so the arriving Wii got the outgoing RISC PC's answer, the sync
+processor counted its serrations as lines, and no rate could be measured through
+it. The sync type decides it now, measured harmless at 37.6 kHz and required at
+15.7. `investigations/the-sub-coast-waited-on-a-measurement-it-made-possible.md`.
+
+**And the dynamic configuration follows the measurement both ways.** The
+take-back was one-way and latched, so a source that fell back into searching
+kept the settled configuration and the coast inversion with it --
+`SP_COAST_INV_REG` 0 with `STATUS_SYNC_PROC_VTOTAL` at 97.
+
+**REFUTED: the separator level is not the fault.** `ADC_SOGCTRL` walked by name
+one step at a time from `ComponentLevel` 14 down to 1 on a frozen failing unit
+left `STATUS_SYNC_PROC_VTOTAL` at 97..102 and `STATUS_SYNC_PROC_HTOTAL` at
+1107..1247 at every level. The earlier reading -- a hand-driven run where the
+count came right once the level reached 1..2 -- does not survive a controlled
+walk.
+
+**WHAT REMAINS IS A WRONG DIVIDER, NOT A WITHHELD CONFIGURATION.** A full
+1536-address `snapdiff.py` across an acquired and a failing leg shows the whole
+sync arrangement byte-identical -- `SP_SOG_MODE` 1, `SP_EXT_SYNC_SEL` 1,
+`SP_DIS_SUB_COAST` 0, coast 7/6, window 16/256, `SP_H_PULSE_IGNOR` 107,
+`SP_DLT_REG` 192, `SP_H_TIMER_VAL` 58, `ADC_SOGCTRL` 14 -- with the difference
+in the SAMPLING group: `PLLAD_MD` 2098 against the 2200 the source wants,
+`PLLAD_KS` 0 against 2, `PLLAD_FS` 0 against 1, both decimators bypassed and
+both clock enables off, which is oversample 1 against oversample 4. So a garbage
+rate was accepted, a divider was installed from it, and the count collapsed
+under it. That is the held-rate half below, and it is the one open half.
+
+### The old reading, which the fixes above supersede in part
 
 **Fifteen seconds of a `ypbpr` acquisition are spent with the ADC PLL already
 locked and the sync processor counting 97 lines.** The teardown repair means the
@@ -216,16 +249,16 @@ and the engine pays for no rate measurement. Only two passes complete in those
 nine seconds.
 
 **~~The rungs that help are all gated behind `FirstAcquisitionGraceMs`.~~**
-**Fixed, and it was not the whole fault.** The grace held the ladder's position
-at 0 for its whole 15 s, so the configuring rungs could not be reached however
-wrong the settings were. It now advances through them during the grace and
-clamps below `SyncRecovery::firstDisruptivePass()`, the re-probe, so each fires
-once and the rungs that restart the ADC PLL, reset the sync processor block or
-move the ADC input stay behind the window -- which is what it was protecting.
-
-Measured after: `recovery: coast window` moves from 40.49 s to **3.43 s** and
-the configuring rungs complete by 4.68 s. `vga` got FASTER with it, `sync pad:
-driven` at 5.30 s against 6.49 s.
+**~~Fixed, and it was not the whole fault.~~** **SUPERSEDED: the configuration
+is the SELECTION'S and no recovery is waited on for it.**
+`SyncProcessor::Dynamic` carried `searching` and `hunting`, and the selection
+asked for the lesser answer -- the pulse-width difference alone -- so the only
+writer of the coast window on a source nothing could count was a rung. Nothing a
+caller knows could decide between the two, so there is one answer now: a
+searching source gets the search configuration, and
+`takeBackSearchSettings()` takes it back on the first count. The grace is gone
+with the pass count; the three acts are ordered so the one that disturbs nothing
+comes first.
 
 **THE WALL CLOCK ON `ypbpr` DID NOT MOVE, AND THE REASON IS THE COUNT.** The
 early rungs get the source producing readings and the readings are wrong:
@@ -367,29 +400,28 @@ route to it and no rung sits between 27 and 150. The PLL group is byte-identical
 across the stall and the fix.
 `investigations/the-search-coast-inversion-outlived-the-search.md`.
 
-**WHAT IS LEFT IS THE LADDER FIRING INTO A HEALTHY ACQUISITION.** Measured on a
-leg that failed: the engine read 263 lines at 15576 Hz and installed its divider
-at 2.16 s, `recovery: coast window at pass 8` reset that window and discarded the
-placement at 2.18 s, and the count then read 271 with
-`STATUS_SYNC_PROC_HTOTAL` 3268 against a 2200 divider. The first reading lands at
-1.8..2.7 s and pass 8 at 1.84 s, so which comes first is a race decided by
-milliseconds -- which is why one build gives 4.4..6.9 s on some legs and nothing
-within 32 s on others. The escalation position no longer advances on a pass that
-measured the source, which closes the half of the race where a reading arrives
-first; the other half needs the rungs themselves looked at, and the argument is
-that they repeat what a selection already applies.
+**~~WHAT IS LEFT IS THE LADDER FIRING INTO A HEALTHY ACQUISITION.~~ Closed by
+the collapse.** Measured on a leg that failed: the engine read 263 lines at
+15576 Hz and installed its divider at 2.16 s, `recovery: coast window at pass 8`
+reset that window and discarded the placement at 2.18 s, and the count then read
+271 with `STATUS_SYNC_PROC_HTOTAL` 3268 against a 2200 divider. The first reading
+lands at 1.8..2.7 s and pass 8 at 1.84 s, so which came first was a race decided
+by milliseconds. Nothing fires inside the budget now: three acts at 10, 20 and
+30 s, and a mode change measured 1.2..2.0 s to `sync pad: driven` either side of
+the change.
 
 **A 3 s hold before the first rung does not close it** and makes `vga` slower,
-measured 5.0..17.3 s against 4.1..7.8 s.
+measured 5.0..17.3 s against 4.1..7.8 s. The budget is what replaces it.
 
-**THE PASS-450 RUNG PARKS THE SEPARATOR FULLY OPEN AND ONLY AN ESP RESTART
-CLIMBS OUT.** `ReopenSogSeparator` calls `choose(0)`, which `SyncOnGreen.h`
-already records as "the one value no ratchet can climb back out of". A leg that
-fails for 25 s reaches it, and every leg after that fails too: `ADC_SOGCTRL` 0,
-`STATUS_SYNC_PROC_VTOTAL` 97, `VPERIOD_IF` a correct 524 beside it. `/sc?~` does
-not recover it because the held level is what `apply()` writes back. `/restart`
-does, detection choosing `ComponentLevel`. So a measurement run must cap its legs
-below 25 s or it poisons itself.
+**~~THE PASS-450 RUNG PARKS THE SEPARATOR FULLY OPEN AND ONLY AN ESP RESTART
+CLIMBS OUT.~~ Gone with the rung.** `ReopenSogSeparator` called `choose(0)`,
+which `SyncOnGreen.h` records as "the one value no ratchet can climb back out
+of". A leg that failed for 25 s reached it, and every leg after that failed too:
+`ADC_SOGCTRL` 0, `STATUS_SYNC_PROC_VTOTAL` 97, `VPERIOD_IF` a correct 524 beside
+it. `/sc?~` does not recover it because the held level is what `apply()` writes
+back; `/restart` does, detection choosing `ComponentLevel`. The separator walk
+inside `Reconfigure` is what recovers it, and nothing parks it any more -- a host
+test asserts the level never reaches 0 across six act intervals.
 
 **THE OLD READING, FOR REFERENCE.** The console says where the 24 s goes:
 `STATUS_SYNC_PROC_HTOTAL` reads 2230..2392 against a 2200 divider and the duty
