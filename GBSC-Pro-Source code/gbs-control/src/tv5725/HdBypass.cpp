@@ -160,7 +160,7 @@ void HdBypass::enterFor(bool component, bool csync, uint32_t lineRateHz,
 
     // The sync processor is configured here or nowhere: no preset load runs on
     // this route.
-    SyncProcessor::applyForSyncType(csync, false);
+    SyncProcessor::applyForSyncType(csync);
     if (csync)
         SyncOnGreen::choose(CsyncSogLevel);
     SyncProcessor::applyForPassThrough();

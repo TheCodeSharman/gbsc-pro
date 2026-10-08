@@ -2277,6 +2277,65 @@ TEST_CASE("reacquiring the sync type reports what the source carries")
     CHECK(engine.reacquireSyncType());
 }
 
+// **THE SUB-COAST WAITED ON A MEASUREMENT THAT NEEDED THE SUB-COAST.** It was
+// written from `lowLineRate() && isCsync()`, and an unmeasured rate answered
+// false -- so a composite-sync source arrived with the sub-coast disabled, the
+// sync processor counted its serrations as lines, and nothing could be measured
+// through it. Measured on the bench, Wii in 480i selected on ypbpr after the
+// RISC PC at 800x600@60: `VPERIOD_IF` a correct 524 the whole time,
+// `STATUS_SYNC_PROC_VTOTAL` 97..101, `STATUS_SYNC_PROC_HTOTAL` 1103..1240
+// against the 1400 reference divider, `SP_DIS_SUB_COAST` 1 -- and no
+// `sampling:` line printed at all, because a rate measurement needs a steady
+// count first. Every recovery re-derived the same answer from the same
+// unmeasurable rate, so no act could break it.
+//
+// THE LINE RATE HAS NO JOB HERE. Enabling the sub-coast on a composite-sync
+// source at a 37.6 kHz line -- RISC PC on `SYNC 1` at 800x600@60 -- left
+// `STATUS_SYNC_PROC_VTOTAL` 623 and `STATUS_SYNC_PROC_HTOTAL` 1438 against a
+// 1438 divider with the lock held, acquired throughout fourteen seconds. So the
+// sync type is what decides it.
+TEST_CASE("a composite-sync source gets the sub-coast before anything is measured")
+{
+    seedBenchSource();
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+    engine.useSyncTypeProbe(probeOwnVsync);
+
+    g_hasOwnVsync = false;
+    REQUIRE(sampling.lineRateHz() == 0);
+
+    engine.establishSyncType(4);
+
+    REQUIRE(SyncMeasurement::isCsync());
+    CHECK(SyncProcessor::SP_DIS_SUB_COAST::read() == 0);
+}
+
+TEST_CASE("a separate-sync source is left without the sub-coast")
+{
+    // Sub-coast suppresses the horizontal count through the serrated part of
+    // the vertical interval, and a source with no serration has nothing to
+    // suppress: enabling it lets the vertical edges into the horizontal count.
+    // Measured on the bench RISC PC at 320x256@50, separate H and V:
+    // STATUS_SYNC_PROC_HTOTAL reads 3116..3251 against a 2250 divider enabled,
+    // and 2250 exactly disabled.
+    // investigations/serrated-sync-is-not-line-rate.md
+    seedBenchSource();
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+    engine.useSyncTypeProbe(probeOwnVsync);
+
+    g_hasOwnVsync = true;
+
+    engine.establishSyncType(3);
+
+    REQUIRE_FALSE(SyncMeasurement::isCsync());
+    CHECK(SyncProcessor::SP_DIS_SUB_COAST::read() == 1);
+}
+
 // WHICH OWNER LAST HAD THE PATH CANNOT BE READ OFF A DUMP, so every route that
 // applies it says so. The load was the silent one.
 TEST_CASE("a load says which arrangement it put in force")
@@ -2350,7 +2409,7 @@ TEST_CASE("a source that measures its own lines is left on the pair it has")
 {
     seedBenchSource();
     seedSourceHalfLines(624);
-    SyncProcessor::applyForSyncType(true, false);
+    SyncProcessor::applyForSyncType(true);
     const uint32_t before = SyncProcessor::SP_PRE_COAST::read();
 
     DisplayClock clock;

@@ -187,15 +187,8 @@ public:
     // solve made from the restored one.
     uint16_t countNow() const;
 
-    // Whether the source runs the 15.7 kHz broadcast line. Not on its own
-    // whether the vertical interval is serrated.
+    // Whether the source runs the 15.7 kHz broadcast line.
     bool lowLineRate() const;
-
-    // Whether the source's vertical interval carries equalisation and
-    // serration pulses, which is a property of composite sync at a 15 kHz line
-    // and not of either alone.
-    // ../../../docs/investigations/serrated-sync-is-not-line-rate.md
-    bool hasSerratedSync() const;
 
 
     // --- the bounds the contract is stated in ---------------------------------

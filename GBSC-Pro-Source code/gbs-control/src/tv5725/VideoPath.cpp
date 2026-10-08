@@ -757,7 +757,7 @@ void VideoPath::configureSyncPath()
 
     // Whatever is held, which is what makes this the load's application of the
     // path rather than a write beside one.
-    putSyncTypeInForce(csync, sampling_.hasSerratedSync());
+    putSyncTypeInForce(csync);
     SyncProcessor::prepare(csync);
 }
 
@@ -841,9 +841,7 @@ bool VideoPath::reapplySyncTypeInForce()
     if (!syncTypeApplied_)
         return false;
 
-    // A re-apply has a measurement by definition -- it only runs on a source
-    // already in force -- so it takes the measured serration.
-    putSyncTypeInForce(syncTypeInForce_, sampling_.hasSerratedSync());
+    putSyncTypeInForce(syncTypeInForce_);
     return true;
 }
 
@@ -872,18 +870,17 @@ void VideoPath::establishSyncType(uint8_t chosenFor)
     // held value the reset had already replaced with a guess -- measured on the
     // bench as the right arrangement applied on an input change and undone five
     // seconds later when detection dropped to low power.
-    applySyncType(SyncMeasurement::syncType(syncProbe_),
-                  sampling_.hasSerratedSync());
+    applySyncType(SyncMeasurement::syncType(syncProbe_));
 }
 
-void VideoPath::applySyncType(bool csync, bool serrated)
+void VideoPath::applySyncType(bool csync)
 {
     if (syncTypeApplied_ && csync == syncTypeInForce_)
         return;
-    putSyncTypeInForce(csync, serrated);
+    putSyncTypeInForce(csync);
 }
 
-void VideoPath::putSyncTypeInForce(bool csync, bool serrated)
+void VideoPath::putSyncTypeInForce(bool csync)
 {
     syncTypeApplied_ = true;
     syncTypeInForce_ = csync;
@@ -902,7 +899,7 @@ void VideoPath::putSyncTypeInForce(bool csync, bool serrated)
                  arrangement, (unsigned)syncTypeChosenFor_);
     tv5725Log(line);
 
-    SyncProcessor::applyForSyncType(csync, serrated);
+    SyncProcessor::applyForSyncType(csync);
     ModeDetect::applySyncType(csync ? ModeDetect::Csync : ModeDetect::SeparateSync);
     delay(SyncProcessor::PathSettleMs);
 }

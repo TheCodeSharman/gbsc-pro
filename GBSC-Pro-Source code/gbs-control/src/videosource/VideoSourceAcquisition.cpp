@@ -28,7 +28,7 @@ VideoSourceAcquisition::VideoSourceAcquisition(Tv5725::SourceMeasurement &sampli
       detectedMs_(0),
       detectedEver_(false), solvedLines_(0), solvedLineRateHz_(0),
       idle_(Tv5725::SourceMeasurement::SteadySamples),
-      unusableCountArmed_(false), ownVsyncFound_(false), searchApplied_(false), sourceMeasured_(false),
+      unusableCountArmed_(false), ownVsyncFound_(false), dynamicApplied_(false), dynamicForSearch_(false), sourceMeasured_(false),
       sourceState_(SourceAbsent),
       solvedLinePeriod_(0), rateRun_(0), recheckPasses_(0),
       firstRateConfirmed_(false),
@@ -713,7 +713,7 @@ void VideoSourceAcquisition::keepSourceComing(uint32_t nowMs)
             Tv5725::Adc::forgetPhase();
     }
 
-    takeBackSearchSettings();
+    followSearchState();
 
     if (!sourceIsPresent())
         recoverSource();
@@ -927,12 +927,11 @@ void VideoSourceAcquisition::placeClampWindow()
     Tv5725::SyncProcessor::adoptClampPlacement();
 }
 
-void VideoSourceAcquisition::takeBackSearchSettings()
+void VideoSourceAcquisition::followSearchState()
 {
-    if (!searchApplied_ || sourceIsSearching())
+    if (dynamicApplied_ && dynamicForSearch_ == sourceIsSearching())
         return;
 
-    searchApplied_ = false;
     applySyncProcessorDynamic();
 }
 
@@ -949,8 +948,8 @@ void VideoSourceAcquisition::applySyncProcessorDynamic()
         VideoSourceSelection::isRgbhv(VideoSourceSelection::selected())
         || Tv5725::VideoRoute::isHdBypassChannel();
 
-    if (source.searching)
-        searchApplied_ = true;
+    dynamicApplied_ = true;
+    dynamicForSearch_ = source.searching;
 
     Tv5725::SyncProcessor::applyDynamic(source);
 }

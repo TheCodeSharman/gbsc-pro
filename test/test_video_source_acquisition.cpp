@@ -2792,6 +2792,40 @@ TEST_CASE("a selection asks for the search configuration, not a recovery")
     CHECK(SyncProcessor::SP_H_CST_SP::read() == 0x100);
 }
 
+// **THE TAKE-BACK WAS ONE-WAY AND NOTHING PUT IT BACK.** The search
+// configuration was applied once and withdrawn on the first count, with a latch
+// so the withdrawal happened once -- so a source that fell back into searching
+// kept the SETTLED configuration, and the coast inversion with it.
+//
+// Measured on the bench, Wii in 480i on ypbpr: SP_COAST_INV_REG 0 with
+// STATUS_SYNC_PROC_VTOTAL at 97 and VPERIOD_IF a correct 524 beside it, which
+// is the exact state the inversion exists to avoid -- uninverted from the
+// start the block counts nothing at all.
+TEST_CASE("a source that falls back into searching gets the search configuration again")
+{
+    seedBenchSource();
+    seedLineSamples(BenchDivider);
+    Acquiring unit;
+    unit.acquisition.allowMaintenance(true);
+    unit.path.useSyncTypeProbe(probeOwnVsync);
+
+    g_hasOwnVsync = false;
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+    REQUIRE(SyncProcessor::SP_SOG_MODE::read() == 1);
+    unit.pollFor(2);
+    REQUIRE(SyncProcessor::SP_COAST_INV_REG::read() == 0);
+
+    // A count no source runs, held long enough for the run to give up on it.
+    seedSourceLines(97);
+    unit.pollFor(4);
+    REQUIRE(unit.acquisition.sourceIsSearching());
+
+    CHECK(SyncProcessor::SP_COAST_INV_REG::read() == 1);
+    CHECK(SyncProcessor::SP_H_CST_ST::read() == 0x10);
+    CHECK(SyncProcessor::SP_H_CST_SP::read() == 0x100);
+}
+
 TEST_CASE("a csync selection does not inherit the separate-sync pulse ignore")
 {
     // THE CSYNC BRANCH WROTE EVERY FIELD OF THE ARRANGEMENT BUT THIS ONE, so a
@@ -2802,16 +2836,8 @@ TEST_CASE("a csync selection does not inherit the separate-sync pulse ignore")
     // lines with the ADC PLL free-running until the recovery ladder repaired it
     // about fifteen seconds later.
     //
-    // **WHICH csync VALUE IS STILL READ FROM THE SOURCE BEING LEFT.**
-    // SourceMeasurement::hasSerratedSync() is lowLineRate() && isCsync(), and a
-    // selection has no measurement of the source arriving -- so a 15 kHz
-    // predecessor yields the serrated value and acquires in 4.7 s, and a
-    // 37.9 kHz one yields the unserrated value and stalls. That is why this
-    // asks only that the field belongs to the arrangement in force.
-    // docs/known-issues.md
-    //
-    // The predecessor is seedPassThroughSource(), 524 lines at 60 Hz, because a
-    // low-rate one cannot tell the two readings apart.
+    // The predecessor is seedPassThroughSource(), 524 lines at 60 Hz, so the
+    // arrangement being left is the separate-sync one.
     seedPassThroughSource();
     Acquiring unit;
     unit.path.useSyncTypeProbe(probeOwnVsync);

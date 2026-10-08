@@ -130,14 +130,18 @@ public:
 
     void applySyncProcessorDynamic();
 
-    // Take the search configuration back once the source can be counted. What
-    // ends the search is the count, and nothing writes the configuration again
-    // after it -- so without this it is what the source is then READ with, which
-    // is what the coast inversion standing after a count cost.
+    // Keep the dynamic configuration following whether the source can be
+    // counted, BOTH WAYS. An edge in front of the write, so a pass that changes
+    // nothing writes nothing.
     //
-    // Nothing else reaches it on a component source: the separator tuning that
-    // applies these settings is skipped there.
-    void takeBackSearchSettings();
+    // **A ONE-WAY TAKE-BACK LEAVES THE SEARCH CONFIGURATION UNREACHABLE.** What
+    // ends a search is the count, and nothing wrote the configuration again
+    // after one -- so a source that fell back into searching kept the settled
+    // configuration and the coast inversion with it, measured on the Wii in
+    // 480i as SP_COAST_INV_REG 0 with STATUS_SYNC_PROC_VTOTAL at 97. Nothing
+    // else reaches it on a component source: the separator tuning that applies
+    // these settings is skipped there.
+    void followSearchState();
 
     // Walk the sync separator's level for the source in force, starting from
     // what the input is due: a component source runs sync on green, which is
@@ -392,10 +396,12 @@ private:
     // of a source, so the input toggle leaves the mux alone.
     bool ownVsyncFound_;
 
-    // Whether a rung's search configuration is standing. Held rather than read
+    // Whether a dynamic configuration has been applied at all, and whether the
+    // one in force was built for a searching source. Held rather than read
     // back: the chip echoes what it was told, and half these settings are
     // indistinguishable from the ones a settled source wants.
-    bool searchApplied_;
+    bool dynamicApplied_;
+    bool dynamicForSearch_;
     SourceState sourceState_;
     uint16_t solvedLinePeriod_;
     uint8_t rateRun_;

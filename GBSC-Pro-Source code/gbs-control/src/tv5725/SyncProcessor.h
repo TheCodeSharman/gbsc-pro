@@ -270,7 +270,7 @@ public:
     // `serrated` comes in for the sub coast alone -- the coast WITHIN a line,
     // which only a source carrying serrations needs. The separation threshold
     // beside it does NOT key on it: see applyPulseIgnore().
-    static void applyForSyncType(bool csync, bool serrated);
+    static void applyForSyncType(bool csync);
 
     // The per-load sync processor setup that does not follow the sync type.
     //

@@ -25,22 +25,22 @@ using namespace Tv5725;
 static const uint8_t Poisons[2] = {0xA5, 0x5A};
 
 template <typename Field>
-static uint32_t applied(bool csync, bool serrated = false)
+static uint32_t applied(bool csync)
 {
     Wire.reset();
     Wire.poison(Poisons[0]);
-    SyncProcessor::applyForSyncType(csync, serrated);
+    SyncProcessor::applyForSyncType(csync);
     return Field::read();
 }
 
 template <typename Field>
-static bool wasWritten(bool csync, bool serrated = false)
+static bool wasWritten(bool csync)
 {
     uint32_t under[2];
     for (int i = 0; i < 2; ++i) {
         Wire.reset();
         Wire.poison(Poisons[i]);
-        SyncProcessor::applyForSyncType(csync, serrated);
+        SyncProcessor::applyForSyncType(csync);
         under[i] = Field::read();
     }
     return under[0] == under[1];
@@ -140,8 +140,7 @@ TEST_CASE("the separation threshold follows the sync type and nothing else")
     CHECK(wasWritten<SyncProcessor::SP_H_PULSE_IGNOR>(true));
     CHECK(wasWritten<SyncProcessor::SP_H_PULSE_IGNOR>(false));
 
-    CHECK(applied<SyncProcessor::SP_H_PULSE_IGNOR>(true, true) == 0x6b);
-    CHECK(applied<SyncProcessor::SP_H_PULSE_IGNOR>(true, false) == 0x6b);
+    CHECK(applied<SyncProcessor::SP_H_PULSE_IGNOR>(true) == 0x6b);
     CHECK(applied<SyncProcessor::SP_H_PULSE_IGNOR>(false) == 0xff);
 }
 
@@ -246,7 +245,7 @@ TEST_CASE("the default coast window leaves the coast lengths alone")
     // the window over must not silently undo them.
     Wire.reset();
     Wire.poison(Poisons[0]);
-    SyncProcessor::applyForSyncType(true, false);
+    SyncProcessor::applyForSyncType(true);
     const uint32_t pre = SyncProcessor::SP_PRE_COAST::read();
     const uint32_t post = SyncProcessor::SP_POST_COAST::read();
 
@@ -470,7 +469,7 @@ TEST_CASE("the composite coast pair counts a source's lines, not its serrations"
     Wire.reset();
     Wire.poison(Poisons[0]);
 
-    SyncProcessor::applyForSyncType(true, false);
+    SyncProcessor::applyForSyncType(true);
 
     CHECK(SyncProcessor::SP_PRE_COAST::read() == 7);
     CHECK(SyncProcessor::SP_POST_COAST::read() == 6);
@@ -495,7 +494,7 @@ TEST_CASE("an overridden coast is what the sync type applies")
     SyncProcessor::overrideCoast(12, 9);
 
     Wire.reset();
-    SyncProcessor::applyForSyncType(true, false);
+    SyncProcessor::applyForSyncType(true);
 
     CHECK(SyncProcessor::SP_PRE_COAST::read() == 12);
     CHECK(SyncProcessor::SP_POST_COAST::read() == 9);
@@ -524,7 +523,7 @@ TEST_CASE("forgetting the override returns the constants")
     SyncProcessor::forgetCoastOverride();
 
     Wire.reset();
-    SyncProcessor::applyForSyncType(true, false);
+    SyncProcessor::applyForSyncType(true);
 
     CHECK(SyncProcessor::SP_PRE_COAST::read() == 7);
     CHECK(SyncProcessor::SP_POST_COAST::read() == 6);
@@ -989,7 +988,7 @@ TEST_CASE("the per-load setup leaves the sync mode the sync type chose")
 {
     Wire.reset();
     Wire.poison(Poisons[0]);
-    SyncProcessor::applyForSyncType(false, false);
+    SyncProcessor::applyForSyncType(false);
 
     SyncProcessor::prepare(false);
 
@@ -1000,7 +999,7 @@ TEST_CASE("the per-load setup leaves the coast enable the sync type chose")
 {
     Wire.reset();
     Wire.poison(Poisons[0]);
-    SyncProcessor::applyForSyncType(false, false);
+    SyncProcessor::applyForSyncType(false);
 
     SyncProcessor::prepare(false);
 
@@ -1019,7 +1018,7 @@ TEST_CASE("the per-load setup leaves the overflow protect the sync type chose")
 {
     Wire.reset();
     Wire.poison(Poisons[0]);
-    SyncProcessor::applyForSyncType(false, false);
+    SyncProcessor::applyForSyncType(false);
 
     SyncProcessor::prepare(false);
 
@@ -1169,7 +1168,7 @@ TEST_CASE("the dynamic pass leaves the pulse ignore the arrangement chose")
     // rest of the window. The other two held 0x6b and acquired at 3.3 s. That
     // is the intermittency, and it is a second writer rather than a flaky part.
     Wire.reset();
-    SyncProcessor::applyForSyncType(true, true);
+    SyncProcessor::applyForSyncType(true);
     REQUIRE(SyncProcessor::SP_H_PULSE_IGNOR::read() == 0x6b);
 
     SyncProcessor::applySeparationThresholds(true);

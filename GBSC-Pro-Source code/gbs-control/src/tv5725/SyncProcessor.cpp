@@ -242,9 +242,16 @@ void SyncProcessor::applyForPassThrough()
     SP_HS2PLL_INV_REG::write(0);
 }
 
-void SyncProcessor::applyForSyncType(bool csync, bool serrated)
+void SyncProcessor::applyForSyncType(bool csync)
 {
-    setSubCoast(serrated);
+    // THE SYNC TYPE IS WHAT DECIDES THE SUB-COAST, and the line rate has no job
+    // in it. Composite sync carries equalisation and serration pulses in the
+    // vertical interval whatever the line rate, and suppressing the horizontal
+    // count through them is measured harmless at 37.6 kHz and required at 15.7;
+    // a source with its own V sync has nothing to suppress, and enabling it
+    // there lets the vertical edges into the horizontal count.
+    // ../../../docs/investigations/serrated-sync-is-not-line-rate.md
+    setSubCoast(csync);
 
     // No ordering constraint between these fields is established, so the two
     // branches keep their own write order.
