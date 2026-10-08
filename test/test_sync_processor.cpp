@@ -256,44 +256,6 @@ TEST_CASE("the default coast window leaves the coast lengths alone")
     CHECK(SyncProcessor::SP_POST_COAST::read() == post);
 }
 
-// Widening the coast, the escalation a source whose sync has gone reaches
-// before anything is reset. Serrated sync puts equalisation pulses either side
-// of the vertical interval, so the coast has to cover more lines and the
-// separator has to ignore fewer short pulses to find the real ones.
-
-TEST_CASE("widening the coast covers more lines either side of the interval")
-{
-    Wire.reset();
-    Wire.poison(Poisons[0]);
-    SyncProcessor::applyForSyncType(true, false);
-
-    SyncProcessor::widenCoastForSerration();
-
-    CHECK(SyncProcessor::SP_PRE_COAST::read() == 9);
-    CHECK(SyncProcessor::SP_POST_COAST::read() == 9);
-}
-
-TEST_CASE("widening the coast leaves the separation threshold to its owner")
-{
-    // IT WAS A SECOND WRITER, AND IT DERIVED ITS VALUE BY READING THE FIELD
-    // BACK -- halving whatever it found, so the value depended on how many times
-    // the rung had run. applyPulseIgnore() is the owner and the threshold is a
-    // pure function of the sync type; 107 is the value measured to serve every
-    // composite source, and nothing measured asks for 53.
-    //
-    // The coast LENGTHS either side of the interval are a different field and
-    // stay this one's.
-    for (uint32_t standing : {(uint32_t)0x6b, (uint32_t)0x32}) {
-        Wire.reset();
-        Wire.poison(Poisons[0]);
-        SyncProcessor::SP_H_PULSE_IGNOR::write(standing);
-
-        SyncProcessor::widenCoastForSerration();
-
-        CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == standing);
-    }
-}
-
 // Resetting the sync processor. A pulse, so the final state proves nothing and
 // the fake's write trace is the assertion: a block never taken low was never
 // reset.
@@ -323,20 +285,6 @@ TEST_CASE("resetting the sync processor takes the block low and brings it back")
 
     CHECK(wasPulsedLow(0x00, 0x47, 2));
     CHECK(Chip::SFTRST_SYNC_RSTZ::read() == 1);
-}
-
-TEST_CASE("toggling the H counter's overflow protection flips it and flips back")
-{
-    // The ladder has nothing to measure it against, so it tries the other
-    // setting periodically. That only works if the toggle is a toggle.
-    Wire.reset();
-    SyncProcessor::SP_H_PROTECT::write(0);
-
-    SyncProcessor::toggleHsyncOverflowProtect();
-    CHECK(SyncProcessor::SP_H_PROTECT::read() == 1);
-
-    SyncProcessor::toggleHsyncOverflowProtect();
-    CHECK(SyncProcessor::SP_H_PROTECT::read() == 0);
 }
 
 // The coast window: where in the line the sync processor stops counting, taken
@@ -586,25 +534,6 @@ TEST_CASE("forgetting the override returns the constants")
 
 
 
-TEST_CASE("coasting further for a serrated source leaves the pulse-ignore alone")
-{
-    // SP_H_PULSE_IGNOR has writers of its own. Widening the coast because a
-    // source's serrations are being counted must not become another one.
-    Wire.reset();
-    Wire.poison(Poisons[0]);
-    SyncProcessor::applyForSyncType(true, false);
-    SyncProcessor::SP_H_PULSE_IGNOR::write(107);
-
-    SyncProcessor::widenCoast();
-
-    const uint32_t pre = SyncProcessor::CompositePreCoastLines;
-    const uint32_t post = SyncProcessor::CompositePostCoastLines;
-
-    CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 107);
-    CHECK(SyncProcessor::SP_PRE_COAST::read() > pre);
-    CHECK(SyncProcessor::SP_POST_COAST::read() > post);
-}
-
 TEST_CASE("the pulse-width difference threshold clears the measured floor")
 {
     // Below 0x70 a serrated source is miscounted -- 307 against 310 at 0x30,
@@ -850,7 +779,6 @@ static SyncProcessor::Dynamic settled()
     SyncProcessor::Dynamic source;
     source.searching = false;
     source.present = true;
-    source.hunting = false;
     source.csync = false;
     source.pathSource = false;
     return source;
@@ -878,39 +806,31 @@ static bool dynamicWrites(const SyncProcessor::Dynamic &source)
     return under[0] == under[1];
 }
 
-TEST_CASE("a source being hunted for gets the search configuration")
+// A SOURCE THAT CANNOT BE COUNTED IS BEING SEARCHED FOR, AND THERE IS NO SECOND
+// ANSWER. The caller used to choose between the search configuration and the
+// pulse width alone, and nothing it knows could decide which: a source with no
+// measured line length wants the windows the search places, whatever the reason
+// it has none. Measured on the Wii in 480i over ypbpr, where the selection
+// asked for the lesser answer: STATUS_SYNC_PROC_VTOTAL sat at 97 for 13.65 s
+// until a recovery wrote the search configuration, after which the source
+// acquired in 1.6 s.
+TEST_CASE("a source that cannot be counted gets the search configuration")
 {
     SyncProcessor::Dynamic source = settled();
     source.searching = true;
     source.present = false;
-    source.hunting = true;
 
     Wire.reset();
     Wire.poison(Poisons[0]);
     SyncProcessor::applyDynamic(source);
 
-    // settled() hunts on separate sync, so the threshold is that arrangement's.
+    // settled() searches on separate sync, so the threshold is that
+    // arrangement's.
     CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 0xff);
     CHECK(SyncProcessor::SP_H_TIMER_VAL::read() == 0x3a);
     CHECK(SyncProcessor::SP_H_COAST::read() == 0);
     CHECK(SyncProcessor::SP_H_CST_ST::read() == 0x10);
-}
-
-TEST_CASE("a source being searched for without the hunt asked gets neither")
-{
-    // The caller that wants the hunt configuration says so. What is left is the
-    // one value every source takes, so a separator mid-search is not left
-    // configured for the source before it.
-    SyncProcessor::Dynamic source = settled();
-    source.searching = true;
-    source.present = false;
-
-    Wire.reset();
-    Wire.poison(Poisons[0]);
-    SyncProcessor::applyDynamic(source);
-
-    CHECK(SyncProcessor::SP_DLT_REG::read() == 0xC0);
-    CHECK_FALSE(dynamicWrites<SyncProcessor::SP_H_TIMER_VAL>(source));
+    CHECK(SyncProcessor::SP_H_CST_SP::read() == 0x100);
 }
 
 TEST_CASE("a source whose sync carries no vertical interval gets the thresholds")

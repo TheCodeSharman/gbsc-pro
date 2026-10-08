@@ -128,14 +128,12 @@ public:
     void placeCoastWindow(bool autoCoast);
     void placeClampWindow();
 
-    // `hunting` asks for the search configuration rather than the settled one.
-    void applySyncProcessorDynamic(bool hunting);
+    void applySyncProcessorDynamic();
 
-    // Take a rung's search configuration back once the source can be counted. The
-    // count that ends the search is also what stops any rung writing it again, so
-    // without this it is what the source is then READ with -- for the 21 s until
-    // the next rung, which is what the coast inversion standing after a count
-    // cost.
+    // Take the search configuration back once the source can be counted. What
+    // ends the search is the count, and nothing writes the configuration again
+    // after it -- so without this it is what the source is then READ with, which
+    // is what the coast inversion standing after a count cost.
     //
     // Nothing else reaches it on a component source: the separator tuning that
     // applies these settings is skipped there.
@@ -147,20 +145,14 @@ public:
     // is walked on a board that may not be there.
     static void acquireSeparatorLevel();
 
-    // Run one rung of the escalation ladder. True means the rung SETTLED the
-    // question rather than advancing it -- a lock found on the other ADC input,
-    // or a sync-type re-probe that found no V sync -- so the run restarts
-    // rather than escalating.
+    // Run one act of the recovery. True means the act SETTLED the question
+    // rather than advancing it -- a lock found on the other ADC input -- so the
+    // run restarts rather than carrying on.
     //
-    // Which rung is SyncRecovery's. The conditions here are facts about the
-    // source rather than about the position, so a rung whose precondition fails
-    // costs its turn and the list moves on.
-    bool runRecovery(SyncRecovery::Step step, bool modeSettled);
-
-    // Whether the source's vertical interval carries serrations, which is a
-    // property of composite sync at a 15 kHz line and not of either alone.
-    // docs/investigations/serrated-sync-is-not-line-rate.md
-    bool sourceHasSerratedSync() const;
+    // Which act is SyncRecovery's. The conditions here are facts about the
+    // source rather than about the clock, so an act whose precondition fails
+    // costs its turn.
+    bool runRecovery(SyncRecovery::Act act);
 
     // Whether detection may cross to the other connector. An explicit
     // selection is a command: a chosen input is selected whether it has a
@@ -218,17 +210,16 @@ public:
 
     SourceState sourceState() const;
 
-    // Which recovery the escalation ladder is due, from this class's own run of
-    // failed passes. The count lives here because the measurement that decides
-    // it does: rto->noSyncCounter advanced on a source the engine calls
-    // present, and walked the ADC and the sync processor off it.
+    // Which act the recovery is due, from this class's own run of failed passes.
+    // The timer lives here because the measurement that decides it does:
+    // rto->noSyncCounter advanced on a source the engine calls present, and
+    // walked the ADC and the sync processor off it.
     // docs/investigations/the-sketch-hunts-while-the-engine-is-locked.md
-    SyncRecovery::Step recoveryDue() const;
+    SyncRecovery::Act recoveryDue() const;
 
-    // The run starts again, for a rung that settled the question rather than
-    // advancing it -- a lock found on the other ADC input, or a sync-type
-    // re-probe that found no V sync. Whether a step settled anything is the
-    // caller's to say; the count cannot tell.
+    // The run starts again, for an act that settled the question rather than
+    // advancing it -- a lock found on the other ADC input. Whether an act
+    // settled anything is the caller's to say; the timer cannot tell.
     void restartRecovery();
 
     // The two halves of the same run, counted off the same measurement. Passes
@@ -381,9 +372,8 @@ private:
     // The other ADC input, kept only if something locks there quickly.
     static bool tryOtherAdcInput();
 
-    // The separator walk, reopened. `reopen` takes the walk's place with the
-    // separator fully open, for a caller that has run out of walks.
-    static void reacquireSeparator(bool reopen);
+    // The separator walk, from the level the input is due.
+    static void reacquireSeparator();
     bool passThroughAllowed_;
     const Tv5725::OutputMode *resolution_;
     uint32_t detectedMs_;
@@ -449,31 +439,24 @@ private:
     // Consecutive passes that did not reach an acquired source.
     uint16_t unmeasuredPasses_;
     uint16_t acquiredPasses_;
-    // How far the escalation has got, which is a different fact from how long
-    // since a measurement: the one above climbs legitimately while a source is
-    // being acquired and this must not move then.
-    uint16_t recoveryPosition_;
 
-    // Whether the pass just run could measure the source's rate. Per pass, not
-    // held: what it gates is whether that pass counts toward escalating.
+    // When the current run of non-acquisition started, and how long it has run.
+    // A WALL CLOCK RATHER THAN THE PASS COUNT: passes are missed wherever
+    // loop() stalls, so a count under-reads the time a source has been missing
+    // and the acquisition budget is what the recovery is timed against.
+    // unmeasuredPasses_ at 0 is what says the timer is not running.
+    uint32_t unacquiredSinceMs_;
+    uint32_t unacquiredForMs_;
+
+    // The act whose window the run is in, and the one already run in it. An act
+    // is due on the EDGE: without this it would run every pass of the ten
+    // seconds it is given to work in.
+    SyncRecovery::Act actDue_;
+    SyncRecovery::Act actRun_;
+
+    // Whether the pass just run could measure the source's rate.
     bool sourceMeasured_;
-    // Whether the engine has yet had its chance at the source now selected. A
-    // component acquisition takes about ten seconds and a pass is 20 ms, so
-    // every rung to FullReset falls due DURING an ordinary selection, tearing
-    // down the sync path the engine is still solving through.
-    bool firstAcquisition_;
 
-    // How long that hold lasts. It exists so the ladder does not tear down a
-    // sync path an ordinary selection is still solving through, which is a
-    // bounded job -- 4.4 to 6.8 s on a component source, measured -- while
-    // FullReset is the only thing that resets the sync processor block, and a
-    // block that has wedged is recoverable by nothing else.
-    // ../../../../docs/known-issues.md
-    static const uint32_t FirstAcquisitionGraceMs = 15000;
-
-
-    bool firstAcquisitionTimed_;
-    uint32_t firstAcquisitionMs_;
     VideoSourceSelection::Id selectionSeen_;
     bool runAdvanced_;
 };

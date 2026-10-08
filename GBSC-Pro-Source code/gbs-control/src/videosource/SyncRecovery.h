@@ -1,32 +1,24 @@
 #ifndef VIDEOSOURCE_SYNC_RECOVERY_H_
 #define VIDEOSOURCE_SYNC_RECOVERY_H_
 
-// The escalation ladder as an ordered list of named recoveries, one per
-// position, rather than a run of moduli on a counter.
+// What to try on a source that is not arriving, as three acts on a timer.
 //
-// It sits beside VideoSourceAcquisition rather than under Tv5725:: because a
-// rung is an act of ACQUISITION, not a register block: every step names an
-// operation one of the chip classes performs, and none of them is this one's
-// to write. The class that holds the tick is the one that asks which step is
-// due.
+// It sits beside VideoSourceAcquisition rather than under Tv5725:: because an
+// act is a step of ACQUISITION, not a register block: each one names operations
+// the chip classes perform, and none of them is this one's to write. The class
+// that holds the tick is the one that asks which act is due.
 //
-// **THE MODULI CARRIED TWO FACTS AND ONLY ONE WAS INTENDED.** `% 27` says both
-// "third in the order" and "again for ever", and the second is what makes the
-// list unreadable: rungs interleaved by accident of their periods, so which
-// recovery had been tried by a given count could not be read off the code. That
-// is also why a gate cannot open in front of the ladder as it stands -- letting
-// the counter advance where it used to sit pinned starts rungs that never ran.
+// **THESE ARE THE THREE ACTS NO RECONFIGURE CAN PERFORM FOR ITSELF**, which is
+// what makes the list this length. Reconfiguring is everything a selection
+// does; resetting the blocks is what is left when a configuration cannot take;
+// moving the mux is the guess of last resort.
 //
-// So each step fires ONCE at its position. The positions are today's first-fire
-// counts, unchanged, so the first pass through the list keeps the timing that
-// was tuned on the bench; what goes is the repetition.
-//
-// **THE LIST CYCLES, because a source that is genuinely unplugged needs it to.**
-// The moduli never stopped, and stopping would leave a unit that had been
-// switched off and on again with no way back. Cycling keeps that while making a
-// position mean something, and it costs nothing extra: the input toggle is the
-// last step, so it stays the rarest thing the ladder does, which is what its
-// `% 413` was buying.
+// **AN ACT IS A SELECTION'S WORTH OF WORK, SO IT GETS A SELECTION'S WORTH OF
+// TIME.** A recovery fired into an acquisition that was working is what the
+// timer exists to prevent, and it costs nothing to wait: the per-pass
+// machinery -- the separator tuning, the search settings taken back on the
+// first count, the maintenance a settled source is due -- is what recovers a
+// momentary loss, not this.
 //
 // docs/video-source-acquisition.md, "Escalation".
 
@@ -34,62 +26,36 @@
 
 class SyncRecovery {
 public:
-    // One named recovery each, in the order they are tried.
-    enum Step : uint8_t {
+    enum Act : uint8_t {
         None = 0,
-        LiftSogFloor,           // the separator is on its floor and sync is serrated
-        CoastWindow,            // default coast, widened for serration
-        SyncProcessorDynamic,   // re-apply the dynamic sync-processor settings
-        ReleaseCapture,         // the write FIFO is holding a frame
-        HoldClamp,              // component sources, whose clamp can sit wrong
-        NudgeModeDetect,        // move the thresholds off a boundary
-        HsyncOverflowProtect,   // csync only
-        RestartSamplingClock,   // the ADC PLL is unlocked, so nothing counts
-        FullReset,              // sync processor and Mode Detect, with the windows
-        ReprobeSyncType,        // ask whether the source has its own V sync
-        ToggleInput,            // the guess of last resort: the other ADC input
-        ReopenSogSeparator,     // walks exhausted: reopen the separator fully
+        Reconfigure,    // everything a selection does, to a path nothing counts
+        ResetBlocks,    // the sync processor, Mode Detect and a held capture
+        MoveInput,      // the other ADC input
     };
 
-    // Nothing escalates on the first failed pass. One dropped measurement is not
-    // a source going away, and the free pass is what stops a single one costing
-    // a recovery.
-    static const uint16_t FirstEscalationPass = 2;
+    // How long a source gets to arrive before anything is recovered. It is the
+    // acquisition BUDGET: a source change is allowed ten seconds to the picture
+    // being shown, so a source still absent at ten has spent it.
+    static const uint32_t FirstActMs = 10000;
 
-    // Where the list restarts. One past the last step's position, so the last
-    // step fires at its own count rather than at zero.
-    static const uint16_t CycleLength = 451;
+    // How long each act is given to show its effect before the next judges it.
+    // The same budget, because an act is a selection's worth of work.
+    static const uint32_t ActIntervalMs = FirstActMs;
 
-    // The step due after this many consecutive failed passes, or None. Pure:
-    // the caller still decides whether that step's own precondition holds --
-    // serrated sync, a component input, csync -- because those are facts about
-    // the source rather than about the position.
-    static Step stepAt(uint16_t passes);
-
-    // The position of the first rung that DISTURBS the sync path rather than
-    // configuring it.
+    // The act due after this long without an acquired source. Pure: the caller
+    // still decides whether the act's own precondition holds -- a mux it is
+    // allowed to move, a source whose V sync proves it is there -- because those
+    // are facts about the source rather than about the clock.
     //
-    // Below it every rung writes a setting the source may need before it can be
-    // counted at all -- the coast window, the separation thresholds, the clamp,
-    // the mode-detect thresholds. From here up the ladder switches the
-    // separator out to ask its question, restarts the ADC PLL, resets the sync
-    // processor block and moves the ADC input, none of which may happen under a
-    // caller still solving through that path.
-    //
-    // The re-probe is the first because it takes the separator out of circuit
-    // to answer, which the chip latches as a SOG switch. The split is what the
-    // first acquisition's grace defers, so a source is configured promptly and
-    // disturbed only once the grace is over.
-    static uint16_t firstDisruptivePass();
+    // It names the act whose window the reading falls in rather than firing one,
+    // so the caller acts on the EDGE: an act that has run holds its window
+    // without running again.
+    static Act actAt(uint32_t unacquiredMs);
 
-    // The position each step occupies, for a caller that wants to say how far
-    // the ladder has got. 0 for None.
-    static uint16_t positionOf(Step step);
-
-    // What to call a step in a diagnostic. Every rung is a register write made
-    // to a source nobody can see, so without this a unit that has been hunting
-    // for a minute gives no account of what it has already tried.
-    static const char *nameOf(Step step);
+    // What to call an act in a diagnostic. Every act is a register write made to
+    // a source nobody can see, so without this a unit that has been hunting for
+    // a minute gives no account of what it has already tried.
+    static const char *nameOf(Act act);
 };
 
 

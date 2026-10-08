@@ -35,9 +35,9 @@ VideoSourceAcquisition::VideoSourceAcquisition(Tv5725::SourceMeasurement &sampli
       sourceInterrupted_(false),
       unsettledPasses_(0), unsettledArmed_(false),
       vsyncAbsentPasses_(0), vsyncAbsentArmed_(false),
-      unmeasuredPasses_(0), acquiredPasses_(0), recoveryPosition_(0),
-      firstAcquisition_(true), firstAcquisitionTimed_(false),
-      firstAcquisitionMs_(0),
+      unmeasuredPasses_(0), acquiredPasses_(0),
+      unacquiredSinceMs_(0), unacquiredForMs_(0),
+      actDue_(SyncRecovery::None), actRun_(SyncRecovery::None),
       selectionSeen_(VideoSourceSelection::selected()),
       runAdvanced_(false) {}
 
@@ -65,10 +65,6 @@ void VideoSourceAcquisition::useWatchdogFeed(void (*feed)())
 
 void VideoSourceAcquisition::allowMaintenance(bool allowed)
 {
-    // Withdrawn after being granted is detection giving up on the source, which
-    // is the engine's chance spent: the ladder is warranted from here.
-    if (maintenanceAllowed_ && !allowed)
-        firstAcquisition_ = false;
     maintenanceAllowed_ = allowed;
 }
 
@@ -603,52 +599,19 @@ bool VideoSourceAcquisition::poll(uint32_t nowMs)
 
     if (sourceState_ == SourceAcquired) {
         unmeasuredPasses_ = 0;
-        recoveryPosition_ = 0;
-        firstAcquisition_ = false;
-        firstAcquisitionTimed_ = false;
+        unacquiredForMs_ = 0;
+        actDue_ = SyncRecovery::None;
+        actRun_ = SyncRecovery::None;
         if (acquiredPasses_ < AcquiredPassCeiling)
             ++acquiredPasses_;
     } else {
         acquiredPasses_ = 0;
-        unmeasuredPasses_ = (uint16_t)((unmeasuredPasses_ + 1) % SyncRecovery::CycleLength);
-        if (firstAcquisition_) {
-            if (!firstAcquisitionTimed_) {
-                firstAcquisitionTimed_ = true;
-                firstAcquisitionMs_ = nowMs;
-            } else if (nowMs - firstAcquisitionMs_ >= FirstAcquisitionGraceMs) {
-                firstAcquisition_ = false;
-            }
-        }
-        // THE GRACE DEFERS THE DISTURBANCE, NOT THE CONFIGURATION. Held at 0 for
-        // the whole window it also withheld the coast window and the
-        // separation thresholds, which a sync-on-green source needs before the
-        // sync processor can count it at all -- so the engine spent the window
-        // waiting for a recovery to do what the selection should have done.
-        // Measured on the Wii in 480i: STATUS_SYNC_PROC_VTOTAL pinned at 97 for
-        // 13.65 s, then passes 2..38 in 1.6 s and acquired.
-        //
-        // Clamped rather than wrapped, so each configuring rung fires once and
-        // the position then rests where no rung sits. The disruptive rungs stay
-        // behind the window, which is the whole of what it was protecting.
-        //
-        // **A PASS THAT MEASURED THE SOURCE IS PROGRESS, AND PROGRESS IS NOT A
-        // REASON TO ESCALATE.** The count above climbs on every pass that has not
-        // reached an ACQUIRED source, which a healthy selection spends several of:
-        // measured on a ypbpr selection, the engine read 263 lines at 15576 Hz and
-        // installed its divider at 2.16 s, and `coast window at pass 8` reset that
-        // window and halved the separation threshold at 2.18 s -- after which the
-        // count read 271 and STATUS_SYNC_PROC_HTOTAL 3268 against a 2200 divider.
-        //
-        // Bounded by the grace rather than open-ended, so a source that measures
-        // and still never acquires reaches the disruptive rungs as before.
-        if (firstAcquisition_) {
-            if (!sourceMeasured_
-                && recoveryPosition_ + 1 < SyncRecovery::firstDisruptivePass())
-                ++recoveryPosition_;
-        } else {
-            recoveryPosition_ =
-                (uint16_t)((recoveryPosition_ + 1) % SyncRecovery::CycleLength);
-        }
+        if (unmeasuredPasses_ == 0)
+            unacquiredSinceMs_ = nowMs;
+        if (unmeasuredPasses_ < AcquiredPassCeiling)
+            ++unmeasuredPasses_;
+        unacquiredForMs_ = nowMs - unacquiredSinceMs_;
+        actDue_ = SyncRecovery::actAt(unacquiredForMs_);
     }
 
     // Ungated: an output left away is a dark panel, and whether maintenance is
@@ -745,7 +708,7 @@ void VideoSourceAcquisition::keepSourceComing(uint32_t nowMs)
         if (tuning.sourceUnsettled)
             report_.vsyncLockStale = true;
         if (tuning.levelMoved)
-            applySyncProcessorDynamic(false);
+            applySyncProcessorDynamic();
         if (tuning.phaseStale)
             Tv5725::Adc::forgetPhase();
     }
@@ -760,15 +723,14 @@ void VideoSourceAcquisition::keepSourceComing(uint32_t nowMs)
     serviceChannelSync(nowMs);
 }
 
-SyncRecovery::Step VideoSourceAcquisition::recoveryDue() const
-{
-    return SyncRecovery::stepAt(recoveryPosition_);
-}
+SyncRecovery::Act VideoSourceAcquisition::recoveryDue() const { return actDue_; }
 
 void VideoSourceAcquisition::restartRecovery()
 {
     unmeasuredPasses_ = 0;
-    recoveryPosition_ = 0;
+    unacquiredForMs_ = 0;
+    actDue_ = SyncRecovery::None;
+    actRun_ = SyncRecovery::None;
     ownVsyncFound_ = false;
 }
 
@@ -778,9 +740,7 @@ bool VideoSourceAcquisition::selectionMoved()
     if (chosenNow == selectionSeen_)
         return false;
     selectionSeen_ = chosenNow;
-    firstAcquisition_ = true;
-    firstAcquisitionTimed_ = false;
-    recoveryPosition_ = 0;
+    restartRecovery();
     return true;
 }
 
@@ -973,10 +933,10 @@ void VideoSourceAcquisition::takeBackSearchSettings()
         return;
 
     searchApplied_ = false;
-    applySyncProcessorDynamic(false);
+    applySyncProcessorDynamic();
 }
 
-void VideoSourceAcquisition::applySyncProcessorDynamic(bool hunting)
+void VideoSourceAcquisition::applySyncProcessorDynamic()
 {
     if (!Tv5725::Chip::hasPower())
         return;
@@ -984,21 +944,15 @@ void VideoSourceAcquisition::applySyncProcessorDynamic(bool hunting)
     Tv5725::SyncProcessor::Dynamic source;
     source.searching = sourceIsSearching();
     source.present = sourceIsPresent();
-    source.hunting = hunting;
     source.csync = Tv5725::SyncMeasurement::isCsync();
     source.pathSource =
         VideoSourceSelection::isRgbhv(VideoSourceSelection::selected())
         || Tv5725::VideoRoute::isHdBypassChannel();
 
-    if (hunting && source.searching)
+    if (source.searching)
         searchApplied_ = true;
 
     Tv5725::SyncProcessor::applyDynamic(source);
-}
-
-bool VideoSourceAcquisition::sourceHasSerratedSync() const
-{
-    return sampling_.hasSerratedSync();
 }
 
 bool VideoSourceAcquisition::mayChangeInput()
@@ -1019,10 +973,10 @@ void VideoSourceAcquisition::acquireSeparatorLevel()
     Tv5725::SyncOnGreen::acquire(clock_, Tv5725::SyncOnGreen::putInForce);
 }
 
-void VideoSourceAcquisition::reacquireSeparator(bool reopen)
+void VideoSourceAcquisition::reacquireSeparator()
 {
     Tv5725::SyncOnGreen::reacquire(acquireSeparatorLevel,
-                                   Tv5725::SyncOnGreen::putInForce, reopen);
+                                   Tv5725::SyncOnGreen::putInForce);
 }
 
 bool VideoSourceAcquisition::tryOtherAdcInput()
@@ -1046,84 +1000,48 @@ bool VideoSourceAcquisition::tryOtherAdcInput()
     return false;
 }
 
-bool VideoSourceAcquisition::runRecovery(SyncRecovery::Step step, bool modeSettled)
+bool VideoSourceAcquisition::runRecovery(SyncRecovery::Act act)
 {
-    switch (step) {
+    switch (act) {
     case SyncRecovery::None:
         break;
 
-    case SyncRecovery::LiftSogFloor:
-        if (modeSettled && sourceHasSerratedSync())
-            Tv5725::SyncOnGreen::liftOffFloor(Tv5725::SyncOnGreen::putInForce);
-        break;
+    case SyncRecovery::Reconfigure:
+        // EVERYTHING A SELECTION DOES, in a selection's order: the sync type
+        // decides what the block counts, the search configuration places the
+        // windows it counts through, and the ADC PLL is restarted last because
+        // the sync processor counts in ADC clocks.
+        //
+        // A V sync arriving is proof of a SOURCE, which is a reason not to move
+        // the mux out from under it -- the next act's precondition.
+        ownVsyncFound_ = !videoPath_.reacquireSyncType();
+        if (ownVsyncFound_)
+            tv5725Log("recovery: own V sync found, the input stays");
 
-    case SyncRecovery::CoastWindow:
-        Tv5725::SyncProcessor::applyDefaultCoastWindow();
-        if (sourceHasSerratedSync())
-            Tv5725::SyncProcessor::widenCoastForSerration();
-        Tv5725::SyncProcessor::forgetPositions();
-        break;
-
-    case SyncRecovery::SyncProcessorDynamic:
-        applySyncProcessorDynamic(true);
-        break;
-
-    case SyncRecovery::ReleaseCapture:
-        if (Tv5725::SyncProcessor::hsyncActive())
-            Tv5725::FrameBuffer::releaseCapture();
-        break;
-
-    case SyncRecovery::HoldClamp:
-        if (Tv5725::Adc::inputIsComponent()) {
-            Tv5725::SyncProcessor::holdClamp();
-            Tv5725::SyncProcessor::forgetPositions();
-        }
-        break;
-
-    case SyncRecovery::NudgeModeDetect:
+        applySyncProcessorDynamic();
+        Tv5725::SyncProcessor::applyDefaultClampWindow();
+        Tv5725::SyncProcessor::holdClamp();
         Tv5725::ModeDetect::nudge();
-        break;
-
-    case SyncRecovery::HsyncOverflowProtect:
-        if (Tv5725::SyncMeasurement::isCsync())
-            Tv5725::SyncProcessor::toggleHsyncOverflowProtect();
-        break;
-
-    case SyncRecovery::RestartSamplingClock:
+        reacquireSeparator();
         videoPath_.restartSamplingClock();
         break;
 
-    case SyncRecovery::FullReset:
-        Tv5725::SyncProcessor::setHsyncOverflowProtect(false);
-        Tv5725::SyncProcessor::applyDefaultCoastWindow();
-        Tv5725::SyncProcessor::applyDefaultClampWindow();
-        applySyncProcessorDynamic(true);
-        Tv5725::ModeDetect::nudge();
-        delay(80);
-        reacquireSeparator(false);
+    case SyncRecovery::ResetBlocks:
+        // What no reconfigure can do for itself. Measured on the Wii at 480p
+        // over ypbpr: the configuration reads correct throughout and the block
+        // still counts 100 lines with the ADC PLL unlocked, until a
+        // SFTRST_SYNC_RSTZ pulse clears it.
+        if (Tv5725::SyncProcessor::hsyncActive())
+            Tv5725::FrameBuffer::releaseCapture();
         Tv5725::SyncProcessor::reset();
         delay(8);
         Tv5725::ModeDetect::reset();
         delay(8);
         break;
 
-    case SyncRecovery::ReprobeSyncType:
-        // A V sync arriving is proof of a SOURCE, which is a reason not to move
-        // the mux out from under it -- the input toggle's precondition, not the
-        // whole ladder's. Restarting the run here capped the ladder at this
-        // rung, because a separate-sync source answers yes on every cycle.
-        ownVsyncFound_ = !videoPath_.reacquireSyncType();
-        if (ownVsyncFound_)
-            tv5725Log("recovery: own V sync found, the input stays");
-        break;
-
-    case SyncRecovery::ToggleInput:
+    case SyncRecovery::MoveInput:
         if (!ownVsyncFound_ && mayChangeInput())
             return tryOtherAdcInput();
-        break;
-
-    case SyncRecovery::ReopenSogSeparator:
-        reacquireSeparator(true);
         break;
     }
     return false;
@@ -1140,15 +1058,21 @@ void VideoSourceAcquisition::recoverSource()
 
     Tv5725::Adc::forgetPhase();
 
-    const SyncRecovery::Step due = recoveryDue();
-    if (due != SyncRecovery::None) {
-        char line[64];
-        snprintf(line, sizeof(line), "recovery: %s at pass %u",
-                 SyncRecovery::nameOf(due), (unsigned)recoveryPosition_);
-        tv5725Log(line);
-    }
+    // On the EDGE of the act's window, so an act runs once rather than on every
+    // pass of the ten seconds it is given to work in.
+    const SyncRecovery::Act due = recoveryDue();
+    if (due == actRun_)
+        return;
+    actRun_ = due;
+    if (due == SyncRecovery::None)
+        return;
 
-    if (runRecovery(due, true)) {
+    char line[64];
+    snprintf(line, sizeof(line), "recovery: %s after %us",
+             SyncRecovery::nameOf(due), (unsigned)(unacquiredForMs_ / 1000));
+    tv5725Log(line);
+
+    if (runRecovery(due)) {
         restartRecovery();
         tv5725Log("No Signal Out");
     }
@@ -1172,7 +1096,7 @@ void VideoSourceAcquisition::maintainSource()
         Tv5725::SyncProcessor::forgetPositions();
 
     if (due.syncProcessorDynamic)
-        applySyncProcessorDynamic(false);
+        applySyncProcessorDynamic();
 
     if (due.sogLevel) {
         delay(20);

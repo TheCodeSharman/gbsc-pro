@@ -38,14 +38,10 @@ void SyncProcessor::driveTestBus(uint8_t module, uint8_t signal)
 
 namespace {
 
-// How many lines either side of the vertical interval a serrated source is
-// coasted over, and the pulse-ignore width at or above which a real sync pulse
-// can be hiding behind it.
 // How long the soft reset is held. 10 us is 270 cycles of the 27 MHz
 // reference, which is what the block sees the reset for.
 const unsigned int ResetHoldUs = 10;
 
-const uint8_t SerratedCoastLines = 9;
 const uint16_t PulseWidthDifference = 0xC0;
 bool coastPlaced_ = false;
 bool clampPlaced_ = false;
@@ -160,17 +156,6 @@ void SyncProcessor::applyPulseWidthDifference()
     SP_DLT_REG::write(PulseWidthDifference);
 }
 
-void SyncProcessor::widenCoast()
-{
-    SP_PRE_COAST::write(SerratedCoastLines);
-    SP_POST_COAST::write(SerratedCoastLines);
-}
-
-void SyncProcessor::widenCoastForSerration()
-{
-    widenCoast();
-}
-
 void SyncProcessor::applyForSearch(bool csync)
 {
     applyPulseWidthDifference();
@@ -193,10 +178,7 @@ void SyncProcessor::applyDynamic(const Dynamic &source)
         setCoastInvert(source.searching);
 
     if (source.searching) {
-        if (source.hunting)
-            applyForSearch(source.csync);
-        else
-            applyPulseWidthDifference();
+        applyForSearch(source.csync);
         return;
     }
 
@@ -513,11 +495,6 @@ void SyncProcessor::clampFromReferenceClock()
 void SyncProcessor::setHsyncOverflowProtect(bool wanted)
 {
     SP_H_PROTECT::write(wanted ? 1 : 0);
-}
-
-void SyncProcessor::toggleHsyncOverflowProtect()
-{
-    SP_H_PROTECT::write(SP_H_PROTECT::read() ? 0 : 1);
 }
 
 void SyncProcessor::setCoastInvert(bool wanted)

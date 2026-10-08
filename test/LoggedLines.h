@@ -12,12 +12,18 @@ std::vector<std::string> g_logLines;
 
 void tv5725Log(const char *line) { g_logLines.push_back(line); }
 
-static bool loggedContaining(const char *text)
+static unsigned loggedCountContaining(const char *text)
 {
+    unsigned seen = 0;
     for (size_t i = 0; i < g_logLines.size(); ++i)
         if (g_logLines[i].find(text) != std::string::npos)
-            return true;
-    return false;
+            ++seen;
+    return seen;
+}
+
+static bool loggedContaining(const char *text)
+{
+    return loggedCountContaining(text) > 0;
 }
 
 #endif  // TEST_LOGGED_LINES_H_

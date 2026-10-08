@@ -210,48 +210,8 @@ TEST_CASE("the coarse pass leaves a sync separator out of the sync path alone")
     CHECK(SyncOnGreen::level() == 7);   // left where it was, not reset
 }
 
-// Lifting the level off the floor, the first thing tried when sync has only
-// just gone. The walk leaves the level at the floor when nothing it tried
-// worked, and a separator that far open slices noise as sync.
-
-TEST_CASE("a level at the floor is lifted one step")
-{
-    seedSlicer(1, 0x05);
-    SyncMeasurement::set(true);
-    SyncOnGreen::choose(1);
-
-    SyncOnGreen::liftOffFloor(putInForce);
-
-    CHECK(SyncOnGreen::level() == 2);
-    CHECK(g_inForce == 1);
-}
-
-TEST_CASE("a level with room to step is left where it is")
-{
-    seedSlicer(1, 0x05);
-    SyncMeasurement::set(true);
-    SyncOnGreen::choose(2);
-
-    SyncOnGreen::liftOffFloor(putInForce);
-
-    CHECK(SyncOnGreen::level() == 2);
-    CHECK(g_inForce == 0);
-}
-
-TEST_CASE("a sync separator out of the sync path is not lifted")
-{
-    seedSlicer(1, 0x05);
-    SyncMeasurement::set(false);
-    SyncOnGreen::choose(1);
-
-    SyncOnGreen::liftOffFloor(putInForce);
-
-    CHECK(SyncOnGreen::level() == 1);
-    CHECK(g_inForce == 0);
-}
-
-// Re-acquiring the level, the escalation ladder's rung. Judged on whether the
-// sync separator's own output moves at all: a measured line length that never
+// Re-acquiring the level, which the recovery's reconfigure runs. Judged on
+// whether the sync separator's own output moves at all: a measured line length that never
 // changes across a run of reads is a separator slicing nothing, and no walk can
 // find a threshold from evidence that is not there.
 
@@ -275,7 +235,7 @@ TEST_CASE("a sync separator out of the sync path is not re-acquired")
     SyncMeasurement::set(false);
     SyncOnGreen::choose(7);
 
-    SyncOnGreen::reacquire(countWalk, putInForce, false);
+    SyncOnGreen::reacquire(countWalk, putInForce);
 
     CHECK(g_walks == 0);
     CHECK(SyncOnGreen::level() == 7);
@@ -287,7 +247,7 @@ TEST_CASE("a sync separator whose output moves is handed to the walk")
     SyncMeasurement::set(true);
     SyncOnGreen::choose(11);
 
-    SyncOnGreen::reacquire(countWalk, putInForce, false);
+    SyncOnGreen::reacquire(countWalk, putInForce);
 
     CHECK(g_walks == 1);
     CHECK(SyncOnGreen::level() == 11);
@@ -299,7 +259,7 @@ TEST_CASE("a sync separator whose output is frozen is parked rather than walked"
     SyncMeasurement::set(true);
     SyncOnGreen::choose(11);
 
-    SyncOnGreen::reacquire(countWalk, putInForce, false);
+    SyncOnGreen::reacquire(countWalk, putInForce);
 
     CHECK(g_walks == 0);
     CHECK(SyncOnGreen::level() == SyncOnGreen::FrozenLevel);
@@ -314,23 +274,10 @@ TEST_CASE("an ADC PLL held in reset is not evidence the output is frozen")
     SyncMeasurement::set(true);
     SyncOnGreen::choose(11);
 
-    SyncOnGreen::reacquire(countWalk, putInForce, false);
+    SyncOnGreen::reacquire(countWalk, putInForce);
 
     CHECK(g_walks == 1);
     CHECK(SyncOnGreen::level() == 11);
-}
-
-TEST_CASE("re-opening the sync separator takes the walk's place, not its result")
-{
-    seedLineLength(1, true, false);
-    SyncMeasurement::set(true);
-    SyncOnGreen::choose(11);
-
-    SyncOnGreen::reacquire(countWalk, putInForce, true);
-
-    CHECK(g_walks == 0);
-    CHECK(SyncOnGreen::level() == 0);
-    CHECK(SyncOnGreen::ADC_SOGCTRL::read() == 0);
 }
 
 // The tuning pass: run while a source is acquired, it steps the level down

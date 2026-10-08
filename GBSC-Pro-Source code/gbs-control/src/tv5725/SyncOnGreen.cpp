@@ -205,17 +205,7 @@ void SyncOnGreen::acquire(uint32_t (*nowMs)(), void (*putInForce)())
     }
 }
 
-void SyncOnGreen::liftOffFloor(void (*putInForce)())
-{
-    if (!inSyncPath() || level_ >= LowestSteppable)
-        return;
-
-    choose((uint8_t)(level_ + 1));
-    putInForce();
-    delay(StepSettleMs);
-}
-
-void SyncOnGreen::reacquire(void (*walk)(), void (*putInForce)(), bool reopen)
+void SyncOnGreen::reacquire(void (*walk)(), void (*putInForce)())
 {
     if (!inSyncPath())
         return;
@@ -226,12 +216,7 @@ void SyncOnGreen::reacquire(void (*walk)(), void (*putInForce)(), bool reopen)
 
     for (uint8_t read = 0; read < LivenessReads; ++read) {
         if (Tv5725::STATUS_SYNC_PROC_HLOW_LEN::read() != first) {
-            if (reopen) {
-                choose(0);
-                putInForce();
-            } else {
-                walk();
-            }
+            walk();
             return;
         }
         delay(0);

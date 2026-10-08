@@ -360,18 +360,6 @@ public:
     static uint8_t preCoastLines();
     static uint8_t postCoastLines();
 
-    // Coast further for a serrated source whose sync has gone. Equalisation
-    // pulses sit either side of the vertical interval, so the coast has to cover
-    // more lines than the sync type asked for.
-    static void widenCoastForSerration();
-
-    // Coast further either side of the vertical interval, and nothing else.
-    // Margin over the default rather than a searched minimum: the pair that
-    // measures a source is not reproducible between runs, so a value that
-    // measured clean once is not safe to settle on.
-    // docs/investigations/two-owners-of-the-coast-lengths-double-the-count.md
-    static void widenCoast();
-
     // How different a pulse width must be to read as vertical. ONE value for
     // every source: a serrated source is miscounted below 0x70 and reads
     // identically at every value above it, and a separate-sync source is
@@ -419,7 +407,6 @@ public:
     struct Dynamic {
         bool searching;
         bool present;
-        bool hunting;
         bool csync;
         bool pathSource;
     };
@@ -673,16 +660,11 @@ public:
     // which is what every path here asks for.
     static void clampFromReferenceClock();
 
-    // The H counter's overflow protection. Nothing on the board measures
-    // whether it is helping, so the ladder tries the other setting
-    // periodically -- which is the toggle rather than a read and a write.
-    //
-    // applyForSyncType() is the one owner of the value a setup leaves: with no
-    // measurement to settle it, a second writer is a disagreement nothing can
-    // adjudicate.
+    // The H counter's overflow protection. applyForSyncType() is the one owner
+    // of the value a setup leaves: nothing on the board measures whether it is
+    // helping, so a second writer is a disagreement nothing can adjudicate.
     // ../../../../docs/investigations/the-overflow-protect-had-four-writers.md
     static void setHsyncOverflowProtect(bool wanted);
-    static void toggleHsyncOverflowProtect();
 
 
     // HSOUT/VSOUT, taken away while a mode change is outstanding and given back

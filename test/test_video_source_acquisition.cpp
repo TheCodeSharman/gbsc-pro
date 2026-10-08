@@ -144,6 +144,15 @@ struct Acquiring {
         return false;
     }
 
+    // Poll for a stretch of the fake clock, for a case whose threshold is a
+    // duration rather than a run.
+    void pollForMs(uint32_t ms)
+    {
+        for (uint32_t elapsed = 0; elapsed < ms;
+             elapsed += VideoSourceAcquisition::DetectionIntervalMs)
+            poll();
+    }
+
     void pollFor(uint8_t runs)
     {
         for (uint16_t i = 0;
@@ -1209,6 +1218,8 @@ TEST_CASE("a count that never settles leaves the divider the source was solved o
     // The real 640x480 -> 320x256 leg is the opposite case, a count that is
     // wrong BECAUSE the divider is the previous mode's. The correction against
     // the divider in force resolves that, which is where it is tested.
+    //
+    // Long enough that every recovery act has come round twice.
     seedBenchSource();
     seedLineSamples(BenchDivider);
     Acquiring unit;
@@ -1216,7 +1227,9 @@ TEST_CASE("a count that never settles leaves the divider the source was solved o
     REQUIRE(unit.pollUntilSolved());
     REQUIRE(Adc::PLLAD_MD::read() == BenchDivider);
 
-    for (uint16_t i = 0; i < 2 * SyncRecovery::CycleLength; ++i) {
+    for (uint16_t i = 0;
+         i < 2 * (SyncRecovery::FirstActMs + 3 * SyncRecovery::ActIntervalMs)
+                 / VideoSourceAcquisition::DetectionIntervalMs; ++i) {
         seedSourceLines((uint16_t)(191 + (i % 64)));
         unit.poll();
     }
@@ -1226,12 +1239,12 @@ TEST_CASE("a count that never settles leaves the divider the source was solved o
 }
 
 // A probe that finds own V sync used to put the pass counter back to 2, and it
-// finds one on every cycle of a separate-sync source, so the ladder could never
-// escalate past the re-probe's position -- a livelock rather than slow
-// progress. Own V sync is proof of a SOURCE, which is a reason not to toggle
-// the input; it is not a reason to forget what has already been tried.
+// finds one on every cycle of a separate-sync source, so the recovery could
+// never get past the re-probe -- a livelock rather than slow progress. Own V
+// sync is proof of a SOURCE, which is a reason not to move the mux; it is not a
+// reason to forget what has already been tried.
 // docs/known-issues.md, "The recovery ladder livelocks"
-TEST_CASE("own V sync does not cap the ladder at the re-probe")
+TEST_CASE("own V sync found by a reconfigure does not hold the acts back")
 {
     seedBenchSource();
     seedLineSamples(BenchDivider);
@@ -1244,19 +1257,16 @@ TEST_CASE("own V sync does not cap the ladder at the re-probe")
     g_hasOwnVsync = true;
     g_logLines.clear();
     seedSourceLines(0);
-    for (uint16_t i = 0; i < SyncRecovery::positionOf(SyncRecovery::FullReset) + 4;
-         ++i)
-        unit.poll();
+    unit.pollForMs(SyncRecovery::FirstActMs + SyncRecovery::ActIntervalMs + 100);
 
-    REQUIRE(loggedContaining("recovery: reprobe sync type at pass"));
-    CHECK(loggedContaining("recovery: restart sampling clock at pass"));
-    CHECK(loggedContaining("recovery: full reset at pass"));
+    REQUIRE(loggedContaining("recovery: reconfigure"));
+    CHECK(loggedContaining("recovery: reset the blocks"));
 }
 
-TEST_CASE("own V sync keeps the ladder off the input toggle")
+TEST_CASE("own V sync keeps the mux still")
 {
-    // What the restart was buying: a live source must not have the mux moved
-    // out from under it. That survives as the toggle's own precondition.
+    // A live source must not have the mux moved out from under it, and a V sync
+    // arriving is proof of one.
     seedBenchSource();
     seedLineSamples(BenchDivider);
     Acquiring unit;
@@ -1269,10 +1279,9 @@ TEST_CASE("own V sync keeps the ladder off the input toggle")
     g_hasOwnVsync = true;
     g_logLines.clear();
     seedSourceLines(0);
-    for (uint16_t i = 0; i < SyncRecovery::CycleLength + 4; ++i)
-        unit.poll();
+    unit.pollForMs(SyncRecovery::FirstActMs + 3 * SyncRecovery::ActIntervalMs);
 
-    REQUIRE(loggedContaining("recovery: toggle input at pass"));
+    REQUIRE(loggedContaining("recovery: move the input"));
     CHECK(Adc::ADC_INPUT_SEL::read() == input);
 }
 
@@ -1565,14 +1574,12 @@ TEST_CASE("a source that stops counting is not present")
     CHECK_FALSE(unit.acquisition.sourceIsPresent());
 }
 
-TEST_CASE("the ladder's position follows the layer's own measurement")
+TEST_CASE("the recovery timer follows the layer's own measurement")
 {
-    // rto->noSyncCounter indexes SyncRecovery::stepAt() from the sketch, and it
-    // advances on a source this class calls present -- which is what walks the
-    // ADC and the sync processor off a source the engine is solving correctly.
-    // The count belongs beside the measurement that decides it, and the
-    // positions carry over unchanged because runSyncWatcher() is called on the
-    // same 20 ms cadence as poll().
+    // rto->noSyncCounter indexed the ladder from the sketch, and it advanced on
+    // a source this class calls present -- which is what walked the ADC and the
+    // sync processor off a source the engine was solving correctly. The run
+    // belongs beside the measurement that decides it.
     // docs/investigations/the-sketch-hunts-while-the-engine-is-locked.md
     seedBenchSource();
     Acquiring unit;
@@ -1582,17 +1589,16 @@ TEST_CASE("the ladder's position follows the layer's own measurement")
     REQUIRE(unit.acquisition.recoveryDue() == SyncRecovery::None);
 
     seedSourceLines(0);
-    for (uint16_t i = 0; i < SyncRecovery::FirstEscalationPass; ++i)
-        unit.poll();
+    unit.pollForMs(SyncRecovery::FirstActMs + 100);
 
-    CHECK(unit.acquisition.recoveryDue() == SyncRecovery::LiftSogFloor);
+    CHECK(unit.acquisition.recoveryDue() == SyncRecovery::Reconfigure);
 }
 
-TEST_CASE("a source that comes back puts the ladder away")
+TEST_CASE("a source that comes back puts the recovery away")
 {
-    // Unlocked rather than absent, so the escalation is exercised against a
-    // source that can then be re-acquired: the ladder must retreat, or a source
-    // that recovers keeps taking recoveries it no longer needs.
+    // Unlocked rather than absent, so the recovery is exercised against a source
+    // that can then be re-acquired: the timer must retreat, or a source that
+    // recovers keeps taking acts it no longer needs.
     seedBenchSource();
     seedLineSamples(BenchDivider);
     Acquiring unit;
@@ -1602,8 +1608,7 @@ TEST_CASE("a source that comes back puts the ladder away")
     REQUIRE(unit.acquisition.recoveryDue() == SyncRecovery::None);
 
     seedLineSamplesUnlocked(3250);
-    for (uint16_t i = 0; i < SyncRecovery::FirstEscalationPass; ++i)
-        unit.poll();
+    unit.pollForMs(SyncRecovery::FirstActMs + 100);
     REQUIRE(unit.acquisition.recoveryDue() != SyncRecovery::None);
 
     seedLineSamples(BenchDivider);
@@ -1612,13 +1617,11 @@ TEST_CASE("a source that comes back puts the ladder away")
     CHECK(unit.acquisition.recoveryDue() == SyncRecovery::None);
 }
 
-TEST_CASE("a recovery names the rung it fired and the pass it fired at")
+TEST_CASE("a recovery names the act it ran and how long the source had been gone")
 {
-    // THE LADDER IS INVISIBLE OTHERWISE. Every rung is a register write made to
-    // a source nobody can see, and only one of the eleven says anything -- so a
-    // unit that has been hunting for a minute gives no account of what it has
-    // already tried, and the position is the only thing that says which rungs
-    // are still to come.
+    // THE RECOVERY IS INVISIBLE OTHERWISE. Every act is a register write made to
+    // a source nobody can see, so without this a unit that has been hunting for
+    // a minute gives no account of what it has already tried.
     seedBenchSource();
     Acquiring unit;
     unit.acquisition.allowMaintenance(true);
@@ -1627,18 +1630,35 @@ TEST_CASE("a recovery names the rung it fired and the pass it fired at")
 
     g_logLines.clear();
     seedSourceLines(0);
-    for (uint16_t i = 0; i < 40; ++i)
-        unit.poll();
+    unit.pollForMs(SyncRecovery::FirstActMs + 100);
 
-    CHECK(loggedContaining("recovery: lift SOG floor at pass"));
+    CHECK(loggedContaining("recovery: reconfigure after 10s"));
+}
+
+TEST_CASE("an act runs once, not once a pass")
+{
+    // The timer names the act whose window the reading falls in, so without an
+    // edge the act would run every 20 ms for the whole ten seconds it is given
+    // to work in.
+    seedBenchSource();
+    Acquiring unit;
+    unit.acquisition.allowMaintenance(true);
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+
+    g_logLines.clear();
+    seedSourceLines(0);
+    unit.pollForMs(SyncRecovery::FirstActMs + SyncRecovery::ActIntervalMs - 100);
+
+    CHECK(loggedCountContaining("recovery: reconfigure") == 1);
 }
 
 TEST_CASE("a recovery that settles the question restarts the run")
 {
-    // Two rungs end the run rather than advancing it: a lock found on the other
-    // ADC input, and a sync-type re-probe that finds no V sync. Whether a step
-    // settled anything is the caller's to say, so it says so rather than
-    // writing a sentinel into the count -- which is what 0x07fe was.
+    // One act ends the run rather than advancing it: a lock found on the other
+    // ADC input. Whether an act settled anything is the caller's to say, so it
+    // says so rather than writing a sentinel into the count -- which is what
+    // 0x07fe was.
     seedBenchSource();
     seedLineSamples(BenchDivider);
     Acquiring unit;
@@ -1647,8 +1667,7 @@ TEST_CASE("a recovery that settles the question restarts the run")
     REQUIRE(unit.pollUntilSolved());
 
     seedLineSamplesUnlocked(3250);
-    for (uint16_t i = 0; i < SyncRecovery::FirstEscalationPass; ++i)
-        unit.poll();
+    unit.pollForMs(SyncRecovery::FirstActMs + 100);
     REQUIRE(unit.acquisition.recoveryDue() != SyncRecovery::None);
 
     unit.acquisition.restartRecovery();
@@ -2058,7 +2077,7 @@ TEST_CASE("an unpowered board gets no window and no dynamic write")
     unit.acquisition.placeClampWindow();
     const uint32_t before = SyncProcessor::SP_H_PULSE_IGNOR::read();
     SyncProcessor::SP_H_PULSE_IGNOR::write(before ^ 0xff);
-    unit.acquisition.applySyncProcessorDynamic(false);
+    unit.acquisition.applySyncProcessorDynamic();
 
     CHECK_FALSE(SyncProcessor::coastPlaced());
     CHECK_FALSE(SyncProcessor::clampPlaced());
@@ -2562,15 +2581,16 @@ TEST_CASE("a source that changes rate while passed through is re-sized")
     CHECK(HdBypass::HD_HSYNC_RST::read() != sizedFor524);
 }
 
-TEST_CASE("a first acquisition does not escalate the ladder")
+TEST_CASE("an acquisition is given its whole budget before anything is recovered")
 {
-    // A component source takes about ten seconds to acquire and a pass is
-    // 20 ms, so the whole ladder -- sync-type re-probe, sampling clock restart,
-    // full reset -- ran DURING an ordinary selection rather than after a
-    // failure. Measured on the bench, FullReset fired 3.03 s after detection
-    // succeeded and the engine then held a solve for the other source.
-    // docs/known-issues.md, "The recovery ladder escalates through every first
-    // acquisition"
+    // A component source takes 4.4 to 6.9 s to acquire and a pass was 20 ms, so
+    // the whole ladder -- sync-type re-probe, sampling clock restart, full reset
+    // -- ran DURING an ordinary selection rather than after a failure. Measured
+    // on a ypbpr leg that then failed: the engine read 263 lines at 15576 Hz and
+    // installed its divider at 2.16 s, and the coast-window rung reset that
+    // window 20 ms later, after which the count read 271 and
+    // STATUS_SYNC_PROC_HTOTAL 3268 against a 2200 divider.
+    // docs/investigations/the-recovery-ladder-fired-into-its-own-acquisition.md
     seedBenchSource();
     Acquiring unit;
     unit.acquisition.allowMaintenance(true);
@@ -2578,47 +2598,16 @@ TEST_CASE("a first acquisition does not escalate the ladder")
 
     g_logLines.clear();
     seedSourceLines(0);
-    for (uint16_t i = 0; i < SyncRecovery::CycleLength; ++i)
-        unit.poll();
+    unit.pollForMs(SyncRecovery::FirstActMs - 100);
 
-    // The three the measurement names, rather than every rung: the grace holds
-    // back what DISTURBS the path and the configuring rungs below the re-probe
-    // run, because withholding those is withholding the acquisition it is
-    // protecting.
-    CHECK_FALSE(loggedContaining("recovery: reprobe sync type at pass"));
-    CHECK_FALSE(loggedContaining("recovery: restart sampling clock at pass"));
-    CHECK_FALSE(loggedContaining("recovery: full reset at pass"));
+    CHECK_FALSE(loggedContaining("recovery:"));
 }
 
-TEST_CASE("detection giving up on the source releases the ladder")
+TEST_CASE("selecting another input gives the arriving source its own budget")
 {
-    // The grace above must not be permanent. Maintenance is withdrawn when
-    // detection concludes there is nothing there, and a source that detection
-    // cannot find has had the engine's chance: the rungs are what is left.
-    seedBenchSource();
-    Acquiring unit;
-    unit.acquisition.allowMaintenance(true);
-    unit.start();
-
-    seedSourceLines(0);
-    for (uint16_t i = 0; i < SyncRecovery::positionOf(SyncRecovery::FullReset); ++i)
-        unit.poll();
-    unit.acquisition.allowMaintenance(false);
-    unit.acquisition.allowMaintenance(true);
-
-    g_logLines.clear();
-    for (uint16_t i = 0; i < SyncRecovery::positionOf(SyncRecovery::FullReset) + 4; ++i)
-        unit.poll();
-
-    CHECK(loggedContaining("recovery: full reset at pass"));
-}
-
-TEST_CASE("selecting another input gives the new source a first acquisition too")
-{
-    // The bench case: the RISC PC is acquired on `vga`, `ypbpr` is selected,
-    // and the Wii needs about ten seconds. Without this the grace is spent on
-    // the source being left rather than the one arriving, and the ladder runs a
-    // full reset three seconds into the new acquisition.
+    // The bench case: the RISC PC is acquired on `vga`, `ypbpr` is selected, and
+    // the Wii needs several seconds. Without this the budget is spent on the
+    // source being left rather than the one arriving.
     seedBenchSource();
     seedLineSamples(BenchDivider);
     VideoSourceSelection::select(VideoSourceSelection::Vga);
@@ -2627,15 +2616,17 @@ TEST_CASE("selecting another input gives the new source a first acquisition too"
     unit.start();
     REQUIRE(unit.pollUntilSolved());
 
+    // Long enough that the budget would already be spent were it timed from the
+    // source being left.
+    seedLineSamplesUnlocked(3250);
+    unit.pollForMs(SyncRecovery::FirstActMs - 100);
+
     VideoSourceSelection::select(VideoSourceSelection::Ypbpr);
     g_logLines.clear();
     seedSourceLines(0);
-    for (uint16_t i = 0; i < SyncRecovery::CycleLength; ++i)
-        unit.poll();
+    unit.pollForMs(SyncRecovery::FirstActMs - 100);
 
-    CHECK_FALSE(loggedContaining("recovery: reprobe sync type at pass"));
-    CHECK_FALSE(loggedContaining("recovery: restart sampling clock at pass"));
-    CHECK_FALSE(loggedContaining("recovery: full reset at pass"));
+    CHECK_FALSE(loggedContaining("recovery:"));
     VideoSourceSelection::forgetSelection();
 }
 
@@ -2672,52 +2663,63 @@ TEST_CASE("selecting another input re-establishes the sync arrangement")
     VideoSourceSelection::forgetSelection();
 }
 
-// The escalation ladder is held off through a first acquisition so its rungs
-// do not tear down a sync path the engine is still solving through. FullReset
-// is the only thing that resets the sync processor block, though, and a block
-// that has wedged is recoverable by nothing else -- measured on the Wii at
-// 480p over ypbpr, where the configuration reads correct throughout
-// (SP_PRE_COAST 7, SP_POST_COAST 6, SP_DLT_REG 192, SP_SOG_MODE 1) and the
-// block still counts 100 lines with the ADC PLL unlocked, until a
-// SFTRST_SYNC_RSTZ pulse clears it. So the hold is bounded rather than
-// permanent. docs/known-issues.md
-TEST_CASE("a first acquisition that never completes lets the ladder back in")
+// The acts are ordered so the one that disturbs nothing comes first, and the
+// teardown only once a reconfigure has failed to take. FullReset was the only
+// thing that reset the sync processor block -- measured on the Wii at 480p over
+// ypbpr, where the configuration reads correct throughout (SP_PRE_COAST 7,
+// SP_POST_COAST 6, SP_DLT_REG 192, SP_SOG_MODE 1) and the block still counts
+// 100 lines with the ADC PLL unlocked, until a SFTRST_SYNC_RSTZ pulse clears
+// it. So the teardown is deferred rather than withheld. docs/known-issues.md
+TEST_CASE("a source that never arrives is reconfigured, then torn down, then moved")
 {
     seedBenchSource();
     seedLineSamples(BenchDivider);
     Acquiring unit;
+    unit.acquisition.allowMaintenance(true);
     unit.start();
 
     seedSourceLines(97);                  // a count no source runs
     unit.path.inputTimingsChanged();
 
-    // A rung is due only on its own first-fire pass, so what a case can ask is
-    // whether one came due at all across the window.
-    bool escalated = false;
-    bool fullReset = false;
-    for (uint16_t i = 0; i < 7000 / VideoSourceAcquisition::DetectionIntervalMs; ++i) {
+    g_logLines.clear();
+    unit.pollForMs(SyncRecovery::FirstActMs + 100);
+    CHECK(loggedContaining("recovery: reconfigure"));
+    CHECK_FALSE(loggedContaining("recovery: reset the blocks"));
+
+    unit.pollForMs(SyncRecovery::ActIntervalMs);
+    CHECK(loggedContaining("recovery: reset the blocks"));
+    CHECK_FALSE(loggedContaining("recovery: move the input"));
+
+    unit.pollForMs(SyncRecovery::ActIntervalMs);
+    CHECK(loggedContaining("recovery: move the input"));
+}
+
+TEST_CASE("nothing parks the sync separator fully open")
+{
+    // THE LAST RUNG BRICKED THE SEPARATOR. ReopenSogSeparator called choose(0),
+    // the one value no ratchet can climb back out of, and every leg that failed
+    // for 25 s reached it -- after which every later leg failed too, with
+    // ADC_SOGCTRL 0, STATUS_SYNC_PROC_VTOTAL 97 and a correct VPERIOD_IF beside
+    // it. `/sc?~` does not recover it, because the held level is what apply()
+    // writes back.
+    seedBenchSource();
+    seedLineSamples(BenchDivider);
+    Acquiring unit;
+    unit.acquisition.allowMaintenance(true);
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+
+    seedSourceLines(97);
+    bool parked = false;
+    for (uint32_t ms = 0; ms < SyncRecovery::FirstActMs
+                                   + 6 * SyncRecovery::ActIntervalMs;
+         ms += VideoSourceAcquisition::DetectionIntervalMs) {
         unit.poll();
-        if (SyncRecovery::positionOf(unit.acquisition.recoveryDue())
-            >= SyncRecovery::firstDisruptivePass())
-            escalated = true;
+        if (SyncOnGreen::level() == 0)
+            parked = true;
     }
 
-    // A healthy component acquisition is 4.4 to 6.8 s, so nothing has DISTURBED
-    // the path by then. The configuring rungs below the re-probe have run, which
-    // is what gets a sync-on-green source counted at all.
-    CHECK_FALSE(escalated);
-
-    for (uint16_t i = 0; i < 20000 / VideoSourceAcquisition::DetectionIntervalMs; ++i) {
-        unit.poll();
-        const SyncRecovery::Step due = unit.acquisition.recoveryDue();
-        if (due != SyncRecovery::None)
-            escalated = true;
-        if (due == SyncRecovery::FullReset)
-            fullReset = true;
-    }
-
-    CHECK(escalated);
-    CHECK(fullReset);
+    CHECK_FALSE(parked);
 }
 
 TEST_CASE("a resolution the encoder cannot transmit gives way to one it can")
@@ -2761,59 +2763,33 @@ TEST_CASE("a resolution the encoder cannot transmit gives way to one it can")
 
 // --- the grace defers the teardown, not the configuration --------------------
 
-// How far the ladder is driven inside the grace: past the last configuring rung
-// and up to the first that tears down. One pass is DetectionIntervalMs, so this
-// is about two seconds against the grace's fifteen.
-static const uint16_t IntoTheGrace =
-    SyncRecovery::positionOf(SyncRecovery::RestartSamplingClock) + 2;
-
-TEST_CASE("a source that never acquires is still configured inside the grace")
+// THE WHOLE COST OF A SYNC-ON-GREEN ACQUISITION WAS A CONFIGURATION NO
+// SELECTION MADE. Measured on the bench, Wii on ypbpr in 480i: the ADC PLL
+// locks at the reference divider inside two seconds and STATUS_SYNC_PROC_VTOTAL
+// then sits at 97 -- the value it holds when it is not following the source at
+// all -- for 13.65 s of total console silence, until a recovery wrote the
+// search configuration and the source acquired 1.6 s later.
+//
+// The search configuration is the SELECTION'S, so the source has it from the
+// outset and the first count takes it back. Nothing waits on a recovery for it.
+TEST_CASE("a selection asks for the search configuration, not a recovery")
 {
-    // THE WHOLE COST OF A SYNC-ON-GREEN ACQUISITION WAS THIS. Measured on the
-    // bench, Wii on ypbpr in 480i: the ADC PLL locks at the reference divider
-    // inside two seconds and STATUS_SYNC_PROC_VTOTAL then sits at 97 -- the
-    // value it holds when it is not following the source at all -- for 13.65 s
-    // of total console silence, until the grace expires and the ladder runs
-    // passes 2, 8, 27, 32, 34 and 38 in 1.6 s and the source acquires.
-    //
-    // The coast window is the rung that source needs and it tears nothing down,
-    // so the grace has no business deferring it.
     seedBenchSource();
     seedLineSamples(BenchDivider);
     Acquiring unit;
     unit.acquisition.allowMaintenance(true);
     unit.start();
 
-    // No count from the outset, so the engine never acquires and the grace
-    // never ends the way an ordinary selection ends it.
+    // No count from the outset, so nothing the engine does can be mistaken for
+    // the search configuration arriving with a measurement.
     seedSourceLines(0);
-    g_logLines.clear();
-    for (uint16_t i = 0; i < IntoTheGrace; ++i)
-        unit.poll();
+    unit.poll();
+    REQUIRE(unit.acquisition.sourceIsSearching());
 
-    CHECK(loggedContaining("recovery: coast window at pass"));
-}
+    unit.acquisition.applySyncProcessorDynamic();
 
-TEST_CASE("a source that never acquires is spared the teardown inside the grace")
-{
-    // What the grace is FOR, in its own words: the ladder must not reset the
-    // sync path an ordinary selection is still solving through. A component
-    // selection is a bounded 4.4..6.8 s job and FullReset is the only thing
-    // that resets the sync processor block, so reaching it early turns a slow
-    // acquisition into none.
-    seedBenchSource();
-    seedLineSamples(BenchDivider);
-    Acquiring unit;
-    unit.acquisition.allowMaintenance(true);
-    unit.start();
-
-    seedSourceLines(0);
-    g_logLines.clear();
-    for (uint16_t i = 0; i < IntoTheGrace; ++i)
-        unit.poll();
-
-    CHECK_FALSE(loggedContaining("recovery: restart sampling clock at pass"));
-    CHECK_FALSE(loggedContaining("recovery: full reset at pass"));
+    CHECK(SyncProcessor::SP_H_CST_ST::read() == 0x10);
+    CHECK(SyncProcessor::SP_H_CST_SP::read() == 0x100);
 }
 
 TEST_CASE("a csync selection does not inherit the separate-sync pulse ignore")

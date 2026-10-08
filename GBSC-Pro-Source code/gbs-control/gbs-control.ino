@@ -2270,7 +2270,7 @@ void doPostPresetLoadSteps()
     }
 
     if (!Tv5725::VideoRoute::isHdBypassChannel() && !geometry.scalingRgbhvInForce()) {
-        inputAcquisition.applySyncProcessorDynamic(0);
+        inputAcquisition.applySyncProcessorDynamic();
     }
 
     Tv5725::SyncProcessor::holdClamp();
@@ -2316,7 +2316,7 @@ void doPostPresetLoadSteps()
     inputAcquisition.placeClampWindow();
     Tv5725::SyncProcessor::releaseClampIfPlaced();
 
-    inputAcquisition.applySyncProcessorDynamic(0);
+    inputAcquisition.applySyncProcessorDynamic();
 
     if (!rto->syncWatcherEnabled) {
         Tv5725::SyncProcessor::releaseClamp();
