@@ -158,6 +158,20 @@ public:
     // costs its turn.
     bool runRecovery(SyncRecovery::Act act);
 
+    // Everything a selection does, to a path nothing is counting: the sync type
+    // decides what the block counts, the search configuration places the windows
+    // it counts through, and the sampling clock is restarted last.
+    void reconfigureForSource();
+
+    // What no reconfigure can do for itself. Measured on the Wii at 480p over
+    // ypbpr: every field of the configuration reads correct and the block still
+    // counts 100 lines with the ADC PLL unlocked, until a SFTRST_SYNC_RSTZ pulse
+    // clears it.
+    void resetTheBlocks();
+
+    // How long each block reset is given before the next write.
+    static const uint8_t BlockResetSettleMs = 8;
+
     // Whether detection may cross to the other connector. An explicit
     // selection is a command: a chosen input is selected whether it has a
     // signal or not, so there is nowhere to promote to.

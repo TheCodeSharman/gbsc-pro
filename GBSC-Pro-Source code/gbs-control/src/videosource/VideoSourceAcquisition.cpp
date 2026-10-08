@@ -1006,36 +1006,11 @@ bool VideoSourceAcquisition::runRecovery(SyncRecovery::Act act)
         break;
 
     case SyncRecovery::Reconfigure:
-        // EVERYTHING A SELECTION DOES, in a selection's order: the sync type
-        // decides what the block counts, the search configuration places the
-        // windows it counts through, and the ADC PLL is restarted last because
-        // the sync processor counts in ADC clocks.
-        //
-        // A V sync arriving is proof of a SOURCE, which is a reason not to move
-        // the mux out from under it -- the next act's precondition.
-        ownVsyncFound_ = !videoPath_.reacquireSyncType();
-        if (ownVsyncFound_)
-            tv5725Log("recovery: own V sync found, the input stays");
-
-        applySyncProcessorDynamic();
-        Tv5725::SyncProcessor::applyDefaultClampWindow();
-        Tv5725::SyncProcessor::holdClamp();
-        Tv5725::ModeDetect::nudge();
-        reacquireSeparator();
-        videoPath_.restartSamplingClock();
+        reconfigureForSource();
         break;
 
     case SyncRecovery::ResetBlocks:
-        // What no reconfigure can do for itself. Measured on the Wii at 480p
-        // over ypbpr: the configuration reads correct throughout and the block
-        // still counts 100 lines with the ADC PLL unlocked, until a
-        // SFTRST_SYNC_RSTZ pulse clears it.
-        if (Tv5725::SyncProcessor::hsyncActive())
-            Tv5725::FrameBuffer::releaseCapture();
-        Tv5725::SyncProcessor::reset();
-        delay(8);
-        Tv5725::ModeDetect::reset();
-        delay(8);
+        resetTheBlocks();
         break;
 
     case SyncRecovery::MoveInput:
@@ -1044,6 +1019,36 @@ bool VideoSourceAcquisition::runRecovery(SyncRecovery::Act act)
         break;
     }
     return false;
+}
+
+void VideoSourceAcquisition::reconfigureForSource()
+{
+    // A V sync arriving is proof of a SOURCE, which is a reason not to move the
+    // mux out from under it -- MoveInput's precondition, set here.
+    ownVsyncFound_ = !videoPath_.reacquireSyncType();
+    if (ownVsyncFound_)
+        tv5725Log("recovery: own V sync found, the input stays");
+
+    applySyncProcessorDynamic();
+    Tv5725::SyncProcessor::applyDefaultClampWindow();
+    Tv5725::SyncProcessor::holdClamp();
+    Tv5725::ModeDetect::nudge();
+    reacquireSeparator();
+
+    // Last, because the sync processor counts in ADC clocks and everything
+    // above is counted through them.
+    videoPath_.restartSamplingClock();
+}
+
+void VideoSourceAcquisition::resetTheBlocks()
+{
+    if (Tv5725::SyncProcessor::hsyncActive())
+        Tv5725::FrameBuffer::releaseCapture();
+
+    Tv5725::SyncProcessor::reset();
+    delay(BlockResetSettleMs);
+    Tv5725::ModeDetect::reset();
+    delay(BlockResetSettleMs);
 }
 
 void VideoSourceAcquisition::recoverSource()
