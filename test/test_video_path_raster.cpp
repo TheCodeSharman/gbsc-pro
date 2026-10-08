@@ -768,3 +768,38 @@ TEST_CASE("the output picture filters take the 1080p question from the held mode
         CHECK(Tv5725::VideoProcessor::VDS_UV_STEP_BYPS::read() == 0);
     }
 }
+
+// THE CROSSOVER ROW BELONGS TO THE DIVIDER IN FORCE, NOT TO THE RATE A
+// MEASUREMENT HOLDS. A selection installs the reference clock and nothing has
+// measured the arriving source, so the held rate is the OUTGOING source's: at
+// the reference divider it picks a row for a CKO the arriving source never
+// produces, the ADC PLL free-runs, the sync processor counts 97 and no
+// measurement can be taken through it to replace the rate.
+//
+// Measured on the bench, a Wii in 480i arriving from an 800x600@60 RISC PC:
+// PLLAD_KS 1 in a 330 s stall, which is 1400 x 37879 = 53 MHz, where the
+// arriving 22 MHz CKO needs row 2; the ADC PLL read unlocked in 1057 of 1057
+// samples and STATUS_SYNC_PROC_HTOTAL never came within 2 of the divider.
+// ../docs/investigations/the-crossover-row-was-sized-from-the-outgoing-source.md
+TEST_CASE("the arriving source keeps the crossover row the reference clock installed")
+{
+    SettledEngine settled;
+
+    // The outgoing source, solved: 627 lines at 60.3 Hz is a 37.9 kHz line.
+    setSourceLines(627);
+    g_fieldRate = 60.3f;
+    settled.engine.setOutputMode(&Mode1080p);
+    settled.engine.inputTimingsChanged(4);
+    REQUIRE(pollUntilSolved(settled.acquisition));
+    REQUIRE(settled.sampling.lineRateHz() > 30000);
+
+    Adc::installReferenceSamplingClock();
+    const uint16_t reference = Wire.field(5, Adc::PLLAD_KS::byteOffset,
+                                          Adc::PLLAD_KS::bitOffset,
+                                          Adc::PLLAD_KS::bitWidth);
+
+    settled.engine.inputTimingsChanged(4);
+
+    CHECK(Wire.field(5, Adc::PLLAD_KS::byteOffset, Adc::PLLAD_KS::bitOffset,
+                     Adc::PLLAD_KS::bitWidth) == reference);
+}

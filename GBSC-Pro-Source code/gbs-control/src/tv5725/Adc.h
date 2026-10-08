@@ -523,6 +523,13 @@ public:
     // one. ../../../docs/investigations/hperiod-if-railing.md
     static uint16_t dividerInForce();
 
+    // The line rate the group in force was sized from, which is what picked the
+    // crossover row and the VCO gain. A caller re-asserting that group hands
+    // this back rather than a measurement, which on an arriving source is the
+    // outgoing one's.
+    // ../../../docs/investigations/the-crossover-row-was-sized-from-the-outgoing-source.md
+    static uint32_t rateInForce();
+
     // The ADC as pass-through wants it: no internal filtering. NOT the divider,
     // NOT the VCO gain and NOT the charge pump -- HdBypass::dividerFor() answers
     // the first against the line rate, and applySampleRate() owns the rest of
@@ -585,6 +592,7 @@ private:
     static uint8_t inputSel_;
     static uint8_t oversampleInForce_;
     static uint16_t dividerInForce_;
+    static uint32_t rateInForce_;
     static bool phaseFound_;
     static uint8_t gain_[3];
     static uint8_t offset_[3];

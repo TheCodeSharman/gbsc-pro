@@ -453,7 +453,12 @@ void VideoPath::inputTimingsChanged(uint8_t oversample)
     // The clock alone: the divider is the one already in force, so the scan
     // beside it already describes that line, and re-asserting it from the
     // OUTGOING source's decision is what left the block half doubled.
-    applySamplingClock(Adc::dividerInForce());
+    //
+    // At the rate that group was built from, for the same reason: nothing has
+    // measured the arriving source, so a measurement holds the OUTGOING one's
+    // rate, and at the reference divider that picks a crossover row for a CKO
+    // this source never produces.
+    applySamplingClock(Adc::dividerInForce(), Adc::rateInForce());
 }
 
 bool VideoPath::passedThrough() const
@@ -971,7 +976,7 @@ void VideoPath::applySampling(uint16_t divider, bool doubled, uint8_t oversample
     if (!applyScan(divider, doubled))
         return;
 
-    applySamplingClock(divider);
+    applySamplingClock(divider, sampling_.lineRateHz());
 }
 
 // The retime window's stop is the capture counter's ORIGIN, so it takes the
@@ -988,12 +993,12 @@ void VideoPath::writeRetimeStop()
                                      Adc::oversampleInForce()));
 }
 
-void VideoPath::applySamplingClock(uint16_t divider)
+void VideoPath::applySamplingClock(uint16_t divider, uint32_t lineRateHz)
 {
     if (divider == 0)
         return;
 
-    Adc::applySampleRate(divider, sampling_.lineRateHz(), modeOversample_);
+    Adc::applySampleRate(divider, lineRateHz, modeOversample_);
     installedDivider_ = divider;
     writeRetimeStop();
 
@@ -1025,7 +1030,7 @@ bool VideoPath::syncTypeIsCsync() const { return syncTypeInForce_; }
 
 void VideoPath::restartSamplingClock()
 {
-    applySamplingClock(Adc::dividerInForce());
+    applySamplingClock(Adc::dividerInForce(), Adc::rateInForce());
     SyncProcessor::forgetPositions();
 }
 

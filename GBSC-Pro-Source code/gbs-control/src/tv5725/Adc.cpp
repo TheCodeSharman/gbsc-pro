@@ -192,6 +192,7 @@ uint8_t Adc::inputSel_ = 1;
 // thing a post divider with no room to give reduces every request to.
 uint8_t Adc::oversampleInForce_ = 1;
 uint16_t Adc::dividerInForce_ = 0;
+uint32_t Adc::rateInForce_ = 0;
 bool Adc::phaseFound_ = false;
 
 void Adc::choosePhaseSyncProcessor(uint8_t phase)
@@ -463,6 +464,8 @@ uint8_t Adc::oversampleInForce() { return oversampleInForce_; }
 
 uint16_t Adc::dividerInForce() { return dividerInForce_; }
 
+uint32_t Adc::rateInForce() { return rateInForce_; }
+
 void Adc::applyDivider(uint16_t divider)
 {
     dividerInForce_ = divider;
@@ -634,6 +637,7 @@ uint8_t Adc::applySampleRate(uint16_t divider, uint32_t lineRateHz,
                              uint8_t oversample)
 {
     dividerInForce_ = divider;
+    rateInForce_ = lineRateHz;
 
     // The charge pump is part of the loop the latch loads, so it goes in here
     // rather than being left to whichever path ran last. One value serves every

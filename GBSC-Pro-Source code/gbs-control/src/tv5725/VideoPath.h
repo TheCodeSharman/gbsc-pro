@@ -542,7 +542,12 @@ private:
     // The clock alone, for a caller re-asserting the divider ALREADY IN FORCE:
     // the scan beside it already describes that line, and re-asserting one from
     // a stale decision is what left the block half doubled.
-    void applySamplingClock(uint16_t divider);
+    //
+    // THE RATE IS HANDED IN BECAUSE IT IS NOT ALWAYS THE MEASURED ONE. It picks
+    // the crossover row and the VCO gain, so an install from a measurement
+    // passes that measurement and a re-assert passes Adc::rateInForce() -- the
+    // rate the group being re-asserted was built from.
+    void applySamplingClock(uint16_t divider, uint32_t lineRateHz);
 
     // **Before the divider is chosen, because it derives from this**: the
     // capture write limit doubles with the line doubler, so the two describe one
