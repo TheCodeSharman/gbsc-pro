@@ -19,9 +19,16 @@ a success, and one build produced exactly it.
 
 **A LEG TIMED WHILE THE UNIT IS BOOTING IS NOT A LEG**, so every run waits for
 the unit to be acquired on something before the first leg starts.
+
+**AND TWO RUNS AGAINST ONE UNIT MEASURE NOTHING.** Both call `/input`, so each
+one's legs are timed through the other's source changes -- which reads as the
+unit being unreliable rather than as the bench being driven twice. A run holds a
+lock on the host and refuses to start beside another.
 """
 import argparse
+import errno
 import json
+import os
 import time
 
 import gbs_unit
@@ -142,6 +149,34 @@ def run_modes(host, console, source, order, legs):
     return results
 
 
+def claim(host):
+    """Refuse to start beside another run against the same unit.
+
+    A stale lock from a killed run is not a reason to refuse, so the holder's
+    pid is recorded and a lock whose holder is gone is taken over.
+    """
+    path = os.path.join("/tmp", f"acquisition_legs.{host}.lock")
+    while True:
+        try:
+            handle = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+        except OSError as problem:
+            if problem.errno != errno.EEXIST:
+                raise
+            try:
+                with open(path) as held:
+                    holder = int(held.read().strip() or 0)
+                os.kill(holder, 0)
+            except (ValueError, OSError):
+                os.unlink(path)
+                continue
+            raise SystemExit(
+                f"another run already holds {host} (pid {holder}); "
+                "two runs against one unit measure nothing")
+        with os.fdopen(handle, "w") as held:
+            held.write(str(os.getpid()))
+        return path
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--host", default="192.168.88.108")
@@ -155,6 +190,8 @@ def main():
 
     if not args.input and not args.mode:
         parser.error("one of --input or --mode")
+
+    lock = claim(args.host)
 
     # A leg timed while the unit is booting is not a leg: the first trip after an
     # OTA scores NEVER or 0.0s depending on which input the flash rebooted onto.
@@ -184,6 +221,8 @@ def main():
         for mode in order:
             assert mode in MODES, f"no expected count for {mode}"
         run_modes(args.host, console, args.source, order, args.legs)
+
+    os.unlink(lock)
 
 
 if __name__ == "__main__":
