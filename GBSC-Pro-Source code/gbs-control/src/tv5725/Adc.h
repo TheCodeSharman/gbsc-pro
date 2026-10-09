@@ -502,6 +502,24 @@ public:
     // ../../../../docs/investigations/a-ypbpr-detection-that-succeeds-first-pass-skips-the-preparation.md
     static void installReferenceSamplingClock();
 
+    // The next reference clock in turn, for a source the one in force has
+    // failed to measure. **ONE REFERENCE IS NOT ENOUGH**: a divider the ADC PLL
+    // will not lock to on the arriving source leaves nothing measurable, and a
+    // divider is installed only FROM a measurement, so a single reference that
+    // fails is a deadlock no recovery can leave by re-asserting it. Cycles, so
+    // a source that needs the first one back gets it.
+    // ../../../../docs/investigations/the-reference-clock-can-deadlock-the-measurement.md
+    static void installNextReferenceSamplingClock();
+
+    // How many there are, so the cycle is testable without restating the list.
+    static uint8_t referenceDividerCount();
+
+    // Whether the clock in force is still a reference -- which is what says
+    // nothing has measured this source, a solved divider being the only other
+    // thing that reaches PLLAD_MD. Asked by the recovery to know whether to try
+    // another reference or re-latch the one a measurement chose.
+    static bool referenceSamplingClockInForce();
+
     static void applyResetParameters();
 
     // Whether the PLL is running the divider in force, against the sync
@@ -587,12 +605,23 @@ private:
 
     static void applyHeldGain();
 
+    // Install whichever reference clock the step names, as the whole PLL group.
+    static void installReferenceStep();
+
     static uint8_t phaseSyncProcessor_;
     static uint8_t phaseAdc_;
     static uint8_t inputSel_;
     static uint8_t oversampleInForce_;
     static uint16_t dividerInForce_;
     static uint32_t rateInForce_;
+
+    // Which reference clock is being tried, and the divider it installed. The
+    // divider is kept rather than compared against the list so that re-applying
+    // the clock in force -- which a mode change does -- still reads as a
+    // reference.
+    static uint8_t referenceStep_;
+    static uint16_t referenceDivider_;
+
     static bool phaseFound_;
     static uint8_t gain_[3];
     static uint8_t offset_[3];

@@ -1030,7 +1030,12 @@ bool VideoPath::syncTypeIsCsync() const { return syncTypeInForce_; }
 
 void VideoPath::restartSamplingClock()
 {
-    applySamplingClock(Adc::dividerInForce(), Adc::rateInForce());
+    // A REFERENCE STILL IN FORCE HAS ALREADY FAILED TO MEASURE THIS SOURCE, so
+    // re-asserting it is the deadlock rather than the recovery from it.
+    if (Adc::referenceSamplingClockInForce())
+        Adc::installNextReferenceSamplingClock();
+    else
+        applySamplingClock(Adc::dividerInForce(), Adc::rateInForce());
     SyncProcessor::forgetPositions();
 }
 

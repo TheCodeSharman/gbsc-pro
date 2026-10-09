@@ -28,6 +28,22 @@ uint8_t atLeastOneOversample(uint8_t oversample)
 // it, so the rows are written once.
 const uint32_t PostDividerRowHz[] = {80000000u, 40000000u, 20000000u};
 const uint8_t PostDividerRows = 3;
+
+// The reference clocks, tried in turn until one measures the arriving source.
+// Each is read against BringUpLineRateHz for its crossover row, and each has to
+// fit the input formatter's eleven-bit line counter undoubled, so none may
+// exceed 2047:
+//
+//   1400   CKO 21.9 MHz   VCO  87.5 MHz, low gain
+//   2040   CKO 31.9 MHz   VCO 127.5 MHz, low gain
+//
+// The first is what a selection installs. The second exists because the first
+// does not lock on every source the board carries -- measured on the Wii at
+// 480i on ypbpr, where nothing is measured through 1400 for as long as it is
+// left. ../../../docs/investigations/the-reference-clock-can-deadlock-the-measurement.md
+const uint16_t ReferenceDividers[] = {Adc::BringUpDivider, 2040};
+const uint8_t ReferenceClockCount =
+    sizeof(ReferenceDividers) / sizeof(ReferenceDividers[0]);
 }  // namespace
 
 uint32_t Adc::sampleRateHz(uint16_t divider, uint32_t lineRateHz,
@@ -193,6 +209,9 @@ uint8_t Adc::inputSel_ = 1;
 uint8_t Adc::oversampleInForce_ = 1;
 uint16_t Adc::dividerInForce_ = 0;
 uint32_t Adc::rateInForce_ = 0;
+
+uint8_t Adc::referenceStep_ = 0;
+uint16_t Adc::referenceDivider_ = 0;
 bool Adc::phaseFound_ = false;
 
 void Adc::choosePhaseSyncProcessor(uint8_t phase)
@@ -503,11 +522,31 @@ void Adc::applyResetParameters()
 
 void Adc::installReferenceSamplingClock()
 {
+    referenceStep_ = 0;
+    installReferenceStep();
+}
+
+void Adc::installNextReferenceSamplingClock()
+{
+    referenceStep_ = (uint8_t)((referenceStep_ + 1) % ReferenceClockCount);
+    installReferenceStep();
+}
+
+uint8_t Adc::referenceDividerCount() { return ReferenceClockCount; }
+
+bool Adc::referenceSamplingClockInForce()
+{
+    return referenceDivider_ != 0 && dividerInForce_ == referenceDivider_;
+}
+
+void Adc::installReferenceStep()
+{
     // The whole group, not the divider alone. A divider written without the
     // crossover row and the VCO gain puts the PLL on a frequency the hardware
     // will not run, which is a solid green screen with every register
     // self-consistent.
-    applySampleRate(BringUpDivider, BringUpLineRateHz, OversampleAsClockAllows);
+    referenceDivider_ = ReferenceDividers[referenceStep_];
+    applySampleRate(referenceDivider_, BringUpLineRateHz, OversampleAsClockAllows);
 }
 
 bool Adc::dividerLatched(uint16_t lineSamples, uint16_t tolerance)

@@ -1199,6 +1199,64 @@ TEST_CASE("a new source is measured through the reference clock, not the last on
                      Adc::PLLAD_MD::bitWidth) == Adc::BringUpDivider);
 }
 
+TEST_CASE("each reference clock in turn is a different divider")
+{
+    // A reference the ADC PLL will not lock to on the arriving source leaves
+    // nothing measurable, and a divider is installed only FROM a measurement --
+    // so the next one tried has to be a different clock, not the same one
+    // re-latched. Measured on the Wii at 480i on ypbpr: no measurement at all
+    // completes through the first for as long as it is left.
+    // ../docs/investigations/the-reference-clock-can-deadlock-the-measurement.md
+    Wire.reset();
+    Adc::installReferenceSamplingClock();
+    const uint16_t first = Adc::dividerInForce();
+
+    Adc::installNextReferenceSamplingClock();
+
+    CHECK(Adc::dividerInForce() != first);
+}
+
+TEST_CASE("the reference clocks cycle, so a source needing the first gets it back")
+{
+    // Stopping at the last would leave a source the earlier ones suit with no
+    // way back, which is the shape the recovery acts already take.
+    Wire.reset();
+    Adc::installReferenceSamplingClock();
+    const uint16_t first = Adc::dividerInForce();
+
+    for (uint8_t i = 0; i < Adc::referenceDividerCount(); ++i)
+        Adc::installNextReferenceSamplingClock();
+
+    CHECK(Adc::dividerInForce() == first);
+}
+
+TEST_CASE("a divider a measurement chose is not a reference clock")
+{
+    // What the recovery asks to tell a source nothing has measured from one
+    // whose clock is its own: re-asserting a reference is the deadlock, and
+    // re-asserting a solved divider is the recovery.
+    Wire.reset();
+    Adc::installReferenceSamplingClock();
+    REQUIRE(Adc::referenceSamplingClockInForce());
+
+    Adc::applySampleRate(2200, 15734, 4);
+
+    CHECK(!Adc::referenceSamplingClockInForce());
+}
+
+TEST_CASE("re-asserting the reference clock in force is still a reference")
+{
+    // A mode change re-applies the divider in force, so a reference that has
+    // not been measured through yet must not read as a solved one afterwards.
+    Wire.reset();
+    Adc::installReferenceSamplingClock();
+
+    Adc::applySampleRate(Adc::dividerInForce(), Adc::BringUpLineRateHz,
+                         Adc::OversampleAsClockAllows);
+
+    CHECK(Adc::referenceSamplingClockInForce());
+}
+
 TEST_CASE("the reference clock is latched, so the PLL leaves on it")
 {
     Wire.reset();

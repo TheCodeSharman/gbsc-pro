@@ -1207,6 +1207,38 @@ TEST_CASE("a count no source runs is absent whatever the sampling says")
 // held value never fires.
 // docs/investigations/the-gate-runs-a-ladder-that-is-not-safe-yet.md
 
+// A REFERENCE CLOCK THE ADC PLL WILL NOT LOCK TO IS A DEADLOCK, because the
+// engine installs a divider only FROM a measurement and the sync processor
+// counts in ADC clocks: nothing is measured, so no divider is chosen, so
+// nothing is ever measured. Measured on the Wii at 480i on ypbpr -- no
+// measurement completes at the bring-up divider for as long as it is left, 60 s
+// and five acts, with STATUS_SYNC_PROC_VTOTAL 97..156 against 525 and
+// STATUS_MISC_PLLAD_LOCK 0 throughout, and a different divider is measured
+// inside 0.1 s and acquires in 1.6 s. One reference is not enough.
+// docs/investigations/the-reference-clock-can-deadlock-the-measurement.md
+TEST_CASE("a source the reference clock cannot measure is given another one")
+{
+    seedBenchSource();
+    Adc::installReferenceSamplingClock();
+    REQUIRE(Adc::dividerInForce() == Adc::BringUpDivider);
+
+    Acquiring unit;
+    unit.acquisition.allowMaintenance(true);
+    unit.start();
+
+    // The free-running count, which settles on no value, so no pass measures
+    // the source and the divider is never chosen.
+    for (uint16_t i = 0;
+         i < (SyncRecovery::FirstActMs + 100)
+                 / VideoSourceAcquisition::DetectionIntervalMs; ++i) {
+        seedSourceLines((uint16_t)(97 + (i % 60)));
+        unit.poll();
+    }
+
+    REQUIRE(unit.acquisition.sourceState() == VideoSourceAcquisition::SourceAbsent);
+    CHECK(Adc::dividerInForce() != Adc::BringUpDivider);
+}
+
 TEST_CASE("a count that never settles leaves the divider the source was solved on")
 {
     // Noise is not a divider fault, so there is nothing here for a rewrite to

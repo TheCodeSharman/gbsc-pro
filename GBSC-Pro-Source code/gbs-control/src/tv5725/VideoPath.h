@@ -418,12 +418,17 @@ public:
     void holdDivider(uint16_t divider);
     uint16_t heldDivider() const;
 
-    // Put the divider in force back on the chip and restart the PLL under it,
-    // solving nothing. For a source that measures as absent while the sync
-    // processor is simply not counting: it counts in ADC clocks, so an unlocked
-    // ADC PLL is indistinguishable from no source, and every sync-processor
-    // register is already correct.
-    // ../../../docs/investigations/the-ladder-never-restarts-the-adc-pll.md
+    // Put a clock a measurement can happen through back on the chip, solving
+    // nothing. For a source that measures as absent while the sync processor is
+    // simply not counting: it counts in ADC clocks, so an unlocked ADC PLL is
+    // indistinguishable from no source, and every sync-processor register is
+    // already correct.
+    //
+    // A divider a measurement chose is re-asserted and the PLL restarted under
+    // it. A REFERENCE still in force is not: nothing has measured this source,
+    // so that clock is what has failed, and the next reference is installed
+    // instead.
+    // ../../../docs/investigations/the-reference-clock-can-deadlock-the-measurement.md
     void restartSamplingClock();
 
     // What the output is doing, as one question. Null only before anything has
