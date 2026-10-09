@@ -31,17 +31,18 @@ const uint8_t PostDividerRows = 3;
 
 // The reference clocks, tried in turn until one measures the arriving source.
 // Each is read against BringUpLineRateHz for its crossover row, and each has to
-// fit the input formatter's eleven-bit line counter undoubled, so none may
-// exceed 2047:
+// fit the input formatter's eleven-bit line counter undoubled:
 //
-//   1400   CKO 21.9 MHz   VCO  87.5 MHz, low gain
-//   2040   CKO 31.9 MHz   VCO 127.5 MHz, low gain
+//   2040   CKO 31.9 MHz   VCO 127.5 MHz   measures every bench source
+//   1400   CKO 21.9 MHz   VCO  87.5 MHz   measures all but interlaced SOG
 //
-// The first is what a selection installs. The second exists because the first
-// does not lock on every source the board carries -- measured on the Wii at
-// 480i on ypbpr, where nothing is measured through 1400 for as long as it is
-// left. ../../../docs/investigations/the-reference-clock-can-deadlock-the-measurement.md
-const uint16_t ReferenceDividers[] = {Adc::BringUpDivider, 2040};
+// A selection installs the first. **THE SECOND IS NOT A SPARE FOR THE BENCH**,
+// which both of these measure: it is there because a reference that cannot be
+// measured through is a DEADLOCK rather than a slow start, and no measurement
+// can choose its way out of one. A source neither suits is a source that never
+// acquires, so the list is what stops one stated pair being the whole answer.
+// ../../../docs/investigations/the-reference-clock-can-deadlock-the-measurement.md
+const uint16_t ReferenceDividers[] = {Adc::BringUpDivider, 1400};
 const uint8_t ReferenceClockCount =
     sizeof(ReferenceDividers) / sizeof(ReferenceDividers[0]);
 }  // namespace
@@ -211,7 +212,7 @@ uint16_t Adc::dividerInForce_ = 0;
 uint32_t Adc::rateInForce_ = 0;
 
 uint8_t Adc::referenceStep_ = 0;
-uint16_t Adc::referenceDivider_ = 0;
+bool Adc::referenceInForce_ = false;
 bool Adc::phaseFound_ = false;
 
 void Adc::choosePhaseSyncProcessor(uint8_t phase)
@@ -534,19 +535,23 @@ void Adc::installNextReferenceSamplingClock()
 
 uint8_t Adc::referenceDividerCount() { return ReferenceClockCount; }
 
-bool Adc::referenceSamplingClockInForce()
-{
-    return referenceDivider_ != 0 && dividerInForce_ == referenceDivider_;
-}
+bool Adc::referenceSamplingClockInForce() { return referenceInForce_; }
+
+void Adc::forgetReferenceClock() { referenceInForce_ = false; }
 
 void Adc::installReferenceStep()
+{
+    installReferenceDivider(ReferenceDividers[referenceStep_]);
+}
+
+void Adc::installReferenceDivider(uint16_t divider)
 {
     // The whole group, not the divider alone. A divider written without the
     // crossover row and the VCO gain puts the PLL on a frequency the hardware
     // will not run, which is a solid green screen with every register
     // self-consistent.
-    referenceDivider_ = ReferenceDividers[referenceStep_];
-    applySampleRate(referenceDivider_, BringUpLineRateHz, OversampleAsClockAllows);
+    applySampleRate(divider, BringUpLineRateHz, OversampleAsClockAllows);
+    referenceInForce_ = true;
 }
 
 bool Adc::dividerLatched(uint16_t lineSamples, uint16_t tolerance)

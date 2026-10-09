@@ -1199,6 +1199,21 @@ TEST_CASE("a new source is measured through the reference clock, not the last on
                      Adc::PLLAD_MD::bitWidth) == Adc::BringUpDivider);
 }
 
+TEST_CASE("a stated divider installs as a reference, against the bring-up rate")
+{
+    // The crossover row and the VCO gain are what separate a reference from a
+    // solved clock: a reference is read against BringUpLineRateHz, so the same
+    // divider lands on a different post divider depending on which it is. That
+    // is why asking whether a candidate can measure a source needs this rather
+    // than an ordinary apply at whatever rate is held.
+    Wire.reset();
+    Adc::installReferenceDivider(1700);
+
+    CHECK(Adc::dividerInForce() == 1700);
+    CHECK(Adc::rateInForce() == Adc::BringUpLineRateHz);
+    CHECK(Adc::referenceSamplingClockInForce());
+}
+
 TEST_CASE("each reference clock in turn is a different divider")
 {
     // A reference the ADC PLL will not lock to on the arriving source leaves
@@ -1228,33 +1243,6 @@ TEST_CASE("the reference clocks cycle, so a source needing the first gets it bac
         Adc::installNextReferenceSamplingClock();
 
     CHECK(Adc::dividerInForce() == first);
-}
-
-TEST_CASE("a divider a measurement chose is not a reference clock")
-{
-    // What the recovery asks to tell a source nothing has measured from one
-    // whose clock is its own: re-asserting a reference is the deadlock, and
-    // re-asserting a solved divider is the recovery.
-    Wire.reset();
-    Adc::installReferenceSamplingClock();
-    REQUIRE(Adc::referenceSamplingClockInForce());
-
-    Adc::applySampleRate(2200, 15734, 4);
-
-    CHECK(!Adc::referenceSamplingClockInForce());
-}
-
-TEST_CASE("re-asserting the reference clock in force is still a reference")
-{
-    // A mode change re-applies the divider in force, so a reference that has
-    // not been measured through yet must not read as a solved one afterwards.
-    Wire.reset();
-    Adc::installReferenceSamplingClock();
-
-    Adc::applySampleRate(Adc::dividerInForce(), Adc::BringUpLineRateHz,
-                         Adc::OversampleAsClockAllows);
-
-    CHECK(Adc::referenceSamplingClockInForce());
 }
 
 TEST_CASE("the reference clock is latched, so the PLL leaves on it")

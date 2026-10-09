@@ -201,6 +201,8 @@ volatile uint8_t pendingCoastPre = 0;
 volatile uint8_t pendingCoastPost = 0;
 volatile bool pendingSampleClock = false;
 volatile bool pendingSampleClockApply = false;
+volatile bool pendingReferenceClock = false;
+volatile uint16_t pendingReferenceClockDivider = 0;
 volatile uint16_t pendingSampleClockDivider = 0;
 volatile uint8_t pendingSampleClockOversample = 0;
 volatile bool pendingDividerHold = false;
@@ -2527,6 +2529,21 @@ static void restartAfterBypassSwitch()
     Tv5725::Adc::latch();
 }
 
+// Install a candidate REFERENCE sampling clock, which is not what
+// /sampleclock installs. The route takes its crossover row from the rate the
+// engine is holding, so the same divider lands on a different post divider and
+// VCO gain depending on what was last believed -- measured, KS 1 against a
+// reference install's KS 2 at the same 1400. A reference is read against
+// Adc::BringUpLineRateHz instead, so only this can ask whether a candidate can
+// measure a source at all.
+// docs/investigations/the-reference-clock-can-deadlock-the-measurement.md
+static void applyReferenceClock(uint16_t divider)
+{
+    Tv5725::Adc::installReferenceDivider(divider);
+    debugPrintf("reference clock: MD %u against %lu Hz\n", (unsigned)divider,
+                (unsigned long)Tv5725::Adc::BringUpLineRateHz);
+}
+
 // The one entry to pass-through, for every source that reaches it.
 //
 // It is NOT a preset load. Nothing here re-runs the scaling bring-up, and
@@ -4773,6 +4790,10 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                              pendingSampleClockDivider,
                              pendingSampleClockOversample);
         }
+        if (pendingReferenceClock) {
+            pendingReferenceClock = false;
+            applyReferenceClock(pendingReferenceClockDivider);
+        }
         if (pendingDividerHold) {
             pendingDividerHold = false;
             holdSampleClock(pendingHeldDivider);
@@ -5829,6 +5850,20 @@ void startWebserver()
         pendingCoastApply = pendingCoastClear || pre || post;
         pendingCoast = true;
         request->send(200, "application/json", "{\"queued\":\"coast\"}");
+    });
+
+    // Ask whether a candidate reference clock can measure the source that is
+    // on. Read the console, not the reply: the group latches together.
+    server.on("/refclock", HTTP_GET, [](AsyncWebServerRequest *request) {
+        if (!request->hasParam("md")) {
+            request->send(200, "application/json",
+                          "{\"error\":\"md is required\"}");
+            return;
+        }
+        pendingReferenceClockDivider =
+            (uint16_t)request->getParam("md")->value().toInt();
+        pendingReferenceClock = true;
+        request->send(200, "application/json", "{\"queued\":\"refclock\"}");
     });
 
     server.on("/sampleclock", HTTP_GET, [](AsyncWebServerRequest *request) {

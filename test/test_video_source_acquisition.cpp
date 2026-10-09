@@ -1216,6 +1216,25 @@ TEST_CASE("a count no source runs is absent whatever the sampling says")
 // STATUS_MISC_PLLAD_LOCK 0 throughout, and a different divider is measured
 // inside 0.1 s and acquires in 1.6 s. One reference is not enough.
 // docs/investigations/the-reference-clock-can-deadlock-the-measurement.md
+TEST_CASE("a measured source is not running a reference clock")
+{
+    // What the recovery asks before replacing a clock. A solved divider can land
+    // on a reference's own value, so this is held from the measurement having
+    // chosen rather than inferred by comparing the two -- compared, a source
+    // solved onto a reference value would read as never having been measured
+    // and have its clock taken away.
+    seedBenchSource();
+    seedLineSamples(BenchDivider);
+    Adc::installReferenceSamplingClock();
+    REQUIRE(Adc::referenceSamplingClockInForce());
+
+    Acquiring unit;
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+
+    CHECK(!Adc::referenceSamplingClockInForce());
+}
+
 TEST_CASE("a source the reference clock cannot measure is given another one")
 {
     seedBenchSource();

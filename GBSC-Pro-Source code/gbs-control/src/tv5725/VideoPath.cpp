@@ -572,6 +572,13 @@ bool VideoPath::installSampling(SamplingReason reason)
     const bool derivedFromMeasurement =
         reason == SamplingFollowsMeasurement && heldDivider_ == 0;
 
+    // A measurement has reached the point of choosing, so whatever happens
+    // below, no reference clock is in force any longer. Before the early return,
+    // because a divider that agrees is still a divider a measurement chose --
+    // and the recovery reads this to know it must not replace one.
+    if (reason == SamplingFollowsMeasurement)
+        Adc::forgetReferenceClock();
+
     // AND OF THE SCAN, because the divider is sized against it: the scan on the
     // chip is the one the last install put there, and the selection path leaves
     // the reference clock's rather than this source's -- so a rate that agrees

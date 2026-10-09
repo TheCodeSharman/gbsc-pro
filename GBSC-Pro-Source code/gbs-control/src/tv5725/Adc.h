@@ -440,31 +440,42 @@ public:
     // the reset state has to be a clock that can be measured through, or
     // nothing is ever able to measure its way out of it.
     //
-    // The pair is a MEASURED WORKING POINT rather than a nominal one: 1400 at
-    // 15625 Hz is CKO 21.9 MHz, which the crossover table puts on post divider
-    // 4 and so a VCO of 87.5 MHz on low gain -- measured on both bench inputs,
-    // acquiring in 3.8 s on `vga` and 5.3 s on `ypbpr`.
+    // The pair is a MEASURED WORKING POINT rather than a nominal one, and what
+    // it is measured against is every source the bench carries. 2040 at
+    // 15625 Hz is CKO 31.9 MHz, which the crossover table puts on post divider
+    // 4 and so a VCO of 127.5 MHz on low gain. Time to `state: acquired` from an
+    // input selection, two trials each:
     //
-    // **IT FITS THE LINE COUNTER UNDOUBLED**, which is the reason to prefer it
-    // over a larger one: everything to LineCounterMax does, so the reference
-    // line can be carried in either scan and the reference clock is no longer a
-    // divider the arriving source's scan may be unable to represent.
+    //   ypbpr 480i, sync on green, interlaced    2.3, 2.6 s
+    //   vga 800x600@60, 37.9 kHz                 5.5, 6.3 s
+    //   vga 640x480@60, 31.5 kHz                 4.9, 4.6 s
+    //   vga 320x256@50, 15.6 kHz                 6.3, 5.7 s
     //
-    // It also sits closer to the row the part ends up on. The crossover row is
-    // chosen from the ASSUMED rate here, and the actual CKO is the divider
-    // times the real line rate -- 1400 puts a 37.9 kHz source at 53 MHz against
-    // an installed /4, where 2506 put it at 94.9 MHz.
+    // **A REFERENCE THAT CANNOT BE MEASURED THROUGH IS A DEADLOCK**, because a
+    // divider is installed only FROM a measurement and the sync processor counts
+    // in ADC clocks. 1400 measures three of those four and NOTHING on the
+    // interlaced sync-on-green one -- no `sampling:` line in 60 s -- so that
+    // source never acquires until the reference is replaced. That is what makes
+    // this a correctness constant rather than a tuning one.
+    //
+    // **IT FITS THE LINE COUNTER UNDOUBLED**, which is what bounds it: the
+    // counter is eleven bits, so LineCounterMax is the ceiling and this sits
+    // just under it. The reference line is then carriable in either scan, so the
+    // reference is never a divider the arriving source's scan cannot represent.
+    //
+    // The crossover row is chosen from the ASSUMED rate while the actual CKO is
+    // the divider times the real line rate, so a fast source runs far off the
+    // installed row: 37.9 kHz at this divider is 77.3 MHz against a /4 sized for
+    // 31.9 MHz. It costs nothing measurable, because the PLL then locks to every
+    // kth hsync and measureSourceLinesCorrected() recovers k up to
+    // LinesPerCountMax -- which is what the 37.9 kHz row above is taken through.
+    // Measured to 37.9 kHz and no further; nothing on this bench runs a faster
+    // line.
     //
     // The rate is the LOWEST line the part is expected to carry, so that every
-    // faster source needs the PLL to divide rather than multiply: asked for a
-    // frequency under its lock range it locks to every kth hsync, and
-    // measureSourceLinesCorrected() recovers k up to LinesPerCountMax. **HOW FAR
-    // THAT REACHES IS A PROPERTY OF THE DIVIDER**, the conversion rate being
-    // divider x line rate against the part's 162 MSPS: swept on the bench at
-    // 37.9, 45.0, 67.6 and 75.0 kHz, every one counted and rated correctly first
-    // pass with one divider solved and STATUS_SYNC_PROC_HTOTAL equal to it.
-    // ../../../docs/investigations/the-reference-divider-was-the-bootstrap.md
-    static const uint16_t BringUpDivider = 1400;
+    // faster source needs the PLL to divide rather than multiply.
+    // ../../../docs/investigations/the-reference-clock-can-deadlock-the-measurement.md
+    static const uint16_t BringUpDivider = 2040;
     static const uint32_t BringUpLineRateHz = 15625;
 
     // The scan the bring-up line is carried as, which the input formatter's line
@@ -514,11 +525,24 @@ public:
     // How many there are, so the cycle is testable without restating the list.
     static uint8_t referenceDividerCount();
 
-    // Whether the clock in force is still a reference -- which is what says
-    // nothing has measured this source, a solved divider being the only other
-    // thing that reaches PLLAD_MD. Asked by the recovery to know whether to try
-    // another reference or re-latch the one a measurement chose.
+    // Whether a reference clock is in force, which is what says nothing has
+    // measured this source. Asked by the recovery to know whether to try another
+    // reference or re-latch the divider a measurement chose. Held rather than
+    // inferred from the divider: a solved divider may land on a reference's
+    // value, and comparing them would read that as never having measured.
     static bool referenceSamplingClockInForce();
+
+    // A measurement has chosen a divider, so no reference is in force any more.
+    // Called even where the install is skipped as already in force -- what
+    // matters is that a measurement got far enough to choose.
+    static void forgetReferenceClock();
+
+    // Install one stated divider as a reference clock: the whole group, with the
+    // crossover row and the VCO gain read against BringUpLineRateHz rather than
+    // against any rate the engine is holding. That distinction is the whole
+    // difference between a reference and a solved clock, so asking whether a
+    // candidate can measure a source needs this rather than an ordinary apply.
+    static void installReferenceDivider(uint16_t divider);
 
     static void applyResetParameters();
 
@@ -605,7 +629,7 @@ private:
 
     static void applyHeldGain();
 
-    // Install whichever reference clock the step names, as the whole PLL group.
+    // Install whichever reference clock the step names.
     static void installReferenceStep();
 
     static uint8_t phaseSyncProcessor_;
@@ -615,12 +639,9 @@ private:
     static uint16_t dividerInForce_;
     static uint32_t rateInForce_;
 
-    // Which reference clock is being tried, and the divider it installed. The
-    // divider is kept rather than compared against the list so that re-applying
-    // the clock in force -- which a mode change does -- still reads as a
-    // reference.
+    // Which reference clock is being tried, and whether one is in force at all.
     static uint8_t referenceStep_;
-    static uint16_t referenceDivider_;
+    static bool referenceInForce_;
 
     static bool phaseFound_;
     static uint8_t gain_[3];
