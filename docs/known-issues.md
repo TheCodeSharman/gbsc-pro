@@ -312,13 +312,28 @@ Twenty legs an input, same session, measured to `sync pad: driven`:
 | `ypbpr` on the correct count | 20 of 20 | **19 of 20**, one 263-line solve |
 | `vga` | 20 of 20, median 6.3 s | 20 of 20, median 6.2 s |
 
-So `ypbpr` meets its budget for the first time, and what is left is the COUNT
-rather than the clock: the one leg at 14.2 s is the one that solved 263 lines
-against the source's 259/260, and `rateSettled()` accepting an arbitrary sample
-once `RateAgreementAttempts` is reached is the open defect that explains it --
-measuring at 2.5 s reaches the source earlier than the escape at 10 s ever did,
-so a reading the cap would have forgiven now decides.
-`investigations/the-reference-clock-can-deadlock-the-measurement.md`.
+So `ypbpr` meets its budget for the first time.
+
+**AND THE RECOVERY LADDER'S THREE ACTS WERE COSTING THE REST.** Retiring them --
+one recovery in place of reconfigure, reset-the-blocks and move-the-input -- took
+the same reference clock from 2.5..14.2 s to **2.5..3.7 s**, and the one leg that
+had solved 263 lines against the source's 259/260 went with the outlier:
+
+| | three acts | one recovery |
+|---|---|---|
+| `ypbpr` inside 10 s | 19 of 20 | 19 of 20 |
+| `ypbpr` spread | 2.5..14.2 s, median 3.0 | **2.5..3.7 s, median 2.8** |
+| `ypbpr` on the correct count | 19 of 20 | **20 of 20**, `cv` 520/522 |
+| `vga` | 20 of 20, median 6.2 s | 20 of 20, median 6.3 s, `cv` 628 throughout |
+
+Which is "a recovery fired into an acquisition that was working" seen from the
+other end, and it is why the acts are gone rather than retimed. `vga` is
+unmoved, and 3060 bytes of globals and 5.9 KB of flash come back.
+`video-source-acquisition.md`, "Three acts went".
+
+`rateSettled()` accepting an arbitrary sample once `RateAgreementAttempts` is
+reached remains open and is the next thing to reach for if a wrong count
+returns. `investigations/the-reference-clock-can-deadlock-the-measurement.md`.
 
 **A GROUP RE-ASSERT PLUS THE BLOCK RESETS RECOVERS THE STALL FROM THE ESP IN
 ABOUT TWO SECONDS**, which no act of the ladder achieves in 330 s:

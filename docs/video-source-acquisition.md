@@ -148,9 +148,10 @@ coherent job, in the wrong hands.
 ### The measurement escalates, and stops as soon as VideoPath can be called
 
 One sequence, cheapest first, driven by what is still missing rather than by
-which tier failed. **The recovery ladder is the bottom of this list, not a
-second one**: both answer "there are no usable timings yet, what next", and
-`SyncRecovery` is that list starting at position 4.
+which tier failed. **The recovery is the bottom of this list, not a second one**:
+both answer "there are no usable timings yet, what next", and the recovery is
+that list's last entry -- restart the sampling clock, which on a source nothing
+has measured means try another reference.
 
     the chip says the mode changed
       0  acquire the sync type            2-3 ms with its own V sync
@@ -647,10 +648,11 @@ deciding to move a mux on another chip -- the dependency disguised rather than
 removed. It reports *not acquired, and out of what I can do alone*; what that
 means is policy.
 
-**`SyncRecovery` is outside `Tv5725::` by the same argument, and moved there at
-step 7.** Ten of its eleven rungs are TV5725 operations, which is why it read as
-marginal, but the eleventh changes the input and the list as a whole is policy
-about the board. It sits in `src/videosource/` beside `VideoSourceAcquisition`.
+**The recovery is outside `Tv5725::` by the same argument.** Its operations are
+TV5725 ones, which is why it reads as marginal, but WHETHER to recover and WHEN
+is policy about the board rather than a register block's business. It lives on
+`VideoSourceAcquisition`, in `src/videosource/`, beside the tick that times
+it.
 
 ## The ladder
 
@@ -690,49 +692,57 @@ only on a genuinely composite one where the timeout is the right answer.
 | steer the HD bypass vsync window | `steerHdBypassVsyncWindow()`, already extracted |
 | steer the ADC PLL | the band index and its `PLLAD_KS`/`FS`/`ICP` writes |
 
-### The three acts, and what each one is for
+### The one recovery, and what it is for
 
-`SyncRecovery::actAt()` answers which act a run of failed passes is due, and
-`VideoSourceAcquisition::runRecovery()` dispatches on the answer. It is a WALL
-CLOCK rather than a pass count: passes are missed wherever `loop()` stalls, so a
-count under-reads how long a source has been missing, and what this is timed
-against is the acquisition BUDGET.
+`VideoSourceAcquisition::recoverSource()` is the whole of it. On a run of failed
+passes it releases a held capture, resets the sync processor, and restarts the
+sampling clock -- the blocks first and the clock after, which is the order
+measured to clear a stall from outside the engine.
 
-| after | act | operation |
+**WHICH CLOCK THAT IS IS NOT THE RECOVERY'S TO DECIDE.** A reference clock still
+in force says nothing has measured this source, so `VideoPath` installs the next
+reference; a divider a measurement chose is re-asserted under a restarted PLL.
+Asking here would make a second owner of a decision `VideoPath` already holds.
+
+**IT IS A WALL CLOCK rather than a pass count**: passes are missed wherever
+`loop()` stalls, so a count under-reads how long a source has been missing, and
+what this is timed against is the acquisition BUDGET --
+`RecoveryBudgetMs`, the ten seconds a source change is allowed to the picture
+being shown. Nothing on the acquisition path waits for it: what it times is a
+source that would otherwise never arrive, not one that is merely slow.
+
+### Three acts went, and nothing replaced two of them
+
+`SyncRecovery` named three -- reconfigure the path, reset the blocks, move the
+mux -- fired ten seconds apart and cycling. Measured against the one stall that
+reproduces, the Wii at 480i on `ypbpr` with a reference clock it cannot be
+measured through: five acts in 60 s, no `sampling:` line printed at all, and the
+source still absent. A fuller reset than `ResetBlocks` performs -- the whole
+`/sampleclock` sequence, video blocks and memory bus and both phases included --
+leaves the same stall standing when the divider is wrong, so the ordering of
+resets against the PLL restart is not what it turned on.
+
+What it turned on was the sampling clock, which only `Reconfigure` touched and
+only as its last step. So the clock is the recovery and the rest is deleted:
+
+| act | why it went |
+|---|---|
+| `Reconfigure` | the sync-type re-probe, the clamp window, the Mode Detect nudge and the separator walk changed nothing across the stall -- `ADC_SOGCTRL` moved 13 to 14 once and held, the coast pair stayed 7/6. What remained of it is the clock |
+| `ResetBlocks` | nothing, twice, in the same stall, and a superset of it from outside the engine does nothing either |
+| `MoveInput` | nothing, and it cannot reach the fault it names: `ADC_INPUT_SEL` is half the input path and `ASW_01`-`ASW_04` is the HC32's, which no register the ESP owns can move |
+
+**The acts were not merely idle, they cost accuracy.** Twenty legs an input
+either side of the retirement, same session, same reference clock:
+
+| | three acts | one recovery |
 |---|---|---|
-| -- | `None` | the budget: a source mode change is shown inside 1.2..2.0 s and a component selection inside 4.4..6.9 s, so nothing is recovered until both have had their chance |
-| 10 s | `Reconfigure` | the sync type re-probed, the search configuration, the clamp window, Mode Detect nudged, the separator walked from the level the input is due, the ADC PLL restarted |
-| 20 s | `ResetBlocks` | a held capture released, `SyncProcessor::reset()`, `ModeDetect::reset()` |
-| 30 s | `MoveInput` | the other ADC input, kept only if it locks within 210 ms |
+| `ypbpr` spread | 2.5..14.2 s, median 3.0 | **2.5..3.7 s, median 2.8** |
+| `ypbpr` on the correct count | 19 of 20 | **20 of 20** |
+| `vga` | median 6.2 s | median 6.3 s, `cv` 628 in all 20 |
 
-Then it cycles, because a source that has been switched off and on again needs
-it to.
-
-**AN ACT IS A SELECTION'S WORTH OF WORK, SO IT GETS A SELECTION'S WORTH OF
-TIME.** The interval is the same budget throughout: an act that has just run has
-not been judged until an acquisition could have completed under it.
-
-**THE ORDER IS WHAT THE FIRST-ACQUISITION GRACE USED TO BE.** A 15 s hold existed
-so the rungs did not tear down a sync path an ordinary selection was still
-solving through. The act that disturbs nothing now comes first and the teardown
-lands at 20 s, past where the grace ended, so there is nothing left for a grace
-to defer.
-
-**A RECOVERY FIRED INTO AN ACQUISITION THAT WAS WORKING.** That is what the
-twelve rungs on a 20 ms pass count did, and it is why the positions are gone
-rather than retuned. Measured on a `ypbpr` leg that then failed:
-
-    2.15  sampling: 263 lines x 59.00 Hz -> line rate 15576
-    2.16  sampling: rate 15576 doubled 1 -> divider 2200
-    2.18  recovery: coast window at pass 8
-    2.28  sampling: 269 lines x 70.15 Hz -> line rate 18941
-    2.80  duty: 243 pulse / 2200 divider, htotal 3268, negative, UNLOCKED
-
-The engine had the source measured and its divider installed, and the rung reset
-the coast window and discarded the placement 20 ms later. The first reading
-lands at 1.8..2.7 s and pass 8 at 1.84 s, so which came first was a race decided
-by milliseconds. Both measured mode changes fired three rungs inside a change
-that completed in 1.2..1.8 s; nothing broke, and nothing was gained.
+The outlier and the one wrong count went with them, which is the same finding as
+"A RECOVERY FIRED INTO AN ACQUISITION THAT WAS WORKING" below seen from the
+other end. It also returns 3060 bytes of globals and 5.9 KB of flash.
 
 ### What went, and the measurement for each
 
@@ -907,8 +917,8 @@ gated on the engine's run rather than on what the source is called:
 **THE CADENCE IS A CLASS, AND THE TICK IS ONE TICK.** `SourceMaintenance` names
 what a settled source is due -- the capture hold, the dynamic sync-processor
 write, the separator level, the sampling phase, the window re-place, the SOG-bad
-acknowledgement, the deinterlacer steer -- and performs none of it, the shape
-`SyncRecovery` already uses one level up. What it replaces is fourteen literal
+acknowledgement, the deinterlacer steer -- and performs none of it, naming the
+work for the caller to do. What it replaces is fourteen literal
 pass counts inside the stable branch, where the cadence could only be read by
 collecting them.
 
@@ -1046,8 +1056,7 @@ line -- and `countMoved` compared raw reads instead, so a source counting
 `SteadyRun::agree()` is that rule made public and both callers use it.
 
 **AND THE LADDERS HAVE MERGED.** Both `!rgbhvBypass()` gates are gone and so is
-`RGBHVNoSyncCounter`, so `SyncRecovery`'s eleven rungs are the only recovery
-there is. Measured with the Wii unplugged, which is what the reproduction needs:
+`RGBHVNoSyncCounter`, so one recovery path serves every source. Measured with the Wii unplugged, which is what the reproduction needs:
 before the change an empty `rgbs` ran `RGBHV limit no sync` every ~33 s and
 **the rungs never ran at all**; after it the ladder walks the separator
 (`SP_SOG_MODE` 1, `ADC_SOGCTRL` 4) and `vga` recovers to acquired in under ten

@@ -196,6 +196,18 @@ Whether the clock in force is a reference is held rather than inferred:
 divider in force -- which a mode change does -- still reads as a reference,
 while a solved divider does not.
 
+## The recovery that remains
+
+Three acts fired against this stall and none of them reached it, so the ladder
+is retired and one recovery replaces it: release a held capture, reset the sync
+processor, restart the sampling clock. `VideoPath` decides which clock that is,
+because a reference still in force means nothing has measured the source.
+
+Retiring them tightened the acquisition it was supposed to protect -- `ypbpr`
+2.5..14.2 s to 2.5..3.7 s, and 20 of 20 on the correct count where one leg in
+twenty had solved 263 lines against 259/260. `../video-source-acquisition.md`
+carries the per-act measurements.
+
 **The escape is what is general here, not either value.** A reference that fails
 on some source is a property of having one stated pair, and the measured fact
 behind it is that CHANGING the divider is what restarts the measurement, after
