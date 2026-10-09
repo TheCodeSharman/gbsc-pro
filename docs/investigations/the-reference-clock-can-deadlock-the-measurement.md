@@ -130,6 +130,59 @@ the bootstrap page measured as the state the unit locks in, but only with the
 reference scan doubled, which is what was given up to stop the arriving source's
 scan being one the reference could not represent.
 
+## Which reference can measure which source
+
+Asked end to end, through the real selection path, two trials a cell. The
+discriminator is the escape itself: a leg that acquires inside the 10 s budget
+was measured through the FIRST reference, and one landing at 11-13 s means the
+first failed and the escape to the second rescued it.
+
+| source | 1400 first | 2040 first |
+|---|---|---|
+| ypbpr 480i, sync on green | **11.5, 11.6 s** -- rescued | **2.3, 2.6 s** |
+| vga 800x600@60, 37.9 kHz | 5.6, 5.8 s | 5.5, 6.3 s |
+| vga 640x480@60, 31.5 kHz | 4.7 s | 4.9, 4.6 s |
+| vga 320x256@50, 15.6 kHz | 2.9, 3.2 s | 6.3, 5.7 s |
+
+**2040 measures every source the bench carries and 1400 is the only one that
+fails any of them**, so the deadlock is answered by the reference's VALUE and not
+by retrying: the interlaced sync-on-green source goes from never acquiring, to
+11.5 s behind the escape, to **2.3 s** with nothing recovered at all.
+
+**THE PREDICTION THAT A HIGH DIVIDER WOULD FAIL THE FAST SOURCES IS REFUTED, and
+it was the reason not to try one.** The crossover row is read against the assumed
+15625 Hz while the actual CKO is the divider times the real line rate, so a
+37.9 kHz source at 2040 runs 77.3 MHz against a /4 sized for 31.9 MHz -- a VCO
+far outside its range on paper. It measures anyway, in the same time 1400 takes,
+because the PLL locks to every kth hsync and
+`SourceMeasurement::measureSourceLinesCorrected()` recovers k. The arithmetic
+that makes a divider look unusable describes the LOCK, and the count correction
+is what makes the measurement survive losing it.
+
+The cost is at the other end: 320x256@50 goes from 2.9 to 6.0 s. Both are inside
+the budget, and a source that never acquired is worth two seconds on one that
+always did.
+
+## How to ask this question, because two ways do not work
+
+**`/sampleclock?md=X` cannot answer it.** It installs through the engine's chosen
+sampling, so the crossover row comes from the HELD rate rather than from
+`BringUpLineRateHz`: the same 1400 lands on `PLLAD_KS` 1 in a stall holding
+vga's 37879 Hz where a reference install holds `KS` 2. `/refclock?md=` installs
+one as a reference, which is the only way to compare candidates.
+
+**Scraping the console for a `sampling:` line gives false negatives.** The
+console drops bursts and the route is queued for `loop()`, which during
+detection sits in waits of seconds -- so a cell scored silent while the unit was
+in that very configuration, acquired, with `STATUS_SYNC_PROC_HTOTAL` equal to
+the divider.
+
+**Installing a candidate while the source is already acquired tests nothing.**
+The engine never leaves `acquired`, so the probe reports success without a
+measurement having been taken through the new clock. Judge a candidate by
+selecting the input with it already in force, and let acquisition be the proof:
+acquiring REQUIRES a measurement.
+
 ## What the engine does now
 
 `Tv5725::Adc` holds the reference clocks as a sequence rather than one pair.
@@ -143,8 +196,10 @@ Whether the clock in force is a reference is held rather than inferred:
 divider in force -- which a mode change does -- still reads as a reference,
 while a solved divider does not.
 
-**The escape is what is general here, not the second value.** A reference that
-fails on some source is a property of having one stated pair, and the measured
-fact behind the fix is that CHANGING the divider is what restarts the
-measurement, after which the engine solves the right one unaided in about a
-second.
+**The escape is what is general here, not either value.** A reference that fails
+on some source is a property of having one stated pair, and the measured fact
+behind it is that CHANGING the divider is what restarts the measurement, after
+which the engine solves the right one unaided in about a second. The bench needs
+no second candidate now that the first measures all of it -- which is exactly
+why the list stays: the next source to arrive is not on this bench, and a
+reference it cannot be measured through would otherwise be terminal.

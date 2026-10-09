@@ -290,15 +290,35 @@ it is left, three selections out of three, 60 s and five acts with no
 and the act installs the NEXT one. Twenty trips from an 800x600@60 `vga`
 predecessor, same session:
 
-| | before | after |
-|---|---|---|
-| `ypbpr` shown a picture | **0 of 3**, none ending on its own | see the run below |
-| `ypbpr` spread | never | **11.7 .. 12.1 s** |
+**AND THE REFERENCE'S VALUE IS THE WHOLE OF IT: `BringUpDivider` IS 2040.**
+Asked end to end, two trials a cell, the discriminator being that a leg inside
+the budget was measured through the first reference while one at 11-13 s means
+the escape rescued it:
 
-`investigations/the-reference-clock-can-deadlock-the-measurement.md`. The wait
-that is left is the act's own window: the escape is correct and fires at
-`FirstActMs`, so the acquisition is ten seconds of timer plus 1.7 s of solve,
-and bringing the trigger forward is what the 10 s budget needs next.
+| source | 1400 first | 2040 first |
+|---|---|---|
+| `ypbpr` 480i, sync on green | 11.5, 11.6 s -- rescued | **2.3, 2.6 s** |
+| `vga` 800x600@60, 37.9 kHz | 5.6, 5.8 s | 5.5, 6.3 s |
+| `vga` 640x480@60, 31.5 kHz | 4.7 s | 4.9, 4.6 s |
+| `vga` 320x256@50, 15.6 kHz | 2.9, 3.2 s | 6.3, 5.7 s |
+
+Twenty legs an input, same session, measured to `sync pad: driven`:
+
+| | 1400 | 2040 |
+|---|---|---|
+| `ypbpr` shown a picture | 20 of 20 | 20 of 20 |
+| `ypbpr` **inside 10 s** | **0 of 20** | **19 of 20** |
+| `ypbpr` spread | 11.6..12.4 s, median 12.0 | **2.5..14.2 s, median 3.0** |
+| `ypbpr` on the correct count | 20 of 20 | **19 of 20**, one 263-line solve |
+| `vga` | 20 of 20, median 6.3 s | 20 of 20, median 6.2 s |
+
+So `ypbpr` meets its budget for the first time, and what is left is the COUNT
+rather than the clock: the one leg at 14.2 s is the one that solved 263 lines
+against the source's 259/260, and `rateSettled()` accepting an arbitrary sample
+once `RateAgreementAttempts` is reached is the open defect that explains it --
+measuring at 2.5 s reaches the source earlier than the escape at 10 s ever did,
+so a reading the cap would have forgiven now decides.
+`investigations/the-reference-clock-can-deadlock-the-measurement.md`.
 
 **A GROUP RE-ASSERT PLUS THE BLOCK RESETS RECOVERS THE STALL FROM THE ESP IN
 ABOUT TWO SECONDS**, which no act of the ladder achieves in 330 s:
