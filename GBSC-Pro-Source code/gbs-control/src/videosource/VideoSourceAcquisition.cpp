@@ -28,7 +28,7 @@ VideoSourceAcquisition::VideoSourceAcquisition(Tv5725::SourceMeasurement &sampli
       detectedMs_(0),
       detectedEver_(false), solvedLines_(0), solvedLineRateHz_(0),
       idle_(Tv5725::SourceMeasurement::SteadySamples),
-      unusableCountArmed_(false), ownVsyncFound_(false), dynamicApplied_(false), dynamicForSearch_(false), sourceMeasured_(false),
+      unusableCountArmed_(false), dynamicApplied_(false), dynamicForSearch_(false), sourceMeasured_(false),
       sourceState_(SourceAbsent),
       solvedLinePeriod_(0), rateRun_(0), recheckPasses_(0),
       firstRateConfirmed_(false),
@@ -36,8 +36,7 @@ VideoSourceAcquisition::VideoSourceAcquisition(Tv5725::SourceMeasurement &sampli
       unsettledPasses_(0), unsettledArmed_(false),
       vsyncAbsentPasses_(0), vsyncAbsentArmed_(false),
       unmeasuredPasses_(0), acquiredPasses_(0),
-      unacquiredSinceMs_(0), unacquiredForMs_(0),
-      actDue_(SyncRecovery::None), actRun_(SyncRecovery::None),
+      unacquiredSinceMs_(0), unacquiredForMs_(0), recoveredAtMs_(0),
       selectionSeen_(VideoSourceSelection::selected()),
       runAdvanced_(false) {}
 
@@ -600,8 +599,6 @@ bool VideoSourceAcquisition::poll(uint32_t nowMs)
     if (sourceState_ == SourceAcquired) {
         unmeasuredPasses_ = 0;
         unacquiredForMs_ = 0;
-        actDue_ = SyncRecovery::None;
-        actRun_ = SyncRecovery::None;
         if (acquiredPasses_ < AcquiredPassCeiling)
             ++acquiredPasses_;
     } else {
@@ -611,7 +608,6 @@ bool VideoSourceAcquisition::poll(uint32_t nowMs)
         if (unmeasuredPasses_ < AcquiredPassCeiling)
             ++unmeasuredPasses_;
         unacquiredForMs_ = nowMs - unacquiredSinceMs_;
-        actDue_ = SyncRecovery::actAt(unacquiredForMs_);
     }
 
     // Ungated: an output left away is a dark panel, and whether maintenance is
@@ -723,15 +719,11 @@ void VideoSourceAcquisition::keepSourceComing(uint32_t nowMs)
     serviceChannelSync(nowMs);
 }
 
-SyncRecovery::Act VideoSourceAcquisition::recoveryDue() const { return actDue_; }
-
 void VideoSourceAcquisition::restartRecovery()
 {
     unmeasuredPasses_ = 0;
     unacquiredForMs_ = 0;
-    actDue_ = SyncRecovery::None;
-    actRun_ = SyncRecovery::None;
-    ownVsyncFound_ = false;
+    recoveredAtMs_ = 0;
 }
 
 bool VideoSourceAcquisition::selectionMoved()
@@ -954,11 +946,6 @@ void VideoSourceAcquisition::applySyncProcessorDynamic()
     Tv5725::SyncProcessor::applyDynamic(source);
 }
 
-bool VideoSourceAcquisition::mayChangeInput()
-{
-    return !VideoSourceSelection::chosen(VideoSourceSelection::selected());
-}
-
 void VideoSourceAcquisition::acquireSeparatorLevel()
 {
     if (!Tv5725::Chip::hasPower()) {
@@ -972,85 +959,6 @@ void VideoSourceAcquisition::acquireSeparatorLevel()
     Tv5725::SyncOnGreen::acquire(clock_, Tv5725::SyncOnGreen::putInForce);
 }
 
-void VideoSourceAcquisition::reacquireSeparator()
-{
-    Tv5725::SyncOnGreen::reacquire(acquireSeparatorLevel,
-                                   Tv5725::SyncOnGreen::putInForce);
-}
-
-bool VideoSourceAcquisition::tryOtherAdcInput()
-{
-    const uint8_t previousInput = Tv5725::Adc::selectOtherInput();
-    delay(40);
-
-    // Counted rather than clocked: the wait is a millisecond a pass, so the
-    // count IS the time, and a rung that hangs when nobody supplied a clock is
-    // worse than one that waits a little long.
-    for (uint16_t waited = 0; waited < OtherInputLockMs; ++waited) {
-        if (Tv5725::SyncProcessor::hsyncActive()) {
-            tv5725Log("recovery: locked on the other ADC input");
-            return true;
-        }
-        watchdog_();
-        delay(1);
-    }
-
-    Tv5725::Adc::selectInput(previousInput);
-    return false;
-}
-
-bool VideoSourceAcquisition::runRecovery(SyncRecovery::Act act)
-{
-    switch (act) {
-    case SyncRecovery::None:
-        break;
-
-    case SyncRecovery::Reconfigure:
-        reconfigureForSource();
-        break;
-
-    case SyncRecovery::ResetBlocks:
-        resetTheBlocks();
-        break;
-
-    case SyncRecovery::MoveInput:
-        if (!ownVsyncFound_ && mayChangeInput())
-            return tryOtherAdcInput();
-        break;
-    }
-    return false;
-}
-
-void VideoSourceAcquisition::reconfigureForSource()
-{
-    // A V sync arriving is proof of a SOURCE, which is a reason not to move the
-    // mux out from under it -- MoveInput's precondition, set here.
-    ownVsyncFound_ = !videoPath_.reacquireSyncType();
-    if (ownVsyncFound_)
-        tv5725Log("recovery: own V sync found, the input stays");
-
-    applySyncProcessorDynamic();
-    Tv5725::SyncProcessor::applyDefaultClampWindow();
-    Tv5725::SyncProcessor::holdClamp();
-    Tv5725::ModeDetect::nudge();
-    reacquireSeparator();
-
-    // Last, because the sync processor counts in ADC clocks and everything
-    // above is counted through them.
-    videoPath_.restartSamplingClock();
-}
-
-void VideoSourceAcquisition::resetTheBlocks()
-{
-    if (Tv5725::SyncProcessor::hsyncActive())
-        Tv5725::FrameBuffer::releaseCapture();
-
-    Tv5725::SyncProcessor::reset();
-    delay(BlockResetSettleMs);
-    Tv5725::ModeDetect::reset();
-    delay(BlockResetSettleMs);
-}
-
 void VideoSourceAcquisition::recoverSource()
 {
     report_.vsyncLockStale = true;
@@ -1062,24 +970,27 @@ void VideoSourceAcquisition::recoverSource()
 
     Tv5725::Adc::forgetPhase();
 
-    // On the EDGE of the act's window, so an act runs once rather than on every
-    // pass of the ten seconds it is given to work in.
-    const SyncRecovery::Act due = recoveryDue();
-    if (due == actRun_)
+    if ((uint32_t)(unacquiredForMs_ - recoveredAtMs_) < RecoveryBudgetMs)
         return;
-    actRun_ = due;
-    if (due == SyncRecovery::None)
-        return;
+    recoveredAtMs_ = unacquiredForMs_;
 
-    char line[64];
-    snprintf(line, sizeof(line), "recovery: %s after %us",
-             SyncRecovery::nameOf(due), (unsigned)(unacquiredForMs_ / 1000));
+    char line[72];
+    snprintf(line, sizeof(line), "recovery: the sampling clock after %us",
+             (unsigned)(unacquiredForMs_ / 1000));
     tv5725Log(line);
 
-    if (runRecovery(due)) {
-        restartRecovery();
-        tv5725Log("No Signal Out");
-    }
+    // The blocks first and the clock after, which is the order measured to clear
+    // a stall from outside the engine.
+    if (Tv5725::SyncProcessor::hsyncActive())
+        Tv5725::FrameBuffer::releaseCapture();
+    Tv5725::SyncProcessor::reset();
+    delay(BlockResetSettleMs);
+
+    // WHICH CLOCK THIS IS IS NOT THIS CLASS'S TO DECIDE. A reference still in
+    // force says nothing has measured the source, so the next reference is
+    // tried; a divider a measurement chose is re-asserted under a restarted PLL.
+    // VideoPath owns that, and asking here would be a second owner.
+    videoPath_.restartSamplingClock();
 }
 
 void VideoSourceAcquisition::maintainSource()

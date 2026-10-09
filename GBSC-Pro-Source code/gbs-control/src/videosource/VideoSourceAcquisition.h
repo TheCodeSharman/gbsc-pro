@@ -11,7 +11,6 @@
 #include "../tv5725/SourceMeasurement.h"
 #include "../tv5725/VideoPath.h"
 #include "SourceMaintenance.h"
-#include "SyncRecovery.h"
 #include "VideoSourceSelection.h"
 
 class VideoSourceAcquisition {
@@ -149,33 +148,8 @@ public:
     // is walked on a board that may not be there.
     static void acquireSeparatorLevel();
 
-    // Run one act of the recovery. True means the act SETTLED the question
-    // rather than advancing it -- a lock found on the other ADC input -- so the
-    // run restarts rather than carrying on.
-    //
-    // Which act is SyncRecovery's. The conditions here are facts about the
-    // source rather than about the clock, so an act whose precondition fails
-    // costs its turn.
-    bool runRecovery(SyncRecovery::Act act);
-
-    // Everything a selection does, to a path nothing is counting: the sync type
-    // decides what the block counts, the search configuration places the windows
-    // it counts through, and the sampling clock is restarted last.
-    void reconfigureForSource();
-
-    // What no reconfigure can do for itself. Measured on the Wii at 480p over
-    // ypbpr: every field of the configuration reads correct and the block still
-    // counts 100 lines with the ADC PLL unlocked, until a SFTRST_SYNC_RSTZ pulse
-    // clears it.
-    void resetTheBlocks();
-
     // How long each block reset is given before the next write.
     static const uint8_t BlockResetSettleMs = 8;
-
-    // Whether detection may cross to the other connector. An explicit
-    // selection is a command: a chosen input is selected whether it has a
-    // signal or not, so there is nowhere to promote to.
-    static bool mayChangeInput();
 
     // Whether keeping the source coming is wanted at all. Off while detection
     // owns the input -- it runs a heavier search of its own -- and while the
@@ -228,16 +202,19 @@ public:
 
     SourceState sourceState() const;
 
-    // Which act the recovery is due, from this class's own run of failed passes.
-    // The timer lives here because the measurement that decides it does:
-    // rto->noSyncCounter advanced on a source the engine calls present, and
-    // walked the ADC and the sync processor off it.
-    // docs/investigations/the-sketch-hunts-while-the-engine-is-locked.md
-    SyncRecovery::Act recoveryDue() const;
+    // How long a source gets to arrive before anything is recovered, and how
+    // long each recovery is then given to show its effect. It is the acquisition
+    // BUDGET rather than a tuned figure: a source change is allowed ten seconds
+    // to the picture being shown, so a source still absent at ten has spent it.
+    //
+    // **NOTHING ON THE ACQUISITION PATH WAITS FOR THIS.** The only recovery left
+    // is a reference sampling clock that has measured nothing, which is a
+    // deadlock no measurement escapes -- so what this times is a source that
+    // would otherwise never arrive, not one that is merely slow.
+    static const uint32_t RecoveryBudgetMs = 10000;
 
-    // The run starts again, for an act that settled the question rather than
-    // advancing it -- a lock found on the other ADC input. Whether an act
-    // settled anything is the caller's to say; the timer cannot tell.
+    // The run starts again, for a selection that gives the arriving source its
+    // own budget rather than spending what the departing one used.
     void restartRecovery();
 
     // The two halves of the same run, counted off the same measurement. Passes
@@ -382,16 +359,6 @@ private:
 
     bool (*mayRun_)();
     void (*passThroughSwitch_)();
-    // How long a lock is waited for on the other ADC input before it is given
-    // back. Long enough for the sync processor to report an hsync, short
-    // enough that a sweep of both inputs is not a visible stall.
-    static const uint16_t OtherInputLockMs = 210;
-
-    // The other ADC input, kept only if something locks there quickly.
-    static bool tryOtherAdcInput();
-
-    // The separator walk, from the level the input is due.
-    static void reacquireSeparator();
     bool passThroughAllowed_;
     const Tv5725::OutputMode *resolution_;
     uint32_t detectedMs_;
@@ -408,7 +375,6 @@ private:
 
     // Whether the re-probe rung found the source carrying its own V sync. Proof
     // of a source, so the input toggle leaves the mux alone.
-    bool ownVsyncFound_;
 
     // Whether a dynamic configuration has been applied at all, and whether the
     // one in force was built for a searching source. Held rather than read
@@ -468,11 +434,13 @@ private:
     uint32_t unacquiredSinceMs_;
     uint32_t unacquiredForMs_;
 
+    // What unacquiredForMs_ read when a recovery last ran, so the next waits a
+    // whole budget rather than firing on every pass of the one it is given.
+    uint32_t recoveredAtMs_;
+
     // The act whose window the run is in, and the one already run in it. An act
     // is due on the EDGE: without this it would run every pass of the ten
     // seconds it is given to work in.
-    SyncRecovery::Act actDue_;
-    SyncRecovery::Act actRun_;
 
     // Whether the pass just run could measure the source's rate.
     bool sourceMeasured_;

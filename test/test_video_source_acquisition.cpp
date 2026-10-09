@@ -14,7 +14,6 @@
 #include "RegistersWritten.h"
 
 #include "../GBSC-Pro-Source code/gbs-control/src/videosource/VideoSourceAcquisition.h"
-#include "../GBSC-Pro-Source code/gbs-control/src/videosource/SyncRecovery.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/videosource/VideoSourceSelection.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Adc.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SamplingClock.h"
@@ -1248,7 +1247,7 @@ TEST_CASE("a source the reference clock cannot measure is given another one")
     // The free-running count, which settles on no value, so no pass measures
     // the source and the divider is never chosen.
     for (uint16_t i = 0;
-         i < (SyncRecovery::FirstActMs + 100)
+         i < (VideoSourceAcquisition::RecoveryBudgetMs + 100)
                  / VideoSourceAcquisition::DetectionIntervalMs; ++i) {
         seedSourceLines((uint16_t)(97 + (i % 60)));
         unit.poll();
@@ -1279,7 +1278,7 @@ TEST_CASE("a count that never settles leaves the divider the source was solved o
     REQUIRE(Adc::PLLAD_MD::read() == BenchDivider);
 
     for (uint16_t i = 0;
-         i < 2 * (SyncRecovery::FirstActMs + 3 * SyncRecovery::ActIntervalMs)
+         i < 2 * (VideoSourceAcquisition::RecoveryBudgetMs + 3 * VideoSourceAcquisition::RecoveryBudgetMs)
                  / VideoSourceAcquisition::DetectionIntervalMs; ++i) {
         seedSourceLines((uint16_t)(191 + (i % 64)));
         unit.poll();
@@ -1287,53 +1286,6 @@ TEST_CASE("a count that never settles leaves the divider the source was solved o
 
     CHECK(Adc::PLLAD_MD::read() == BenchDivider);
     CHECK(unit.acquisition.sourceState() == VideoSourceAcquisition::SourceAbsent);
-}
-
-// A probe that finds own V sync used to put the pass counter back to 2, and it
-// finds one on every cycle of a separate-sync source, so the recovery could
-// never get past the re-probe -- a livelock rather than slow progress. Own V
-// sync is proof of a SOURCE, which is a reason not to move the mux; it is not a
-// reason to forget what has already been tried.
-// docs/known-issues.md, "The recovery ladder livelocks"
-TEST_CASE("own V sync found by a reconfigure does not hold the acts back")
-{
-    seedBenchSource();
-    seedLineSamples(BenchDivider);
-    Acquiring unit;
-    unit.acquisition.allowMaintenance(true);
-    unit.path.useSyncTypeProbe(probeOwnVsync);
-    unit.start();
-    REQUIRE(unit.pollUntilSolved());
-
-    g_hasOwnVsync = true;
-    g_logLines.clear();
-    seedSourceLines(0);
-    unit.pollForMs(SyncRecovery::FirstActMs + SyncRecovery::ActIntervalMs + 100);
-
-    REQUIRE(loggedContaining("recovery: reconfigure"));
-    CHECK(loggedContaining("recovery: reset the blocks"));
-}
-
-TEST_CASE("own V sync keeps the mux still")
-{
-    // A live source must not have the mux moved out from under it, and a V sync
-    // arriving is proof of one.
-    seedBenchSource();
-    seedLineSamples(BenchDivider);
-    Acquiring unit;
-    unit.acquisition.allowMaintenance(true);
-    unit.path.useSyncTypeProbe(probeOwnVsync);
-    unit.start();
-    REQUIRE(unit.pollUntilSolved());
-    const uint8_t input = Adc::ADC_INPUT_SEL::read();
-
-    g_hasOwnVsync = true;
-    g_logLines.clear();
-    seedSourceLines(0);
-    unit.pollForMs(SyncRecovery::FirstActMs + 3 * SyncRecovery::ActIntervalMs);
-
-    REQUIRE(loggedContaining("recovery: move the input"));
-    CHECK(Adc::ADC_INPUT_SEL::read() == input);
 }
 
 TEST_CASE("an ordinary mode change reuses the sync type instead of re-probing")
@@ -1625,50 +1577,31 @@ TEST_CASE("a source that stops counting is not present")
     CHECK_FALSE(unit.acquisition.sourceIsPresent());
 }
 
-TEST_CASE("the recovery timer follows the layer's own measurement")
-{
-    // rto->noSyncCounter indexed the ladder from the sketch, and it advanced on
-    // a source this class calls present -- which is what walked the ADC and the
-    // sync processor off a source the engine was solving correctly. The run
-    // belongs beside the measurement that decides it.
-    // docs/investigations/the-sketch-hunts-while-the-engine-is-locked.md
-    seedBenchSource();
-    Acquiring unit;
-
-    unit.start();
-    REQUIRE(unit.pollUntilSolved());
-    REQUIRE(unit.acquisition.recoveryDue() == SyncRecovery::None);
-
-    seedSourceLines(0);
-    unit.pollForMs(SyncRecovery::FirstActMs + 100);
-
-    CHECK(unit.acquisition.recoveryDue() == SyncRecovery::Reconfigure);
-}
-
 TEST_CASE("a source that comes back puts the recovery away")
 {
     // Unlocked rather than absent, so the recovery is exercised against a source
-    // that can then be re-acquired: the timer must retreat, or a source that
-    // recovers keeps taking acts it no longer needs.
+    // that can then be re-acquired: the run must retreat, or a source that has
+    // recovered keeps being recovered.
     seedBenchSource();
     seedLineSamples(BenchDivider);
     Acquiring unit;
+    unit.acquisition.allowMaintenance(true);
 
     unit.start();
     REQUIRE(unit.pollUntilSolved());
-    REQUIRE(unit.acquisition.recoveryDue() == SyncRecovery::None);
 
+    g_logLines.clear();
     seedLineSamplesUnlocked(3250);
-    unit.pollForMs(SyncRecovery::FirstActMs + 100);
-    REQUIRE(unit.acquisition.recoveryDue() != SyncRecovery::None);
+    unit.pollForMs(VideoSourceAcquisition::RecoveryBudgetMs + 100);
+    REQUIRE(loggedCountContaining("recovery: the sampling clock") == 1);
 
     seedLineSamples(BenchDivider);
-    unit.poll();
+    unit.pollForMs(VideoSourceAcquisition::RecoveryBudgetMs + 100);
 
-    CHECK(unit.acquisition.recoveryDue() == SyncRecovery::None);
+    CHECK(loggedCountContaining("recovery: the sampling clock") == 1);
 }
 
-TEST_CASE("a recovery names the act it ran and how long the source had been gone")
+TEST_CASE("a recovery names what it ran and how long the source had been gone")
 {
     // THE RECOVERY IS INVISIBLE OTHERWISE. Every act is a register write made to
     // a source nobody can see, so without this a unit that has been hunting for
@@ -1681,12 +1614,12 @@ TEST_CASE("a recovery names the act it ran and how long the source had been gone
 
     g_logLines.clear();
     seedSourceLines(0);
-    unit.pollForMs(SyncRecovery::FirstActMs + 100);
+    unit.pollForMs(VideoSourceAcquisition::RecoveryBudgetMs + 100);
 
-    CHECK(loggedContaining("recovery: reconfigure after 10s"));
+    CHECK(loggedContaining("recovery: the sampling clock after 10s"));
 }
 
-TEST_CASE("an act runs once, not once a pass")
+TEST_CASE("a recovery runs once, not once a pass")
 {
     // The timer names the act whose window the reading falls in, so without an
     // edge the act would run every 20 ms for the whole ten seconds it is given
@@ -1699,31 +1632,9 @@ TEST_CASE("an act runs once, not once a pass")
 
     g_logLines.clear();
     seedSourceLines(0);
-    unit.pollForMs(SyncRecovery::FirstActMs + SyncRecovery::ActIntervalMs - 100);
+    unit.pollForMs(VideoSourceAcquisition::RecoveryBudgetMs + VideoSourceAcquisition::RecoveryBudgetMs - 100);
 
-    CHECK(loggedCountContaining("recovery: reconfigure") == 1);
-}
-
-TEST_CASE("a recovery that settles the question restarts the run")
-{
-    // One act ends the run rather than advancing it: a lock found on the other
-    // ADC input. Whether an act settled anything is the caller's to say, so it
-    // says so rather than writing a sentinel into the count -- which is what
-    // 0x07fe was.
-    seedBenchSource();
-    seedLineSamples(BenchDivider);
-    Acquiring unit;
-
-    unit.start();
-    REQUIRE(unit.pollUntilSolved());
-
-    seedLineSamplesUnlocked(3250);
-    unit.pollForMs(SyncRecovery::FirstActMs + 100);
-    REQUIRE(unit.acquisition.recoveryDue() != SyncRecovery::None);
-
-    unit.acquisition.restartRecovery();
-
-    CHECK(unit.acquisition.recoveryDue() == SyncRecovery::None);
+    CHECK(loggedCountContaining("recovery: the sampling clock") == 1);
 }
 
 TEST_CASE("the run of acquired passes is the layer's too")
@@ -1768,7 +1679,7 @@ TEST_CASE("the run counts detection passes, not loop passes")
     // loop() calls poll() every time round and runSyncWatcher() every 20 ms, so
     // a run counted per call is a different length from the one every threshold
     // was tuned against. It advances on the cadence, which is what makes
-    // SyncRecovery's positions mean what they meant beside runSyncWatcher().
+    // the recovery's budget mean what it meant beside runSyncWatcher().
     seedBenchSource();
     seedLineSamples(BenchDivider);
     Acquiring unit;
@@ -2649,7 +2560,7 @@ TEST_CASE("an acquisition is given its whole budget before anything is recovered
 
     g_logLines.clear();
     seedSourceLines(0);
-    unit.pollForMs(SyncRecovery::FirstActMs - 100);
+    unit.pollForMs(VideoSourceAcquisition::RecoveryBudgetMs - 100);
 
     CHECK_FALSE(loggedContaining("recovery:"));
 }
@@ -2670,12 +2581,12 @@ TEST_CASE("selecting another input gives the arriving source its own budget")
     // Long enough that the budget would already be spent were it timed from the
     // source being left.
     seedLineSamplesUnlocked(3250);
-    unit.pollForMs(SyncRecovery::FirstActMs - 100);
+    unit.pollForMs(VideoSourceAcquisition::RecoveryBudgetMs - 100);
 
     VideoSourceSelection::select(VideoSourceSelection::Ypbpr);
     g_logLines.clear();
     seedSourceLines(0);
-    unit.pollForMs(SyncRecovery::FirstActMs - 100);
+    unit.pollForMs(VideoSourceAcquisition::RecoveryBudgetMs - 100);
 
     CHECK_FALSE(loggedContaining("recovery:"));
     VideoSourceSelection::forgetSelection();
@@ -2714,37 +2625,6 @@ TEST_CASE("selecting another input re-establishes the sync arrangement")
     VideoSourceSelection::forgetSelection();
 }
 
-// The acts are ordered so the one that disturbs nothing comes first, and the
-// teardown only once a reconfigure has failed to take. FullReset was the only
-// thing that reset the sync processor block -- measured on the Wii at 480p over
-// ypbpr, where the configuration reads correct throughout (SP_PRE_COAST 7,
-// SP_POST_COAST 6, SP_DLT_REG 192, SP_SOG_MODE 1) and the block still counts
-// 100 lines with the ADC PLL unlocked, until a SFTRST_SYNC_RSTZ pulse clears
-// it. So the teardown is deferred rather than withheld. docs/known-issues.md
-TEST_CASE("a source that never arrives is reconfigured, then torn down, then moved")
-{
-    seedBenchSource();
-    seedLineSamples(BenchDivider);
-    Acquiring unit;
-    unit.acquisition.allowMaintenance(true);
-    unit.start();
-
-    seedSourceLines(97);                  // a count no source runs
-    unit.path.inputTimingsChanged();
-
-    g_logLines.clear();
-    unit.pollForMs(SyncRecovery::FirstActMs + 100);
-    CHECK(loggedContaining("recovery: reconfigure"));
-    CHECK_FALSE(loggedContaining("recovery: reset the blocks"));
-
-    unit.pollForMs(SyncRecovery::ActIntervalMs);
-    CHECK(loggedContaining("recovery: reset the blocks"));
-    CHECK_FALSE(loggedContaining("recovery: move the input"));
-
-    unit.pollForMs(SyncRecovery::ActIntervalMs);
-    CHECK(loggedContaining("recovery: move the input"));
-}
-
 TEST_CASE("nothing parks the sync separator fully open")
 {
     // THE LAST RUNG BRICKED THE SEPARATOR. ReopenSogSeparator called choose(0),
@@ -2762,8 +2642,8 @@ TEST_CASE("nothing parks the sync separator fully open")
 
     seedSourceLines(97);
     bool parked = false;
-    for (uint32_t ms = 0; ms < SyncRecovery::FirstActMs
-                                   + 6 * SyncRecovery::ActIntervalMs;
+    for (uint32_t ms = 0; ms < VideoSourceAcquisition::RecoveryBudgetMs
+                                   + 6 * VideoSourceAcquisition::RecoveryBudgetMs;
          ms += VideoSourceAcquisition::DetectionIntervalMs) {
         unit.poll();
         if (SyncOnGreen::level() == 0)

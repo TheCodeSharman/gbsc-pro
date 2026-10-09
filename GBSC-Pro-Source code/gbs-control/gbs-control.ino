@@ -84,7 +84,6 @@ static unsigned long Tim_Resolution = 0, Tim_Resolution_Start = 0;
 #include "src/videosource/DetectionEntry.h"
 #include "src/videosource/SourceAbsence.h"
 #include "src/videosource/SourceMaintenance.h"
-#include "src/videosource/SyncRecovery.h"
 #include "src/videosource/FrameTimeLock.h"
 #include "src/tv5725/DisplayClock.h"
 #include "src/tv5725/DebugPin.h"

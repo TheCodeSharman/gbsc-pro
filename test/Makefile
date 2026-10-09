@@ -16,7 +16,7 @@ CXXFLAGS ?= -std=c++11 -O1 -Wall -Wextra
 # embarrassingly parallel: measured 3m26s serial against 34s here.
 MAKEFLAGS += -j$(shell nproc)
 
-.PHONY: all test ir-receiver menu aspect video-signal test-bus test-bus-rate-measurement steady-run sync-on-green sampling-log axis source-key source-timing framing-table framing-text scale video-source-line capture-window output-window video-path source-measurement memory-window display-clock frame-sync frame-time-lock output-mode clock-ramp rate-agreement hold-ramp sync-search video-source-selection video-source-selector segment-select register-queue sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc video-route rgbhv-output write-trace settings clean help
+.PHONY: all test ir-receiver menu aspect video-signal test-bus test-bus-rate-measurement steady-run sync-on-green sampling-log axis source-key source-timing framing-table framing-text scale video-source-line capture-window output-window video-path source-measurement memory-window display-clock frame-sync frame-time-lock output-mode clock-ramp rate-agreement hold-ramp sync-search video-source-selection video-source-selector segment-select register-queue sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc video-route rgbhv-output write-trace settings clean help
 .DEFAULT_GOAL := test
 
 ## help: list the targets
@@ -79,7 +79,7 @@ OSD_SRC = src/osd/Menu.cpp src/osd/MenuCommand.cpp src/osd/MenuContext.cpp \
 
 GEOMETRY_RASTER_SRC = $$(ls src/tv5725/*.cpp | grep -vE '^src/tv5725/(Controls)\.cpp$$') \
 	$(CLOCK_SRC) src/videosource/VideoSourceAcquisition.cpp \
-	src/videosource/SyncRecovery.cpp src/videosource/VideoSourceSelection.cpp \
+	src/videosource/VideoSourceSelection.cpp \
 	src/videosource/SourceMaintenance.cpp
 
 HOST_GEOMETRY_SRC = $$(ls src/tv5725/*.cpp | grep -vE '^src/tv5725/(VideoPath|Controls|FrameBuffer|MemoryBus|Chip|Gpio|HdBypass|SamplingLog|VideoProcessor|BringUp)\.cpp$$') $(CLOCK_SRC)
@@ -237,7 +237,7 @@ menu:
 	  -o "$(OUT)/test_menu" \
 	  "$(HERE)/test_menu.cpp" $(OSD_SRC) \
 	  $$(ls src/tv5725/*.cpp) $(CLOCK_SRC) \
-	  src/videosource/VideoSourceAcquisition.cpp src/videosource/SyncRecovery.cpp \
+	  src/videosource/VideoSourceAcquisition.cpp \
 	  src/videosource/VideoSourceSelection.cpp src/videosource/SourceMaintenance.cpp
 	@"$(OUT)/test_menu"
 
@@ -666,16 +666,6 @@ source-maintenance:
 	  "$(HERE)/test_source_maintenance.cpp" src/videosource/SourceMaintenance.cpp
 	@"$(OUT)/test_source_maintenance"
 
-## sync-recovery: host unit tests for SyncRecovery
-#
-# Pure arithmetic over the escalation ladder's positions, so it links nothing
-# and needs no fake Wire.
-sync-recovery:
-	@mkdir -p "$(OUT)"
-	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
-	  -o "$(OUT)/test_sync_recovery" \
-	  "$(HERE)/test_sync_recovery.cpp" src/videosource/SyncRecovery.cpp
-	@"$(OUT)/test_sync_recovery"
 
 ## mode-detect: host unit tests for Tv5725::ModeDetect
 #
@@ -836,7 +826,7 @@ controls:
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_controls" \
 	  "$(HERE)/test_controls.cpp" $$(ls src/tv5725/*.cpp) $(CLOCK_SRC) \
-	  src/videosource/VideoSourceAcquisition.cpp src/videosource/SyncRecovery.cpp \
+	  src/videosource/VideoSourceAcquisition.cpp \
 	  src/videosource/VideoSourceSelection.cpp src/videosource/SourceMaintenance.cpp
 	@"$(OUT)/test_controls"
 
@@ -908,7 +898,7 @@ write-trace:
 	@"$(OUT)/test_write_trace"
 
 ## test: every host unit test
-test: input-scale ir-receiver osd-row osd-screens menu aspect video-signal test-bus test-bus-rate-measurement steady-run source-absence detection-entry sync-measurement colour-space colour-balance framing-save-timer sync-on-green axis source-key source-timing framing-table framing-text scale sync-processor video-processor video-source-line capture-window output-window video-path source-measurement memory-window display-clock frame-sync frame-time-lock output-mode clock-ramp rate-agreement hold-ramp sync-search video-source-selection video-source-selector segment-select register-queue sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc sampling-log video-route rgbhv-output write-trace settings
+test: input-scale ir-receiver osd-row osd-screens menu aspect video-signal test-bus test-bus-rate-measurement steady-run source-absence detection-entry sync-measurement colour-space colour-balance framing-save-timer sync-on-green axis source-key source-timing framing-table framing-text scale sync-processor video-processor video-source-line capture-window output-window video-path source-measurement memory-window display-clock frame-sync frame-time-lock output-mode clock-ramp rate-agreement hold-ramp sync-search video-source-selection video-source-selector segment-select register-queue sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc sampling-log video-route rgbhv-output write-trace settings
 all: test
 
 ## clean: remove the compiled test binaries
