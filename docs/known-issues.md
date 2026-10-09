@@ -278,12 +278,41 @@ on a source producing 22 MHz. `/sc?~` cleared it in 15 s.
 `investigations/the-crossover-row-was-sized-from-the-outgoing-source.md` carries
 why `reconciledFrame()` cannot be the gate that refuses it.
 
+**THE THIRD HALF IS FIXED: ONE REFERENCE CLOCK IS NOT ENOUGH.** The ten-second
+timer three quarters of legs were waiting out is the recovery reaching a clock
+the source can be measured through, and `reconfigureForSource()` could only get
+there by accident -- it re-asserted the divider in force, so what it corrected
+was the crossover ROW, and a reference divider the ADC PLL will not lock to on
+the arriving source is not recoverable that way at all. Measured on the Wii at
+480i: nothing is measured through the reference divider of 1400 for as long as
+it is left, three selections out of three, 60 s and five acts with no
+`sampling:` line printed. `Tv5725::Adc` holds the references as a sequence now
+and the act installs the NEXT one. Twenty trips from an 800x600@60 `vga`
+predecessor, same session:
+
+| | before | after |
+|---|---|---|
+| `ypbpr` shown a picture | **0 of 3**, none ending on its own | see the run below |
+| `ypbpr` spread | never | **11.7 .. 12.1 s** |
+
+`investigations/the-reference-clock-can-deadlock-the-measurement.md`. The wait
+that is left is the act's own window: the escape is correct and fires at
+`FirstActMs`, so the acquisition is ten seconds of timer plus 1.7 s of solve,
+and bringing the trigger forward is what the 10 s budget needs next.
+
 **A GROUP RE-ASSERT PLUS THE BLOCK RESETS RECOVERS THE STALL FROM THE ESP IN
 ABOUT TWO SECONDS**, which no act of the ladder achieves in 330 s:
 `/sampleclock?md=1400&os=4` -- the divider already in force -- took a 26 s stall
 to `state: acquired` in **1.9 s**, and `md=2200&os=4` took a 330 s stall in
 5.4 s. Both landed on the count 259/260, `HTOTAL` 2200 against a 2200 divider
 and a measured 59.93 Hz.
+
+**NEITHER FIGURE TRANSFERS TO ANOTHER STALL, because the route's crossover row
+comes from the HELD rate rather than from the divider asked for.** The same
+`md=1400` installed `PLLAD_KS` 1 in a stall holding vga's 37879 Hz where a
+reference install at 1400 holds `KS` 2, and it recovered nothing there -- one
+garbage reading in 30 s and still absent. Say which rate was held, or the
+command names a different group each time.
 
 ### The old reading, which the fixes above supersede in part
 
