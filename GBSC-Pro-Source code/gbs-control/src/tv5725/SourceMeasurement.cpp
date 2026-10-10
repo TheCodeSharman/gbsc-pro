@@ -136,9 +136,14 @@ SourceMeasurement::ScanType SourceMeasurement::scanType() const
 
 uint16_t SourceMeasurement::verticalPeriod() const { return verticalPeriod_; }
 
+uint16_t SourceMeasurement::countFrom(uint16_t correctedLines) const
+{
+    return (uint16_t)(correctedLines + verticalSyncLines_);
+}
+
 uint16_t SourceMeasurement::countNow() const
 {
-    return (uint16_t)(SyncProcessor::lineCount() + verticalSyncLines_);
+    return countFrom(measureSourceLinesCorrected(Adc::dividerInForce()));
 }
 
 bool SourceMeasurement::sampleSteady()
@@ -402,7 +407,7 @@ uint16_t SourceMeasurement::readSourceLines()
     const uint16_t lines = measureSourceLinesCorrected(Adc::dividerInForce());
     holdVerticalSync(lines);
 
-    return (uint16_t)(lines + verticalSyncLines_);
+    return countFrom(lines);
 }
 
 bool SourceMeasurement::readSource()

@@ -180,11 +180,17 @@ public:
     // complete. verticalTapFor() and the relock want the period itself.
     uint16_t verticalPeriod() const;
 
-    // The sync processor's count with the vertical sync it loses restored, for
-    // a caller reading the count for itself. **ONE OWNER OF WHAT THE COUNT
+    // The sync processor's count, corrected for a PLL counting several source
+    // lines per count and with the vertical sync the reading loses restored,
+    // for a caller reading the count for itself. **ONE OWNER OF WHAT THE COUNT
     // IS**: the presence poll and the measurement have to agree, and a reader
     // taking the register raw sees the source move on every pass against a
     // solve made from the restored one.
+    //
+    // The correction is as load bearing as the restoration: at a divider left
+    // behind by another mode the PLL locks to every kth hsync, and a reader
+    // without it judges 155 where the measurement judges 310 -- a healthy
+    // source called unusable, which discards the held sync type.
     uint16_t countNow() const;
 
     // Whether the source runs the 15.7 kHz broadcast line.
@@ -219,6 +225,10 @@ public:
 
 private:
     // --- the one pass, in the order it takes them ----------------------------
+
+    // The count both readers report, taken from one reading so the hold and the
+    // answer cannot straddle a change.
+    uint16_t countFrom(uint16_t correctedLines) const;
 
     bool sampleSteady();
     bool measureLineRate();

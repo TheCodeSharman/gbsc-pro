@@ -954,6 +954,24 @@ TEST_CASE("the multiple tolerates the jitter of every line it counts")
     }
 }
 
+TEST_CASE("the presence poll and the measurement read one count")
+{
+    // The count is one fact with two readers: the arm path asks countNow() and
+    // the measurement asks readSourceLines(). Where the PLL locked to every
+    // other hsync the correction recovers 310 from a reported 155, and a reader
+    // without it calls a healthy source unusable -- which discards the held
+    // sync type and spends the one arm that state is given.
+    SourceMeasurement sampling(inputFormatter);
+
+    seedSource(155, 2249, 1124);
+
+    const uint16_t presence = sampling.countNow();
+    const uint16_t measured = sampling.readSourceLines();
+
+    CHECK(presence == measured);
+    CHECK(presence == 310);
+}
+
 // What an output frame of this many lines can display, which is the question
 // the doubling asks: the part cannot minify, so this is the ceiling.
 
