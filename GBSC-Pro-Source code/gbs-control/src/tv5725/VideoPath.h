@@ -113,7 +113,9 @@ public:
     // separate-sync source left on sync-on-green counts nothing at all.
     void configureSyncPath();
 
-    // The display scaler's picture filters, as the user chose them.
+    // The display scaler's picture filters, as the user chose them. The line
+    // filter is not among them: the window its delay can carry decides whether
+    // it goes in circuit, so the solve that writes the window owns it.
     //
     // The six-tap filter is forced ON, which overrides the preference the web
     // UI reports. ../../../../docs/known-issues.md
@@ -132,6 +134,11 @@ public:
     // so they live here beside the colour and the framing, and the preferences
     // pass adopts them rather than owning them.
     PictureOptions &pictureOptions();
+
+    // The line filter, which is not just a bit: the delay behind it carries a
+    // bounded line, so asking for it bounds the divider and the whole solve
+    // follows. Every caller that can change it goes through here.
+    bool setLineFilter(bool want);
 
     // The shape the picture is shown in. Defaulted from the raster the source
     // matched, replaced by whatever the user last chose for that source, and
@@ -512,6 +519,17 @@ private:
     // where there is no raster to bound it with.
     // ../../../../docs/investigations/the-capture-may-not-outgrow-the-raster.md
     uint16_t dividerCeilingForOutput() const;
+
+    // The largest divider whose captured line fits the one-line delay, or 0
+    // where the delay is not wanted or the source has more pixels than the
+    // delay holds -- below that the line keeps its samples and the delay stays
+    // out of circuit instead.
+    // ../../../../docs/investigations/the-tail-green-is-the-vds-line-filter.md
+    uint16_t dividerCeilingForLineFilter() const;
+
+    // The delay in circuit if it was asked for and the line it would carry
+    // fits. The window decides, so this follows the solve that wrote it.
+    void applyLineFilter(const CaptureWindow &capture);
 
     // The capture counter's origin, from the divider installed and the sync
     // width measured through it. Written at the install and again on every

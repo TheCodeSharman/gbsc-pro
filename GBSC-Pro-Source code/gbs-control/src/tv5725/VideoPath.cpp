@@ -106,9 +106,15 @@ void VideoPath::restartAndLatch()
 
 void VideoPath::applyPictureFilters()
 {
-    VideoProcessor::setLineFilter(picture_.lineFilter());
     VideoProcessor::setPeaking(picture_.peaking());
     VideoProcessor::setSixTapFilter(true);
+}
+
+void VideoPath::applyLineFilter(const CaptureWindow &capture)
+{
+    const bool fits = capture.horizontal().width()
+                      <= (int32_t)VideoProcessor::LineBufferSamples;
+    VideoProcessor::setLineFilter(picture_.lineFilter() && fits);
 }
 
 void VideoPath::applyOutputPictureFilters()
@@ -312,6 +318,7 @@ bool VideoPath::solveWindows()
     }
 
     write(solved, capture);
+    applyLineFilter(capture);
     solvePending_ = false;
 
     // Re-asserted only where the output is already on: its enables have a
@@ -466,6 +473,24 @@ bool VideoPath::passedThrough() const
     return mode_ != 0 && mode_->isBypass();
 }
 
+bool VideoPath::setLineFilter(bool want)
+{
+    if (want == picture_.lineFilter())
+        return true;
+    picture_.setLineFilter(want);
+
+    // A transition in flight chooses the divider with the preference already in
+    // force, and pass-through solves nothing.
+    if (modePending_ || passedThrough())
+        return true;
+
+    // Re-derived from the rate already held rather than re-measured, the same
+    // way an output change moves this bound.
+    if (!installSampling(SamplingFollowsOutput))
+        return false;
+    return solveWindows();
+}
+
 bool VideoPath::setOutputMode(const OutputMode *mode)
 {
     if (mode != 0 && mode->isBypass()) {
@@ -589,7 +614,15 @@ bool VideoPath::installSampling(SamplingReason reason)
                 ? VideoSignal::ratesAgree(rate, installedRateHz_,
                                           SourceIdentityPerThousand)
                 : divider == inForce);
-    if (inForce != 0 && alreadyInForce)
+    // AND OF THE DELAY'S BOUND, which arrives a pass after the divider does:
+    // installing the clock invalidates the sync width, so the first solve after
+    // a source mode change chooses against the outgoing source's duty, matches
+    // no published raster and has no bound to apply. A divider above what the
+    // delay can carry is therefore replaced however well the rate agrees.
+    const uint16_t delayCeiling = dividerCeilingForLineFilter();
+    const bool overDelay = delayCeiling != 0 && inForce > delayCeiling;
+
+    if (inForce != 0 && alreadyInForce && !overDelay)
         return true;
 
     installedRateHz_ = rate;
@@ -1048,11 +1081,42 @@ void VideoPath::restartSamplingClock()
 
 uint16_t VideoPath::chooseDivider() const
 {
-    return heldDivider_ != 0
-               ? heldDivider_
-               : SamplingClock::recommendedDivider(sampling_.lineRateHz(),
-                                                   modeOversample_, lineDoubled_,
-                                                   dividerCeilingForOutput());
+    if (heldDivider_ != 0)
+        return heldDivider_;
+
+    uint16_t ceiling = dividerCeilingForOutput();
+    const uint16_t delay = dividerCeilingForLineFilter();
+    if (delay != 0 && (ceiling == 0 || delay < ceiling))
+        ceiling = delay;
+
+    return SamplingClock::recommendedDivider(sampling_.lineRateHz(),
+                                             modeOversample_, lineDoubled_,
+                                             ceiling);
+}
+
+uint16_t VideoPath::dividerCeilingForLineFilter() const
+{
+    if (!picture_.lineFilter())
+        return 0;
+
+    // The published raster this solve is about to be placed against, computed
+    // rather than read, so the ceiling does not depend on when the timing was
+    // last taken -- the same reason dividerCeilingForOutput() solves its own.
+    const SourceTiming arriving = SourceTiming::matching(arrivingKey());
+    const uint16_t pixels = arriving.activePixels();
+    const float active = arriving.activeExtent(AxisHorizontal);
+
+    // Holding the line down is only worth it while the source's own pixels
+    // still fit: below that the delay costs resolution nothing brings back, so
+    // the samples are kept and applyLineFilter() leaves the delay out.
+    if (pixels == 0 || pixels > VideoProcessor::LineBufferSamples || active <= 0.0f)
+        return 0;
+
+    // The window opens a captureMargin either side of the picture, so what the
+    // delay holds bounds the picture by two of them less.
+    const float units = ((float)VideoProcessor::LineBufferSamples
+                         - 2.0f * (float)AxisHorizontal.captureMargin()) / active;
+    return (uint16_t)(units * (lineDoubled_ ? 2.0f : 1.0f));
 }
 
 uint16_t VideoPath::dividerCeilingForOutput() const

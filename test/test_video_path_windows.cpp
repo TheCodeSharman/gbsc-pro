@@ -28,10 +28,17 @@
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/InputFormatter.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SyncMeasurement.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/VideoSourceLine.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/VideoProcessor.h"
 
 static Tv5725::InputFormatter inputFormatter;
 
 using namespace Tv5725;
+
+// The samples the input formatter is told to keep out of each line.
+static long capturedHorizontal()
+{
+    return Wire.field(1, 0x18, 0, 11) - Wire.field(1, 0x1A, 0, 11);
+}
 
 // The picture each axis puts on the raster, as an outside observer reads it off
 // the registers the solve wrote.
@@ -1122,3 +1129,109 @@ TEST_CASE("a ratio the scan cannot carry leaves the line it already had")
     CHECK(GBS::IF_HB_ST2::read() == capture);
     CHECK(GBS::IF_HS_RATE_SEG0::read() == 0);
 }
+
+
+// THE ONE-LINE DELAY IS A 1024-SAMPLE LINE BUFFER, and the tail of a longer
+// captured line comes back as garbage -- a green band over the last of the
+// picture. 800x600@60 into a 1080p raster captures 1091 samples, which puts 67
+// of them past the buffer and destroys 6% of the width.
+//
+// So the filter is a bound on the capture as well as a bit: asked for, the
+// divider comes down until the line fits.
+// docs/investigations/the-tail-green-is-the-vds-line-filter.md
+TEST_CASE("the line filter brings the divider down until the line fits the delay")
+{
+    // 800x600@60 on the bench RISC PC: 128 of its 1056 pixels on sync, a
+    // 628-line frame reported as 627, and a positive-going pulse.
+    const uint16_t Divider = 1436;
+    const uint16_t HsyncLow = (uint16_t)(Divider * 128 / 1056);
+    SolvedEngine solved(627, 60.317f, HsyncLow, &Mode1080p, true, Divider);
+
+    REQUIRE(capturedHorizontal() > VideoProcessor::LineBufferSamples);
+
+    REQUIRE(solved.engine.setLineFilter(true));
+
+    CHECK(capturedHorizontal() <= VideoProcessor::LineBufferSamples);
+
+    SUBCASE("and the delay goes in circuit rather than being dropped") {
+        CHECK(Wire.field(3, 0x26, 6, 1) == 0);                  // VDS_D_RAM_BYPS
+    }
+
+    SUBCASE("and the source keeps more samples than it has pixels") {
+        CHECK(capturedHorizontal() > 800);
+    }
+}
+
+
+// A framing wider than the buffer is reachable however the divider is sized --
+// the override shows the whole reach, which is the line rather than the picture
+// inside it -- so the bit follows the window that was actually written.
+TEST_CASE("a capture wider than the delay buffer leaves it out of circuit")
+{
+    const uint16_t Divider = 1436;
+    const uint16_t HsyncLow = (uint16_t)(Divider * 128 / 1056);
+    SolvedEngine solved(627, 60.317f, HsyncLow, &Mode1080p, true, Divider);
+
+    REQUIRE(solved.engine.setLineFilter(true));
+    REQUIRE(Wire.field(3, 0x26, 6, 1) == 0);
+
+    solved.engine.forceFullFraming(true);
+    REQUIRE(resolveUntilSolved(solved.acquisition));
+
+    REQUIRE(capturedHorizontal() > VideoProcessor::LineBufferSamples);
+    CHECK(Wire.field(3, 0x26, 6, 1) == 1);
+}
+
+
+// 1280x720@60 states 1280 active pixels of 1650, so a capture held inside the
+// buffer would store fewer samples than the source has pixels -- resolution the
+// filter cannot buy back. The line keeps its samples and the delay stays out.
+TEST_CASE("a source with more pixels than the buffer keeps its samples")
+{
+    const uint16_t Divider = 1436;
+    const uint16_t HsyncLow = (uint16_t)(Divider * 40 / 1650);
+    SolvedEngine solved(749, 60.0f, HsyncLow, &Mode1080p, true, Divider);
+
+    const long before = Wire.field(5, 0x12, 0, 12);             // PLLAD_MD
+
+    REQUIRE(solved.engine.setLineFilter(true));
+
+    CHECK(Wire.field(5, 0x12, 0, 12) == before);
+    CHECK(Wire.field(3, 0x26, 6, 1) == 1);
+}
+
+
+// THE DUTY ARRIVES A PASS AFTER THE DIVIDER. Installing the sampling clock
+// invalidates the sync width, so the first solve after a source mode change
+// chooses the divider against the OUTGOING source's duty -- which matches no
+// published raster, leaving the delay's bound nothing to compute from. Measured
+// on the bench: divider 1438 chosen, `duty: 171 pulse / 1438` a pass later, and
+// the delay dropped instead of the divider coming down.
+//
+// So the bound displaces a divider already in force, however well the rate
+// agrees with the one it was sized from. What it cannot do is follow the
+// framing: a zoom must never move the divider, so a framing wider than the
+// raster's own default is left to applyLineFilter().
+TEST_CASE("the delay's bound displaces a divider chosen before the duty landed")
+{
+    const uint16_t Divider = 1436;
+    const uint16_t Matching = (uint16_t)(Divider * 128 / 1056);
+
+    // Arriving on the duty of the source that just left, which is what the
+    // engine reads until the install's own invalidation clears.
+    SolvedEngine solved(627, 60.317f, (uint16_t)(Divider * 151 / 2200), &Mode1080p,
+                        true, Divider);
+
+    REQUIRE(solved.engine.setLineFilter(true));
+    REQUIRE_FALSE(solved.engine.sourceTiming().published());
+    const long chosenBlind = Wire.field(5, 0x12, 0, 12);
+    REQUIRE(chosenBlind * 800 / 1056 > VideoProcessor::LineBufferSamples);
+
+    Wire.sourceHsync(Matching, Divider, true);
+    REQUIRE(resolveUntilSolved(solved.acquisition));
+
+    REQUIRE(solved.engine.sourceTiming().activePixels() == 800);
+    CHECK(Wire.field(5, 0x12, 0, 12) < chosenBlind);
+    CHECK(Wire.field(5, 0x12, 0, 12) * 800 / 1056 <= VideoProcessor::LineBufferSamples);
+}
+

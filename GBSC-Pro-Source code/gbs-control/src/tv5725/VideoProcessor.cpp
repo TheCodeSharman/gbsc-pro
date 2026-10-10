@@ -2,6 +2,8 @@
 
 namespace Tv5725 {
 
+const uint16_t VideoProcessor::LineBufferSamples;
+
 void VideoProcessor::setLineFilter(bool wanted)
 {
     VDS_D_RAM_BYPS::write(wanted ? 0 : 1);

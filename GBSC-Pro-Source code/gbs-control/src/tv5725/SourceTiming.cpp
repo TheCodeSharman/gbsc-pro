@@ -219,6 +219,11 @@ float SourceTiming::activeExtent(const Axis &axis) const
         : (float)raster_->activePixels / (float)raster_->totalPixels;
 }
 
+uint16_t SourceTiming::activePixels() const
+{
+    return published() ? raster_->activePixels : 0;
+}
+
 float SourceTiming::hsyncExtent() const
 {
     if (!published())

@@ -5111,10 +5111,7 @@ void handleType2Command(char argument)
             cycleAspect();
             break;
         case 'm':; // SerialMprint(F("Line Filter: "));
-            geometry.pictureOptions().setLineFilter(
-                !geometry.pictureOptions().lineFilter());
-            Tv5725::VideoProcessor::setLineFilter(
-                geometry.pictureOptions().lineFilter());
+            geometry.setLineFilter(!geometry.pictureOptions().lineFilter());
             saveUserPrefs();
             break;
         case 'n':; // SerialMprint(F("ADC gain++ : "));

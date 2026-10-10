@@ -384,7 +384,9 @@ static void checkBenchGeometry()
     // written anyway rather than cached against what was last sent. s4_00 is
     // MEM_INI_REG, pulsed once the windows are written because the SDRAM
     // controller and both FIFOs are laid out for the geometry this solve chose.
-    CHECK(registersWritten() == 93);
+    // s3_26 is VDS_D_RAM_BYPS, the one-line delay: what it can carry is bounded
+    // by the window this solve just wrote, so the solve is what owns it.
+    CHECK(registersWritten() == 94);
     CHECK(Wire.touched[0][0x49]);   // PAD_SYNC_OUT_ENZ
 
     // Three of those are the measurement rather than the geometry: timing the
@@ -1423,8 +1425,9 @@ TEST_CASE("a framed picture holds every window against the framing")
     // OUT_SYNC_CNTRL, the DAC power and the sync pad, asserted with every show,
     // and the retime stop is derived per solve because the sync width it needs
     // arrives after the install that invalidates it -- two bytes, the field
-    // being twelve bits across s5_4B and s5_4C.
-    CHECK(registersWritten() == 37);
+    // being twelve bits across s5_4B and s5_4C. The one-line delay is written
+    // with every window, because the window is what bounds what it can carry.
+    CHECK(registersWritten() == 38);
 }
 
 // --- the IF line counter follows the scan mode -------------------------------
@@ -2752,13 +2755,13 @@ TEST_CASE("the picture filters are applied from held state, not handed in")
     VideoPath engine(clock, sampling, framings, inputFormatter);
 
     Wire.reset();
-    engine.pictureOptions().setLineFilter(true);
+    engine.pictureOptions().setPeaking(true);
     engine.applyPictureFilters();
-    CHECK(VideoProcessor::VDS_D_RAM_BYPS::read() == 0);
+    CHECK(VideoProcessor::VDS_PK_Y_H_BYPS::read() == 0);
 
-    engine.pictureOptions().setLineFilter(false);
+    engine.pictureOptions().setPeaking(false);
     engine.applyPictureFilters();
-    CHECK(VideoProcessor::VDS_D_RAM_BYPS::read() == 1);
+    CHECK(VideoProcessor::VDS_PK_Y_H_BYPS::read() == 1);
 }
 
 TEST_CASE("the output filters are applied from held state, and 1080p still wins")

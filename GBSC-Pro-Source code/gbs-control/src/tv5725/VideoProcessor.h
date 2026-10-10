@@ -840,6 +840,18 @@ public:
     // Every static register of this subsystem, in address order.
     static void init();
 
+    // What the one-line delay behind setLineFilter() delivers, in samples of
+    // the captured line. Past it the tail comes back green, and the datasheet
+    // gives the buffer no length register -- VDS_D_SP is a position and does
+    // not move the boundary.
+    //
+    // Measured by creeping the capture across it: 1024 leaves six columns of
+    // fringe, 1022 two, 1020 none. A band is obvious and the last samples are
+    // not, so a detector wide enough to ignore the card's own colour reads the
+    // boundary four samples late.
+    // ../../../docs/investigations/the-tail-green-is-the-vds-line-filter.md
+    static const uint16_t LineBufferSamples = 1020;
+
     // The picture-quality controls. Each names what the user asked for, not the
     // bypass bit that carries it: the registers are BYPS, so wanting a filter
     // clears one. Every writer of these four registers goes through here.

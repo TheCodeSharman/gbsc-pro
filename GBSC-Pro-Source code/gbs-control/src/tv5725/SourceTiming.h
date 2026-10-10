@@ -48,6 +48,11 @@ public:
     // is what an unrecognised computer mode almost always is.
     Aspect aspect() const;
 
+    // How many pixels across the raster states as picture. Zero where no
+    // raster matched: nothing on the chip can measure it, so a source running
+    // no standard mode has no pixel count at all.
+    uint16_t activePixels() const;
+
     // How far the horizontal sync pulse runs, as a fraction of the whole line.
     // The one part of a published raster a source matching it cannot have spent
     // differently: the match is ON the sync width. Meaningless unless
