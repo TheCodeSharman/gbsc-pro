@@ -1,6 +1,15 @@
 """Fixtures for the live-unit tests. Without --host (or GBSC_HOST) every test
-here skips, so a bare `pytest` at the repo root stays useful with no hardware."""
+here skips, so a bare `pytest` at the repo root stays useful with no hardware.
 
+**EVERY TEST THAT CAN RUN, RUNS.** The disruptive ones are opted OUT of rather
+than into -- `--no-source`, `--no-preset-save`, and so on. Opt-in was the other
+way round and it cost two bench faults in one day: a bypass deadlock had a test
+describing it exactly and a bypass predicate that could never hold, and both
+reported green because a plain `pytest --host=...` skipped them. A suite that
+is quiet about what it did not run is worse than one that is slow.
+"""
+
+import argparse
 import os
 
 import pytest
@@ -29,11 +38,12 @@ def pytest_addoption(parser):
     )
     group.addoption(
         "--source",
-        action="store_true",
-        default=False,
-        help="a video source is connected and expected to lock, so run the sync "
-        "tests. Without it they skip: an unplugged input and a firmware that "
-        "cannot see the input look identical from over here.",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="a video source is connected and expected to lock. On by default; "
+        "--no-source skips the sync tests, for a bench with the input "
+        "unplugged, where a firmware that cannot see the input looks the same "
+        "from over here.",
     )
     group.addoption(
         "--no-sync",
@@ -45,47 +55,48 @@ def pytest_addoption(parser):
     )
     group.addoption(
         "--freeze",
-        action="store_true",
-        default=False,
+        action=argparse.BooleanOptionalAction,
+        default=True,
         help="run the freeze test that proves a frozen firmware stops writing "
-        "TV5725 registers. Needs a build with /freeze support; opt-in because a "
-        "failure means a preset load corrupted the picture.",
+        "TV5725 registers. On by default; --no-freeze for a build without "
+        "/freeze support.",
     )
     group.addoption(
         "--preset-load",
-        action="store_true",
-        default=False,
+        action=argparse.BooleanOptionalAction,
+        default=True,
         help="run the tests that force a preset load to prove the geometry is "
-        "recomputed from scratch afterwards. They leave the unit in the preset "
-        "they loaded (pal_768x576), because restoring the output raster is the "
-        "one thing the geometry guard must not do, so the output mode is wrong "
-        "until the next real mode change or a power cycle. Writes no flash.",
+        "recomputed from scratch afterwards. On by default; --no-preset-load "
+        "to skip them. They leave the unit in the preset they loaded "
+        "(pal_768x576), because restoring the output raster is the one thing "
+        "the geometry guard must not do, so the output mode is wrong until the "
+        "next real mode change or a power cycle. Writes no flash.",
     )
     group.addoption(
         "--preset-save",
-        action="store_true",
-        default=False,
+        action=argparse.BooleanOptionalAction,
+        default=True,
         help="run the tests that write flash -- the framing table, saved to "
-        "/framing.txt when a tuning settles. Opt-in because it spends flash "
-        "write cycles and leaves a file on the unit, not because it is risky: "
-        "the framing it stores is the one the user tuned.",
+        "/framing.txt when a tuning settles. On by default; --no-preset-save "
+        "to spare the write cycles. Not risky: the framing it stores is the "
+        "one the user tuned.",
     )
     group.addoption(
         "--reboot",
-        action="store_true",
-        default=False,
+        action=argparse.BooleanOptionalAction,
+        default=True,
         help="restart the unit, to prove the boot restore brings the saved input "
-        "back. Costs a few seconds of black screen and a re-detection; writes no "
-        "flash. Opt-in because it takes the unit away mid-run.",
+        "back. On by default; --no-reboot to skip it. Costs a few seconds of "
+        "black screen and a re-detection; writes no flash.",
     )
     group.addoption(
         "--modeserv",
         action="store",
-        default=os.environ.get("GBSC_MODESERV"),
-        help="the ModeServ host driving the SOURCE, e.g. 192.168.88.10. Tests "
-        "that need a particular source mode change it there and put it back; "
-        "without this they skip, because nothing else can put a VESA raster on "
-        "the input.",
+        default=os.environ.get("GBSC_MODESERV", "192.168.88.10"),
+        help="the ModeServ host driving the SOURCE. Defaults to the bench one, "
+        "so the tests that change the source mode run without being asked for; "
+        "pass --modeserv '' where there is none and they skip, because nothing "
+        "else can put a VESA raster on the input.",
     )
     group.addoption(
         "--all-modes",
@@ -99,12 +110,12 @@ def pytest_addoption(parser):
     )
     group.addoption(
         "--pllad-hostile",
-        action="store_true",
-        default=False,
+        action=argparse.BooleanOptionalAction,
+        default=True,
         help="drive PLLAD_MD to values known to break sync, to prove the unit "
-        "stays reachable. Corrupts the picture for about half a minute and puts "
-        "the divider back afterwards; it writes no flash. Opt-in because it is "
-        "disruptive to watch, not because it is dangerous.",
+        "stays reachable. On by default; --no-pllad-hostile to skip it. "
+        "Corrupts the picture for about half a minute and puts the divider "
+        "back afterwards; it writes no flash.",
     )
 
 
@@ -139,16 +150,17 @@ def pytest_configure(config):
 
 
 def pytest_collection_modifyitems(config, items):
+    # EVERY GATE BUT ONE IS OPTED OUT OF. --no-sync is the exception because it
+    # is the opposite of --source rather than a cost: it needs the input
+    # UNPLUGGED, so it cannot be on at the same time as the suite that needs a
+    # lock, and no default serves both.
     gates = [
         ("no_sync", "--no-sync", "needs the source unplugged; pass --no-sync to run it"),
-        ("pllad_hostile", "--pllad-hostile",
-         "corrupts the picture while it runs; pass --pllad-hostile to run it"),
-        ("freeze", "--freeze",
-         "needs a build with /freeze support; pass --freeze to run it"),
-        ("reboot", "--reboot",
-         "restarts the unit while it runs; pass --reboot to run it"),
+        ("pllad_hostile", "--pllad-hostile", "--no-pllad-hostile was passed"),
+        ("freeze", "--freeze", "--no-freeze was passed"),
+        ("reboot", "--reboot", "--no-reboot was passed"),
         ("source_mode", "--modeserv",
-         "changes the source mode; pass --modeserv <host> to run it"),
+         "no ModeServ host: pass --modeserv <host> to change the source mode"),
     ]
     for keyword, option, reason in gates:
         if config.getoption(option):
@@ -226,7 +238,7 @@ def modeserv(request):
     """
     where = request.config.getoption("--modeserv")
     if not where:
-        pytest.skip("needs the source: pass --modeserv <host>")
+        pytest.skip("no ModeServ host: pass --modeserv <host>")
 
     def send(command):
         reply = mode_serv(where, command)
@@ -277,7 +289,7 @@ def source(request, host):
     anything else, so a test that pans the framing and ends leaves that framing
     on flash as the source's remembered one."""
     if not request.config.getoption("--source"):
-        pytest.skip("needs a connected source: pass --source")
+        pytest.skip("--no-source was passed: the input is unplugged")
 
     # A build without GBS_DEBUG answers 404 and the tests still run; they just
     # do not get the protection.
@@ -304,16 +316,16 @@ def framing_autosave(host, source):
 
 @pytest.fixture
 def preset_save(request):
-    """Opt-in for the tests that write flash. A run that is only checking the
-    picture should not spend write cycles."""
+    """The tests that write flash. Opted OUT of, for a run that is only
+    checking the picture and should not spend write cycles."""
     if not request.config.getoption("--preset-save"):
-        pytest.skip("writes flash: pass --preset-save")
+        pytest.skip("--no-preset-save was passed: sparing the flash")
 
 
 @pytest.fixture
 def preset_load(request):
-    """Opt-in for the tests that force a preset load. They leave the output in
-    whatever preset they loaded, which a plain --source run must not do."""
+    """The tests that force a preset load. Opted OUT of, because they leave
+    the output in whatever preset they loaded."""
     if not request.config.getoption("--preset-load"):
         pytest.skip("forces a preset load and leaves the output mode changed: "
                     "pass --preset-load")

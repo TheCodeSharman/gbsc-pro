@@ -27,13 +27,9 @@ BENCH_LINES = 311
 # A mode change is followed by seconds of readings inside no standard at all.
 SETTLE_SECONDS = 14.0
 
-# What bypassModeSwitch_RGBHV() hardcodes. Reading it means the switch ran,
-# whatever the path bits say.
-BYPASS_DIVIDER = 1856
-
-# ADC2DAC and OUT_SYNC_SEL are 1 in bypass and 0 on the scaling path. The scale
+# BYPS2DAC and OUT_SYNC_SEL are 1 in bypass and 0 on the scaling path. The scale
 # registers are NOT the tell: bypass leaves them on the last scaled load's.
-PATH = ("DAC_RGBS_ADC2DAC", "OUT_SYNC_SEL",
+PATH = ("DAC_RGBS_BYPS2DAC", "OUT_SYNC_SEL",
         "STATUS_SYNC_PROC_VTOTAL", "STATUS_SYNC_PROC_HTOTAL", "PLLAD_MD")
 
 
@@ -55,8 +51,12 @@ def settled(host, attempts=10, interval=4.0):
     return previous
 
 
+# DAC_RGBS_BYPS2DAC, not DAC_RGBS_ADC2DAC. The second is 0 on BOTH paths, so a
+# predicate keyed on it being 1 can never hold and the bypass half of every
+# test using it is unreachable -- which is how a bypass fault reached the bench
+# with these tests reported green. docs/rgbhv-bypass-trap.md
 def in_bypass(at):
-    return at["DAC_RGBS_ADC2DAC"] == 1 and at["OUT_SYNC_SEL"] == 1
+    return at["DAC_RGBS_BYPS2DAC"] == 1 and at["OUT_SYNC_SEL"] == 1
 
 
 def scaling(at):
@@ -65,7 +65,7 @@ def scaling(at):
     # firmware writing it: every one of these tests failed on the marker alone
     # while the route bits read correct. What the chip can still answer is which
     # route the video takes, which is the question these tests ask.
-    return at["DAC_RGBS_ADC2DAC"] == 0 and at["OUT_SYNC_SEL"] == 0
+    return at["DAC_RGBS_BYPS2DAC"] == 0 and at["OUT_SYNC_SEL"] == 0
 
 
 def at_mode(host, where, command, lines):
@@ -100,8 +100,6 @@ def test_a_source_too_tall_for_the_old_gate_is_scaled(tall_source):
 def test_a_tall_sources_divider_is_measured_and_latched(tall_source):
     # STATUS_SYNC_PROC_HTOTAL counts real ADC clocks, so it is the only witness
     # on the chip that the divider reached the PLL rather than just the register.
-    assert tall_source["PLLAD_MD"] != BYPASS_DIVIDER, (
-        f"the divider is the bypass switch's hardcoded {BYPASS_DIVIDER}, not a measured one")
     assert abs(tall_source["STATUS_SYNC_PROC_HTOTAL"] - tall_source["PLLAD_MD"]) <= 2, (
         f"HTOTAL {tall_source['STATUS_SYNC_PROC_HTOTAL']} against PLLAD_MD "
         f"{tall_source['PLLAD_MD']}: written but never latched")
@@ -130,13 +128,55 @@ def test_the_preference_still_reaches_bypass_and_still_leaves_it(
     off = settled(host)
     try:
         assert in_bypass(off), f"the preference did not reach bypass: {off}"
-        assert off["PLLAD_MD"] == BYPASS_DIVIDER, (
-            f"in bypass the divider should be the switch's {BYPASS_DIVIDER}: {off}")
+
+        # LATCHED, not a particular number. The channel sizes its divider from
+        # the measured line rate through the same chooser the scaling path
+        # uses, so asserting the switch's old hardcoded 1856 pinned a value
+        # nothing writes any more. HTOTAL counts real ADC clocks, so it is the
+        # only witness that the divider reached the PLL.
+        assert abs(off["STATUS_SYNC_PROC_HTOTAL"] - off["PLLAD_MD"]) <= 2, (
+            f"HTOTAL {off['STATUS_SYNC_PROC_HTOTAL']} against PLLAD_MD "
+            f"{off['PLLAD_MD']}: the bypass divider never latched: {off}")
     finally:
         get(host, "/uc?x")
     back = settled(host)
     assert scaling(back), (
         f"a {TALL_LINES}-line source could not leave bypass: {back}")
+
+
+@pytest.mark.source_mode
+def test_the_permission_survives_being_let_go_and_takes_the_source_back(
+        request, host, preset_save, tall_source):
+    """The ROUND TRIP, with the permission left on throughout.
+
+    Letting a slowed source go is half the behaviour; taking it back when it
+    speeds up again is the other half, and nothing walked it. The two are not
+    the same branch -- leaving is a measurement that stops qualifying, and
+    returning is the channel being sized a second time from a rate that did
+    qualify. A permission spent on the way out would strand every later source
+    on the scaling path with the row still reading Pass Through.
+    """
+    where = request.config.getoption("--modeserv")
+    get(host, "/uc?x")
+    try:
+        assert in_bypass(settled(host)), (
+            "the preference did not reach bypass, so the round trip is untested")
+
+        slowed = at_mode(host, where, BENCH_MODE, BENCH_LINES)
+        assert scaling(slowed), (
+            f"a bypassed source that slowed to {BENCH_LINES} lines stayed in "
+            f"bypass: {slowed}")
+
+        back = at_mode(host, where, TALL_MODE, TALL_LINES)
+        assert in_bypass(back), (
+            f"the source sped up again and the permission did not take it "
+            f"back, so leaving spent it: {back}")
+        assert abs(back["STATUS_SYNC_PROC_HTOTAL"] - back["PLLAD_MD"]) <= 2, (
+            f"re-entered bypass on an unlatched divider: {back}")
+    finally:
+        get(host, "/uc?x")
+        mode_serv(where, BENCH_MODE)
+        time.sleep(SETTLE_SECONDS)
 
 
 @pytest.mark.source_mode

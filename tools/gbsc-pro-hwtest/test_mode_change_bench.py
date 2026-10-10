@@ -219,3 +219,42 @@ def test_the_departure_raster_returning_is_not_an_arrival():
                _s(4.0, "acquired", 15625, 311), _s(5.0, "acquired", 15625, 311)]
     r = b.analyse(samples, t_cmd=0.5, before=OLD, dwell=3.0)
     assert r.acquired is None and r.settled is None
+
+
+# THE ENGINE REPORTING `acquired` IS NOT A PICTURE. It says the engine has an
+# answer, not that anything reached the encoder -- a pass-through channel with
+# the video blocks held reads acquired and emits nothing. Only the frame
+# separates them, so a leg carries one.
+def test_a_black_frame_is_reported_as_showing_nothing():
+    import numpy as np
+    assert b.shown(np.zeros((64, 64), np.uint8))["dark"]
+
+
+def test_a_frame_with_a_picture_in_it_reports_the_picture_it_shows():
+    import numpy as np
+    frame = np.zeros((64, 64), np.uint8)
+    frame[8:56, 16:48] = 255
+
+    seen = b.shown(frame)
+    assert not seen["dark"]
+    assert seen["width"] == 32 and seen["height"] == 48
+
+
+# A MODE THE SOURCE CANNOT DO IS NOT A MISS. ModeServ answers a request its
+# monitor definition has no entry for with the nearest it does have, so the
+# raster never moves and the leg reports "no move seen" -- which reads as the
+# engine failing to notice a change that never happened.
+def test_a_mode_the_definition_does_not_offer_is_not_walked():
+    offered = "X320 Y256 C256 F50\nX640 Y480 C256 F60\n"
+    asked = ["MODE X320 Y256 C256 F50", "MODE X720 Y576 C256 F50",
+             "MODE X640 Y480 C256 F60"]
+
+    kept, dropped = b.offered_only(asked, offered)
+    assert kept == ["MODE X320 Y256 C256 F50", "MODE X640 Y480 C256 F60"]
+    assert dropped == ["MODE X720 Y576 C256 F50"]
+
+
+def test_every_mode_offered_leaves_nothing_dropped():
+    offered = "X320 Y256 C256 F50\n"
+    kept, dropped = b.offered_only(["MODE X320 Y256 C256 F50"], offered)
+    assert kept == ["MODE X320 Y256 C256 F50"] and dropped == []

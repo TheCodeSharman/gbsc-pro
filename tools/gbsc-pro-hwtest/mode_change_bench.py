@@ -46,6 +46,7 @@ transition being measured -- which a `/getreg` poll would.
 """
 import argparse
 import json
+import os
 import re
 import statistics
 import threading
@@ -53,6 +54,7 @@ import time
 from dataclasses import dataclass
 
 import gbs_unit
+import hdmi_capture
 
 # SyncRecovery's rungs, mirrored so a pass count can be named without a build.
 # src/tv5725/SyncRecovery.cpp is the source of truth; these are read-only here.
@@ -184,6 +186,23 @@ def short(mode):
     return f"{m.group(1)}x{m.group(2)}@{m.group(3)}" if m else mode
 
 
+def offered_only(modes, listing):
+    """`modes` split into the ones the monitor definition offers and the rest.
+
+    A MODE THE DEFINITION HAS NO ENTRY FOR IS NOT A MISS. ModeServ answers with
+    the nearest it does have, so the raster never moves and the leg reports
+    "no move seen" -- which reads as the engine failing to notice a change that
+    never happened. WHICH DEFINITION IS LOADED IS WHAT `MODES` SAYS, and
+    nothing else says it. docs/bench-sources.md
+    """
+    allowed = set(listing.split())
+    kept, dropped = [], []
+    for mode in modes:
+        wanted = mode.split(None, 1)[1] if mode.startswith("MODE ") else mode
+        (kept if set(wanted.split()) <= allowed else dropped).append(mode)
+    return kept, dropped
+
+
 def leg(departs, lands):
     """What a timing is recorded under. ORDERED: the cost is not symmetric --
     640x480 -> 320x256 pays for a divider that describes the mode that left,
@@ -309,6 +328,40 @@ def run_one(host, source, mode, deadline_s, dwell):
     return reply, transition
 
 
+def shown(frame):
+    """What a captured frame says is on the screen.
+
+    THE ENGINE REPORTING `acquired` IS NOT A PICTURE: it says the engine has an
+    answer, not that anything reached the encoder. A pass-through channel with
+    the video blocks held reads acquired and emits nothing, and no register
+    distinguishes the two -- only the frame does.
+    """
+    box = hdmi_capture.borders(frame)
+    return dict(mean=round(float(frame.mean()), 2), dark=box["width"] == 0, **box)
+
+
+def lit(dev, deadline_s):
+    """The first frame with a picture in it, and how long it took to arrive.
+
+    ONE GRAB CANNOT TELL A DARK BOARD FROM A DONGLE STILL LOCKING. Anything
+    that re-acquires the HDMI link leaves the capture delivering black for
+    seconds after the engine reports acquired, so a single frame scores a
+    working mode change as a failed one. Waiting for light and reporting the
+    wait separates them: a board emitting nothing never lights.
+    docs/bench-output-capture.md
+    """
+    started = time.time()
+    last = None
+    while True:
+        frame = hdmi_capture.frames(1, dev)[0]
+        last = frame
+        seen = shown(hdmi_capture.luma(frame))
+        if not seen["dark"]:
+            return seen, time.time() - started, frame
+        if time.time() - started >= deadline_s:
+            return seen, None, last
+
+
 def why_missed(tr):
     """Which half of the transition went unseen, for a run that has no interval."""
     if tr.moved is None:
@@ -359,6 +412,15 @@ def main():
                    help="seconds to wait for acquired before recording a miss")
     p.add_argument("--dwell", type=float, default=4.0,
                    help="seconds one raster must be held before a leg is timed")
+    p.add_argument("--lit-deadline", type=float, default=12.0,
+                   help="seconds to wait for a picture to reach the capture "
+                        "after a leg settles. The dongle delivers black for "
+                        "several seconds whenever the HDMI link re-acquires, "
+                        "so one grab scores a working change as a dark one.")
+    p.add_argument("--shots", default=None,
+                   help="directory to write one PNG per leg into, named after "
+                        "the leg. The frame is the evidence the mode change "
+                        "reached the encoder; the timings are not.")
     p.add_argument("--modes", nargs="*", default=[
         "MODE X320 Y256 C256 F50",
         "MODE X640 Y480 C256 F60",
@@ -367,8 +429,18 @@ def main():
     ])
     args = p.parse_args()
 
-    tour = legs(args.modes)
+    wanted, missing = offered_only(args.modes,
+                                   gbs_unit.mode_serv(args.source, "MODES"))
+    for mode in missing:
+        print(f"  {short(mode)} is not in the loaded monitor definition -- skipped")
+    if len(wanted) < 2:
+        raise SystemExit("fewer than two modes the source can reach")
+
+    tour = legs(wanted)
     console = gbs_unit.Console(args.host)
+    dev = hdmi_capture.device()
+    if args.shots:
+        os.makedirs(args.shots, exist_ok=True)
     time.sleep(1.0)
 
     print(f"{len(tour)} legs x {args.repeat}, departing from {short(tour[0][0])}")
@@ -389,11 +461,26 @@ def main():
             reports = [r for r in (parse_sampling(x) for x in console.lines) if r]
             runs.setdefault(name, []).append(tr.settled_interval)
             firsts.setdefault(name, []).append(tr.interval)
-            shown = (f"{tr.settled_interval:6.2f}s" if tr.settled_interval is not None
-                     else "   MISS")
+            took = (f"{tr.settled_interval:6.2f}s" if tr.settled_interval is not None
+                    else "   MISS")
             at_first = f"{tr.interval:5.2f}" if tr.interval is not None else "    -"
-            print(f"  {name:26} run {n + 1}  {shown}  acquired at {at_first}  "
-                  f"{why_missed(tr):22} "
+
+            # THE FRAME, not the timing. /geometry answers from engine state,
+            # so a leg can report acquired with nothing reaching the encoder --
+            # measured on this bench, a pass-through channel with the video
+            # blocks held read acquired and emitted black.
+            seen, waited, frame = lit(dev, args.lit_deadline)
+            if args.shots:
+                hdmi_capture.write_png(
+                    os.path.join(args.shots,
+                                 f"{name.replace(' -> ', '-to-').replace(' ', '')}"
+                                 f"-run{n + 1}.png"),
+                    frame)
+            picture = (f"DARK after {args.lit_deadline:.0f}s" if waited is None
+                       else f"{seen['width']}x{seen['height']} lit +{waited:4.1f}s")
+
+            print(f"  {name:26} run {n + 1}  {took}  acquired at {at_first}  "
+                  f"{picture:24} {why_missed(tr):22} "
                   f"first={reports[0] if reports else None}"
                   f"{'' if console.alive else '   (CONSOLE DEAD)'}"
                   f"{'' if reply else '   (no ModeServ reply)'}")
