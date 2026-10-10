@@ -162,9 +162,14 @@ const char *aspectText(const MenuContext &context)
     }
 }
 
-const char *upscalingText(const MenuContext &context)
+// Which way a source that COULD pass through is sent. It reaches no other
+// kind: VideoSourceAcquisition::passThroughSuitsSource() refuses a doubled
+// line and anything under HdBypass::MinLineRateHz, so every low-res mode is
+// scaled whatever this holds. Spelled as the Resolution page spells it, that
+// page reporting availability where this one states the wish.
+const char *highResRouteText(const MenuContext &context)
 {
-    return onOff(context.options().preferScalingRgbhv);
+    return context.options().preferScalingRgbhv ? "Scale" : "Pass Through";
 }
 
 const char *deinterlaceText(const MenuContext &context)
@@ -314,7 +319,7 @@ const MenuItem SvAv[] = {
 
 const MenuItem System[] = {
     MenuItem::submenu("Sv-Av InPutSet", SvAv, sizeof(SvAv) / sizeof(SvAv[0])),
-    MenuItem::choice("Use upscaling", 'x', upscalingText),
+    MenuItem::choice("High res", 'x', highResRouteText),
     MenuItem::adjust("Deinterlace", MenuCommand(), MenuCommand::user('q'),
                      MenuCommand::user('r'), deinterlaceText),
     MenuItem::choice("Frame Time Lock", '5', frameTimeLockText),

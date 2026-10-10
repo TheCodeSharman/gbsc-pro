@@ -1016,15 +1016,27 @@ TEST_CASE("the clock generator reads the opposite way round to the option behind
     CHECK(std::string(item("Clock generator").valueText(unit.context)) == "OFF");
 }
 
-TEST_CASE("the upscaling preference is on the menu, which the chain left unreachable")
+// THE ROW NAMES WHAT IT GOVERNS AND THE VALUE STATES THE OUTCOME, because the
+// preference only reaches a source pass-through suits -- undoubled and at or
+// above HdBypass::MinLineRateHz. Said as "Use upscaling", OFF reads as a
+// promise not to upscale, which is false: every low-res mode is scaled whatever
+// this holds.
+//
+// The value is spelled as the Resolution page spells it. One destination, one
+// word, and the two rows divide as policy against availability: this one says
+// what is wanted, "Pass Through" there reports N/A when the rate refuses it.
+TEST_CASE("the high-res route is on the menu, which the chain left unreachable")
 {
     // Branch 96 drew it and its Ok was commented out, and nothing reached the
     // branch: the only route was /uc?x.
     Unit unit;
 
     unit.options.preferScalingRgbhv = 1;
-    CHECK(std::string(item("Use upscaling").valueText(unit.context)) == "ON");
-    CHECK(item("Use upscaling").okCommand().letter() == 'x');
+    CHECK(std::string(item("High res").valueText(unit.context)) == "Scale");
+    CHECK(item("High res").okCommand().letter() == 'x');
+
+    unit.options.preferScalingRgbhv = 0;
+    CHECK(std::string(item("High res").valueText(unit.context)) == "Pass Through");
 }
 
 TEST_CASE("restarting is on the menu, which the chain also left unreachable")
