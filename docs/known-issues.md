@@ -2677,10 +2677,12 @@ settles. **A 0.4 s HTTP poll cannot resolve it** -- the doubled samples and the
 correct ones are 300 ms apart -- so the next instrument is `Tv5725::SamplingLog`
 through that window rather than more point reads.
 
-**THE COST IS GONE EVEN THOUGH THE FAULT IS NOT.** With the reference pair at
-1400 undoubled the first ACCEPTED sample is the correct one, so `ypbpr` solves one
-divider per selection instead of three and no line counter is refused at all.
-`Adc::BringUpDivider`.
+**THE COST IS GONE EVEN THOUGH THE FAULT IS NOT.** With the reference pair
+STATED -- `Adc::BringUpDivider` at `Adc::BringUpLineRateHz`, carried undoubled
+by `Adc::BringUpLineDoubled` -- the first ACCEPTED sample is the correct one, so
+`ypbpr` solves one divider per selection instead of three and no line counter is
+refused at all. Measured on both pairs the reference has held, so it follows from
+the pair being stated and self-consistent rather than from its value.
 
 **Do not read it as ordinary settling.** 119.87 sits inside the 60..160 Hz band
 the console table calls `getSourceFieldRate()` settling, which is what has let it

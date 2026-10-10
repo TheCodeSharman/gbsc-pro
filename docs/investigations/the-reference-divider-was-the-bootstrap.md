@@ -99,17 +99,27 @@ instead. `Adc::applyResetParameters()` applies a stated pair rather than parking
 `PLLAD_MD` and declaring nothing in force:
 
 ```
-BringUpDivider     2506
-BringUpLineRateHz  15625      CKO 39.2 MHz -> post divider 2 -> VCO 156.6 MHz
+BringUpDivider     2040
+BringUpLineRateHz  15625      CKO 31.9 MHz -> post divider 4 -> VCO 127.5 MHz
 ```
 
-Both halves of the pair are measured rather than nominal. That VCO on high gain
-is the state the bench unit locks in; the arithmetically tidier 1792 puts it at
-112 MHz on low gain, where nothing has measured whether the PLL holds. And the
-rate is the LOWEST line the part is expected to carry, so every faster source
-needs the PLL to divide rather than multiply -- asked for a frequency under its
-lock range it locks to every kth hsync, and the count correction above recovers
-k up to `LinesPerCountMax`, which reaches 62.5 kHz.
+Both halves of the pair are measured rather than nominal, and the rate is the
+LOWEST line the part is expected to carry, so every faster source needs the PLL
+to divide rather than multiply -- asked for a frequency under its lock range it
+locks to every kth hsync, and the count correction above recovers k up to
+`LinesPerCountMax`, which reaches 62.5 kHz.
+
+**WHAT THE PAIR'S VALUE HAS TO SATISFY IS SETTLED ELSEWHERE, AND IT IS A
+CORRECTNESS CONSTANT RATHER THAN A TUNING ONE**: a reference the ADC PLL cannot
+be measured through is a deadlock, because a divider is installed only FROM a
+measurement. `the-reference-clock-can-deadlock-the-measurement.md` carries which
+reference measures which source, and the two bounds that leave no room --
+the eleven-bit line counter caps an undoubled reference at 2047 while high VCO
+gain needs 2080, so the pair above runs on low gain by necessity.
+
+**The measurements on the rest of this page were taken at a divider of 2506**,
+which is what the pair held when the two-clock scheme was removed. They are
+reported at the value in force when each was taken.
 
 **It belongs there rather than in a bring-up block**, which was the first
 proposal: `BringUp::init()` does run after the last `setResetParameters()` at

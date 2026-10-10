@@ -87,9 +87,14 @@ smp,4720, 694,0,524,2506,214, 524,1, 3,64    and sizes this
 smp,5871,1446,1,524,1446,214, 524,1, 3,0     settled
 ```
 
-**2506 is `Adc::BringUpDivider`**, written by `applyResetParameters()` inside
-`setResetParameters()` on the low-power teardown. Detection hands the source
-over with it still in force, and the first field rate is measured through it.
+**2506 is the `Adc::BringUpDivider` these captures were taken at**, written by
+`applyResetParameters()` inside `setResetParameters()` on the low-power
+teardown. Detection hands the source over with it still in force, and the first
+field rate is measured through it. The constant is 2040 now, sized by which
+sources a reference can be measured through rather than by the arithmetic here
+-- `the-reference-clock-can-deadlock-the-measurement.md` -- so every 2506 below
+is the value in force when the reading was taken, and the mechanism rather than
+the number is what carries over.
 
 The field rate is timed on `DEBUG_IN_PIN` off `TestBus::selectInputVsync()` --
 `VideoSourceAcquisition` passes `useSyncProcessorBus` false, so the held sync
@@ -156,8 +161,10 @@ measurement landed in.
 
 `IF_HSYNC_RST` truncating is part of it. The register takes eleven bits, and
 `applySampling()` re-applies the divider in force with the OUTGOING source's
-scan mode -- so after a teardown the bring-up divider arrives undoubled, 2506
-does not fit, and 458 is what the block counts with. Refusing that write
+scan mode -- so after a teardown the bring-up divider arrived undoubled at a
+value that does not fit, and 458 is what the block counted with. Fitting the
+counter undoubled is a bound on the pair now, which is why 2040 sits just under
+`LineCounterMax`. Refusing that write
 removes the 0.650 reading outright.
 
 **It does not remove the other two**, and counted per run rather than pooled the
