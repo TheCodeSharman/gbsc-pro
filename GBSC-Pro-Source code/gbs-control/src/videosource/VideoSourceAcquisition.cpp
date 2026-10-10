@@ -236,6 +236,9 @@ bool VideoSourceAcquisition::passSourceThrough()
         // divider is not theirs. Without this a mode change keeps the previous
         // mode's divider: measured, 800x600 to 640x480 held PLLAD_MD at 2039
         // against a 524-line source with the ADC PLL unlocked.
+        //
+        // It holds the divider already in force, which is what stops it
+        // running on a source standing still.
         resizePassThrough();
     }
 
@@ -269,11 +272,30 @@ bool VideoSourceAcquisition::passThroughSourceMoved() const
         Tv5725::SourceIdentityPerThousand);
 }
 
+// A DIVIDER ALREADY IN FORCE IS LEFT ALONE, the same rule the scaling path's
+// installSampling() holds, and for the same reason: applying it re-latches the
+// ADC PLL. Here that closes a loop, because the field rate this route judges a
+// source by is timed off a pin the sync processor drives -- so a resize taken
+// on a source standing still moves the next reading, which reads as a source
+// that moved, which takes another resize.
+//
+// Measured on the bench at 720p: the engine solved some ten times a second and
+// reported the rate as 60.01, 60.34 and 60.99 Hz against an identity tolerance
+// of 3 per thousand, while the same rate timed with automation FROZEN read
+// 60.019 Hz in 120 of 120 samples at sd 0.000.
+//
+// The guard is the divider rather than the field rate, because a source can
+// change raster without changing it: 524 lines to 627 at 60 Hz is one line rate
+// to another at one field rate, and that one must still re-size.
 void VideoSourceAcquisition::resizePassThrough()
 {
     const uint32_t lineRateHz = sampling_.lineRateHz();
-    Tv5725::HdBypass::applyForSource(Tv5725::HdBypass::dividerFor(lineRateHz),
-                                     lineRateHz, videoPath_.sourceTiming(),
+    const uint16_t divider = Tv5725::HdBypass::dividerFor(lineRateHz);
+    if (divider == Tv5725::Adc::dividerInForce())
+        return;
+
+    Tv5725::HdBypass::applyForSource(divider, lineRateHz,
+                                     videoPath_.sourceTiming(),
                                      sampling_.sourceLines() + 1,
                                      sampling_.hsync());
 }
