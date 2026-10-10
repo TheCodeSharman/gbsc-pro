@@ -33,7 +33,6 @@ VideoSourceAcquisition::VideoSourceAcquisition(Tv5725::SourceMeasurement &sampli
       unusableCountArmed_(false), dynamicApplied_(false), dynamicForSearch_(false), sourceMeasured_(false),
       sourceState_(SourceAbsent),
       solvedLinePeriod_(0), rateRun_(0), recheckPasses_(0),
-      firstRateConfirmed_(false),
       sourceInterrupted_(false),
       unsettledPasses_(0), unsettledArmed_(false),
       vsyncAbsentPasses_(0), vsyncAbsentArmed_(false),
@@ -615,9 +614,8 @@ bool VideoSourceAcquisition::rateMoved()
     // THE RECHECK AND NOT WHATEVER REACHES HERE FIRST. A line period that
     // twitches early spends the arm inside the window this exists to outlast,
     // and the solve it takes holds the same wrong rate.
-    if (recheckDue && !firstRateConfirmed_) {
-        firstRateConfirmed_ = true;
-        sampling_.forgetHeldRate();
+    if (recheckDue && !sampling_.rateConfirmed()) {
+        sampling_.confirmRate();
         return true;
     }
 

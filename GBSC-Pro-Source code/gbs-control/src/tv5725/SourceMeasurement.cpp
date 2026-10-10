@@ -93,7 +93,7 @@ SourceMeasurement::SourceMeasurement(InputFormatter &inputFormatter)
       agreedRateHz_(0.0f), judgedLines_(0), judgedRateHz_(0), goodLineRateHz_(0),
       rateRejections_(0), hsyncPolarity_(SourceKey::Undetermined),
       vsyncPolarity_(SourceKey::Undetermined), verticalPeriod_(0),
-      dutyMeasured_(false), settlePasses_(0),
+      rateConfirmed_(false), dutyMeasured_(false), settlePasses_(0),
       steady_(SteadySamples), scanSteady_(SteadySamples), rateAttempts_(0),
       scanReported_(-1)
 {
@@ -198,6 +198,14 @@ float SourceMeasurement::settledFieldRateHz() const
         return 0.0f;
 
     return (float)judgedRateHz_ / (float)(judgedLines_ + 1);
+}
+
+bool SourceMeasurement::rateConfirmed() const { return rateConfirmed_; }
+
+void SourceMeasurement::confirmRate()
+{
+    rateConfirmed_ = true;
+    forgetHeldRate();
 }
 
 void SourceMeasurement::forgetHeldRate()

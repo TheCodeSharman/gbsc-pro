@@ -565,6 +565,41 @@ TEST_CASE("the rate a boot's first solve took is re-measured once")
           == doctest::Approx(50.4744f).epsilon(0.0002f));
 }
 
+TEST_CASE("the confirmation drops the boot's rate rather than judging against it")
+{
+    // The worst boot reading measured is twice the source, and once held it is
+    // what rateFollowsCount() judges every correct reading against -- so the
+    // real rate is refused and the doubled one survives:
+    //
+    //     sampling: 311 lines x 100.90 Hz -> line rate 31481
+    //     sampling: 311 lines x  50.46 Hz -> line rate 0
+    //
+    // Nothing else reaches it. A settled source takes no field-rate
+    // measurement between solves, so the held rate is never challenged and
+    // HeldRateRejectionLimit never drains, and every arm is a change detector.
+    // ../docs/investigations/the-first-solve-of-a-boot-cannot-be-corroborated.md
+    seedBenchSource();
+    seedField(0, 0x06, 0, 9, 431);   // HPERIOD_IF, steady, as the bench reads it
+    Acquiring unit;
+
+    g_fieldRate = 100.90f;
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+    REQUIRE(unit.sampling.settledFieldRateHz()
+            == doctest::Approx(100.90f).epsilon(0.001f));
+
+    // What the source was running all along, more than
+    // RateFollowsCountPerThousand away from what the boot holds.
+    g_fieldRate = 50.4744f;
+    for (uint16_t pass = 0;
+         pass < VideoSourceAcquisition::RateRecheckPasses
+                + 4 * SourceMeasurement::SteadySamples; ++pass)
+        unit.poll();
+
+    CHECK(unit.sampling.settledFieldRateHz()
+          == doctest::Approx(50.4744f).epsilon(0.001f));
+}
+
 TEST_CASE("an early arm does not spend the boot's one confirmation")
 {
     // The confirmation is the RECHECK'S, not whatever reaches the rate arm

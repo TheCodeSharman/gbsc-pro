@@ -172,6 +172,21 @@ public:
     // agreeing, which is the test a pair cannot do. docs/known-issues.md
     float settledFieldRateHz() const;
 
+    // Whether the rate the first solve of a boot took has been re-measured.
+    // What that solve holds is not the source's, and every later acquisition of
+    // the same source is exact. Nothing else reaches it: every arm is a change
+    // detector, and the error is inside
+    // VideoSourceAcquisition::RateCorroborationPerThousand, which cannot be
+    // narrowed past the instrument's one-line quantisation step.
+    // ../../../docs/investigations/the-first-solve-of-a-boot-cannot-be-corroborated.md
+    bool rateConfirmed() const;
+
+    // Records that re-measure, and drops the held rate so the solve it is asked
+    // for is judged against nothing. One call rather than two, because a
+    // confirmation that left the boot's rate held would corroborate it for the
+    // life of the boot.
+    void confirmRate();
+
 
     // The count the steadiness gate settled on, which is not the last sample.
     uint16_t steadyLines() const;
@@ -314,6 +329,7 @@ private:
     SourceKey::Polarity hsyncPolarity_;
     SourceKey::Polarity vsyncPolarity_;
     uint16_t verticalPeriod_;
+    bool rateConfirmed_;
     bool dutyMeasured_;
     uint8_t settlePasses_;
     SteadyRun steady_;
