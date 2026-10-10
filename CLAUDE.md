@@ -998,11 +998,22 @@ twelve tables while they existed, which is what `BringUp` was built from.
   a clip. And `HPERIOD_IF` stays perfectly healthy while the screen is green, so
   this is not the railing and the two must not be merged.
 
-  `PLLAD_MD`, `IF_HSYNC_RST` (= `MD`/2) and `SP_RT_HS_SP` (= 93% of `MD`, the
-  sync processor's retime window) are **ONE quantity in THREE registers**, and
+  `PLLAD_MD`, `IF_HSYNC_RST` (= `MD`/2) and `SP_RT_HS_SP`, the sync processor's
+  retime window, are **ONE quantity in THREE registers**, and
   `Tv5725::SourceMeasurement` owns all three off one held value. It is *state*,
   handed to `Tv5725::CaptureWindow` rather than read back — the same rule
   `CaptureWindow::ProgressiveStart` already carried.
+
+  **`SP_RT_HS_SP` IS THE CAPTURE COUNTER'S ORIGIN, NOT A FRACTION OF THE
+  DIVIDER.** It lays the retimed pulse on the incoming one --
+  `PLLAD_MD - STATUS_SYNC_PROC_HLOW_LEN + 63` -- so it follows the source's own
+  sync width. `0.93 x MD` is `1 - duty` for a source whose sync takes 7% of the
+  line and is wrong for every other duty, placing the whole capture window with
+  nothing in a register dump to show it. **A narrow pulse is where this bites**:
+  `retimeStopFor()` returns 0 when the measured sync is under the 63-sample
+  origin, and `writeRetimeStop()` then writes nothing at all, so the counter
+  keeps the origin it had.
+  `docs/investigations/the-retime-stop-is-the-counters-origin.md`.
 
   **`IF_HSYNC_RST` is `PLLAD_MD` HALVED ONLY WHERE THE LINE IS DOUBLED**, which is
   what `SourceMeasurement::ifLineFor()` does — an IF unit is two ADC samples on a
