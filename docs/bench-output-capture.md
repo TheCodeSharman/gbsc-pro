@@ -39,7 +39,7 @@ The order that separates them, cheapest first:
 
 | ask | healthy |
 |---|---|
-| `s0_46` | `SFTRST_MEM_RSTZ` and its four neighbours all 1 -- **active low**, so 0 is a block held in reset and no video crosses the part |
+| `s0_46` | **on the SCALING path** `SFTRST_MEM_RSTZ` and its four neighbours all 1 -- active low, so 0 is a block held in reset and no video crosses the part. **IN PASS-THROUGH 0x01 IS HEALTHY**, see below |
 | `s0_45` | 0x11, the three colour channels enabled and the DAC powered |
 | `s0_49` | `PAD_SYNC_OUT_ENZ` 0 and `PAD_TRI_ENZ` 0, so HSOUT/VSOUT are driven |
 | the console | `frame time lock` carrying an `out` rate that matches `in` |
@@ -48,6 +48,14 @@ That last one is answered without the dongle at all: `out` is the TV5725's own
 VSOUT sampled on `DEBUG_IN_PIN`, so it proves the scaler is feeding the encoder.
 **It does not prove the encoder is transmitting** -- it is upstream of the
 MS9288A -- so it exonerates the scaler and says nothing about the link.
+
+**`s0_46` READS 0x01 IN PASS-THROUGH AND THAT IS CORRECT.** Bypass does not
+route video through the memory chain, so the blocks the bring-up's arm holds
+down stay held and cost nothing: measured at 800x600@60, `s0_46` 0x01 against
+0x7f on the scaling path, emitting a full-screen 1920x1079 picture either side
+of four mode changes. Reading the row above as a fault there has cost a wrong
+defect report. Ask the route first -- `DAC_RGBS_BYPS2DAC` and `OUT_SYNC_SEL`,
+both 1 in bypass -- and apply the row only where they are 0.
 
 With all four healthy and the panel still dark, the encoder is next
 (`PAD_SYNC_OUT_ENZ` toggled 1 then 0), and a full power cycle -- mains *and*
