@@ -484,8 +484,8 @@ TEST_CASE("the input formatter's fixed horizontal filtering is the bring-up's")
 TEST_CASE("the sync processor's retime window starts where it always starts")
 {
     // SP_RT_HS_ST is 0 whatever the divider is, in every path. Its partner
-    // SP_RT_HS_SP is 93% of PLLAD_MD and belongs to SourceMeasurement, which is
-    // why only one of the pair is here.
+    // SP_RT_HS_SP follows the source's measured sync width and belongs to
+    // SourceMeasurement, which is why only one of the pair is here.
     CHECK(WRITTEN(Tv5725::SyncProcessor::SP_RT_HS_ST) == 0);
 }
 

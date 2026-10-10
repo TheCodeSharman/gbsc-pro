@@ -507,12 +507,20 @@ TEST_CASE("the retime window's stop follows the source's sync width")
               == SyncProcessor::retimeStopFor(1440, pulse, 2));
     }
 
-    SUBCASE("a pulse narrower than the origin has no answer") {
+    SUBCASE("a pulse narrower than the origin wraps into the line") {
         // A duty of 4.1% is 59 samples at this divider -- fewer than the origin
-        // sits behind the stop.
-        // Carried through the subtraction it lands beyond the end of the line,
-        // where the register does nothing at all, so there is no stop to write.
-        CHECK(SyncProcessor::retimeStopFor(1440, HsyncPulse(0.041f), 2) == 0);
+        // sits behind the stop -- so the subtraction lands at 1444, past the end
+        // of the line, where the register does nothing at all.
+        //
+        // THE STOP IS A PHASE, so the same phase one line earlier is the
+        // modulo, and a whole line of horizontal shift is no shift at all.
+        // Every CEA-861 HD raster is this case at the divider the engine picks:
+        // measured on the bench at 720p, PLLAD_MD 1446 and HLOW_LEN 37 want
+        // 1472, and writing 26 took the source from a line wrapped across the
+        // frame to a whole picture.
+        CHECK(SyncProcessor::retimeStopFor(1440, HsyncPulse(0.041f), 2) == 4);
+        CHECK(SyncProcessor::retimeStopFor(1446, HsyncPulse(37.0f / 1446.0f), 2)
+              == 26);
     }
 
     SUBCASE("a reading that is not a pulse has no answer") {

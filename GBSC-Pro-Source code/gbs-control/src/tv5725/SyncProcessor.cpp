@@ -19,15 +19,23 @@ const uint16_t SyncProcessor::InvertedPulseWidthSamples;
 uint16_t SyncProcessor::retimeStopFor(uint16_t divider, const HsyncPulse &pulse,
                                      uint8_t oversample)
 {
-    if (!pulse.isPulse())
+    if (!pulse.isPulse() || divider == 0)
         return 0;
 
     const uint16_t origin =
         RetimeOriginSamples + (oversample <= 1 ? UndecimatedOriginSamples : 0);
     const uint32_t sync = (uint32_t)lrintf((float)divider * pulse.syncDuty());
-    if (sync < origin)
-        return 0;
-    return (uint16_t)(divider - sync + origin);
+
+    // A pulse narrower than the origin carries the subtraction past the end of
+    // the line, where the register is inert. The stop is a PHASE, so the same
+    // phase one line earlier is the modulo: a whole line of horizontal shift is
+    // no horizontal shift at all.
+    const uint32_t stop = (divider + origin - sync) % divider;
+
+    // 0 is this function's "nothing measured" answer, so a phase landing there
+    // takes the next sample instead -- one ADC sample, against an origin whose
+    // own measurement spread is +/-1.5.
+    return (uint16_t)(stop == 0 ? 1 : stop);
 }
 
 void SyncProcessor::driveTestBus(uint8_t module, uint8_t signal)

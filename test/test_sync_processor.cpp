@@ -734,8 +734,8 @@ static bool bringUpWrites()
 
 TEST_CASE("the bring-up leaves the retime stop to the class that holds the divider")
 {
-    // SP_RT_HS_SP is 93% of PLLAD_MD: one quantity in three registers, all
-    // three written by SourceMeasurement off one held value. A second writer
+    // SP_RT_HS_SP follows the source's measured sync width: one quantity in
+    // three registers, all three written by SourceMeasurement off one held value. A second writer
     // here puts a window on the sync processor that the ADC clock does not
     // match, and the header above says what poisoning it costs.
     CHECK_FALSE(bringUpWrites<SyncProcessor::SP_RT_HS_SP>());

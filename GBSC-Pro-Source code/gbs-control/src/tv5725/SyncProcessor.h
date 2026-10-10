@@ -224,8 +224,10 @@ public:
     // misplaces every source whose sync is not 7% of the line.
     //
     // A stop past the end of the line is inert -- measured, the picture does
-    // not move at any value above PLLAD_MD -- so a pulse that carries no
-    // reading falls back to the fraction rather than reaching for one.
+    // not move at any value above PLLAD_MD -- and a pulse narrower than the
+    // origin lands there, which is every CEA-861 HD raster at the divider the
+    // engine picks. The stop is a PHASE, so it wraps: the same phase one line
+    // earlier shifts the picture by a whole line, which is no horizontal shift.
     // 0 where the source's sync was not measured, and then nothing is written:
     // this register is the capture counter's ORIGIN, so a value invented from
     // the divider alone places every window the solve makes against an origin
