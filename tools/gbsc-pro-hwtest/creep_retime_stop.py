@@ -45,7 +45,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import full_margins                                    # noqa: E402
 import gbs_unit                                        # noqa: E402
 import hdmi_capture                                    # noqa: E402
-from shear import freeze, write_field                  # noqa: E402
+from gbs_unit import freeze                           # noqa: E402
+from shear import write_field                         # noqa: E402
 
 # Rows of the dongle frame the column profile is averaged over. Inside the
 # picture at the bench framing, so a vertical edge cannot enter the band.
