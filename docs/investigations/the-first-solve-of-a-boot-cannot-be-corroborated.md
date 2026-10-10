@@ -53,11 +53,13 @@ The output frame comes out 440 ticks short of the input's and the phase walks
 until the error wraps a frame, at which point the loop yanks the clock. The lock
 is not at fault and neither is its tuning.
 
-Two consequences beyond the tear. **The output raster is boot-dependent**,
-because the source key is sticky and carries the boot's rate for the life of the
-boot -- 1900 against 1902 at 320x256@50 into 1080p, 0.15 per thousand, so
-absolute geometry is not comparable across boots. And the stored framing is
-filed under a key the source does not have.
+Two consequences beyond the tear. **The output raster is sized for the boot's
+rate until the confirmation lands** -- 1900 against 1902 at 320x256@50 into
+1080p, 0.15 per thousand, so absolute geometry taken inside that window is not
+comparable across boots. And the key the framing is looked up under is the one
+that reading gave, so which stored record answers is decided by a transient;
+`one-source-takes-many-keys.md` measures what that costs and what the
+confirmation now puts right.
 
 ## Why nothing already on the board reaches it
 
@@ -81,8 +83,10 @@ firing is a solve nobody asked for.
 ## What the engine does now
 
 The first recheck of a boot **re-solves instead of corroborating**.
-`VideoSourceAcquisition::rateMoved()` holds `firstRateConfirmed_`, forgets the
-held rate and arms a move the first time the recheck falls due. One extra solve
+`VideoSourceAcquisition::rateMoved()` calls `SourceMeasurement::confirmRate()`
+the first time the recheck falls due, which records the re-measure and drops the
+held rate in one call -- a confirmation leaving the boot's rate held would
+corroborate it for the life of the boot -- and arms a move. One extra solve
 per boot, `RateRecheckPasses` after the first -- ten seconds, by which time the
 source has settled.
 
@@ -100,6 +104,14 @@ of walking.
 The first ten seconds of a boot still run on the boot's rate, so a picture
 judged in that window is judged against a raster that is about to move, and the
 correction blanks the output for the encoder relook as any solve does.
+
+**The confirmation reaches the KEY as well as the rate**, and that took a second
+change: `adoptSourceKey()` returns early when the arriving key compares equal to
+the one held, and a corrected reading of the same source does compare equal, so
+the key stood while the rate moved under it. The early return asks whether the
+rate behind the key in force had been confirmed when it was taken. Measured,
+two `source key:` lines a boot where there was one, the second on the settled
+reading. `one-source-takes-many-keys.md`.
 
 Nothing here bounds the error. A boot that lands on a doubled rate still sizes a
 divider from it and still spends `HeldRateRejectionLimit` refusing correct

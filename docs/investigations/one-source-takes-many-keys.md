@@ -1,0 +1,163 @@
+# One source takes many keys, and its stored shape goes with them
+
+A framing and a shape tuned on one source come back on some boots and not
+others, with nothing touched between them. Two independent causes, both
+measured, both now closed.
+
+The bench state throughout: the RISC PC on `vga`, 311 lines, settled field rate
+50.474 Hz, `/framing.txt` holding three records for that one source, one of
+which carries a 4:3 shape.
+
+    311@50.45/732++ = 2588 6412 1090 8269 13333
+    310@50.00/741?? = 1971 7956 1479 8215 0
+    311@50.61/732++ = 2698 6249 1154 8205 0
+
+## The shape never left the file
+
+`loadFramingTable()` parses the file into a scratch `FramingTable` so a read
+failing part way cannot leave the live table holding half a file, then copied
+the entries across one at a time -- naming the key and the framing, and not the
+shape, which took `Aspect()`'s default of Fill. **Every stored shape was
+discarded on every boot, for every source.**
+
+The console says it in one line. The record above holds 13333 and the recall
+reports:
+
+    source key: 311@50.45/732++, framing recalled, shape 0
+
+with `/geometry` answering `"aspect":0` beside a framing that is the stored
+record's to the unit. The text codec round-trips the shape and is tested doing
+so, so nothing was lost in the file or the parse.
+
+`FramingTable::adopt()` crosses that gap now, so the copy has one owner rather
+than a list of fields written out at the call site. The table's own tests had no
+shape coverage at all, which is what let it through.
+
+## The boot's first solve takes a key the source does not have
+
+Every later acquisition of this source reads 50.47. The first solve of a boot
+does not. Measured across six boots, untouched between them:
+
+| boot | key the first solve took | shape it recalled |
+|---|---|---|
+| 1 | 311@50.61 | 0 |
+| 2 | 311@50.45 | 13333 |
+| 3 | 311@50.53 | 0 |
+| 4 | 311@50.45 | 13333 |
+| 5 | 311@50.45 | 13333 |
+| 6 | 311@50.45 | 13333 |
+
+So the shape appears on the boots whose key happens to land on the record that
+carries it. 50.45 against 50.61 is 3.2 per thousand, outside the 3
+`SourceIdentityPerThousand` allows, so those are two keys and the one source
+accumulated a record under each.
+
+### The readings ladder, and agreement picks a rung
+
+The whole of one boot's first solve, from the console:
+
+    sampling: 311 lines x 50.45 Hz -> line rate 15740
+    sampling: 311 lines x 50.53 Hz -> line rate 15765
+    sampling: 311 lines x 50.45 Hz -> line rate 15740
+    sampling: 311 lines x 50.53 Hz -> line rate 15765
+    sampling: 311 lines x 50.60 Hz -> line rate 15788
+    sampling: 311 lines x 50.60 Hz -> line rate 15788
+    sampling: rate 15788 doubled 1 -> divider 2200
+    source key: 311@50.61/732++, framing recalled, shape 0
+
+The rungs sit about 80 mHz apart, which is half a source line at 311 lines and
+50.47 Hz. `rateSettled()` promotes the first consecutive PAIR agreeing within
+`RateAgreementPerThousand`, which is 1 -- and one rung is 1.6 per thousand, so
+adjacent rungs never agree and an agreement means two samples landed on the SAME
+rung. **Which rung that is, is luck**, and it becomes the source's identity and
+the raster's rate.
+
+The median of three in `sampleFieldRateHz()` does not rescue this. It is sized
+against the signature `single-sample-rate-jitter.md` measures on a SETTLED
+source -- one sample in eighty displaced by one whole line -- where two of three
+have to be out the same way. Here the scatter spans several rungs within one
+solve, so the median returns a rung rather than an outlier.
+
+**The two signatures are different and must not be merged.** After the boot, the
+same measurement on the same source reads 50.47 with occasional single
+excursions of one whole line:
+
+    sampling: 311 lines x 50.47 Hz -> line rate 15748
+    sampling: 311 lines x 50.47 Hz -> line rate 15748
+    sampling: 311 lines x 50.63 Hz -> line rate 15798
+    sampling: 311 lines x 50.47 Hz -> line rate 15748
+    sampling: 311 lines x 50.47 Hz -> line rate 15748
+
+Half-line rungs spanning several values during the first solve; whole-line
+single excursions afterwards. **What makes the first solve different is not
+established.** The filesystem is ruled out on timing -- it is mounted at 1.73 s
+and the framing table loaded at 1.78 s, five seconds before the first reading --
+and detection's own 2.57 s of register writing finishes immediately before it.
+The reading is taken through the reference divider rather than the one the
+source ends up on, which is a lead and not a measurement.
+
+### The correction reached the rate and not the key
+
+The periodic recheck re-solves once per boot and reaches the settled rate every
+time, 50474 of 50474. The key did not follow it: `adoptSourceKey()` returns
+early when the arriving key compares equal to the one held, and **the corrected
+reading does compare equal -- it is the same source.** One `source key:` line
+per boot and none after the correction.
+
+So the key is replaced not on a change of source, of which there is none, but on
+the reading behind it getting better. The early return asks whether the rate
+behind the key in force had been confirmed when it was taken; while it had not,
+a solve re-derives. Measured after the change, two `source key:` lines a boot:
+
+    09.44  source key: 311@50.45/732++, framing recalled, shape 13333
+    19.62  source key: 311@50.48/732++, framing recalled, shape 13333
+
+The gate is what stops the stored framing being recalled over a user who has
+tuned it and not yet had it written out, so it is not simply dropped.
+
+**The recheck is therefore still load bearing, and more so.** It was the only
+thing correcting the boot's rate; it is now also the only thing correcting the
+boot's key. Deleting it needs the first solve's reading made good first.
+
+## Identity is not transitive, and a first match let the file decide
+
+50.474 is 0.46 per thousand from 50.45 and 2.65 from 50.61, so it is inside
+tolerance of both -- while they are 3.11 apart and outside tolerance of each
+other. `SourceKey` equality is symmetric and **not transitive**, which is
+structural rather than a defect in the relation.
+
+Two consequences, both closed:
+
+- `FramingTable::indexOf()` was a linear scan returning the FIRST match, so with
+  both records present the order the file happened to be written in decided
+  which framing the source got back. It returns the nearest now, by
+  `SourceKey::distanceTo()` -- the separation on each tolerant axis as a
+  fraction of what that axis allows, summed.
+- Nearest-match makes a lookup deterministic and does not stop the split. Two
+  records both identified by one reading shadow each other for ever, and a later
+  reading lands on whichever it sits nearer. A store now drops every other entry
+  the stored reading also identifies, collapsing them onto the one just written.
+
+**Widening `SourceIdentityPerThousand` is not the answer and was rejected.** The
+spread is a transient in the measurement rather than a property of the source,
+so identity is the wrong place to absorb it; widening also puts more records
+inside tolerance of each other, every one of them still resolved by proximity to
+a reading that wanders. A bucket would be transitive but straddles boundaries,
+which `SourceKey.h` rejects by measurement.
+
+## What is still open
+
+The first solve's reading is still a lottery; what changed is that the engine no
+longer carries its first guess for the life of the boot. Until that reading is
+made good:
+
+- the first ten seconds of a boot run on a raster sized for the wrong rate, and
+  the correction blanks the output for the encoder relook as any solve does;
+- a boot can still file a record under a transient key if a framing is pressed
+  inside that window, and the collapse on store is what folds it back.
+
+The instrument is the console across a boot, which carries every reading as it
+is taken. `/bootlog` holds what precedes the websocket handshake, and a TCP
+connection to port 81 counts as a connected client -- so polling that port to
+find out when the unit is back sets `bootLogDelivered` and truncates the very
+window being asked about. Poll port 80.

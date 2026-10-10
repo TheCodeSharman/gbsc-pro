@@ -228,6 +228,35 @@ from a standard is a guess that happens to be well-informed. Choosing the right
 row is a separate question, and the polarity the key now carries is evidence for
 it that the table does not yet read.
 
+## Equality is not transitive, so a lookup has to choose
+
+A reading can sit inside tolerance of two stored keys that are outside tolerance
+of each other. Measured on the RISC PC at 320x256@50, whose settled rate is
+50.474 Hz: it is 0.46 per thousand from a stored 50.45 and 2.65 from a stored
+50.61, while those two are 3.11 apart against the 3
+`SourceIdentityPerThousand` allows. **That is structural rather than a defect in
+the relation** -- any tolerant equality over a continuum behaves this way, and
+widening the tolerance puts more records inside it of each other rather than
+fewer.
+
+Two rules follow, and the file's order decides nothing under either:
+
+- **The NEAREST match answers, not the first.** `FramingTable::indexOf()` scores
+  every match with `SourceKey::distanceTo()` -- the separation on each tolerant
+  axis as a fraction of what that axis allows, summed -- and returns the
+  smallest. A scan returning the first match let the order the file happened to
+  be written in decide which framing a source got back.
+- **A store leaves no shadow.** Nearest-match makes a lookup deterministic and
+  does not stop two records both identified by one reading from splitting a
+  source's framing between them, a later reading landing on whichever it sits
+  nearer. `FramingTable::remember()` drops every other entry the stored reading
+  also identifies, collapsing them onto the one just written.
+
+A source accumulates records under more than one key in the first place because
+the boot's first solve measures through a path detection has just reconfigured;
+`investigations/one-source-takes-many-keys.md` measures that and what corrects
+it.
+
 ## Where the implementation departs from the design
 
 **Steps 2 and 3 are one table and the precedence runs the wrong way.**
