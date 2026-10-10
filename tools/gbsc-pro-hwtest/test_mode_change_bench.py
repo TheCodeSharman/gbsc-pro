@@ -258,3 +258,17 @@ def test_every_mode_offered_leaves_nothing_dropped():
     offered = "X320 Y256 C256 F50\n"
     kept, dropped = b.offered_only(["MODE X320 Y256 C256 F50"], offered)
     assert kept == ["MODE X320 Y256 C256 F50"] and dropped == []
+
+
+# WHICH ROUTE A LEG LANDED ON. A sweep run with pass-through preferred walks
+# legs the channel carries and legs it refuses, and the timings mean different
+# things on each -- so a run that does not say which is which cannot be read.
+def test_the_route_is_named_from_the_two_fields_that_tell_it_apart():
+    assert b.route_of({"DAC_RGBS_BYPS2DAC": 1, "OUT_SYNC_SEL": 1}) == "bypass"
+    assert b.route_of({"DAC_RGBS_BYPS2DAC": 0, "OUT_SYNC_SEL": 0}) == "scaled"
+
+
+def test_a_half_switched_route_is_named_rather_than_guessed():
+    # Neither answer is right, and silently calling it one of them is how a
+    # switch that half ran reads as a clean leg.
+    assert b.route_of({"DAC_RGBS_BYPS2DAC": 1, "OUT_SYNC_SEL": 0}) == "route?"

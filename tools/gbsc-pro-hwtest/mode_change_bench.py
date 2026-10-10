@@ -340,6 +340,21 @@ def shown(frame):
     return dict(mean=round(float(frame.mean()), 2), dark=box["width"] == 0, **box)
 
 
+# The two fields that tell the paths apart, both 1 in bypass and 0 scaling.
+# DAC_RGBS_ADC2DAC is NOT the tell, being 0 on both. docs/rgbhv-bypass-trap.md
+ROUTE = ("DAC_RGBS_BYPS2DAC", "OUT_SYNC_SEL")
+
+
+def route_of(at):
+    """Which path the video takes, or "route?" where the two disagree."""
+    on = [at[k] for k in ROUTE]
+    if all(v == 1 for v in on):
+        return "bypass"
+    if all(v == 0 for v in on):
+        return "scaled"
+    return "route?"
+
+
 def lit(dev, deadline_s):
     """The first frame with a picture in it, and how long it took to arrive.
 
@@ -469,6 +484,13 @@ def main():
             # so a leg can report acquired with nothing reaching the encoder --
             # measured on this bench, a pass-through channel with the video
             # blocks held read acquired and emitted black.
+            # THE ROUTE AND THE BLOCKS, read before the frame, because a dark
+            # frame means nothing without them: the blocks the bring-up's arm
+            # holds down are released on the scaling path and not in
+            # pass-through, and s0_46 is the only thing that says so.
+            # docs/known-issues.md
+            path = gbs_unit.read_fields(args.host, list(ROUTE))
+            blocks = gbs_unit.read_reg(args.host, 0, 0x46)
             seen, waited, frame = lit(dev, args.lit_deadline)
             if args.shots:
                 hdmi_capture.write_png(
@@ -480,6 +502,7 @@ def main():
                        else f"{seen['width']}x{seen['height']} lit +{waited:4.1f}s")
 
             print(f"  {name:26} run {n + 1}  {took}  acquired at {at_first}  "
+                  f"{route_of(path):7} s0_46 {blocks:#04x}  "
                   f"{picture:24} {why_missed(tr):22} "
                   f"first={reports[0] if reports else None}"
                   f"{'' if console.alive else '   (CONSOLE DEAD)'}"
