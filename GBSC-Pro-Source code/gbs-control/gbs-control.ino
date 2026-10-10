@@ -3748,15 +3748,19 @@ void loop()
         bootLogDelivered = true; // set first: broadcastTXT re-enters SerialMirror
 
         // **SEND IT IN PIECES, NOT ONE 2 KB FRAME.** A single broadcast of the
-        // whole backlog allocates for every connected client at once, and
-        // SerialMirror drops clients when free heap falls below its threshold
-        // during a console write -- so the replay hangs up the very client it is
-        // replaying to. Chunked with a yield between, and skipped entirely when
-        // the heap is already tight: losing the backlog is a smaller loss than
-        // losing the console session it was meant to enrich.
+        // whole backlog allocates for every connected client at once, so it is
+        // chunked with a yield between, and skipped when the heap is tight:
+        // losing the backlog is a smaller loss than the console session it was
+        // meant to enrich.
+        //
+        // Each chunk IS a console write, so it is gated at what a console write
+        // needs and no more. A threshold above the heap this chip has spare
+        // never opens -- measured, this fork boots with 10.5 K free, so every
+        // console started mid-sentence and the whole of detection, the sync-type
+        // probe and the first solve were only ever in /bootlog.
         const uint16_t chunk = 256;
         for (uint16_t sent = 0; sent < bootLogLen; sent += chunk) {
-            if (ESP.getFreeHeap() < 22000) {
+            if (ESP.getFreeHeap() < CONSOLE_BROADCAST_MIN_HEAP) {
                 Serial.println(F("BOOTLOG: heap low, replay truncated"));
                 break;
             }
