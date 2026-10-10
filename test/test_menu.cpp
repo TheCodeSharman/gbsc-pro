@@ -1070,6 +1070,36 @@ TEST_CASE("the aspect item names the shape the source is shown in")
     CHECK(item("Aspect").okCommand().letter() == 'G');
 }
 
+// WHETHER THE BOARD SHAPES AT ALL, which is a different question from what
+// shape. A display set to its own 4:3 mode shapes what it is sent, so the two
+// compound and the picture comes out narrower than either asked for.
+// docs/aspect-ratio.md
+TEST_CASE("whether the board shapes the picture is on the System page")
+{
+    Unit unit;
+
+    // Read off the engine, as the shape itself is: the saved byte is only how
+    // it survives a power cycle.
+    REQUIRE(unit.solved.engine.appliesAspect());
+    CHECK(std::string(item("Aspect ratio").valueText(unit.context)) == "Apply");
+    CHECK(item("Aspect ratio").okCommand().letter() == 'S');
+
+    REQUIRE(unit.solved.engine.setApplyAspect(false));
+    CHECK(std::string(item("Aspect ratio").valueText(unit.context)) == "Ignore");
+}
+
+TEST_CASE("the shape row is unavailable while the board is not shaping")
+{
+    const MenuItem &screen = item("Screen Settings");
+    REQUIRE(std::string(screen.children()[2].label()) == "Aspect");
+
+    Unit unit;
+    REQUIRE(screen.children()[2].isAvailable(unit.context));
+
+    REQUIRE(unit.solved.engine.setApplyAspect(false));
+    CHECK_FALSE(screen.children()[2].isAvailable(unit.context));
+}
+
 TEST_CASE("the aspect sits with the pads, all three being the picture's shape")
 {
     const MenuItem &screen = item("Screen Settings");
@@ -1639,14 +1669,14 @@ TEST_CASE("a row is written whole, so a shorter label leaves no tail behind")
     Cells.clear();
     OSD::forget();
     drawOnTelevision(cursor.page(), unit.context);
-    REQUIRE(rowText(row) == ">Frame Time Lock-------OFF ^");
+    REQUIRE(rowText(row) == ">Frame Time Lock-------OFF 2");
 
     // A level whose row at that position is shorter, drawn over the same cells.
     MenuCursor second = cursorInside("Picture Settings");
-    REQUIRE(std::string(second.page().labelAt(row)) == "ADC gain");
+    REQUIRE(std::string(second.page().labelAt(row)) == "Scanlines");
     drawOnTelevision(second.page(), unit.context);
 
-    CHECK(rowText(row) == ">ADC gain--------------OFF");
+    CHECK(rowText(row) == " Scanlines-------------OFF 1");
 }
 
 TEST_CASE("a space inside a label is the font's blank, not its 0x20")

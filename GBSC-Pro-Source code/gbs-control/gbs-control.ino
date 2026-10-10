@@ -3102,6 +3102,7 @@ static void applyStoredSettings()
     if (Tv5725::OutputMode::fromName(uopt->outputResolution) == NULL)
         chooseOutputMode(&Tv5725::Mode1080p);
     applyPassThroughPreference();
+    geometry.setApplyAspect(uopt->applyAspect != 0);
 }
 
 void loadDefaultUserOptions()
@@ -5171,6 +5172,13 @@ void handleType2Command(char argument)
             uopt->enableCalibrationADC = !uopt->enableCalibrationADC;
             saveUserPrefs();
             break;
+        case 'S':
+            // The engine owns it and the byte is how it survives a power
+            // cycle, so the engine is asked first and mirrored afterwards.
+            geometry.setApplyAspect(!geometry.appliesAspect());
+            uopt->applyAspect = geometry.appliesAspect() ? 1 : 0;
+            saveUserPrefs();
+            break;
         case 'x':
             uopt->preferScalingRgbhv = !uopt->preferScalingRgbhv;
             applyPassThroughPreference();
@@ -6235,7 +6243,7 @@ void startWebserver()
                  "\"sh\":%u,\"sv\":%u,"
                  "\"poh\":%d,\"peh\":%d,\"pov\":%d,\"pev\":%d,"
                  "\"lineRateHz\":%lu,\"lowLineRate\":%s,"
-                 "\"aspect\":%u,\"shaped\":%s,"
+                 "\"aspect\":%u,\"shaping\":%s,\"shaped\":%s,"
                  "\"present\":%s,\"state\":\"%s\"}"),
             geometry.originUnitsOn(Tv5725::AxisHorizontal),
             geometry.extentUnitsOn(Tv5725::AxisHorizontal),
@@ -6266,6 +6274,10 @@ void startWebserver()
             // The shape the picture is shown in, in the same ten-thousandths
             // the framing file carries. 0 is filling.
             (unsigned)geometry.aspect().tenThousandths(),
+            // Whether the board applies that shape at all. `shaped` cannot say
+            // so: an axis told to fill is indistinguishable from one that
+            // honoured what it was given.
+            geometry.appliesAspect() ? "true" : "false",
             // False where an axis had to fill because the part cannot minify
             // into the shape. No register distinguishes that from no shape.
             geometry.shapeHonoured() ? "true" : "false",

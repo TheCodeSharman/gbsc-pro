@@ -68,6 +68,10 @@ struct userOptions
     uint8_t deintMode;        //非int模式
     uint8_t wantTap6;
     uint8_t preferScalingRgbhv;
+    // Whether the board narrows the room to the source's shape. A display set
+    // to its own 4:3 mode shapes what it is sent, so the two compound.
+    // docs/aspect-ratio.md
+    uint8_t applyAspect;
     uint8_t PalForce60;
     uint8_t disableExternalClockGenerator;  //禁用外部时钟生成器
     uint8_t enableCalibrationADC;  //启用校准 ADC

@@ -162,6 +162,14 @@ const char *aspectText(const MenuContext &context)
     }
 }
 
+// Whether the board narrows the room to the shape at all. A display set to its
+// own 4:3 mode shapes what it is sent, and the two then compound -- so the
+// board's half is a switch, and the shape it is not applying stays stored.
+const char *aspectAppliedText(const MenuContext &context)
+{
+    return context.controls().engine().appliesAspect() ? "Apply" : "Ignore";
+}
+
 // Which way a source that COULD pass through is sent. It reaches no other
 // kind: VideoSourceAcquisition::passThroughSuitsSource() refuses a doubled
 // line and anything under HdBypass::MinLineRateHz, so every low-res mode is
@@ -245,6 +253,13 @@ bool scalerInPath(const MenuContext &context)
     return mode == NULL || !mode->isBypass();
 }
 
+// The shape row asks WHICH shape, so it has nothing to say where the board is
+// not applying one: a row that stays live there reads as a broken control.
+bool scalerShapes(const MenuContext &context)
+{
+    return scalerInPath(context) && context.controls().engine().appliesAspect();
+}
+
 // A pad asks for a control and the way it goes, which the remote's hold ramp
 // multiplies -- the /sc? geometry letters are stated in output pixels, where one
 // tap asks for one capture granule. The key follows the edge that moves: the
@@ -264,7 +279,7 @@ const MenuPad ScalePad(MenuCommand::nudge(Tv5725::Nudge::VerticalZoom, -1),
 const MenuItem Screen[] = {
     MenuItem::pad("Move", MovePad).onlyWhen(scalerInPath),
     MenuItem::pad("Scale", ScalePad).onlyWhen(scalerInPath),
-    MenuItem::choice("Aspect", 'G', aspectText).onlyWhen(scalerInPath),
+    MenuItem::choice("Aspect", 'G', aspectText).onlyWhen(scalerShapes),
     MenuItem::serialAction("Reset", 'B'),
 };
 
@@ -320,6 +335,7 @@ const MenuItem SvAv[] = {
 const MenuItem System[] = {
     MenuItem::submenu("Sv-Av InPutSet", SvAv, sizeof(SvAv) / sizeof(SvAv[0])),
     MenuItem::choice("High res", 'x', highResRouteText),
+    MenuItem::choice("Aspect ratio", 'S', aspectAppliedText),
     MenuItem::adjust("Deinterlace", MenuCommand(), MenuCommand::user('q'),
                      MenuCommand::user('r'), deinterlaceText),
     MenuItem::choice("Frame Time Lock", '5', frameTimeLockText),

@@ -36,6 +36,7 @@ namespace Tv5725 {
 VideoPath::VideoPath(DisplayClock &displayClock, SourceMeasurement &sampling,
                      FramingTable &framings, InputFormatter &inputFormatter)
     : displayClock_(displayClock), inputFormatter_(inputFormatter),
+      applyAspect_(true),
       usableHorizontal_(0), usableVertical_(0),
       reachHorizontal_(0), reachVertical_(0),
       firstHorizontal_(0), firstVertical_(0),
@@ -1178,7 +1179,7 @@ uint16_t VideoPath::narrowestCaptureOn(const Axis &axis) const
     // narrowed room is reached by a smaller capture. widestCaptureOn is
     // deliberately without it -- narrowToRaster CROPS the capture by that
     // bound, and the shape must never cost picture.
-    return OutputWindow::narrowestCapture(axis, raster_, aspect_);
+    return OutputWindow::narrowestCapture(axis, raster_, appliedAspect());
 }
 
 uint16_t VideoPath::widestCaptureOn(const Axis &axis) const
@@ -1335,7 +1336,7 @@ OutputWindow VideoPath::imageFor(const CaptureWindow &capture) const
     return OutputWindow(capture.pictureOn(AxisHorizontal).width(),
                         capture.pictureOn(AxisVertical).width(), raster_,
                         marginTaken(capture, AxisHorizontal),
-                        marginTaken(capture, AxisVertical), aspect_);
+                        marginTaken(capture, AxisVertical), appliedAspect());
 }
 
 void VideoPath::write(const OutputWindow &solved, const CaptureWindow &capture)
@@ -1449,6 +1450,33 @@ bool VideoPath::step(const PanAndZoom &wanted)
 }
 
 Aspect VideoPath::aspect() const { return aspect_; }
+
+Aspect VideoPath::appliedAspect() const { return applyAspect_ ? aspect_ : Aspect(); }
+
+bool VideoPath::appliesAspect() const { return applyAspect_; }
+
+// Not through step(), for the reason setAspect() is not: what it moves is the
+// scale and the two output blanking pairs, and the press comparison watches
+// the input formatter's windows.
+bool VideoPath::setApplyAspect(bool apply)
+{
+    if (apply == applyAspect_)
+        return false;
+
+    applyAspect_ = apply;
+    if (!solveWindows()) {
+        applyAspect_ = !apply;
+        solveWindows();
+        return false;
+    }
+
+    char line[48];
+    snprintf(line, sizeof(line), "aspect: %u, %s",
+             (unsigned)aspect_.tenThousandths(),
+             applyAspect_ ? "applied" : "not applied");
+    tv5725Log(line);
+    return true;
+}
 
 InputScale VideoPath::inputScale() const { return inputScale_; }
 

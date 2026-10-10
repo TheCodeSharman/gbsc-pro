@@ -151,6 +151,13 @@ public:
     // shape asked for is the one already in force, or the solve refused.
     bool setAspect(Aspect shape);
 
+    // Whether the board shapes the picture at all. A display set to its own
+    // 4:3 mode shapes what it is sent, and the two compound; off, every source
+    // fills the raster and the set has the whole of it. The stored shape is
+    // untouched either way, so turning it back on puts the bars back.
+    bool appliesAspect() const;
+    bool setApplyAspect(bool apply);
+
     // Whether the last solve could show the shape it was given. False means an
     // axis filled instead, which no register distinguishes from having been
     // given no shape at all.
@@ -637,6 +644,11 @@ private:
     static uint16_t marginTaken(const CaptureWindow &capture, const Axis &axis);
     OutputWindow imageFor(const CaptureWindow &capture) const;
 
+    // The shape the SOLVE narrows against, which is the stored one only while
+    // the board is shaping. Every solve site asks this; aspect() answers what
+    // is stored.
+    Aspect appliedAspect() const;
+
     // Ordered so the headroom never dips: the solver always takes the whole
     // memory window, so the only edge that can narrow it is VDS_?B_SP moving up.
     // docs/firmware-geometry-engine.md "Write ordering".
@@ -650,6 +662,7 @@ private:
     InputFormatter &inputFormatter_;
     PanAndZoom framing_;
     Aspect aspect_;
+    bool applyAspect_;
     InputScale inputScale_;
     ColourBalance colour_;
     PictureOptions picture_;

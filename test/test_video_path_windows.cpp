@@ -1235,3 +1235,34 @@ TEST_CASE("the delay's bound displaces a divider chosen before the duty landed")
     CHECK(Wire.field(5, 0x12, 0, 12) * 800 / 1056 <= VideoProcessor::LineBufferSamples);
 }
 
+// A DISPLAY SET TO ITS OWN 4:3 MODE SHAPES WHAT IT IS SENT, so the board's
+// shaping and the set's compound and the picture comes out narrower than
+// either asked for. The board's half is therefore a switch, and the shape it
+// is not applying is still STORED -- a tuning must survive being turned off.
+// docs/aspect-ratio.md
+TEST_CASE("shaping turned off fills the raster, and the stored shape outlives it")
+{
+    SolvedEngine filling(311, 50.08f, 181, &Mode1080p);
+    REQUIRE(filling.engine.setAspect(Aspect(Aspect::Fill)));
+    const float full = filling.engine.image().horizontal().produced();
+
+    SolvedEngine ignored(311, 50.08f, 181, &Mode1080p);
+    REQUIRE(ignored.engine.aspect() == Aspect(Aspect::FourThree));
+    REQUIRE(ignored.engine.image().horizontal().produced() < full - 100.0f);
+
+    CHECK(ignored.engine.setApplyAspect(false));
+    CHECK(ignored.engine.aspect() == Aspect(Aspect::FourThree));
+    CHECK_NEAR(ignored.engine.image().horizontal().produced(), full, 0.51f);
+}
+
+TEST_CASE("the stored shape comes back with the switch")
+{
+    SolvedEngine engine(311, 50.08f, 181, &Mode1080p);
+    const float narrowed = engine.engine.image().horizontal().produced();
+
+    REQUIRE(engine.engine.setApplyAspect(false));
+    REQUIRE(engine.engine.image().horizontal().produced() > narrowed + 100.0f);
+
+    CHECK(engine.engine.setApplyAspect(true));
+    CHECK_NEAR(engine.engine.image().horizontal().produced(), narrowed, 0.51f);
+}
