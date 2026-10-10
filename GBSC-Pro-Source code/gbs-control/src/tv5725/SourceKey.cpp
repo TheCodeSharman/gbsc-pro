@@ -49,6 +49,35 @@ SourceKey::Polarity SourceKey::hsyncPolarity() const { return hsyncPolarity_; }
 
 SourceKey::Polarity SourceKey::vsyncPolarity() const { return vsyncPolarity_; }
 
+namespace {
+
+const float Unreachable = 1.0e9f;
+
+float fractionOfTolerance(float apart, float allowed)
+{
+    if (allowed <= 0.0f)
+        return apart == 0.0f ? 0.0f : Unreachable;
+    return apart / allowed;
+}
+
+}  // namespace
+
+float SourceKey::distanceTo(const SourceKey &other) const
+{
+    if (!valid() || !other.valid() || lines_ != other.lines_
+        || hsyncPolarity_ != other.hsyncPolarity_
+        || vsyncPolarity_ != other.vsyncPolarity_)
+        return Unreachable;
+
+    const float smaller = rateHz_ < other.rateHz_ ? rateHz_ : other.rateHz_;
+    const float rateApart = fabsf(rateHz_ - other.rateHz_) * 1000.0f;
+    const float rateAllowed = (float)SourceIdentityPerThousand * smaller;
+
+    return fractionOfTolerance(rateApart, rateAllowed)
+         + fractionOfTolerance(fabsf(syncWidth_ - other.syncWidth_),
+                               SyncWidthIdentity);
+}
+
 bool SourceKey::operator==(const SourceKey &other) const
 {
     return valid() && other.valid()

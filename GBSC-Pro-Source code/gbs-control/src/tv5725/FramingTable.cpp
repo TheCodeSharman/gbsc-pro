@@ -10,10 +10,35 @@ int16_t FramingTable::indexOf(const SourceKey &key) const
 {
     if (!key.valid())
         return -1;
-    for (uint16_t i = 0; i < count_; ++i)
-        if (keys_[i] == key)
-            return (int16_t)i;
-    return -1;
+
+    int16_t best = -1;
+    float nearest = 0.0f;
+    for (uint16_t i = 0; i < count_; ++i) {
+        if (!(keys_[i] == key))
+            continue;
+        const float apart = key.distanceTo(keys_[i]);
+        if (best < 0 || apart < nearest) {
+            best = (int16_t)i;
+            nearest = apart;
+        }
+    }
+    return best;
+}
+
+void FramingTable::collapseOnto(uint16_t kept, const SourceKey &identified)
+{
+    uint16_t out = 0;
+    for (uint16_t i = 0; i < count_; ++i) {
+        if (i != kept && keys_[i] == identified)
+            continue;
+        if (out != i) {
+            keys_[out] = keys_[i];
+            framings_[out] = framings_[i];
+            aspects_[out] = aspects_[i];
+        }
+        ++out;
+    }
+    count_ = out;
 }
 
 bool FramingTable::find(const SourceKey &key, PanAndZoom *into,
@@ -39,6 +64,7 @@ bool FramingTable::remember(const SourceKey &key, const PanAndZoom &framing,
     if (at >= 0) {
         framings_[at] = framing;
         aspects_[at] = shape;
+        collapseOnto((uint16_t)at, key);
         moved();
         return true;
     }

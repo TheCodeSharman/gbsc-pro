@@ -244,3 +244,71 @@ TEST_CASE("adopting more than fits keeps what it can and says so")
     CHECK_FALSE(live.adopt(stored));
     CHECK(live.count() == FramingTable::Entries);
 }
+
+// --- which record answers ---------------------------------------------------
+//
+// Identity is symmetric but not transitive: a reading can sit inside tolerance
+// of two stored keys that are outside tolerance of each other. Measured on a
+// RISC PC at 320x256@50, whose settled 50.474 Hz is 0.46 per thousand from a
+// stored 50.45 and 2.65 from a stored 50.61, which are 3.11 apart against the
+// 3 identity allows. So a lookup has to choose, and the choice may not be the
+// order the file happened to be written in.
+
+static const PanAndZoom Near(0.2588f, 0.6412f, 0.1090f, 0.8269f);
+static const PanAndZoom Far(0.2698f, 0.6249f, 0.1154f, 0.8205f);
+
+static SourceKey at(float rateHz)
+{
+    return SourceKey(311, rateHz, 0.0732f, SourceKey::Positive, SourceKey::Positive);
+}
+
+TEST_CASE("the nearest stored key answers, whichever order the file held them")
+{
+    for (int reversed = 0; reversed < 2; ++reversed) {
+        FramingTable table;
+        if (reversed) {
+            REQUIRE(table.remember(at(50.61f), Far));
+            REQUIRE(table.remember(at(50.45f), Near));
+        } else {
+            REQUIRE(table.remember(at(50.45f), Near));
+            REQUIRE(table.remember(at(50.61f), Far));
+        }
+        REQUIRE(table.count() == 2);
+
+        PanAndZoom found;
+        REQUIRE(table.find(at(50.474f), &found));
+        CHECK(found == Near);
+    }
+}
+
+TEST_CASE("storing a framing leaves no two keys that compare equal")
+{
+    // Two records both inside tolerance of what was just stored would shadow
+    // each other for ever, and which one a later recall got would be decided by
+    // where in the table they sat.
+    FramingTable table;
+    REQUIRE(table.remember(at(50.45f), Near));
+    REQUIRE(table.remember(at(50.61f), Far));
+
+    const PanAndZoom tuned(0.1f, 0.5f, 0.2f, 0.6f);
+    REQUIRE(table.remember(at(50.474f), tuned));
+
+    CHECK(table.count() == 1);
+
+    PanAndZoom found;
+    REQUIRE(table.find(at(50.474f), &found));
+    CHECK(found == tuned);
+}
+
+TEST_CASE("a store that collapses two records keeps the shape just stored")
+{
+    FramingTable table;
+    REQUIRE(table.remember(at(50.45f), Near, Aspect(Aspect::FourThree)));
+    REQUIRE(table.remember(at(50.61f), Far));
+
+    REQUIRE(table.remember(at(50.474f), Far, Aspect(Aspect::FourThree)));
+
+    Aspect shape;
+    REQUIRE(table.find(at(50.474f), (PanAndZoom *)NULL, &shape));
+    CHECK(shape.tenThousandths() == Aspect(Aspect::FourThree).tenThousandths());
+}

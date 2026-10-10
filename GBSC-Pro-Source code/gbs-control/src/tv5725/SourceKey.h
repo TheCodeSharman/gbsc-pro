@@ -98,6 +98,16 @@ public:
     // bench runs.
     float rateHz() const;
 
+    // How far apart two keys sit, as a fraction of what identity allows on each
+    // tolerant axis, summed. 0 is the same reading and anything above 1 on
+    // either axis is a different source.
+    //
+    // Equality is symmetric but NOT transitive -- a reading can sit inside
+    // tolerance of two stored keys that are outside tolerance of each other --
+    // so a lookup over several matches has to choose between them by something
+    // other than the order it meets them in.
+    float distanceTo(const SourceKey &other) const;
+
     bool operator==(const SourceKey &other) const;
     bool operator!=(const SourceKey &other) const;
 

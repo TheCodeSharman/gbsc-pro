@@ -61,7 +61,18 @@ public:
     void clear();
 
 private:
+    // The NEAREST entry this key identifies, not the first one met. Identity is
+    // not transitive, so several entries can match one reading, and a scan
+    // returning the first lets the order of the file decide which framing a
+    // source gets back.
     int16_t indexOf(const SourceKey &key) const;
+
+    // Drops every entry other than the kept one that this reading also
+    // identifies. Identity is not transitive, so two entries outside tolerance
+    // of EACH OTHER can both be inside tolerance of one reading -- and left
+    // standing they split the source's framing between them, a later reading
+    // landing on whichever it happens to sit nearer.
+    void collapseOnto(uint16_t kept, const SourceKey &identified);
 
     void moved();
 
