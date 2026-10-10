@@ -240,6 +240,36 @@ it is a statement about one file, and AKF80 has it at 63.7 kHz, which is 1.25
 MB at 8 bpp against the machine's 2 MB of VRAM. The depth matters -- the PM5544
 card's palette comes out wrong below 256 colours, measured.
 
+### The machine's own ceiling is 720p, and 1080p is marginal at the SOURCE
+
+`RetroScaler-Acorn.mdf` offers 1920x1080, and the RISC PC does not drive it
+cleanly. **This is a limit of the machine and not something to fix in the
+firmware**, which is worth stating because every symptom it produces reads like
+a scaler fault.
+
+1280x720@60 is sound. Measured on `vga` with automation frozen, the field rate
+timed off `DEBUG_IN_PIN` reads **60.019 Hz in 120 of 120 samples, sd 0.0000**,
+and the emitted frame sits at the capture's own noise floor -- 1.8 mean
+frame-to-frame difference on a still desktop, worst frame 2.0.
+
+1920x1080 is not. The same measurement returns **669.68 Hz, sd 0.0321** --
+about eleven times the field rate, steadily -- and `rateFollowsCount()` rejects
+every reading, so the console prints `line rate 0` and the held line rate
+drifts with nothing valid to refresh it. The picture carries per-line
+horizontal jitter on **both** the scaling path and pass-through, at 12.3 and
+17.2 mean frame-to-frame difference against that 1.8 floor, with occasional
+frames landing clean.
+
+**What settles it is a monitor plugged straight into the machine**, which
+shares the source and the cable with this board and nothing else: it also fails
+to lock, jumping horizontally and glitching, with the framing off. Two
+independent sinks, one source.
+
+So a 1080p measurement taken here is evidence about the RISC PC rather than
+about the scaler, and the board is the better of the two sinks -- it recovers
+clean frames from a signal the monitor cannot hold at all. 1280x720 at
+74.25 MHz is what the acceptance work uses.
+
 ### It is the only source that can put ONE divider under two line rates
 
 The engine halves `PLLAD_MD` when the line rate doubles, and at 1096 the ADC PLL
