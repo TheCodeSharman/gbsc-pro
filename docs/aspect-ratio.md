@@ -174,6 +174,28 @@ before shapes existed comes up unshaped, where the same source with no stored
 framing is defaulted from the raster it matched. Whether that is right is open:
 `known-issues.md`.
 
+## The board's half is a switch
+
+A display has a shape control of its own, and a set put into its 4:3 mode
+shapes what it is sent. The board's shaping and the set's then COMPOUND, and
+the picture comes out narrower than either asked for -- so whether the board
+shapes at all is a setting, System Settings' `Aspect ratio`, valued `Apply` and
+`Ignore`.
+
+Ignored, every solve is handed `Aspect::Fill` and each source fills the raster
+whatever shape it carries. **The shape itself is untouched**: it stays stored
+against the source key, `aspect()` still reports it, and turning the switch
+back on puts the bars back where they were. `VideoPath::appliedAspect()` is the
+whole of the mechanism -- the stored shape while applying, `Fill` otherwise --
+and every solve site asks it rather than the stored value.
+
+The Screen Settings `Aspect` row greys while it is ignored, because that row
+asks WHICH shape and has nothing to say when none is being applied.
+
+`/geometry` carries `shaping` for it. `shaped` cannot answer the question: an
+axis told to fill is indistinguishable from one that honoured what it was
+given, so both read true.
+
 ## Control
 
 `/uc?G` cycles 4:3, 16:9, 5:4 and round — `Aspect::next()`, which the menu row
@@ -182,5 +204,10 @@ picture as 16:9, so it was a step that changed nothing. A preset cycle rather th
 number, because the remote has one button for it; the shape is stored against
 the source, so the cycle starts from whatever that source was left at.
 
-`/geometry` reports `aspect` in the same ten-thousandths and `shaped` for
-whether the last solve could honour it.
+`/uc?S` toggles whether any of it is applied, and is the `Aspect ratio` row.
+The engine owns the switch and `apply-aspect` in the preferences file is how it
+survives a power cycle, defaulting to applying.
+
+`/geometry` reports `aspect` in the same ten-thousandths -- the STORED shape,
+applied or not -- `shaping` for whether the board is applying it, and `shaped`
+for whether the last solve could honour it.

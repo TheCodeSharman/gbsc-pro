@@ -134,9 +134,11 @@ row keeps the cursor and asks for counts of a value somebody holds. Both take
 their number of steps from the remote's hold ramp.
 
 **A ROW THE ENGINE CANNOT SERVE IS GREYED, NOT HIDDEN.** `MenuItem::onlyWhen()`
-takes a predicate over the context, and `Osd::MenuTree`'s `scalerInPath()` is
-the only one so far: pass-through hands the source's own timing to the encoder,
-so Move, Scale and Aspect have nothing to transform. The engine already refuses
+takes a predicate over the context. `Osd::MenuTree`'s `scalerInPath()` is one:
+pass-through hands the source's own timing to the encoder,
+so Move, Scale and Aspect have nothing to transform. `scalerShapes()` narrows
+that for the `Aspect` row alone -- it asks WHICH shape, so it has nothing to
+say while System Settings' `Aspect ratio` is set to ignore them. The engine already refuses
 all three there -- `VideoPath::solveWindows()` has no raster to fit -- and no
 register distinguishes that refusal from the press never arriving, which is what
 made them read as broken controls rather than as unavailable ones.
@@ -202,8 +204,10 @@ Settings, Picture Settings and Reset Settings -- in that order, which is the
 chain's. **Screen Settings carries two rows the chain's did not**: `Aspect`,
 which is the item the whole extraction was for, and `Reset`, which puts the
 framing and the shape back to the source's defaults. The three picture controls
-and their undo therefore sit on one level, which is why the aspect is not under
-System Settings. The labels are the chain's
+and their undo therefore sit on one level, which is why the shape is not under
+System Settings. **What is under System Settings is `Aspect ratio`**, which is
+a different question -- whether the board shapes at all, against which shape --
+and it greys the Screen row when it says `Ignore`. The labels are the chain's
 too, except for the number each root item carries: the chain kept it inside the
 label string (`Osd_Display(1, "4 System Settings")`) and here it is a column of
 its own, which the overlay draws for the level with nothing above it. The panel
