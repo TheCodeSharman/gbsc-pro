@@ -730,7 +730,18 @@ def parse_modes(listing):
 
 
 def list_modes(where):
-    return parse_modes(mode_serv(where, "MODES", timeout=15))
+    """The modes the loaded monitor definition offers, or none where the source
+    cannot be reached.
+
+    A SOURCE THAT IS OFF MUST NOT BREAK COLLECTION. This is called from
+    pytest_generate_tests, so a raised socket error there is a collection
+    failure rather than a skip, and a bare `pytest` stops working the moment
+    the bench machine is unplugged.
+    """
+    try:
+        return parse_modes(mode_serv(where, "MODES", timeout=15))
+    except OSError:
+        return []
 
 
 def show_card(where):
