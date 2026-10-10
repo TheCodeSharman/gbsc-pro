@@ -192,3 +192,55 @@ TEST_CASE("clearing a table that held something moves the revision")
     table.clear();
     CHECK(table.revision() == emptied);
 }
+
+// --- the shape -------------------------------------------------------------
+//
+// Stored beside the framing and recalled with it. A table copied into another
+// one entry at a time is how the file reaches the live table, so the copy is
+// where a dropped shape costs the user their 4:3 on every boot.
+
+TEST_CASE("a shape is recalled with the framing it was stored beside")
+{
+    FramingTable table;
+    REQUIRE(table.remember(Bench, Framed, Aspect(Aspect::FourThree)));
+
+    Aspect shape;
+    REQUIRE(table.find(Bench, (PanAndZoom *)NULL, &shape));
+    CHECK(shape.tenThousandths() == Aspect(Aspect::FourThree).tenThousandths());
+}
+
+TEST_CASE("adopting another table takes its shapes, not just its framings")
+{
+    FramingTable stored;
+    const SourceKey other(627, 60.32f, 0.0f, SourceKey::Positive, SourceKey::Positive);
+    REQUIRE(stored.remember(Bench, Framed, Aspect(Aspect::FourThree)));
+    REQUIRE(stored.remember(other, Framed));
+
+    FramingTable live;
+    REQUIRE(live.adopt(stored));
+
+    Aspect shape;
+    REQUIRE(live.find(Bench, (PanAndZoom *)NULL, &shape));
+    CHECK(shape.tenThousandths() == Aspect(Aspect::FourThree).tenThousandths());
+
+    REQUIRE(live.find(other, (PanAndZoom *)NULL, &shape));
+    CHECK(shape.fills());
+}
+
+TEST_CASE("adopting more than fits keeps what it can and says so")
+{
+    FramingTable stored;
+    for (uint16_t i = 0; i < FramingTable::Entries; ++i)
+        REQUIRE(stored.remember(SourceKey((uint16_t)(200 + i), 50.0f, 0.0f,
+                                          SourceKey::Negative, SourceKey::Negative),
+                                Framed));
+
+    FramingTable live;
+    REQUIRE(live.remember(SourceKey(900, 50.0f, 0.0f,
+                                    SourceKey::Negative, SourceKey::Negative), Framed));
+
+    // remember()'s policy: what is already stored is kept and the entry that
+    // will not fit is refused visibly.
+    CHECK_FALSE(live.adopt(stored));
+    CHECK(live.count() == FramingTable::Entries);
+}

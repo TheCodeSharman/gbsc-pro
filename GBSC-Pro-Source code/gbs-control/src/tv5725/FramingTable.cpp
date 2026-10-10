@@ -53,6 +53,15 @@ bool FramingTable::remember(const SourceKey &key, const PanAndZoom &framing,
     return true;
 }
 
+bool FramingTable::adopt(const FramingTable &other)
+{
+    bool whole = true;
+    for (uint16_t i = 0; i < other.count(); ++i)
+        if (!remember(other.keyAt(i), other.framingAt(i), other.aspectAt(i)))
+            whole = false;
+    return whole;
+}
+
 bool FramingTable::forget(const SourceKey &key)
 {
     const int16_t at = indexOf(key);

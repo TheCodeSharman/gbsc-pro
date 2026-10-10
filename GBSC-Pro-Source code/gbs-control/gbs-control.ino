@@ -6863,8 +6863,7 @@ void loadFramingTable()
     }
     f.close();
 
-    for (uint16_t i = 0; i < read.count(); ++i)
-        sourceFramings.remember(read.keyAt(i), read.framingAt(i));
+    sourceFramings.adopt(read);
 
     framingIsSuspect = false;
     framingSaves.markSaved(sourceFramings.revision());

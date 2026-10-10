@@ -37,6 +37,12 @@ public:
     bool remember(const SourceKey &key, const PanAndZoom &framing,
                   Aspect shape = Aspect());
 
+    // Takes every entry another table holds, shapes included. The file is read
+    // into a scratch table so a read failing part way cannot leave the live one
+    // holding half a file, and this is what crosses that gap. False when any
+    // entry would not fit; what fitted is kept.
+    bool adopt(const FramingTable &other);
+
     bool forget(const SourceKey &key);
 
     uint16_t count() const;
