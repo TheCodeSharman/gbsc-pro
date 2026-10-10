@@ -1,5 +1,6 @@
 #include "VideoSourceAcquisition.h"
 
+#include <math.h>
 #include <stdio.h>
 
 #include "../tv5725/Adc.h"
@@ -15,6 +16,7 @@
 #include "../tv5725/SyncMeasurement.h"
 #include "../tv5725/SyncOnGreen.h"
 #include "../tv5725/VideoRoute.h"
+#include "../tv5725/VideoSignal.h"
 #include "VideoSourceSelection.h"
 #include "../tv5725/SyncProcessor.h"
 #include "../tv5725/Tv5725Log.h"
@@ -35,6 +37,7 @@ VideoSourceAcquisition::VideoSourceAcquisition(Tv5725::SourceMeasurement &sampli
       sourceInterrupted_(false),
       unsettledPasses_(0), unsettledArmed_(false),
       vsyncAbsentPasses_(0), vsyncAbsentArmed_(false),
+      passThroughFieldRateHz_(0.0f),
       unmeasuredPasses_(0), acquiredPasses_(0),
       unacquiredSinceMs_(0), unacquiredForMs_(0), recoveredAtMs_(0),
       selectionSeen_(VideoSourceSelection::selected()),
@@ -183,6 +186,27 @@ bool VideoSourceAcquisition::outputIsPassedThrough() const
     return Tv5725::VideoRoute::isHdBypassChannel();
 }
 
+// A MEASUREMENT THAT DID NOT COMPLETE DECIDES NOTHING -- except about the
+// route, and only here. Everywhere else a failed reading is a dropped sample
+// and acting on one would cost a good picture; in pass-through it is also what
+// a real mode change looks like, because the count is taken through a divider
+// sized for the source that has already gone. The field rate is the one
+// reading that cannot say so falsely, so it is the only thing asked.
+//
+// The output alone goes back. The mode change that brought the pass here is
+// already armed, and the rate held still names the mode pass-through was
+// entered on, so the next pass measures this source through the chip
+// setOutputMode() has just put back.
+bool VideoSourceAcquisition::gaveBackPassThrough()
+{
+    if (!passThroughSourceMoved())
+        return false;
+
+    videoPath_.setOutputMode(carriedResolution());
+    return true;
+}
+
+
 bool VideoSourceAcquisition::passThroughSuitsSource() const
 {
     return passThroughAllowed_
@@ -215,8 +239,34 @@ bool VideoSourceAcquisition::passSourceThrough()
         resizePassThrough();
     }
 
+    passThroughFieldRateHz_ = sampling_.fieldRateHz();
     videoPath_.setOutputMode(&Tv5725::ModeBypass);
     return true;
+}
+
+// WHETHER THE SOURCE UNDER PASS-THROUGH IS STILL THE ONE THE CHANNEL WAS SIZED
+// FOR, asked of the field rate because it is the only measurement the route
+// cannot poison: it is timed off vsync edges on DEBUG_IN_PIN, where the count
+// is taken in ADC clocks through a divider sized for the source that has just
+// left. So a count that disagrees says nothing here and a rate that disagrees
+// says the source moved.
+//
+// No reading is not a disagreement. A source that did not pulse reports 0, and
+// dropping a handed-over picture on one missed sample is what the rule above
+// exists to prevent.
+bool VideoSourceAcquisition::passThroughSourceMoved() const
+{
+    if (!outputIsPassedThrough() || passThroughFieldRateHz_ <= 0.0f)
+        return false;
+
+    const float measured = sampling_.fieldRateHz();
+    if (measured <= 0.0f)
+        return false;
+
+    return !Tv5725::VideoSignal::ratesAgree(
+        (uint32_t)lrintf(measured * Tv5725::RateStepsPerHz),
+        (uint32_t)lrintf(passThroughFieldRateHz_ * Tv5725::RateStepsPerHz),
+        Tv5725::SourceIdentityPerThousand);
 }
 
 void VideoSourceAcquisition::resizePassThrough()
@@ -777,6 +827,7 @@ bool VideoSourceAcquisition::runPass(uint32_t nowMs, bool &detectionPass)
     if (!reading(sampling_.measureRate(), settling)) {
         if (!settling)
             sourceState_ = SourceAbsent;
+        gaveBackPassThrough();
         return false;
     }
 
@@ -790,6 +841,7 @@ bool VideoSourceAcquisition::runPass(uint32_t nowMs, bool &detectionPass)
     if (!reading(sampling_.measureDuty(), settling)) {
         if (!settling)
             sourceState_ = SourceAbsent;
+        gaveBackPassThrough();
         return false;
     }
 

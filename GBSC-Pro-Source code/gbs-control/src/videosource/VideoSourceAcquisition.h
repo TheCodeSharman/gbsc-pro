@@ -282,6 +282,8 @@ private:
     // over. Both halves are the measurement's: a raster the line doubler is not
     // needed for, at a rate that reaches the sink. docs/capture-limits.md
     bool passThroughSuitsSource() const;
+    bool passThroughSourceMoved() const;
+    bool gaveBackPassThrough();
 
     // Whether video routes around the VDS, which the mode in force says.
     bool outputIsPassedThrough() const;
@@ -423,6 +425,9 @@ private:
 
 
     // Consecutive passes that did not reach an acquired source.
+    // The field rate pass-through was last sized for, which is what a later
+    // reading is the same source as. Zero where the route is not taken.
+    float passThroughFieldRateHz_;
     uint16_t unmeasuredPasses_;
     uint16_t acquiredPasses_;
 

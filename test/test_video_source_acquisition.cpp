@@ -824,6 +824,54 @@ TEST_CASE("a pass-through source is not dropped because a measurement failed")
     CHECK(unit.path.outputMode()->isBypass());
 }
 
+// AND THE OTHER HALF OF THAT RULE NEEDS A WITNESS THE ROUTE CANNOT POISON.
+// A source that changes under pass-through can become unmeasurable BECAUSE of
+// the route: the bypass divider is sized from the rate held when the channel
+// was entered, installSampling() leaves it alone there, and the sync processor
+// counts in ADC clocks -- so a source the ADC PLL will not lock to through that
+// divider is counted by nothing, and the pass that would doubt the route is the
+// pass that cannot run. Waiting for a completed measurement waits for ever.
+//
+// The field rate is that witness. It is timed off vsync edges on DEBUG_IN_PIN
+// rather than counted in ADC clocks, so it survives exactly what the count does
+// not. Measured on the bench, 800x600@60 handed over and the source dropped to
+// a 15 kHz mode: the count wandered 195..398 while the field rate read
+// 50.47..51.13 against the 60.32 the channel was sized for, every pass.
+// docs/investigations/the-reference-clock-can-deadlock-the-measurement.md
+TEST_CASE("a field rate that moved in pass-through gives the route back")
+{
+    seedPassThroughSource();
+    g_passThroughSwitches = 0;
+
+    Acquiring unit;
+    unit.acquisition.usePassThroughSwitch(enterPassThrough);
+    unit.acquisition.allowPassThrough(true);
+    unit.start();
+    REQUIRE(unit.pollUntilSolved(8));
+    REQUIRE(unit.path.outputMode()->isBypass());
+
+    // The bench shape: the source moved, and the ADC PLL will not lock to it
+    // through the divider the channel was sized for -- so the duty read never
+    // completes and the measurement never finishes. The field rate is taken
+    // before that point and before anything the divider touches.
+    const uint32_t movedAtMs = unit.nowMs;
+    g_fieldRate = 50.6f;
+    seedSourceLines(311);
+    seedLineSamplesUnlocked(4077);
+    for (uint16_t pass = 0; pass < 400 && unit.path.outputMode()->isBypass();
+         ++pass)
+        unit.poll();
+
+    CHECK_FALSE(unit.path.outputMode()->isBypass());
+
+    // Inside the budget a mode change is held to. This is not a stall to be
+    // recovered from after a timeout -- the source said what it had done, on
+    // the first pass that read it.
+    CHECK(unit.nowMs - movedAtMs < 4000);
+
+    Wire.lockSyncProcessor();
+}
+
 TEST_CASE("withdrawing the permission leaves pass-through without the source moving")
 {
     // THE PERMISSION MOVES WHILE THE SOURCE STANDS STILL, which is the whole of
