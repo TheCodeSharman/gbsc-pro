@@ -2692,6 +2692,38 @@ TEST_CASE("an acquisition is given its whole budget before anything is recovered
     CHECK_FALSE(loggedContaining("recovery:"));
 }
 
+TEST_CASE("the boot's own input selection is not a source change")
+{
+    // The acquisition layer is constructed before setup() applies the saved
+    // input, so the selection it latched at construction is not the one the
+    // boot goes on to make. runPass() reaches sourceMoved() only once a mode
+    // change has finished, so nothing refreshes the latch while the boot's own
+    // acquisition is in flight -- and the edge is then read as a source change
+    // that re-acquires everything the first solve has just established.
+    //
+    // Measured on the bench, six boots of six:
+    //
+    //     source key: 311@50.45/732++, framing recalled, shape 0
+    //     rate match: source 50451 mHz, output 50475 mHz
+    //     source moved: input (311 lines, solved 311)
+    //
+    // The count is the same on both sides of it, so nothing but the selection
+    // could have armed it.
+    seedBenchSource();
+    seedLineSamples(BenchDivider);
+    VideoSourceSelection::forgetSelection();
+    Acquiring unit;
+
+    // setup() applying the saved input, after the layer was constructed.
+    VideoSourceSelection::select(VideoSourceSelection::Vga);
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+    unit.pollFor(4);
+
+    CHECK_FALSE(loggedContaining("source moved: input"));
+    VideoSourceSelection::forgetSelection();
+}
+
 TEST_CASE("selecting another input gives the arriving source its own budget")
 {
     // The bench case: the RISC PC is acquired on `vga`, `ypbpr` is selected, and

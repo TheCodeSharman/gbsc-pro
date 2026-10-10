@@ -39,7 +39,7 @@ VideoSourceAcquisition::VideoSourceAcquisition(Tv5725::SourceMeasurement &sampli
       passThroughFieldRateHz_(0.0f),
       unmeasuredPasses_(0), acquiredPasses_(0),
       unacquiredSinceMs_(0), unacquiredForMs_(0), recoveredAtMs_(0),
-      selectionSeen_(VideoSourceSelection::selected()),
+      selectionSeen_(VideoSourceSelection::None), selectionEstablished_(false),
       runAdvanced_(false) {}
 
 void VideoSourceAcquisition::useRunGate(bool (*mayRun)()) { mayRun_ = mayRun; }
@@ -655,6 +655,20 @@ bool VideoSourceAcquisition::poll(uint32_t nowMs)
 
     if (!Tv5725::Chip::hasPower())
         return false;
+
+    // THE SELECTION BASELINE IS TAKEN ON THE FIRST POLL. setup() applies the
+    // saved input before loop() runs, so the first pass already sees it -- and
+    // taking it at construction instead left the boot's own selection unseen
+    // until its first acquisition had finished, where it read as a source
+    // change and re-acquired everything that acquisition established.
+    //
+    // Here rather than in selectionMoved(), which runPass() reaches only once a
+    // mode change has finished: a selection made before that is a COMMAND and
+    // has to be answered, so the baseline cannot wait for the first comparison.
+    if (!selectionEstablished_) {
+        selectionEstablished_ = true;
+        selectionSeen_ = VideoSourceSelection::selected();
+    }
 
     bool detectionPass = false;
     sourceMeasured_ = false;

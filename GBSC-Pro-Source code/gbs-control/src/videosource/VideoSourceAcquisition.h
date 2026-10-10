@@ -443,7 +443,14 @@ private:
     // Whether the pass just run could measure the source's rate.
     bool sourceMeasured_;
 
+    // WHICH INPUT THE LAST OBSERVATION SAW, AND WHETHER THERE HAS BEEN ONE.
+    // The baseline cannot be taken at construction: this layer is built before
+    // setup() applies the saved input, and runPass() reaches sourceMoved() only
+    // once a mode change has finished -- so the boot's own selection is still
+    // unseen when its first acquisition completes, and is then read as a source
+    // change that re-acquires what that acquisition just established.
     VideoSourceSelection::Id selectionSeen_;
+    bool selectionEstablished_;
     bool runAdvanced_;
 };
 
