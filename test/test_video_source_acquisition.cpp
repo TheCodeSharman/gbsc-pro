@@ -627,39 +627,6 @@ TEST_CASE("a rate confirmed once is not re-measured again")
           == doctest::Approx(50.4744f).epsilon(0.0002f));
 }
 
-TEST_CASE("an unusable count that never repeats still arms a re-measure")
-{
-    // A divider the arriving source cannot be measured through puts the ADC PLL
-    // outside its lock range, and the sync processor then counts noise. No arm
-    // advances while it does: the unsettled branch is unreachable on a count
-    // outside the source bounds, and the unusable one waits for the count to
-    // HOLD STILL, which noise does not do -- so the only exit is noise
-    // repeating by chance, and only the arm re-latches the PLL the count needs.
-    //
-    // Measured leaving pass-through, 1280x720@60 to 320x256@50 six times:
-    // STATUS_SYNC_PROC_HTOTAL 1059..4076 against a divider of 2038 with the
-    // count wandering 187..806, and the output blanked 3.19..7.52 s against a
-    // 0.35..0.44 s leg the other way.
-    seedBenchSource();
-    Acquiring unit;
-    unit.start();
-    REQUIRE(unit.pollUntilSolved());
-
-    bool armed = false;
-    for (uint16_t i = 0;
-         i < 8 * SourceMeasurement::SteadySamples && !armed; ++i) {
-        // Below SourceVerticalTotalMin and never twice running, and a sample
-        // count too small for any multiple of the divider to fit, so the
-        // correction cannot rescue it either.
-        seedSourceLines((uint16_t)(187 + i % 11));
-        seedLineSamplesUnlocked((uint16_t)(1059 + 31 * (i % 17)));
-        unit.poll();
-        armed = unit.path.changingMode();
-    }
-
-    CHECK(armed);
-}
-
 TEST_CASE("a disturbance answered by one re-measure does not arm a second")
 {
     // The 640x480 -> 320x256 leg, measured on the bench: the source's own mode

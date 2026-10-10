@@ -373,19 +373,6 @@ private:
     uint32_t solvedLineRateHz_;
 
     Tv5725::SteadyRun idle_;
-
-    // Consecutive passes on which the count was outside the source bounds.
-    // Sized the same way UnsettledArmPasses is and for the same job -- clearing
-    // a run of glitches rather than outlasting a settle -- because the count
-    // cannot settle here: a divider the source cannot be measured through leaves
-    // the ADC PLL unlocked, and the arm is what re-latches it.
-    //
-    // Reset by any plausible count rather than by a settled one, so a healthy
-    // source cannot accumulate its way to an arm that discards the sync type.
-    static const uint16_t UnusableArmPasses =
-        4 * Tv5725::SourceMeasurement::SteadySamples;
-
-    uint16_t unusablePasses_;
     bool unusableCountArmed_;
 
     // Whether the re-probe rung found the source carrying its own V sync. Proof

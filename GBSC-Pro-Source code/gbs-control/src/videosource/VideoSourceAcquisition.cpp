@@ -30,7 +30,6 @@ VideoSourceAcquisition::VideoSourceAcquisition(Tv5725::SourceMeasurement &sampli
       detectedMs_(0),
       detectedEver_(false), solvedLines_(0), solvedLineRateHz_(0),
       idle_(Tv5725::SourceMeasurement::SteadySamples),
-      unusablePasses_(0),
       unusableCountArmed_(false), dynamicApplied_(false), dynamicForSearch_(false), sourceMeasured_(false),
       sourceState_(SourceAbsent),
       solvedLinePeriod_(0), rateRun_(0), recheckPasses_(0),
@@ -471,25 +470,8 @@ bool VideoSourceAcquisition::sourceMoved()
     // re-establishes the sync type, so the state that most needs a re-probe was
     // the one state that could never arm one. It arms ONCE: the count stays
     // wrong until the probe has moved the path.
-    //
-    // A RUN OF PASSES AS WELL AS THE COUNT HOLDING STILL, because the count
-    // cannot hold still in part of what this arm exists for: a divider the
-    // source cannot be measured through leaves the ADC PLL outside its lock
-    // range, the sync processor counts noise, and only the arm re-latches the
-    // PLL that would settle it. Waiting for noise to repeat blanked the output
-    // 3.19..7.52 s leaving pass-through against 0.35..0.44 s entering it, with
-    // nothing counting up meanwhile -- the unsettled arm below is unreachable
-    // on a count this far out, so neither timer advanced.
-    //
-    // The settled reading stays a trigger in its own right rather than being
-    // replaced: a source that LEAVES reads a steady 0, which settles in
-    // SteadySamples, and that arm is what re-solves one returning at the count
-    // it left on, where nothing below can see it move.
     if (!plausible) {
-        if (unusablePasses_ < UnusableArmPasses)
-            ++unusablePasses_;
-        const bool persisted = unusablePasses_ >= UnusableArmPasses;
-        if (!(held || persisted) || unusableCountArmed_)
+        if (!held || unusableCountArmed_)
             return false;
         unusableCountArmed_ = true;
 
@@ -500,7 +482,6 @@ bool VideoSourceAcquisition::sourceMoved()
         return armMove("unusable count", lines);
     }
 
-    unusablePasses_ = 0;
     unusableCountArmed_ = false;
 
     // A count inside the source bounds that never SETTLES had no arm at all:
