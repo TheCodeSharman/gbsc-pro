@@ -633,9 +633,13 @@ bypass they ask the byte, and the sketch routes the question on
 ## The sampling divider
 
 `Tv5725::SourceMeasurement` owns `PLLAD_MD`, `IF_HSYNC_RST` (= `MD`/2) and `SP_RT_HS_SP`
-(= 93% of `MD`) off one held value, and computes it from the measured line rate.
+off one held value, and computes it from the measured line rate.
 It must be written **before** `latchPLLAD()`; after it, the register reads the new
 value while the PLL still runs the old one.
+
+`SP_RT_HS_SP` is the capture counter's origin rather than a fraction of the
+divider: `PLLAD_MD - STATUS_SYNC_PROC_HLOW_LEN + 63`, the retimed pulse laid on
+the incoming one. `investigations/the-retime-stop-is-the-counters-origin.md`.
 
 `RecommendedPercent` is 98, taken from the deleted tables: they shipped
 2269..2559, the 1080p pair at 2553 and 2558, both 98% of the 162 MSPS rating. 85
