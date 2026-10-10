@@ -690,6 +690,13 @@ private:
     uint8_t syncTypeChosenFor_;
     bool (*syncProbe_)();
     SourceKey framedKey_;
+
+    // Whether the rate behind framedKey_ had been confirmed when it was taken.
+    // The first solve of a boot measures through a path detection has just
+    // reconfigured and its readings scatter, so the key it takes can match a
+    // different stored record from the one the settled source matches -- while
+    // comparing EQUAL to it, the two being the same source.
+    bool framedKeyRateConfirmed_;
     FramingTable &framings_;
     bool solvePending_;
     bool modePending_;

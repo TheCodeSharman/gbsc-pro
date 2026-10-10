@@ -3069,3 +3069,81 @@ TEST_CASE("the sync units the solve placed the capture from are readable")
           == VideoSourceLine::DoubledHeadBlankingUnits
              + engine.syncUnitsOn(AxisHorizontal));
 }
+
+// --- the key the boot took, once the rate is confirmed ----------------------
+//
+// The first solve of a boot measures through an analog path detection has just
+// reconfigured, and its readings scatter: measured across six boots of one
+// untouched RISC PC at 320x256@50, whose settled rate is 50.474 Hz, the solve
+// took 50.45 twice, 50.53 once and 50.61 once -- a spread of 3.2 per thousand
+// against the 3 identity allows, so one source takes more than one key and the
+// framing stored under one of them is not found under another.
+//
+// The corrected reading compares EQUAL to the transient, because they are the
+// same source. So a key is not replaced on a change of source here -- there is
+// none -- but on the reading behind it getting better.
+
+TEST_CASE("the rate being confirmed re-derives which stored framing matches")
+{
+    seedBenchSource();
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+    VideoSourceAcquisition acquisition(sampling, engine);
+
+    const PanAndZoom framed(0.10f, 0.60f, 0.15f, 0.55f);
+    REQUIRE(framings.remember(
+        SourceKey(311, 50.61f, BenchKeySyncWidth, BenchPolarity, BenchPolarity),
+        framed));
+    REQUIRE(framings.remember(
+        SourceKey(311, 50.45f, BenchKeySyncWidth, BenchPolarity, BenchPolarity),
+        framed, Aspect(Aspect::FourThree)));
+
+    g_fieldRate = 50.60f;
+    engine.setOutputMode(benchMode());
+    engine.inputTimingsChanged(4);
+    REQUIRE(pollUntilSolved(acquisition));
+    REQUIRE(engine.aspect().fills());
+
+    g_fieldRate = 50.474f;
+    sampling.confirmRate();
+    engine.inputTimingsChanged(4);
+    REQUIRE(pollUntilSolved(acquisition));
+
+    CHECK(engine.aspect() == Aspect(Aspect::FourThree));
+}
+
+TEST_CASE("a confirmed rate drifting inside tolerance keeps the framing in force")
+{
+    // The gate, and the reason the key is not simply re-derived every solve:
+    // a reading that wanders within one source's tolerance must not swap the
+    // framing under a user who has tuned it and not yet had it written out.
+    seedBenchSource();
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+    VideoSourceAcquisition acquisition(sampling, engine);
+
+    const PanAndZoom framed(0.10f, 0.60f, 0.15f, 0.55f);
+    REQUIRE(framings.remember(
+        SourceKey(311, 50.61f, BenchKeySyncWidth, BenchPolarity, BenchPolarity),
+        framed));
+    REQUIRE(framings.remember(
+        SourceKey(311, 50.45f, BenchKeySyncWidth, BenchPolarity, BenchPolarity),
+        framed, Aspect(Aspect::FourThree)));
+
+    g_fieldRate = 50.60f;
+    sampling.confirmRate();
+    engine.setOutputMode(benchMode());
+    engine.inputTimingsChanged(4);
+    REQUIRE(pollUntilSolved(acquisition));
+    REQUIRE(engine.aspect().fills());
+
+    g_fieldRate = 50.474f;
+    engine.inputTimingsChanged(4);
+    REQUIRE(pollUntilSolved(acquisition));
+
+    CHECK(engine.aspect().fills());
+}

@@ -36,7 +36,7 @@ namespace Tv5725 {
 VideoPath::VideoPath(DisplayClock &displayClock, SourceMeasurement &sampling,
                      FramingTable &framings, InputFormatter &inputFormatter)
     : displayClock_(displayClock), inputFormatter_(inputFormatter),
-      applyAspect_(true),
+      applyAspect_(true), framedKeyRateConfirmed_(false),
       usableHorizontal_(0), usableVertical_(0),
       reachHorizontal_(0), reachVertical_(0),
       firstHorizontal_(0), firstVertical_(0),
@@ -834,7 +834,14 @@ SourceKey VideoPath::arrivingKey() const
 void VideoPath::adoptSourceKey()
 {
     const SourceKey arriving = arrivingKey();
-    if (arriving == framedKey_)
+
+    // The same source keeps the framing it is being tuned to, rather than
+    // having the stored one recalled over it on every solve. Unless the key in
+    // force was taken before the rate was confirmed, in which case the reading
+    // has got better and which record this source matches is worth asking
+    // again -- nothing has been tuned that early in a boot.
+    if (arriving == framedKey_
+        && framedKeyRateConfirmed_ == sampling_.rateConfirmed())
         return;
 
     // Leaving one source for another. Nothing is stored here: the table has
@@ -848,6 +855,7 @@ void VideoPath::adoptSourceKey()
         aspect_ = SourceTiming::matching(arriving).aspect();
     }
     framedKey_ = arriving;
+    framedKeyRateConfirmed_ = sampling_.rateConfirmed();
     announceSourceKey(arriving, recalled);
 }
 
