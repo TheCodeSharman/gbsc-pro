@@ -68,24 +68,96 @@ window filled.
 picture magenta, so a greenness profile stops seeing a band that is still there.
 A metric keyed on one colour cannot survive a global colour change.
 
-## The write reset position does not carry the boundary
+## The buffer delivers 1020 samples of the captured line
 
-`VDS_D_SP` is the line buffer's write reset, *"also the write start position"*.
-Walked to 100, 300, 600 and 900 the band's onset does not move -- 1048, 1046,
-1046, 1046. At 0 the **whole screen** goes green from column 4, which is what
-establishes that the delay carries the entire line rather than a filter tap.
+Past captured sample 1020 the tail comes back green. The bound is on the
+CAPTURED width -- the data the VDS reads back per line -- and on nothing else.
 
-So the depth that bounds the line is not measured from the write reset, and this
-page does not supply what it is measured from.
+Measured on `vga` at 800x600@60, undoubled, raster 1592x1125, read off the USB
+HDMI capture at 1920x1080 as the run of columns at the picture's right edge
+where `G - max(R, B)` stays above 4.
+
+| capture, samples | 1024 | 1022 | 1020 | 1018 | 1016 | 1008 |
+|---|---|---|---|---|---|---|
+| fringe, photo columns | 6 | 2 | 0 | 0 | 0 | 0 |
+| greenness of the last ten columns | +25.8 | +2.5 | +0.0 | +0.1 | +0.2 | +0.2 |
+
+**A BAND IS OBVIOUS AND THE LAST FEW SAMPLES ARE NOT**, which is how the
+boundary reads four samples late: a detector wide enough to ignore the test
+card's own green needs a sustained run, and a six-column fringe never supplies
+one. The first pass over this put the boundary at 1024 for that reason. Ask the
+columns at the edge, not for a run.
+
+## It is not output pixels, a line position, or the oversampling
+
+Each of these moves something the boundary might have been expressed in, and
+leaves it where it was.
+
+| moved | from | to | onset, captured sample |
+|---|---|---|---|
+| `VDS_HSCALE` | 803 | 1023 | 1022.8 both |
+| the display window | 1387 px | 1042 px | 1022.8 both |
+| the capture window's head | 293 | 172 | 1022.8 and 1022.3, at line positions 1316 and 1194 |
+| the oversampling | 2x | 1x | 1019.7 both |
+
+The scale and the display window settle that it is not output pixels. The
+window's head settles that it is counted from the first captured sample rather
+than from hsync. The oversampling settles that it counts KEPT samples: the
+whole group moved -- `PLLAD_CKOS` 0 to 1, `ADC_CLK_ICLK1X` 1 to 0, `DEC2_BYPS`
+0 to 1 -- with `PLLAD_MD` held at 1348, and the fringe stayed six columns wide.
+Nothing upstream of the decimator reaches it.
+
+## There is no width register
+
+RD-5725-1.1 gives this buffer one register and it is a position, not a length.
+`VDS_D_SP` at 3, 100, 500 and 1023 leaves the onset at 1022.8; at 0 the whole
+line goes green from column 4, which is what says the delay carries the whole
+line rather than a filter tap. Every other line buffer in the part has a read
+reset beside its write reset -- `MADPT_PD_SP`/`_ST`,
+`MADPT_NRD_VIIR_PD_SP`/`_ST`, `MADPT_UVDLY_PD_SP`/`_ST` -- and this one has
+none.
+
+`VDS_HALF_EN` is the only candidate the datasheet leaves open, its Function cell
+being empty with the neighbouring text duplicated from `VDS_HSCALE_BYPS`. Set to
+1 it changes the onset, the lit extent and the mean luma by nothing at all.
+
+## What it costs, and which sources reach it
+
+The captured width is the source's active area in IF units, so the divider
+decides whether the line fits:
+
+| | `PLLAD_MD` | doubled | capture window | samples | band |
+|---|---|---|---|---|---|
+| 800x600@60, unbounded | 1436 | no | 293..1384 | 1091 | 71 samples, 6.5% of the width |
+| 800x600@60, bounded | 1342 | no | 275..1294 | 1019 | none |
+| 320x256@50 | 2200 | yes | 236..926 | 690 | none |
+
+`VideoPath::dividerCeilingForLineFilter()` is the bound: with the delay wanted,
+the divider comes down until the captured line fits, which costs 6% of the
+sampling density here and leaves 1.27 ADC samples per source pixel. It declines
+where the published raster states more active pixels than the delay delivers --
+1024x768 and up -- because capping there would store fewer samples than the
+source has pixels, and `applyLineFilter()` leaves the delay out instead.
+
+Nothing bounds the undoubled divider by this buffer.
+`VideoPath::dividerCeilingForOutput()` caps it by what the raster can show,
+which is 1436 here, and the capture reaches 1091 unopposed.
+
+**`SamplingClock::DoubledLineSampleLimit` is this buffer.** Its onset of
+2236..2256 ADC samples is 1118..1128 IF units on a doubled line, which is 1024
+captured samples once the window's head is off. Two things follow. Its stated
+premise -- that the bound is on the line rather than the window -- is refuted by
+the pan above, so a doubled source whose active fraction is wider than the
+bench's bands at any divider the cap allows. And it is only needed while the
+delay is in circuit, which is not the default, so on a doubled source it is
+otherwise holding the kept count at 1100 against the counter's wall of 2006.
 
 ## What is still bounded
 
 At divider 3200 with the delay bypassed the tail of the line repeats
 horizontally. The playback fetch is held at the value the engine solved for a
 shorter line, so that reading is about `PB_FETCH_NUM` and not about a capture
-bound. **How far the divider goes once the engine solves the whole framing is
-not measured**, and it cannot be from outside the firmware: `framableIfLine()`
-caps the divider below the band's onset, so the engine never reaches it.
+bound.
 
 `docs/capture-limits.md` and
 [`the-tail-band-is-not-a-capture-width.md`](the-tail-band-is-not-a-capture-width.md)
