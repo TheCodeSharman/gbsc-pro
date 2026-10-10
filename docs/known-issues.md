@@ -10,6 +10,38 @@ regardless of which step is in flight.
 
 ## Reaches the picture
 
+### Entering pass-through emits black, because the teardown is never undone
+
+**`s0_46` reads `0x01` in pass-through and the capture reads mean luma 0.00.**
+Four of the five video blocks are held in reset -- active low -- so nothing
+crosses the part, while every other register reads correct: `OUT_SYNC_SEL` 1,
+`DAC_RGBS_BYPS2DAC` 1, `PAD_SYNC_OUT_ENZ` 0, `s0_45` 0x11, `s0_49` 0x1a,
+`PLLAD_MD` 2038 latched against `STATUS_SYNC_PROC_HTOTAL` 2038, and the console
+reporting `627 lines x 60.31 Hz` and `rate match: the HD bypass channel carries
+the video` every pass.
+
+Measured on `vga`, RiscPC at 800x600@60, a mode pass-through can carry. The
+scaling path was emitting a 1440x1080 picture immediately before; one `/uc?x`
+made it black, and `/uc?x` back took `s0_46` to `0x7f` and the picture with it.
+
+**The mechanism is that the route which tears the blocks down is the one that
+never builds them back.** `enterHdBypass()` calls `BringUp::arm()`, and
+`BringUp.cpp` holds `SFTRST_MEM_RSTZ`. The only caller of
+`buildUpIfTornDown()` is `VideoPath::prepareToMeasure()`, and it returns early
+on `passedThrough()` -- so the arm is never answered while the route is
+pass-through. On the scaling path `BringUp::init()` runs and releases them,
+which is why only bypass shows it.
+
+**What would settle whether bypass NEEDS those blocks**: enter pass-through,
+write `s0_46 = 0x7f` by hand, and capture. If the picture appears, the fix is
+to release the video blocks on the bypass entry rather than leaving the arm
+outstanding; if it stays black, the teardown is not the cause and the black is
+elsewhere. One frame answers it.
+
+Not to be confused with the entry below -- 800x600 in bypass clipping the top
+and leaving a bar at the bottom -- which is a picture that is PRESENT and
+mis-framed.
+
 ### The default framing loses the source's outermost COLUMN on every mode
 
 **`PATTERN CARD`'s one-pixel green frame does not reach the emitted frame at the
