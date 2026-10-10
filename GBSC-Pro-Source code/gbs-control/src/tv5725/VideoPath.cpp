@@ -698,6 +698,12 @@ void VideoPath::configurePassThrough()
     // caller asking whether the display can show this source wants, and the
     // only place it exists once the standard byte is gone.
 
+    // A report names the SOURCE, and the scaling solve is what usually adopts
+    // it -- so without this a handed-over source left the last SCALED source's
+    // key standing. Reached on every accepted pass-through pass, and the key
+    // compares tolerant of the rate, so a settled source adopts once.
+    adoptSourceKey();
+
     // No raster is solved here, so the register is the only source of the seed
     // the encoder is already running on.
     displayClock_.adopt();

@@ -691,14 +691,11 @@ TEST_CASE("a source the panel takes straight is passed through, not scaled")
 
 TEST_CASE("a source passed through still reports the raster it measured")
 {
-    // PASS-THROUGH SPENDS THE MODE CHANGE THE ARM TOOK. setOutputMode()
-    // configures the channel and returns, so solveFromMeasurement() never runs
-    // and adoptSourceKey() with it -- framedKey() stays invalid for the life of
-    // a bypassed boot, and no `source key:` line is ever printed. Measured on
-    // the bench at 800x600@60 on `vga`, across a boot and an input round trip.
-    //
-    // So a report has to fall back to the measurement: reading the framed key
-    // named 0 lines at 0 Hz on the information screen, beside a working picture.
+    // PASS-THROUGH SPENDS THE MODE CHANGE THE ARM TOOK, so solveFromMeasurement()
+    // never runs on this route and the scaling solve is not what names the
+    // source here. A bypassed boot reported 0 lines at 0 Hz on the information
+    // screen beside a working picture. Measured on the bench at 800x600@60 on
+    // `vga`, across a boot and an input round trip.
     seedPassThroughSource();
     g_passThroughSwitches = 0;
 
@@ -709,7 +706,6 @@ TEST_CASE("a source passed through still reports the raster it measured")
 
     REQUIRE(unit.pollUntilSolved(8));
     REQUIRE(unit.path.outputMode()->isBypass());
-    REQUIRE_FALSE(unit.path.framedKey().valid());
 
     CHECK(unit.path.reportedKey().valid());
     CHECK(unit.path.reportedKey().lines() == 524);
@@ -721,6 +717,28 @@ TEST_CASE("a source passed through still reports the raster it measured")
 // says bypass -- so the switch that claims the route never runs again and the
 // channel plays out into a route nothing selected.
 // ../docs/investigations/low-power-detection-strands-pass-through-off-its-route.md
+// WHAT A REPORT NAMES IS THE SOURCE, AND PASS-THROUGH SOLVES NOTHING. The key
+// is adopted by the scaling solve, so a source handed over to the channel left
+// the last SCALED source's key standing -- an info screen naming 311 lines
+// while the channel carried a 524-line one.
+TEST_CASE("a passed-through source names itself rather than the last scaled one")
+{
+    seedBenchSource();
+    seedLineSamples(BenchDivider);
+    Acquiring unit;
+    unit.acquisition.usePassThroughSwitch(enterPassThrough);
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+    REQUIRE(unit.path.reportedKey().lines() == 311);
+
+    unit.acquisition.allowPassThrough(true);
+    seedPassThroughSource();
+    REQUIRE(unit.pollUntilSolved(8));
+    REQUIRE(unit.path.outputMode()->isBypass());
+
+    CHECK(unit.path.reportedKey().lines() == 524);
+}
+
 TEST_CASE("a route taken away underneath pass-through is claimed again")
 {
     seedPassThroughSource();
@@ -2110,6 +2128,8 @@ TEST_CASE("an unpowered board gets no window and no dynamic write")
 // The display aperture is what a scaled output blanks with, because closing it
 // never reaches the encoder; the sync pad is what is left where there is no
 // aperture in the path, and what the encoder is made to re-look with.
+static bool syncPadAway() { return Chip::PAD_SYNC_OUT_ENZ::read() == 1; }
+
 static bool outputBlanked()
 {
     return Chip::PAD_SYNC_OUT_ENZ::read() == 1
@@ -2208,6 +2228,32 @@ TEST_CASE("the output sync comes back for a source that returns unchanged")
     seedSourceLines(311);
     unit.pollFor(4);
     CHECK_FALSE(outputBlanked());
+}
+
+// UNDER PASS-THROUGH THE PAD IS THE ONLY MECHANISM. There is no display
+// aperture to blank -- video routes around the VDS entirely -- so the twin
+// above cannot cover this route, and a source that drops and returns unchanged
+// leaves the encoder transmitting the timing it had.
+// docs/investigations/encoder-stale-timing.md
+TEST_CASE("a pass-through source that returns unchanged gets the sync pad back")
+{
+    seedPassThroughSource();
+    Acquiring unit;
+    unit.acquisition.usePassThroughSwitch(enterPassThrough);
+    unit.acquisition.allowPassThrough(true);
+    unit.start();
+    REQUIRE(unit.pollUntilSolved(8));
+    unit.poll();
+    REQUIRE(unit.path.outputMode()->isBypass());
+    REQUIRE_FALSE(syncPadAway());
+
+    seedSourceLines(0);
+    unit.pollFor(1);
+    REQUIRE(syncPadAway());
+
+    seedPassThroughSource();
+    unit.pollFor(4);
+    CHECK_FALSE(syncPadAway());
 }
 
 TEST_CASE("the encoder is made to look again only when the output timing moves")
@@ -2333,8 +2379,6 @@ TEST_CASE("an output resolution change makes the encoder look again")
 // settled, sets the mode up once, and presents once the divider has latched and
 // the sampling phase has been searched. Nothing the setup writes lands after the
 // sync pad returns, so the sink locks to the line the source will keep.
-
-static bool syncPadAway() { return Chip::PAD_SYNC_OUT_ENZ::read() == 1; }
 
 // Where in the trace the pad was last driven, or -1 for never.
 static long lastPadDrive()
