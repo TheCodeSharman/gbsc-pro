@@ -172,30 +172,47 @@ on **8 boots of 8** rather than on whichever boots were lucky. It costs nothing
 in time: three readings settle it where six did not, so the first key lands at
 9.2--9.6 s against 8.3--12.6 s before.
 
+## The re-solve that gave back an identical picture
+
+A re-solve takes the sync pad away for the encoder relook, so one armed on a
+rate that had not moved is about 0.9 s of black for nothing. Two separate arms
+were doing it.
+
+**The boot's confirmation armed unconditionally.** It had to: both readings were
+timed over one pulse, so the tolerance had to be wider than the error being
+looked for and a boot error of about one per thousand sat inside it. With both
+readings spanned the comparison is worth making, at
+`BootRateConfirmPerThousand` -- 1, against the drift tolerance's 2, because a
+one-line excursion divided by the span lands at 0.4. A boot whose rate is right
+is confirmed where it stands; one wrong by a per thousand still re-solves.
+
+`confirmRate()` no longer drops the held rate with it. Dropping is what a SOLVE
+needs, and a confirmation arming none must not, or the next reading is judged
+against nothing and `sourceLineRateHz()` reports 0.
+
+**The periodic corroboration read one timing and judged it at 2 per thousand**,
+which a single timing cannot support. Measured, with the boot's confirmation
+already corroborating, one boot of eight still blanked -- and its arm landed
+6.9 s after the solve rather than at `RateRecheckPasses`, so it was the line
+period's arm, and the reading behind it was:
+
+    sampling: 311 lines x 50.73 Hz -> line rate 15828
+
+5 per thousand high on a source running 50.47, about 1.6 lines. A disagreement
+is now asked again over a span before anything is armed, with the cheap reading
+still in front of it: a span costs that many field periods, and paying for one
+only once the cheap half has seen something is the same split the line period
+and the rate already use.
+
+**The host fake cannot judge either span.** It has no jitter to divide, so
+mutating the span to one pulse leaves every suite green. What the stub CAN model
+is that one timing may report a different rate from a spanned one, which is what
+`g_oneTimingRateHz` says, and that is what separates the two paths in a test.
+
 ## What is still open
 
-**The confirmation still arms a re-solve unconditionally**, so a boot whose rate
-was right first time is blanked for about 0.9 s at ten seconds and comes back
-identical:
-
-    20.34  source moved: rate (311 lines, solved 311)
-    20.34  sync pad: away
-    20.98  source key: 311@50.48/732++, framing recalled, shape 13333
-    21.24  sync pad: driven
-
-Corroborating before arming is what removes it, and a corroboration reading has
-to span pulses for the same reason the boot's does: a single pulse carries a
-whole line of latency, which is wider than `RateCorroborationPerThousand`.
-`confirmRate()` marks the rate confirmed and drops the held rate in one call,
-which is right when a solve follows and is what would have to be separated.
-
-Also still open:
-
-- a boot can file a record under a transient key if a framing is pressed inside
+- A boot can file a record under a transient key if a framing is pressed inside
   the first ten seconds, and the collapse on store is what folds it back.
-
-The instrument is the console across a boot, which carries every reading as it
-is taken. `/bootlog` holds what precedes the websocket handshake, and a TCP
-connection to port 81 counts as a connected client -- so polling that port to
-find out when the unit is back sets `bootLogDelivered` and truncates the very
-window being asked about. Poll port 80.
+- **What makes the first solve's readings different is still not established.**
+  Spanning makes the reading good without saying why one timing is worse there
+  than it is a minute later.
