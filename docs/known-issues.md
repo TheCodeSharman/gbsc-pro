@@ -10,6 +10,66 @@ regardless of which step is in flight.
 
 ## Reaches the picture
 
+### The Wii's 480p does not acquire: the field rate reads whole multiples of the frame
+
+**480i acquires and 480p does not, on the same input, cable and sync
+arrangement.** Measured 2026-10-11 on `ypbpr`, sync on green. `/geometry` sits at
+`state: absent` with `lineRateHz` 29363 -- the right order for 480p's 31469 and
+nowhere near 480i's 15734 -- so the engine sees the source and cannot converge on
+it.
+
+**THE FAILURE IS IN THE FIELD-RATE MEASUREMENT, UPSTREAM OF EVERYTHING ELSE.**
+`/samplinglog?rates=` times the source's field rate off `DEBUG_IN_PIN` exactly as
+`SourceMeasurement` does and runs from `loop()` rather than the acquisition tick,
+so it answers with the engine out of the way. 60 readings:
+
+```
+rate,ms,sp_vtotal,field_rate_mhz
+rate,5,98,0          <- 0 in the large majority of samples
+rate,8238,0,15365    <- 15.4 Hz against a true 59.94
+rate,8344,0,18543    <- 18.5 Hz
+rate,8710,100,20146  <- 20.1 Hz
+```
+
+15365, 18543 and 20146 mHz are 59.94 divided by 4, 3 and 3. **A whole multiple of
+the frame period is the signature of MISSED EDGES**, the same shape the frame time
+lock's second owner had -- `investigations/the-frame-time-lock-saturates.md`. So
+the vertical sync is not being caught reliably at the pin on this source, and
+every downstream symptom follows: `line rate 0` is the reading `rateFollowsCount()`
+rejected, no divider can be sized from a rejected rate, the ADC PLL free-runs
+(`STATUS_MISC_PLLAD_LOCK` 0, `STATUS_SYNC_PROC_HTOTAL` 413 against a 2040
+divider), and `STATUS_SYNC_PROC_VTOTAL` never settles -- 97, 98, 100, 128, 222,
+243 across one session.
+
+**`VPERIOD_IF` IS NON-ZERO THROUGHOUT**, so the input formatter counts the
+source's vertical while the sync processor has nothing coherent to count. That
+split is the same one the free-running-PLL entry below records, and it is what
+says the signal is present rather than absent.
+
+**Four hypotheses are REFUTED, and none of them should be reached for again:**
+
+| refuted | by |
+|---|---|
+| a stranded held rate | `/restart` holds no rate at all and still reads `243 lines x 0.00 Hz` |
+| the separator level | `ADC_SOGCTRL` is 13, not the parked 0, and 480i locks at the same level |
+| the sync type or SOG configuration | `SP_SOG_MODE` 1 and `ADC_SOGEN` 1 are correct for component, and 480i acquires with both identical |
+| the HC32's routing, or the Wii | 480i acquires on the same input and cable, and `vga` acquires fully with the frame time lock converging |
+
+`/sc?~` and `/restart` both fail to recover it, which separates it from the stuck
+divider and from the sync-type latch.
+
+**A TESTBUS SWEEP CANNOT BE READ AS SIGNAL ABSENT HERE.** Selectors 14, 15 and 16
+drop from ~3500 transitions per 25 ms on a clean ypbpr state to 0, which reads as
+a dead input and is not one -- they are pipeline-internal and go quiet whenever
+the part is unlocked. With `sp=4` out, selector 10 carries 98 transitions in
+25 ms, about 2 kHz, which is neither the field nor the line rate.
+
+**Whether it is a regression is OPEN.** 480p has acquired at 525 lines and
+31468 Hz, recorded further down this page, so the mode is not inherently out of
+reach. The newest engine commits touch `SourceMeasurement` and
+`VideoSourceAcquisition` -- the rate path and the solve arming -- and a build from
+before them has not been tried.
+
 ### The default framing loses the source's outermost COLUMN on every mode
 
 **`PATTERN CARD`'s one-pixel green frame does not reach the emitted frame at the
