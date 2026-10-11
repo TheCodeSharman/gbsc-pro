@@ -656,6 +656,29 @@ bool VideoSourceAcquisition::rateMoved()
         return false;
     }
 
+    // A DISAGREEMENT FROM ONE TIMING IS NOT A MEASUREMENT, so it is asked again
+    // over a span before anything is armed. One timing carries a whole source
+    // line of edge latency -- 3.2 per thousand at 311 lines, against the 2 this
+    // compares at -- and an arm blanks the output for the encoder relook.
+    // Measured on the bench, a single timing read 50.73 Hz on a source running
+    // 50.47 and bought a solve that gave back an identical picture.
+    //
+    // The cheap reading stays in front of it: a span costs that many field
+    // periods, and a corroborated disagreement is rare enough to pay for one
+    // only when the cheap half has already seen something.
+    if (!confirming) {
+        const float spanned = Tv5725::TestBusRateMeasurement::sourceFieldRateHz(
+            false, Tv5725::SourceMeasurement::UnconfirmedRatePulses);
+        if (!Tv5725::VideoSignal::isVideo(solvedLines_, spanned))
+            return false;
+        if (Tv5725::VideoSignal::ratesAgree(
+                Tv5725::VideoSignal::lineRateFor(solvedLines_, spanned),
+                solvedLineRateHz_, within)) {
+            solvedLinePeriod_ = sampling_.settledLinePeriod();
+            return false;
+        }
+    }
+
     // The held rate is what moved, and measureLineRate() rejects a rate that
     // changed at an unchanged count -- so leaving it would refuse the very
     // measurement this armed the solve for.

@@ -118,6 +118,7 @@ struct Acquiring {
         : sampling(inputFormatter), path(clock, sampling, framings, inputFormatter),
           acquisition(sampling, path), nowMs(0)
     {
+        g_oneTimingRateHz = 0.0f;
         VideoRoute::toScaler();
     }
 
@@ -2974,4 +2975,29 @@ TEST_CASE("a boot rate the corroboration agrees with is not re-solved")
     for (uint16_t pass = 0;
          pass < 2 * VideoSourceAcquisition::RateRecheckPasses; ++pass)
         CHECK_FALSE(unit.poll());
+}
+
+TEST_CASE("a corroboration disagreeing on one timing is asked again over a span")
+{
+    // One timing carries a whole source line of edge latency -- 3.2 per
+    // thousand at 311 lines, against the 2 the corroboration compares at -- so
+    // a disagreement from one is not a measurement. Measured on the bench, a
+    // single timing read 50.73 Hz on a source running 50.47, and the arm it
+    // bought blanked the output for ~0.9 s to give back an identical picture.
+    seedBenchSource();
+    seedField(0, 0x06, 0, 9, 431);   // HPERIOD_IF, steady, as the bench reads it
+    Acquiring unit;
+
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+
+    // The source unmoved, and one timing of it 5 per thousand high. Long
+    // enough to reach the rechecks AFTER the boot's confirmation, which are the
+    // ones that read a single timing.
+    g_oneTimingRateHz = 50.73f;
+    for (uint16_t pass = 0;
+         pass < 4 * VideoSourceAcquisition::RateRecheckPasses; ++pass)
+        CHECK_FALSE(unit.poll());
+
+    g_oneTimingRateHz = 0.0f;
 }

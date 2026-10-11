@@ -29,9 +29,17 @@ static float g_fieldRate = 50.08f;
 // front of it and why a quiet source must not reach it at all.
 static unsigned g_fieldRateCalls = 0;
 
+// What ONE timing reports when it differs from the source, or 0 for a pin that
+// reads the same however long it is watched. A single timing carries the whole
+// of both edge ISRs' latency and a spanned one divides it, so on the board the
+// two disagree; here a case says by how much.
+static float g_oneTimingRateHz = 0.0f;
+
 uint32_t debugPinSpanTicks(uint32_t pulses)
 {
     ++g_fieldRateCalls;
+    if (pulses == 1 && g_oneTimingRateHz > 0.0f)
+        return ticksForHz(g_oneTimingRateHz);
     return pulses * ticksForHz(g_fieldRate);
 }
 
