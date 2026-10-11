@@ -19,7 +19,10 @@
 // Driveable, because the bypass decisions below are taken against a measured
 // source and the rate is half of what they weigh.
 static float g_fieldRate = 50.0f;
-uint32_t debugPinPulseTicks() { return ticksForHz(g_fieldRate); }
+uint32_t debugPinSpanTicks(uint32_t pulses)
+{
+    return pulses * ticksForHz(g_fieldRate);
+}
 void tv5725Log(const char *) {}
 
 FakeTwoWire Wire;

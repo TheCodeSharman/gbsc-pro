@@ -72,14 +72,14 @@ static uint16_t g_dividerWhenSampled = 0;
 // off this block, and a window whose start lies beyond the frame never fires.
 static uint16_t g_blankStartWhenSampled = 0;
 
-uint32_t debugPinPulseTicks()
+uint32_t debugPinSpanTicks(uint32_t pulses)
 {
     ++g_fieldRateCalls;
     g_dividerWhenSampled = (uint16_t)(Wire.bank[5][0x12] |
                                       ((Wire.bank[5][0x13] & 0x0F) << 8));
     g_blankStartWhenSampled = (uint16_t)(Wire.bank[1][0x1C] |
                                          ((Wire.bank[1][0x1D] & 0x07) << 8));
-    return ticksForHz(g_fieldRate);
+    return pulses * ticksForHz(g_fieldRate);
 }
 
 // Neither a preset table's value nor the firmware's, so a read-back

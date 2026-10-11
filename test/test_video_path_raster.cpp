@@ -41,7 +41,10 @@ using namespace Tv5725;
 // The source field rate the engine will measure. The sketch defines this for
 // real; here it is the test's to set, which is the point.
 static float g_fieldRate = 50.08f;
-uint32_t debugPinPulseTicks() { return ticksForHz(g_fieldRate); }
+uint32_t debugPinSpanTicks(uint32_t pulses)
+{
+    return pulses * ticksForHz(g_fieldRate);
+}
 void tv5725Log(const char *) {}
 
 // STATUS_SYNC_PROC_VTOTAL, s0_1B[10:0] -- the source's line count.

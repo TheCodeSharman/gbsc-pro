@@ -77,11 +77,13 @@ bool debugPinPulseEdges(uint32_t *start, uint32_t *stop)
     return true;
 }
 
-uint32_t debugPinPulseTicks()
+uint32_t debugPinSpanTicks(uint32_t pulses)
 {
     uint32_t start, stop;
-    return debugPinPulseEdges(&start, &stop) ? stop - start : 0;
+    return debugPinPulseEdges(&start, &stop) ? pulses * (stop - start) : 0;
 }
+
+uint32_t debugPinPulseTicks() { return debugPinSpanTicks(1); }
 
 void debugPinProbe() { ++g_probes; }
 

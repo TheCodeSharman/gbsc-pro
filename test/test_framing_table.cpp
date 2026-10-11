@@ -14,7 +14,10 @@ FakeTwoWire Wire;
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/FramingTable.h"
 
 #include "DebugPinStub.h"
-uint32_t debugPinPulseTicks() { return ticksForHz(0.0f); }
+uint32_t debugPinSpanTicks(uint32_t pulses)
+{
+    return pulses * ticksForHz(0.0f);
+}
 void tv5725Log(const char *) {}
 
 using namespace Tv5725;

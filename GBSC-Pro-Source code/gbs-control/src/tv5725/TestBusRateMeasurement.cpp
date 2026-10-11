@@ -15,27 +15,29 @@ namespace Tv5725 {
 const uint8_t StageSignalFirst = 0;
 const uint8_t CsSepSignal = 6;
 
-float TestBusRateMeasurement::rateFrom(uint32_t ticks)
+float TestBusRateMeasurement::rateFrom(uint32_t ticks, uint32_t pulses)
 {
-    if (ticks == 0)
+    if (ticks == 0 || pulses == 0)
         return 0;
-    return (float)((double)debugPinTicksPerSecond() / (double)ticks);
+    return (float)((double)debugPinTicksPerSecond() * (double)pulses
+                   / (double)ticks);
 }
 
 // A sample that reports no ticks timed out rather than measuring 0 Hz, so it is
 // worth one more. What the rate is worth afterwards is the caller's to judge:
 // SourceMeasurement cross-checks it against the line count and requires two
 // readings to agree, which is a test a second sample here cannot do.
-float TestBusRateMeasurement::measureRateHz()
+float TestBusRateMeasurement::measureRateHz(uint32_t pulses)
 {
-    uint32_t period = debugPinPulseTicks();
+    uint32_t period = debugPinSpanTicks(pulses);
     if (period == 0)
-        period = debugPinPulseTicks();
+        period = debugPinSpanTicks(pulses);
 
-    return rateFrom(period);
+    return rateFrom(period, pulses);
 }
 
-float TestBusRateMeasurement::sourceFieldRateHz(bool useSyncProcessorBus)
+float TestBusRateMeasurement::sourceFieldRateHz(bool useSyncProcessorBus,
+                                               uint32_t pulses)
 {
     if (useSyncProcessorBus && SyncMeasurement::isCsync())
         TestBus::select(TestBus::SyncProcessor);
@@ -46,14 +48,14 @@ float TestBusRateMeasurement::sourceFieldRateHz(bool useSyncProcessorBus)
         SyncProcessor::driveTestBus(SyncProcessor::TestModuleOutProc,
                                     StageSignalFirst);
 
-    return measureRateHz();
+    return measureRateHz(pulses);
 }
 
 float TestBusRateMeasurement::outputFrameRateHz()
 {
     TestBus::selectOutputVsync();
 
-    return measureRateHz();
+    return measureRateHz(1);
 }
 
 uint32_t TestBusRateMeasurement::pllRateHz()

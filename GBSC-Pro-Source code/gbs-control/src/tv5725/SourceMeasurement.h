@@ -238,6 +238,17 @@ public:
     // docs/investigations/the-duty-is-counted-before-the-processor-relocks.md
     static const uint8_t LatchSettlePasses = 5;
 
+    // How many consecutive pulses ONE field-rate timing spans while the boot's
+    // rate is unconfirmed.
+    //
+    // Sized by the instrument. One timing carries the whole of both edge ISRs'
+    // latency, and across six boots the first solve's readings ladder over 4.8
+    // per thousand in steps of half a source line -- wider than
+    // RateAgreementPerThousand, so the pair that agrees picks a rung. Spanning
+    // N divides that fixed error by N; 8 brings it inside the agreement band.
+    // It costs N field periods a timing, which is why only the boot pays.
+    static const uint32_t UnconfirmedRatePulses = 8;
+
 private:
     // --- the one pass, in the order it takes them ----------------------------
 

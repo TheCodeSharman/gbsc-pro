@@ -47,14 +47,16 @@ static unsigned g_fieldRateCalls = 0;
 // Readings handed out one per call before g_fieldRate resumes, for a case about
 // what one PASS samples rather than what one pass reads.
 static std::vector<float> g_fieldRates;
-uint32_t debugPinPulseTicks()
+static uint32_t g_pulsesAsked = 0;
+uint32_t debugPinSpanTicks(uint32_t pulses)
 {
     ++g_fieldRateCalls;
+    g_pulsesAsked = pulses;
     if (g_fieldRates.empty())
-        return ticksForHz(g_fieldRate);
+        return pulses * ticksForHz(g_fieldRate);
     const float hz = g_fieldRates.front();
     g_fieldRates.erase(g_fieldRates.begin());
-    return ticksForHz(hz);
+    return pulses * ticksForHz(hz);
 }
 
 static std::string g_log;
@@ -2078,4 +2080,65 @@ TEST_CASE("the settled field rate is the judged pair, not a fresh reading")
         CHECK(settled > 0.0f);
         CHECK(settled == doctest::Approx((float)lineRate / 628.0f).epsilon(0.0001));
     }
+}
+
+// --- how many pulses one timing spans ---------------------------------------
+//
+// The boot's readings ladder in half-line steps -- measured on a source running
+// 50.474 Hz, the first solve took 50.45, 50.53, 50.60 and 50.69 across six
+// boots -- while RateAgreementPerThousand is finer than one step, so the pair
+// that agrees picks a rung rather than the source. One timing carries the whole
+// of both edge ISRs' latency; spanning N pulses divides that fixed error by N.
+// ../docs/investigations/one-source-takes-many-keys.md
+
+TEST_CASE("a reading taken before the rate is confirmed spans several pulses")
+{
+    SourceMeasurement sampling(inputFormatter);
+    Adc::applyDivider(BenchDivider);
+    seedSourceLines(311);
+    Wire.sourceHsync(181, BenchDivider, false);
+    g_fieldRate = 50.08f;
+
+    g_pulsesAsked = 0;
+    REQUIRE(measurePastGate(sampling) == SourceMeasurement::Measured);
+
+    CHECK(g_pulsesAsked == SourceMeasurement::UnconfirmedRatePulses);
+}
+
+TEST_CASE("a reading taken after the rate is confirmed spans one pulse")
+{
+    // The spread is the boot's. Every later acquisition reads the source
+    // exactly, so paying several field periods a sample afterwards buys
+    // nothing and costs a mode change its budget.
+    SourceMeasurement sampling(inputFormatter);
+    Adc::applyDivider(BenchDivider);
+    seedSourceLines(311);
+    Wire.sourceHsync(181, BenchDivider, false);
+    g_fieldRate = 50.08f;
+    sampling.confirmRate();
+
+    g_pulsesAsked = 0;
+    REQUIRE(measurePastGate(sampling) == SourceMeasurement::Measured);
+
+    CHECK(g_pulsesAsked == 1);
+}
+
+TEST_CASE("the rate read is the same whatever the span")
+{
+    // N pulses take N times the ticks, so the rate divides back out: a spanned
+    // reading is the same number, measured better.
+    SourceMeasurement spanned(inputFormatter);
+    Adc::applyDivider(BenchDivider);
+    seedSourceLines(311);
+    Wire.sourceHsync(181, BenchDivider, false);
+    g_fieldRate = 50.08f;
+    REQUIRE(measurePastGate(spanned) == SourceMeasurement::Measured);
+
+    SourceMeasurement single(inputFormatter);
+    seedSourceLines(311);
+    Wire.sourceHsync(181, BenchDivider, false);
+    single.confirmRate();
+    REQUIRE(measurePastGate(single) == SourceMeasurement::Measured);
+
+    CHECK(spanned.fieldRateHz() == doctest::Approx(single.fieldRateHz()));
 }

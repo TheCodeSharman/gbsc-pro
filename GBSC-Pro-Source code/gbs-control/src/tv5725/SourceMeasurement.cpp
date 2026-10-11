@@ -86,6 +86,7 @@ const uint16_t SourceMeasurement::RateFollowsCountPerThousand;
 const uint16_t SourceMeasurement::LinePeriodMovedPerThousand;
 const uint8_t SourceMeasurement::RateAgreementAttempts;
 const uint8_t SourceMeasurement::LatchSettlePasses;
+const uint32_t SourceMeasurement::UnconfirmedRatePulses;
 
 SourceMeasurement::SourceMeasurement(InputFormatter &inputFormatter)
     : inputFormatter_(inputFormatter), lineRateHz_(0), sourceLines_(0),
@@ -231,12 +232,18 @@ float SourceMeasurement::sampleFieldRateHz()
 {
     // A source that did not pulse has nothing for the other two to time, and a
     // sample that reports none has already waited out two timeouts.
-    const float first = TestBusRateMeasurement::sourceFieldRateHz(false);
+    // A MEDIAN REJECTS AN OUTLIER AND NOT A SPREAD. It returns the middle
+    // sample whatever the three are, so three readings on three different rungs
+    // of the boot's ladder yield a rung. What the boot needs is samples that are
+    // closer together, which is what spanning pulses buys.
+    const uint32_t pulses = rateConfirmed_ ? 1 : UnconfirmedRatePulses;
+
+    const float first = TestBusRateMeasurement::sourceFieldRateHz(false, pulses);
     if (first == 0.0f)
         return 0.0f;
 
-    const float second = TestBusRateMeasurement::sourceFieldRateHz(false);
-    const float third = TestBusRateMeasurement::sourceFieldRateHz(false);
+    const float second = TestBusRateMeasurement::sourceFieldRateHz(false, pulses);
+    const float third = TestBusRateMeasurement::sourceFieldRateHz(false, pulses);
     return medianOfThree(first, second, third);
 }
 

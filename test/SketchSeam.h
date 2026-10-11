@@ -18,7 +18,10 @@
 #include "Si5351Stubs.h"
 #include "DebugPinStub.h"
 
-uint32_t debugPinPulseTicks() { return ticksForHz(50.08f); }
+uint32_t debugPinSpanTicks(uint32_t pulses)
+{
+    return pulses * ticksForHz(50.08f);
+}
 
 // The ADC PLL rate, which only the standard-8 branch reads. Zero is outside
 // the band that branch acts on, so a suite not driving it sees no effect.

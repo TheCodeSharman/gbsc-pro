@@ -15,8 +15,11 @@ static const uint32_t StubTicksPerSecond = 160000000u;
 // needs a real definition to link against. One include per binary, so one.
 uint32_t debugPinTicksPerSecond() { return StubTicksPerSecond; }
 
-// The binary's own, from ticksForHz() below.
-uint32_t debugPinPulseTicks();
+// The binary's own, from ticksForHz() below. N pulses take N times the ticks,
+// which is what the two edge ISRs measure on the board.
+uint32_t debugPinSpanTicks(uint32_t pulses);
+
+uint32_t debugPinPulseTicks() { return debugPinSpanTicks(1); }
 
 // The same pulse as two edge timestamps, which is the seam Tv5725::FrameSync
 // measures phase from. Derived here so the binaries that only care about a

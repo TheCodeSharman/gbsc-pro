@@ -14,7 +14,10 @@
 
 // SourceMeasurement links in behind HdBypass and wants these from the sketch.
 #include "DebugPinStub.h"
-uint32_t debugPinPulseTicks() { return ticksForHz(50.0f); }
+uint32_t debugPinSpanTicks(uint32_t pulses)
+{
+    return pulses * ticksForHz(50.0f);
+}
 void tv5725Log(const char *) {}
 
 FakeTwoWire Wire;

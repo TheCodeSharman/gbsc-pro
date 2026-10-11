@@ -2077,14 +2077,21 @@ namespace MeasurePeriod
     volatile uint32_t stopTime, startTime;
     volatile uint32_t armed;
 
+    // How many pulses one measurement spans, and how many have arrived. Timing
+    // ONE pulse puts the whole of both edge ISRs' latency into the answer;
+    // spanning N divides that fixed error by N.
+    volatile uint32_t periodsWanted, periodsSeen;
+
     void _risingEdgeISR_prepare();
     void _risingEdgeISR_measure();
 
-    void start()
+    void start(uint32_t periods)
     {
         startTime = 0;
         stopTime = 0;
         armed = 0;
+        periodsWanted = periods < 1 ? 1 : periods;
+        periodsSeen = 0;
         attachInterrupt(DEBUG_IN_PIN, _risingEdgeISR_prepare, RISING);
     }
 
@@ -2111,9 +2118,15 @@ namespace MeasurePeriod
     void ICACHE_RAM_ATTR _risingEdgeISR_measure()
     {
         noInterrupts();
+        uint32_t now;
         __asm__ __volatile__("rsr %0,ccount"
-                             : "=a"(stopTime));
-        detachInterrupt(DEBUG_IN_PIN);
+                             : "=a"(now));
+        // Stays attached until the last of them, so the intermediate edges cost
+        // a counter increment and nothing else.
+        if (++periodsSeen >= periodsWanted) {
+            stopTime = now;
+            detachInterrupt(DEBUG_IN_PIN);
+        }
         interrupts();
     }
 }
@@ -2133,13 +2146,20 @@ namespace MeasurePeriod
 // swamp that. The delay(7) after the first edge stays exactly where it is: it
 // yields in the ~20 ms of slack between edges, well away from the one that is
 // about to be measured.
-bool debugPinPulseEdges(uint32_t *start, uint32_t *stop)
+bool debugPinSpanEdges(uint32_t periods, uint32_t *start, uint32_t *stop)
 {
     yield();
     ESP.wdtFeed();
-    MeasurePeriod::start();
+    MeasurePeriod::start(periods);
 
-    const uint32_t deadline = millis() + FS_SAMPLE_TIMEOUT_MS;
+    // **THE DEADLINE IS PER EDGE, NOT PER MEASUREMENT.** A span of N pulses
+    // waits N times as long in total, so a fixed budget would time out on a
+    // healthy source; budgeting N times the timeout would make an ABSENT one
+    // cost N times the wait. Restarted whenever an edge arrives, it does
+    // neither: a source that stops pulsing gives up one timeout later whatever
+    // the span.
+    uint32_t deadline = millis() + FS_SAMPLE_TIMEOUT_MS;
+    uint32_t seen = 0;
     uint32_t spins = 0;
     while (MeasurePeriod::stopTime == 0)
     {
@@ -2151,6 +2171,12 @@ bool debugPinPulseEdges(uint32_t *start, uint32_t *stop)
         }
         if (++spins % FS_SAMPLE_CHECK_EVERY == 0)
         {
+            const uint32_t arrived = MeasurePeriod::periodsSeen;
+            if (arrived != seen)
+            {
+                seen = arrived;
+                deadline = millis() + FS_SAMPLE_TIMEOUT_MS;
+            }
             // Signed difference, so this still terminates across the millis()
             // wrap rather than spinning for another 49 days.
             if ((int32_t)(millis() - deadline) >= 0)
@@ -2170,11 +2196,18 @@ bool debugPinPulseEdges(uint32_t *start, uint32_t *stop)
     return *start != 0 && *stop != 0 && *start < *stop;
 }
 
-uint32_t debugPinPulseTicks()
+bool debugPinPulseEdges(uint32_t *start, uint32_t *stop)
+{
+    return debugPinSpanEdges(1, start, stop);
+}
+
+uint32_t debugPinSpanTicks(uint32_t periods)
 {
     uint32_t start, stop;
-    return debugPinPulseEdges(&start, &stop) ? stop - start : 0;
+    return debugPinSpanEdges(periods, &start, &stop) ? stop - start : 0;
 }
+
+uint32_t debugPinPulseTicks() { return debugPinSpanTicks(1); }
 
 uint32_t debugPinTicksPerSecond() { return ESP.getCpuFreqMHz() * 1000000; }
 

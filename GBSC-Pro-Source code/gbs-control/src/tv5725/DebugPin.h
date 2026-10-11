@@ -21,6 +21,11 @@ bool debugPinPulseEdges(uint32_t *start, uint32_t *stop);
 // no pulse looks like, and is also the no-lock answer.
 uint32_t debugPinPulseTicks();
 
+// The ticks spanned by `periods` consecutive pulses, or 0 where none
+// arrived. One pulse carries the whole of both edge ISRs' latency in its
+// answer; N divides that fixed error by N.
+uint32_t debugPinSpanTicks(uint32_t periods);
+
 // What one tick is worth, in ticks per second.
 uint32_t debugPinTicksPerSecond();
 

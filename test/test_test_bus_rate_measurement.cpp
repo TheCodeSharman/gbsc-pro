@@ -28,10 +28,12 @@ using namespace Tv5725;
 static float g_sourceRate = 0.0f;
 static unsigned g_samples = 0;
 
-uint32_t debugPinPulseTicks()
+static uint32_t g_pulsesAsked = 0;
+uint32_t debugPinSpanTicks(uint32_t pulses)
 {
     ++g_samples;
-    return ticksForHz(g_sourceRate);
+    g_pulsesAsked = pulses;
+    return pulses * ticksForHz(g_sourceRate);
 }
 
 // A pin pulsing at this rate, and nothing sampled yet. The sync type is held

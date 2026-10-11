@@ -29,10 +29,10 @@ static float g_fieldRate = 50.08f;
 // front of it and why a quiet source must not reach it at all.
 static unsigned g_fieldRateCalls = 0;
 
-uint32_t debugPinPulseTicks()
+uint32_t debugPinSpanTicks(uint32_t pulses)
 {
     ++g_fieldRateCalls;
-    return ticksForHz(g_fieldRate);
+    return pulses * ticksForHz(g_fieldRate);
 }
 
 
