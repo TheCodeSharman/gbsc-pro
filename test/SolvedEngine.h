@@ -35,11 +35,21 @@ static unsigned g_fieldRateCalls = 0;
 // two disagree; here a case says by how much.
 static float g_oneTimingRateHz = 0.0f;
 
+// What the NEXT spanned timing reports, once, or 0 for a pin that reads the
+// source every time. Spanning divides the edge latency rather than removing it,
+// so a spanned reading is still occasionally out.
+static float g_nextSpanRateHz = 0.0f;
+
 uint32_t debugPinSpanTicks(uint32_t pulses)
 {
     ++g_fieldRateCalls;
     if (pulses == 1 && g_oneTimingRateHz > 0.0f)
         return ticksForHz(g_oneTimingRateHz);
+    if (pulses > 1 && g_nextSpanRateHz > 0.0f) {
+        const float once = g_nextSpanRateHz;
+        g_nextSpanRateHz = 0.0f;
+        return pulses * ticksForHz(once);
+    }
     return pulses * ticksForHz(g_fieldRate);
 }
 

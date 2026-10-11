@@ -656,27 +656,27 @@ bool VideoSourceAcquisition::rateMoved()
         return false;
     }
 
-    // A DISAGREEMENT FROM ONE TIMING IS NOT A MEASUREMENT, so it is asked again
-    // over a span before anything is armed. One timing carries a whole source
-    // line of edge latency -- 3.2 per thousand at 311 lines, against the 2 this
-    // compares at -- and an arm blanks the output for the encoder relook.
-    // Measured on the bench, a single timing read 50.73 Hz on a source running
-    // 50.47 and bought a solve that gave back an identical picture.
+    // **A DISAGREEMENT IS ASKED AGAIN BEFORE ANYTHING IS ARMED**, whichever
+    // reading found it, because an arm blanks the output for the encoder relook.
+    // One timing carries a whole source line of edge latency -- 3.2 per thousand
+    // at 311 lines, against the 2 this compares at -- and spanning DIVIDES that
+    // rather than removing it, so a spanned reading is occasionally out too.
+    // Measured on the bench: a single timing read 50.73 Hz on a source running
+    // 50.47, and one boot of ten armed on a spanned one, both giving back an
+    // identical picture.
     //
-    // The cheap reading stays in front of it: a span costs that many field
-    // periods, and a corroborated disagreement is rare enough to pay for one
-    // only when the cheap half has already seen something.
-    if (!confirming) {
-        const float spanned = Tv5725::TestBusRateMeasurement::sourceFieldRateHz(
-            false, Tv5725::SourceMeasurement::UnconfirmedRatePulses);
-        if (!Tv5725::VideoSignal::isVideo(solvedLines_, spanned))
-            return false;
-        if (Tv5725::VideoSignal::ratesAgree(
-                Tv5725::VideoSignal::lineRateFor(solvedLines_, spanned),
-                solvedLineRateHz_, within)) {
-            solvedLinePeriod_ = sampling_.settledLinePeriod();
-            return false;
-        }
+    // The first reading stays in front of it: a span costs that many field
+    // periods, and a disagreement is rare enough to pay for a second only once
+    // something has been seen.
+    const float again = Tv5725::TestBusRateMeasurement::sourceFieldRateHz(
+        false, Tv5725::SourceMeasurement::UnconfirmedRatePulses);
+    if (!Tv5725::VideoSignal::isVideo(solvedLines_, again))
+        return false;
+    if (Tv5725::VideoSignal::ratesAgree(
+            Tv5725::VideoSignal::lineRateFor(solvedLines_, again),
+            solvedLineRateHz_, within)) {
+        solvedLinePeriod_ = sampling_.settledLinePeriod();
+        return false;
     }
 
     // The held rate is what moved, and measureLineRate() rejects a rate that

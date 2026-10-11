@@ -119,6 +119,7 @@ struct Acquiring {
           acquisition(sampling, path), nowMs(0)
     {
         g_oneTimingRateHz = 0.0f;
+        g_nextSpanRateHz = 0.0f;
         VideoRoute::toScaler();
     }
 
@@ -3000,4 +3001,27 @@ TEST_CASE("a corroboration disagreeing on one timing is asked again over a span"
         CHECK_FALSE(unit.poll());
 
     g_oneTimingRateHz = 0.0f;
+}
+
+TEST_CASE("a boot confirmation disagreeing once is asked again before arming")
+{
+    // Spanning divides the edge latency rather than removing it, so the
+    // confirmation's own reading is occasionally out too -- measured, one boot
+    // of ten armed on one, at RateRecheckPasses, and gave back an identical
+    // picture. Every disagreement is re-asked, whichever path found it.
+    seedBenchSource();
+    seedField(0, 0x06, 0, 9, 431);   // HPERIOD_IF, steady, as the bench reads it
+    Acquiring unit;
+
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+
+    // One spanned reading 1.2 per thousand off, which is outside
+    // BootRateConfirmPerThousand, on a source that has not moved.
+    g_nextSpanRateHz = 50.14f;
+    for (uint16_t pass = 0;
+         pass < 2 * VideoSourceAcquisition::RateRecheckPasses; ++pass)
+        CHECK_FALSE(unit.poll());
+
+    g_nextSpanRateHz = 0.0f;
 }
