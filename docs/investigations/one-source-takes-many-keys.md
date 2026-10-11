@@ -198,11 +198,17 @@ period's arm, and the reading behind it was:
 
     sampling: 311 lines x 50.73 Hz -> line rate 15828
 
-5 per thousand high on a source running 50.47, about 1.6 lines. A disagreement
-is now asked again over a span before anything is armed, with the cheap reading
-still in front of it: a span costs that many field periods, and paying for one
-only once the cheap half has seen something is the same split the line period
-and the rate already use.
+5 per thousand high on a source running 50.47, about 1.6 lines.
+
+**Spanning divides the edge latency rather than removing it**, so the
+confirmation's own reading is occasionally out as well -- one boot of ten armed
+on one, at `RateRecheckPasses`, and gave back an identical picture. So the rule
+is uniform rather than per path: **a disagreement is asked again over a span
+before anything is armed, whichever reading found it.** The first reading stays
+in front of it, because a span costs that many field periods and a disagreement
+is rare enough to pay for a second only once something has been seen -- the same
+split the line period and the rate already use. A rate that really moved
+disagrees twice and still arms.
 
 **The host fake cannot judge either span.** It has no jitter to divide, so
 mutating the span to one pulse leaves every suite green. What the stub CAN model
