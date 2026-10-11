@@ -18,6 +18,7 @@
 FakeTwoWire Wire;
 
 #include "../GBSC-Pro-Source code/gbs-control/options.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/audio/LineVolume.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/prefs/Settings.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/ColourBalance.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/PictureOptions.h"
@@ -139,7 +140,7 @@ TEST_CASE("a comment and a blank line are skipped")
     CHECK(read.settings.readLine("# volume = 50") == Prefs::Settings::Skipped);
     CHECK(read.settings.readLine("") == Prefs::Settings::Skipped);
     CHECK(read.settings.readLine("   ") == Prefs::Settings::Skipped);
-    CHECK(read.volume == 0);
+    CHECK(read.volume == Audio::LineVolume::Default);
 }
 
 TEST_CASE("the terminator is reported, so a read that stops short is visible")
@@ -171,7 +172,7 @@ TEST_CASE("a file truncated mid-line leaves what it did not reach at defaults")
     read.load(whole.substr(0, whole.find("volume")));
 
     CHECK(read.options.enableFrameTimeLock == 1);
-    CHECK(read.volume == 0);
+    CHECK(read.volume == Audio::LineVolume::Default);
 }
 
 TEST_CASE("a value past its bound reads as the default")
@@ -180,7 +181,7 @@ TEST_CASE("a value past its bound reads as the default")
     read.load("deinterlace-mode = 9\nvolume = 200\npeaking = 4\n");
 
     CHECK(read.options.deintMode == 0);
-    CHECK(read.volume == 0);
+    CHECK(read.volume == Audio::LineVolume::Default);
     CHECK(read.picture.peaking());
 }
 
@@ -189,7 +190,7 @@ TEST_CASE("a value that is not a number reads as the default")
     Stored read;
     read.load("volume = loud\nscanline-strength =\n");
 
-    CHECK(read.volume == 0);
+    CHECK(read.volume == Audio::LineVolume::Default);
     CHECK(read.options.scanlineStrength == 0x30);
 }
 

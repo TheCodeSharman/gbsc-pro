@@ -16,7 +16,7 @@ CXXFLAGS ?= -std=c++11 -O1 -Wall -Wextra
 # embarrassingly parallel: measured 3m26s serial against 34s here.
 MAKEFLAGS += -j$(shell nproc)
 
-.PHONY: all test ir-receiver menu aspect video-signal test-bus test-bus-rate-measurement steady-run sync-on-green sampling-log axis source-key source-timing framing-table framing-text scale video-source-line capture-window output-window video-path source-measurement memory-window display-clock frame-sync frame-time-lock output-mode clock-ramp rate-agreement hold-ramp sync-search video-source-selection video-source-selector segment-select register-queue sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc video-route rgbhv-output write-trace settings clean help
+.PHONY: all test ir-receiver menu aspect video-signal test-bus test-bus-rate-measurement steady-run sync-on-green sampling-log axis source-key source-timing framing-table framing-text scale video-source-line capture-window output-window video-path source-measurement memory-window display-clock frame-sync frame-time-lock output-mode clock-ramp rate-agreement hold-ramp sync-search video-source-selection video-source-selector segment-select register-queue sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc video-route rgbhv-output write-trace settings line-volume clean help
 .DEFAULT_GOAL := test
 
 ## help: list the targets
@@ -279,11 +279,23 @@ settings:
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_settings" \
 	  "$(HERE)/test_settings.cpp" src/prefs/Settings.cpp \
-	  src/prefs/SettingVisitor.cpp \
+	  src/prefs/SettingVisitor.cpp src/audio/LineVolume.cpp \
 	  src/tv5725/ColourBalance.cpp src/tv5725/PictureOptions.cpp \
 	  src/tv5725/VideoProcessor.cpp \
 	  src/videosource/VideoSourceSelection.cpp
 	@"$(OUT)/test_settings"
+
+## line-volume: host unit tests for Audio::LineVolume
+#
+# The setting is decibels of attenuation for the PT2257, so 0 is loudest. The
+# chain costs a further 6 dB in the divider feeding the encoder that no setting
+# recovers. docs/audio-path.md.
+line-volume:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
+	  -o "$(OUT)/test_line_volume" \
+	  "$(HERE)/test_line_volume.cpp" src/audio/LineVolume.cpp
+	@"$(OUT)/test_line_volume"
 
 ## framing-text: host unit tests for Tv5725::FramingText
 #
@@ -898,7 +910,7 @@ write-trace:
 	@"$(OUT)/test_write_trace"
 
 ## test: every host unit test
-test: input-scale ir-receiver osd-row osd-screens menu aspect video-signal test-bus test-bus-rate-measurement steady-run source-absence detection-entry sync-measurement colour-space colour-balance framing-save-timer sync-on-green axis source-key source-timing framing-table framing-text scale sync-processor video-processor video-source-line capture-window output-window video-path source-measurement memory-window display-clock frame-sync frame-time-lock output-mode clock-ramp rate-agreement hold-ramp sync-search video-source-selection video-source-selector segment-select register-queue sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc sampling-log video-route rgbhv-output write-trace settings
+test: input-scale ir-receiver osd-row osd-screens menu aspect video-signal test-bus test-bus-rate-measurement steady-run source-absence detection-entry sync-measurement colour-space colour-balance framing-save-timer sync-on-green axis source-key source-timing framing-table framing-text scale sync-processor video-processor video-source-line capture-window output-window video-path source-measurement memory-window display-clock frame-sync frame-time-lock output-mode clock-ramp rate-agreement hold-ramp sync-search video-source-selection video-source-selector segment-select register-queue sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc sampling-log video-route rgbhv-output write-trace settings line-volume
 all: test
 
 ## clean: remove the compiled test binaries

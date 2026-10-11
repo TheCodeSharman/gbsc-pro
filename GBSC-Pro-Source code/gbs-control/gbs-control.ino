@@ -104,6 +104,7 @@ static unsigned long Tim_Resolution = 0, Tim_Resolution_Start = 0;
 #include "src/osd/OSD.h"
 #include "src/osd/Panel.h"
 #include "src/osd/VolumeOverlay.h"
+#include "src/audio/LineVolume.h"
 #include "src/clock/ClockGen.h"
 #include "src/input/HoldRamp.h"
 #include "src/input/IrReceiver.h"
@@ -317,7 +318,7 @@ typedef enum {
 } OSD_Menu;
 char adl = 0;
 boolean IR = 0;
-uint8_t Volume = 0;
+uint8_t Volume = Audio::LineVolume::Default;
 boolean MUTE_R = 0;
 static int oled_menuItem = 0;
 static int oled_menuItem_last = 0;
@@ -3867,7 +3868,7 @@ void loop()
     }
 
     if ((millis() - Tim_sys) >= 400) {
-        PT_2257(Volume + 12);
+        PT_2257(Audio::LineVolume::attenuationDb(Volume));
         Tim_sys = millis();
     }
 
@@ -7111,7 +7112,7 @@ void drawOverlayScreens()
         // framebuffer over the bus the acquisition shares, and this branch runs
         // on every pass the overlay is up. Invalidated when the overlay opens,
         // or reopening at an unchanged level would draw nothing.
-        adl = 50 - Volume;
+        adl = Audio::LineVolume::displayLevel(Volume);
         if (adl != volumeShown) {
             volumeShown = adl;
             if (OLED_clear_flag)
@@ -7129,14 +7130,14 @@ void drawOverlayScreens()
             decode_flag = 1;
             switch (results.value) {
                 case kRecv2: // ++
-                    Volume = MAX(Volume - 1, 0);
-                    adl = 50 - Volume;
-                    PT_2257(Volume + 12);
+                    Volume = Audio::LineVolume::louder(Volume);
+                    adl = Audio::LineVolume::displayLevel(Volume);
+                    PT_2257(Audio::LineVolume::attenuationDb(Volume));
                     break;
                 case kRecv3: // --
-                    Volume = MIN(Volume + 1, 50);
-                    adl = 50 - Volume;
-                    PT_2257(Volume + 12);
+                    Volume = Audio::LineVolume::quieter(Volume);
+                    adl = Audio::LineVolume::displayLevel(Volume);
+                    PT_2257(Audio::LineVolume::attenuationDb(Volume));
                     break;
                 case IRKeyMenu:
                     oled_menuItem = 0;

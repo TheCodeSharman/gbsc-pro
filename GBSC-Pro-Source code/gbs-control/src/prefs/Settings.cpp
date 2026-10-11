@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "../../options.h"
+#include "../audio/LineVolume.h"
 #include "../tv5725/ColourBalance.h"
 #include "../tv5725/PictureOptions.h"
 #include "../videosource/VideoSourceSelection.h"
@@ -19,9 +20,6 @@ const uint8_t PictureLimit = 255;
 
 // The broadcast standards the decoder can be told to expect.
 const uint8_t StandardLimit = MT_MODE_SECAM;
-
-// 0 is silence at the overlay's top end, 50 the bottom.
-const uint8_t VolumeLimit = 50;
 
 const char *skipSpace(const char *at)
 {
@@ -169,7 +167,8 @@ void Settings::eachScalerSetting(SettingVisitor &visit)
 
 void Settings::eachBoardSetting(SettingVisitor &visit)
 {
-    visit.number("volume", volume_, VolumeLimit, 0);
+    visit.number("volume", volume_, Audio::LineVolume::Maximum,
+                 Audio::LineVolume::Default);
 
     // The chosen input, by the name the routes use, because nothing on the chip
     // reports it: half the path is the HC32F460's analog switches and those
