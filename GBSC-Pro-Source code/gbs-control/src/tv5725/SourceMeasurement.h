@@ -181,10 +181,9 @@ public:
     // ../../../docs/investigations/the-first-solve-of-a-boot-cannot-be-corroborated.md
     bool rateConfirmed() const;
 
-    // Records that re-measure, and drops the held rate so the solve it is asked
-    // for is judged against nothing. One call rather than two, because a
-    // confirmation that left the boot's rate held would corroborate it for the
-    // life of the boot.
+    // Records that re-measure. Dropping the held rate is NOT part of it: that
+    // is what a solve needs, and a confirmation that corroborates the boot's
+    // rate arms no solve -- so the caller forgets it where it arms one.
     void confirmRate();
 
 

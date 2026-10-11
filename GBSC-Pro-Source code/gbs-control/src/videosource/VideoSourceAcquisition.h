@@ -42,6 +42,17 @@ public:
     // fresh reading. A vsync spin every few hundred passes, against a fault
     // that is otherwise permanent.
     static const uint16_t RateRecheckPasses = 500;
+
+    // How far the boot's held rate and a fresh reading of it may sit apart and
+    // still be the same measurement, in parts per thousand.
+    //
+    // Tighter than RateCorroborationPerThousand because BOTH readings are
+    // spanned over SourceMeasurement::UnconfirmedRatePulses: a single pulse
+    // carries a whole source line of edge latency -- 3.2 per thousand at 311
+    // lines -- and spanning divides that to 0.4, so a boot error of about one
+    // per thousand is visible here where the drift tolerance cannot see it.
+    // Measured, eight boots of one source agree to 0.2 per thousand.
+    static const uint16_t BootRateConfirmPerThousand = 1;
     // What a pass decided that this layer cannot carry out. The frame time
     // lock and the external clock generator are the sketch's, so they are
     // REPORTED, the shape Tv5725::Deinterlacer::steer() already uses.

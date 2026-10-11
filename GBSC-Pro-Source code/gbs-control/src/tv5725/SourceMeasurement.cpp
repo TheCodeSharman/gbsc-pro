@@ -203,11 +203,7 @@ float SourceMeasurement::settledFieldRateHz() const
 
 bool SourceMeasurement::rateConfirmed() const { return rateConfirmed_; }
 
-void SourceMeasurement::confirmRate()
-{
-    rateConfirmed_ = true;
-    forgetHeldRate();
-}
+void SourceMeasurement::confirmRate() { rateConfirmed_ = true; }
 
 void SourceMeasurement::forgetHeldRate()
 {

@@ -606,28 +606,49 @@ bool VideoSourceAcquisition::rateMoved()
     rateRun_ = 0;
     recheckPasses_ = 0;
 
-    // THE FIRST RECHECK OF A BOOT RE-SOLVES RATHER THAN CORROBORATING.
-    // Corroboration cannot reject what it is asked about: the readings behind
-    // the first solve carry a common error, they agree with each other, and
-    // what survives is inside the tolerance a later drift is judged by.
+    // THE FIRST RECHECK OF A BOOT IS MEASURED BETTER RATHER THAN TRUSTED LESS.
+    // It used to re-solve unconditionally, because corroboration could not
+    // reject what it was asked about: both readings were timed over one pulse,
+    // which carries a whole source line of edge latency, so the tolerance had
+    // to be wider than the error being looked for. A re-solve blanks the output
+    // for the encoder relook, so a boot whose rate was right paid for it.
     //
     // THE RECHECK AND NOT WHATEVER REACHES HERE FIRST. A line period that
-    // twitches early spends the arm inside the window this exists to outlast,
-    // and the solve it takes holds the same wrong rate.
-    if (recheckDue && !sampling_.rateConfirmed()) {
-        sampling_.confirmRate();
-        return true;
-    }
+    // twitches early spends the confirmation inside the window it exists to
+    // outlast, and what it then corroborates is the same wrong rate.
+    const bool confirming = recheckDue && !sampling_.rateConfirmed();
 
     // What the rate IS, measured a different way, and asked only here. It costs
     // a vsync spin, which is what the cheap half exists to avoid -- affordable
     // because a corroborated disagreement is rare.
-    const float fieldRateHz = Tv5725::TestBusRateMeasurement::sourceFieldRateHz(false);
-    if (!Tv5725::VideoSignal::isVideo(solvedLines_, fieldRateHz))
-        return false;
+    //
+    // Spanned while the boot's rate is unconfirmed, because this is the reading
+    // that has to be able to refuse it, and the boot's own was spanned too.
+    const uint32_t pulses =
+        confirming ? Tv5725::SourceMeasurement::UnconfirmedRatePulses : 1;
+    const float fieldRateHz =
+        Tv5725::TestBusRateMeasurement::sourceFieldRateHz(false, pulses);
+
+    if (confirming)
+        sampling_.confirmRate();
+
+    if (!Tv5725::VideoSignal::isVideo(solvedLines_, fieldRateHz)) {
+        if (!confirming)
+            return false;
+        // Nothing to judge the boot's rate against, so re-solve rather than
+        // keep a rate this never managed to check.
+        sampling_.forgetHeldRate();
+        return true;
+    }
+
+    // Two spanned readings are comparable at a tolerance a single pulse cannot
+    // support, which is what lets the boot's rate be confirmed where it is
+    // right instead of replaced because it could not be told apart.
+    const uint16_t within =
+        confirming ? BootRateConfirmPerThousand : RateCorroborationPerThousand;
     if (Tv5725::VideoSignal::ratesAgree(
             Tv5725::VideoSignal::lineRateFor(solvedLines_, fieldRateHz),
-            solvedLineRateHz_, RateCorroborationPerThousand)) {
+            solvedLineRateHz_, within)) {
         // The register moved and the rate did not, which is the register being
         // unreliable. Adopt what it reads now, so the same disagreement does
         // not buy another spin every pass.

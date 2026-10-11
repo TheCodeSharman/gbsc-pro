@@ -2949,3 +2949,29 @@ TEST_CASE("a csync selection does not inherit the separate-sync pulse ignore")
 
     VideoSourceSelection::forgetSelection();
 }
+
+TEST_CASE("a boot rate the corroboration agrees with is not re-solved")
+{
+    // A re-solve blanks the output for the encoder relook, so one taken on a
+    // rate that had not moved costs the user ~0.9 s of black ten seconds into
+    // every boot and gives back an identical picture. Measured on the bench
+    // once the boot's readings were spanned:
+    //
+    //     source moved: rate (311 lines, solved 311)
+    //     sync pad: away
+    //     source key: 311@50.48/732++, framing recalled, shape 13333
+    //     sync pad: driven
+    //
+    // with the key either side identical.
+    seedBenchSource();
+    seedField(0, 0x06, 0, 9, 431);   // HPERIOD_IF, steady, as the bench reads it
+    Acquiring unit;
+
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+
+    // The source doing exactly what it was solved against.
+    for (uint16_t pass = 0;
+         pass < 2 * VideoSourceAcquisition::RateRecheckPasses; ++pass)
+        CHECK_FALSE(unit.poll());
+}
