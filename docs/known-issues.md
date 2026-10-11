@@ -64,11 +64,26 @@ a dead input and is not one -- they are pipeline-internal and go quiet whenever
 the part is unlocked. With `sp=4` out, selector 10 carries 98 transitions in
 25 ms, about 2 kHz, which is neither the field nor the line rate.
 
-**Whether it is a regression is OPEN.** 480p has acquired at 525 lines and
-31468 Hz, recorded further down this page, so the mode is not inherently out of
-reach. The newest engine commits touch `SourceMeasurement` and
-`VideoSourceAcquisition` -- the rate path and the solve arming -- and a build from
-before them has not been tried.
+**IT IS NOT A REGRESSION FROM THE RATE CORROBORATION, and that is measured.**
+`SourceMeasurement` and `VideoSourceAcquisition` reverted to `c145e0d6a~1` --
+before the corroboration commits, with everything else held -- fails too, and
+fails more loudly: the count reads a correct **524 lines** while the field rate
+scatters over 67.15, 70.00, 72.41, 77.85, 81.79, 81.89, 95.97, 97.16, 97.85,
+99.29 and 112.60 Hz, touching the true 59.93 twice. It then acts on the garbage,
+installing dividers of 1322, 1700, 1254 and 1920 from line rates of 52128, 26582,
+32827 and 13965, and still ends at `state: absent`.
+
+**So the corroboration is not the fault and reverting it is not the fix** -- it
+rejects the bad readings where the older code acted on them. **The count is not
+the fault either**: the sync processor counts 524 correctly on that build, so the
+part can count this source.
+
+**WHAT IS LEFT IS THE VSYNC EDGE ITSELF, AND IT BOUNCES RATHER THAN MERELY GOING
+MISSING.** A reading ABOVE 59.94 is a period measured too short, which takes an
+extra edge; 32.93 takes a missed one. Both appear in one run, so the signal
+reaching `DEBUG_IN_PIN` is ragged on this source rather than simply absent -- the
+direction a sync-on-green separator fails in on a progressive source. Why 480i
+survives the same path is the open question.
 
 ### The default framing loses the source's outermost COLUMN on every mode
 
