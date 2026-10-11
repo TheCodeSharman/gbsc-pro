@@ -27,21 +27,52 @@ splitting it into the PT2257's two command bytes — `0xE0 | tens` in 10 dB step
 and `0xD0 | units` in 1 dB steps, valid to 79 dB total. `PT_MUTE(0x78)` clears
 mute (`0111100M`, M=0).
 
+`Audio::LineVolume` owns the mapping from the setting to decibels, and it is the
+only thing that does -- the sketch's loop, the overlay's two step keys and
+Settings' bound all ask it. **The setting IS the attenuation in decibels**, so 0
+asks the part for 0 dB and `Maximum` is 50. The overlay shows `Maximum -
+setting`, so a larger number on screen is louder, and the volume-up key
+DECREMENTS the setting.
+
 `setup()` unmutes and writes `PT_2257(70)`. `loop()` then writes
-`PT_2257(Volume + 12)` every 400 ms, where `Volume` is 0..50 from the OSD's
-"Line input volume" page, the IR remote's volume keys, or the `volume` setting.
-The OSD displays `50 - Volume`, so a larger number on screen is louder.
+`PT_2257(LineVolume::attenuationDb(Volume))` every 400 ms, where `Volume` comes
+from the OSD's "Line input volume" page, the IR remote's volume keys, or the
+`volume` setting.
+
+`LineVolume::Default` is 12, which is where a unit with nothing saved starts.
+**It is a precaution rather than a measurement**: the encoder's full-scale input
+level is unknown, so nothing says whether a hot source clips at 0 dB, and the
+default leaves the same 12 dB every unit carried when the floor was hardcoded.
+Turning it down costs nothing; a source quieter than the chain expects goes to
+0.
 
 ## Level budget
 
-The quietest link in the chain is fixed. `Volume` 0 still asks for 12 dB of
-attenuation, and the divider costs 6 dB, so **the loudest the encoder can ever
-see is 18 dB below the source** — about 125 mVrms from a 1 Vrms line output.
+**Only the divider is fixed.** At setting 0 the PT2257 attenuates nothing, so
+the loudest the encoder can see is the divider's 6 dB below the source — about
+500 mVrms from a 1 Vrms line output. At the default of 12 it is 18 dB down,
+about 125 mVrms, which is where every unit sits until the setting is moved and
+is enough that a line-level source needs most of a television's volume range.
+
 `MS9288A-Datasheet-Rev-B0.pdf` gives the audio ADC's resolution, channel count
-and supply current and no full-scale input level, so the margin cannot be
-calculated. It does not have to be: a line-level source is heard cleanly through
-the whole chain, so 18 dB down is enough for one. A quieter source than that
-wants gain ahead of the jack, because the PT2257 only attenuates.
+and supply current and **no full-scale input level**, so the headroom cannot be
+calculated and the default's 12 dB is not derived from one.
+
+**0 dB does not clip the RiscPC's headphone output, measured 2026-10-11** --
+heard at the sink with the setting at 0, both channels, no clipping. That is one
+source, and a headphone amplifier at full volume is among the hotter things this
+jack will see, so it bounds the risk without retiring it: the default keeps the
+12 dB because nothing states where the ADC actually runs out.
+
+**The PT2257 only attenuates**, so a source quieter than the chain expects wants
+gain ahead of the jack once the setting is already at 0. The 6 dB divider is
+hardware and no setting recovers it.
+
+**A headphone output is not the weak end, which is worth stating because it
+reads like one.** Consumer line level is nominally ~316 mVrms and a headphone
+amplifier driving this input — the PT2257's own, essentially unloaded — normally
+swings more than that, so a quiet result from one is the source's own volume
+control or this budget rather than a level mismatch at the jack.
 
 ## Where to look when it is silent
 
