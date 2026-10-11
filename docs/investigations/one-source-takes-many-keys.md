@@ -72,11 +72,14 @@ adjacent rungs never agree and an agreement means two samples landed on the SAME
 rung. **Which rung that is, is luck**, and it becomes the source's identity and
 the raster's rate.
 
-The median of three in `sampleFieldRateHz()` does not rescue this. It is sized
+**A MEDIAN REJECTS AN OUTLIER AND NOT A SPREAD.** `medianOfThree()` returns the
+middle sample whatever the three are -- no agreement is required and nothing is
+ever rejected -- so three samples on three rungs yield a rung. It is sized
 against the signature `single-sample-rate-jitter.md` measures on a SETTLED
-source -- one sample in eighty displaced by one whole line -- where two of three
-have to be out the same way. Here the scatter spans several rungs within one
-solve, so the median returns a rung rather than an outlier.
+source, one sample in eighty displaced by a whole line, and it does kill those:
+two boot logs here carried a 51.35 and a 51.61 that never reached a reading.
+Against a spread it passes the ladder straight through, which the console shows
+directly -- every `sampling:` line above is ALREADY a median of three.
 
 **The two signatures are different and must not be merged.** After the boot, the
 same measurement on the same source reads 50.47 with occasional single
@@ -145,16 +148,51 @@ inside tolerance of each other, every one of them still resolved by proximity to
 a reading that wanders. A bucket would be transitive but straddles boundaries,
 which `SourceKey.h` rejects by measurement.
 
+## The reading itself is what was fixed
+
+No order statistic recovers a value from a spread, so the instrument is where it
+had to be answered. One timing was one vsync period between two edge ISRs, which
+puts the whole of both ISRs' latency into the answer; `MeasurePeriod` counts
+edges and stops on the Nth now, so a timing spans
+`SourceMeasurement::UnconfirmedRatePulses` pulses and divides that fixed error
+by the count.
+
+Only the boot pays for it -- `rateConfirmed_` already marks that window, every
+later acquisition reads the source exactly, and N pulses cost N field periods a
+timing. Measured across eight boots afterwards, every first-solve reading on the
+same source:
+
+| reading | boots before | boots after |
+|---|---|---|
+| 50.45 .. 50.69, four rungs | 4.8 per thousand | -- |
+| 50.47 / 50.48 only | -- | **0.2 per thousand** |
+
+and the key lands on 311@50.47 or 311@50.48 every time, recalling the stored 4:3
+on **8 boots of 8** rather than on whichever boots were lucky. It costs nothing
+in time: three readings settle it where six did not, so the first key lands at
+9.2--9.6 s against 8.3--12.6 s before.
+
 ## What is still open
 
-The first solve's reading is still a lottery; what changed is that the engine no
-longer carries its first guess for the life of the boot. Until that reading is
-made good:
+**The confirmation still arms a re-solve unconditionally**, so a boot whose rate
+was right first time is blanked for about 0.9 s at ten seconds and comes back
+identical:
 
-- the first ten seconds of a boot run on a raster sized for the wrong rate, and
-  the correction blanks the output for the encoder relook as any solve does;
-- a boot can still file a record under a transient key if a framing is pressed
-  inside that window, and the collapse on store is what folds it back.
+    20.34  source moved: rate (311 lines, solved 311)
+    20.34  sync pad: away
+    20.98  source key: 311@50.48/732++, framing recalled, shape 13333
+    21.24  sync pad: driven
+
+Corroborating before arming is what removes it, and a corroboration reading has
+to span pulses for the same reason the boot's does: a single pulse carries a
+whole line of latency, which is wider than `RateCorroborationPerThousand`.
+`confirmRate()` marks the rate confirmed and drops the held rate in one call,
+which is right when a solve follows and is what would have to be separated.
+
+Also still open:
+
+- a boot can file a record under a transient key if a framing is pressed inside
+  the first ten seconds, and the collapse on store is what folds it back.
 
 The instrument is the console across a boot, which carries every reading as it
 is taken. `/bootlog` holds what precedes the websocket handshake, and a TCP
