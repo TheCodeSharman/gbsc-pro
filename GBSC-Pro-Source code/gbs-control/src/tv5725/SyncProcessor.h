@@ -408,6 +408,12 @@ public:
     // docs/investigations/the-pulse-ignore-value-is-measured-not-chosen.md
     static void applyForSearch(bool csync);
 
+    // The block parked so the ADC can measure its own black level: nothing
+    // clamped, nothing coasting, no inversion anywhere, and the clamp window
+    // collapsed so the measurement is of the input rather than of a window
+    // placed for a source.
+    static void applyForOffsetCalibration();
+
     // What the separator is configured for pass by pass, as against the static
     // half init() writes and the per-sync-type half applyForSyncType() writes.
     //

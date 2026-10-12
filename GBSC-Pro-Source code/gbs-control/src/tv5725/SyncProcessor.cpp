@@ -209,6 +209,26 @@ void SyncProcessor::applyDynamic(const Dynamic &source)
     }
 }
 
+void SyncProcessor::applyForOffsetCalibration()
+{
+    SP_CS_CLP_ST::write(0x00);
+    SP_CS_CLP_SP::write(0x00);
+    SP_SOG_MODE::write(1);
+    SP_HS2PLL_INV_REG::write(0);
+    SP_CLAMP_MANUAL::write(1);
+    SP_CLP_SRC_SEL::write(0);
+    SP_SYNC_BYPS::write(0);
+    SP_HS_PROC_INV_REG::write(0);
+    SP_VS_PROC_INV_REG::write(0);
+    SP_CLAMP_INV_REG::write(0);
+    SP_NO_CLAMP_REG::write(0);
+    SP_COAST_INV_REG::write(0);
+    SP_NO_COAST_REG::write(0);
+    SP_COAST_VALUE_REG::write(0);
+    SP_HS_LOOP_SEL::write(0);
+    SP_HS_REG::write(1);
+}
+
 void SyncProcessor::applyDefaultCoastWindow()
 {
     SP_H_CST_ST::write(0x10);

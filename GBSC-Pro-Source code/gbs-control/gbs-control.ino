@@ -1161,7 +1161,6 @@ void setResetParameters()
     Tv5725::Adc::applyReferenceTrim();
     GBS::ADC_CLK_PA::write(0);
     GBS::ADC_SOGEN::write(1); 
-    GBS::SP_SOG_MODE::write(1);
 
     // The chosen input, not a literal. This runs from low power and the RGBHV
     // watchdog as well as from boot, and only boot follows it with
@@ -1182,11 +1181,7 @@ void setResetParameters()
     Tv5725::ModeDetect::init();
     Tv5725::Adc::applyOffset(Tv5725::Adc::NeutralOffset, Tv5725::Adc::NeutralOffset,
                              Tv5725::Adc::NeutralOffset);
-    GBS::SP_PRE_COAST::write(9);
-    GBS::SP_POST_COAST::write(18);  
-    GBS::SP_NO_COAST_REG::write(0); 
     Tv5725::SyncProcessor::applyDefaultClampWindow();
-    GBS::SP_SOG_SRC_SEL::write(0);  
     Tv5725::SyncProcessor::selectExternalSync(0);
     Tv5725::SyncProcessor::holdClamp();
     Tv5725::Adc::applyResetParameters();
@@ -1699,7 +1694,6 @@ uint8_t inputAndSyncDetect()
             }
             SYNC_EVENT("det low power", 1);
             rto->sourceDisconnected = true;
-            GBS::SP_SOG_MODE::write(1);
             goLowPowerWithInputDetection();
             rto->isInLowPowerMode = true;
             sourceAbsence.poweredDown();
@@ -1710,8 +1704,6 @@ uint8_t inputAndSyncDetect()
         rto->sourceDisconnected = false;
         rto->isInLowPowerMode = false; 
         geometry.applyColourPath();
-        if (VideoSourceSelection::selected() == InfoRGBs || VideoSourceSelection::selected() == InfoRGsB) {
-        }
 
         return 1;
     } else if (syncFound == 2 && Info_sate == 0) //&& SeleInputSource == S_YUV)
@@ -1721,8 +1713,6 @@ uint8_t inputAndSyncDetect()
         geometry.applyColourPath();
         // GBS::VDS_CONVT_BYPS::write(0);
         // GBS::PIP_CONVT_BYPS::write(0);
-        if (VideoSourceSelection::selected() == InfoYUV || VideoSourceSelection::selected() == InfoSV || VideoSourceSelection::selected() == InfoAV) {
-        }
 
         return 2;
     } else if (syncFound == 3 && Info_sate == 0) //&& SeleInputSource == S_VGA)
@@ -2956,22 +2946,7 @@ void calibrateAdcOffset()
     GBS::ADC_FLTR::write(3);
     GBS::ADC_TR_RSEL::write(0);
     GBS::ADC_TR_ISEL::write(0);
-    GBS::SP_CS_CLP_ST::write(0x00);
-    GBS::SP_CS_CLP_SP::write(0x00);
-    GBS::SP_SOG_MODE::write(1);
-    GBS::SP_HS2PLL_INV_REG::write(0);
-    GBS::SP_CLAMP_MANUAL::write(1);
-    GBS::SP_CLP_SRC_SEL::write(0);
-    GBS::SP_SYNC_BYPS::write(0);
-    GBS::SP_HS_PROC_INV_REG::write(0);
-    GBS::SP_VS_PROC_INV_REG::write(0);
-    GBS::SP_CLAMP_INV_REG::write(0);
-    GBS::SP_NO_CLAMP_REG::write(0);
-    GBS::SP_COAST_INV_REG::write(0);
-    GBS::SP_NO_COAST_REG::write(0);
-    GBS::SP_COAST_VALUE_REG::write(0);
-    GBS::SP_HS_LOOP_SEL::write(0);
-    GBS::SP_HS_REG::write(1);
+    Tv5725::SyncProcessor::applyForOffsetCalibration();
     GBS::ADC_CLK_PA::write(2);
     GBS::ADC_CLK_PLLAD::write(0);
     GBS::ADC_CLK_ICLK2X::write(0);
