@@ -441,6 +441,113 @@ frozen poke cannot answer it.
 rather than on a measurement that failed for any reason. The witness exists and
 no caller consults it yet.
 
+### The Wii's 480p vertical count is bimodal, and that is what is left
+
+Measured 2026-10-12 on `ypbpr` at 480p, output 720x480, divider 1858 latched
+against `STATUS_SYNC_PROC_HTOTAL` 1858 and the field rate reading a correct
+59.93 Hz throughout. `Tv5725::SamplingLog` at 25 ms over 20 s:
+
+| `STATUS_SYNC_PROC_VTOTAL` | share |
+|---|---|
+| 521 | 70% |
+| 524 | 20% |
+| 433..494 | 10% |
+
+521 and 524 are three apart, so `SteadyRun::agree()` calls them two
+measurements and each run settles on whichever it sees four of first. The solve
+settles on 524 and the idle run on 521, and the engine then reads its own two
+readings as the source moving.
+
+**IT IS THE ROOT OF THREE SYMPTOMS, and two of them were diagnosed separately
+before this was measured.** The picture ROLLS, because the capture height
+follows the count. The colour flips GREEN to MAGENTA per acquisition, because a
+count that moves moves the line rate, which moves the CKO across a crossover
+row, which installs a different oversampling ratio -- and `PLLAD_CKOS` against
+the decimators is the solid-green cause this page already carries.
+`Tv5725::ColourSpace::applyYuv()` is correct and is not the place to look:
+`DEC_MATRIX_BYPS` 1, `ADC_RYSEL_*` 1/0/1 and equal gains are what it intends.
+
+**THE COAST WINDOW IS THE ONLY THING MEASURED TO MOVE IT, AND ITS OPTIMUM IS
+NARROW AND FRAGILE.** Frozen, sweeping `SP_PRE_COAST`/`SP_POST_COAST`:
+
+| coast | `VTOTAL` 524 | note |
+|---|---|---|
+| 0 / 0 | 0% | a steady 521, 120 of 120 |
+| 0 / 6 | 4% | nearly unimodal, duty 136/1858 |
+| 7 / 6, shipped | 14% | worst of both |
+| 20 / 20 | 41% | |
+| 44 / 44 | 90% | |
+| **48 / 48** | **95%** | |
+| 50 / 50 | 3% | |
+
+**A SEARCH SCORED ON THE COUNT ALONE PICKS 48/48 AND IS WRONG.** Unfrozen, that
+coast holds the PLL off the reference long enough to destroy the duty --
+`duty: 2 pulse / 1858 divider, NOT A PULSE`, then 32, 69 and 55 across four
+solves -- and the capture counter's origin is derived from the duty. Any
+autotune has to score the duty as well, and has to score it with the engine
+RUNNING.
+
+**AND A FROZEN SWEEP IS NOT A SWEEP.** Frozen, the output is blanked and the
+state degrades as the run goes on: a live run of the same settings produced no
+console output and an all-black capture from 20/20 onward, so those rows are
+dead state rather than data. The live score is the one that means anything --
+arms, `source absent` transitions and frames with a picture, per setting, with
+automation running.
+
+**Two causes are REFUTED by direct sweep and must not be reached for again:**
+
+| refuted | by |
+|---|---|
+| the sync-on-green slicer level | `ADC_SOGCTRL` swept 5..24 frozen: flat at 13..19% correct counts across the whole range |
+| the clamp being held off | `SP_NO_CLAMP_REG` released by hand: 4% to 6%, `STATUS_SYNC_PROC_HLOW_LEN` unchanged at 136 |
+
+**What it still costs is the terminal retry cycle.** The engine re-solves on
+every flip -- 14 arms and 17 installs in 45 s -- and one of those solves
+eventually lands on a count outside the pair. Observed: a solved `lineRateHz`
+of 6791 against a true 31468, after which nothing measures and the
+reference-clock retry cycles indefinitely, 98 retries in 30 s. `/restart`
+recovers it in about 15 s; `/input?src=ypbpr` does not, for the reason the
+entry below gives.
+
+### FIXED: a solve re-armed and re-blanked itself on a source standing still
+
+Three defects measured 2026-10-12 on `ypbpr` at 480p, each of which on its own
+kept a correctly measured source off the panel.
+
+**THE SEPARATOR LATCH HAD A THIRD OWNER AND IT ANSWERED FOR NOTHING.** The
+engine's own divider, clamp and coast placements switch the sync separator, and
+the chip latches that in `STATUS_INT_SOG_SW` about a second later -- so every
+solve armed a re-measure of a source that had not moved. Measured: 19 solves in
+60 s, each blanking the output for an encoder relock, with the source measured
+correctly throughout. `vga` never shows it because the bit is acted on only
+where `SyncMeasurement::isCsync()`.
+
+The latch is an event inside the rate question now rather than an arm of its
+own: it opens the expensive half of `rateMoved()`, which refuses a reading
+`VideoSignal::isVideo()` rejects. That is what makes it safe on this source,
+where the rate reads two thirds through the divider a 1080p raster forces -- a
+refused reading is not evidence the source moved.
+
+**A LINE PERIOD THAT NEVER SETTLES GATED THE WHOLE RATE QUESTION.** A
+`solvedLinePeriod_` of 0 returned before the recheck and the disturbance as
+well as before the cheap half, so a source whose `HPERIOD_IF` never holds still
+could reach neither exit. Only the cheap half needs the period.
+
+**THE OUTPUT WAS DROPPED ON A COUNT THAT MERELY WOBBLED.** A pair three apart
+restarts the idle steadiness run, the state reads absent for the passes it
+takes to re-earn, and the display aperture was closed on every one of them.
+Measured: **111 blanks in 30 s with no arm and no install behind any of them**,
+which is the panel flickering under a solve that never moved. The blank waits
+`VideoSourceAcquisition::OutputBlankPasses` now, derived from
+`MinimumSyncAwayMs`: `presentWhenSettled()` holds the pad away that long once
+it goes, so a blank the engine will undo sooner shortens nothing and buys an
+encoder relock.
+
+Measured after all three, same source and output: 0 blanks, 1 arm and 1 install
+in 50 s, and a picture in every frame `hdmi_capture.py` takes where one in
+three was black. Guarded by `test_video_source_acquisition.cpp`, which fails
+against each of the old behaviours.
+
 ### The field rate reads two thirds at the solved clock, where the reference reads it right
 
 Measured 2026-10-12 on `ypbpr` at 480p, one boot, after the scan fix:
