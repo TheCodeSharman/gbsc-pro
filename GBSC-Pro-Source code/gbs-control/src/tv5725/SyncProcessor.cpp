@@ -12,6 +12,7 @@
 
 namespace Tv5725 {
 
+const uint16_t SyncProcessor::DefaultCoastStop;
 const uint16_t SyncProcessor::RetimeOriginSamples;
 const uint16_t SyncProcessor::UndecimatedOriginSamples;
 const uint16_t SyncProcessor::InvertedPulseWidthSamples;
@@ -211,7 +212,7 @@ void SyncProcessor::applyDynamic(const Dynamic &source)
 void SyncProcessor::applyDefaultCoastWindow()
 {
     SP_H_CST_ST::write(0x10);
-    SP_H_CST_SP::write(0x100);
+    SP_H_CST_SP::write(DefaultCoastStop);
 }
 
 void SyncProcessor::prepare(bool csync)

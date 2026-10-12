@@ -111,6 +111,10 @@ TEST_CASE("a lock with no coast window never arms")
     SolvedEngine unit;
     for (unsigned i = 0; i < FrameTimeLock::ArmPasses + 1u; ++i)
         pollOnce(unit.acquisition);
+
+    // A solve places one, so the state under test is asked for rather than
+    // inherited.
+    SyncProcessor::forgetPositions();
     REQUIRE_FALSE(SyncProcessor::coastPlaced());
 
     FrameSync lock(unit.clock);

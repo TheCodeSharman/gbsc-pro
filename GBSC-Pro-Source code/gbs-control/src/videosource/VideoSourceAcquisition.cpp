@@ -470,6 +470,14 @@ void VideoSourceAcquisition::holdSolvedSource()
     // through it yet, so the sampling half is asked on the next idle pass
     // rather than assumed here.
     sourceState_ = SourceAcquired;
+
+    // AFTER the state, because the placement refuses to write for a searching
+    // source and this is what stops it searching. A search leaves the window
+    // at DefaultCoastStop, which coasts over the wrong part of the line and
+    // counts short -- so a solve that does not re-place it measures a source
+    // that looks like it moved, and searches again.
+    // ../../../../docs/investigations/the-coast-window-is-placed-once-the-rate-is-known.md
+    placeCoastWindow(false);
 }
 
 // Whether the count has held long enough to be the source's rather than a

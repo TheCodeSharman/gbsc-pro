@@ -2246,6 +2246,24 @@ TEST_CASE("a counted source gets both windows placed on its own line")
     CHECK(SyncProcessor::clampPlaced());
 }
 
+TEST_CASE("a solved source has its coast window placed from the line rate")
+{
+    // A window left at its bring-up default coasts over the wrong part of the
+    // line, and the count that produces is several lines short of the source's
+    // own -- which reads as a source that moved, so the solve repeats for ever.
+    // Measured on the Wii at 480p: 524 lines in 95% of samples against 11.7%.
+    seedBenchSource();
+    seedLineSamples(BenchDivider);
+    Acquiring unit;
+    unit.start();
+    SyncProcessor::forgetPositions();
+    SyncProcessor::applyDefaultCoastWindow();
+    REQUIRE(unit.pollUntilSolved());
+
+    CHECK(SyncProcessor::coastPlaced());
+    CHECK(SyncProcessor::SP_H_CST_SP::read() != SyncProcessor::DefaultCoastStop);
+}
+
 TEST_CASE("an unpowered board gets no window and no dynamic write")
 {
     seedBenchSource();

@@ -425,6 +425,9 @@ public:
 
     static void applyDynamic(const Dynamic &source);
 
+    // Where the coast window sits before a line rate has been measured.
+    static const uint16_t DefaultCoastStop = 0x100;
+
     // Where in the line to coast, back at the value every path starts over
     // from. It says WHERE, not how long: the coast lengths around the vertical
     // interval follow the sync type and are applyForSyncType()'s.
