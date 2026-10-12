@@ -4761,6 +4761,37 @@ measurement here says what the filter costs or buys.
 Passing it in as a third argument is the whole of the fix if it should be
 honoured.
 
+### One reading of the sync width decides the duty, and on sync on green that register is bimodal
+
+`SourceMeasurement::readSource()` takes ONE reading per mode change, guarded only
+by the divider being latched and the ratio being inside `HsyncPulse`'s band. On
+the Wii at 480p on `ypbpr` the register holds 135/136 for a mean run of 6.3
+samples and jumps to 163..166 for up to 4, 21% of 1143 samples — and
+`STATUS_SYNC_PROC_HTOTAL` equals the divider in 100% of rows in BOTH bands, so
+`Adc::dividerLatched()` passes every excursion.
+
+**The duty therefore differs between acquisitions of a motionless source**, and
+it reaches three places. `SourceKey` carries it at `SyncWidthIdentity` of 0.002,
+so three consecutive solves key `/877`, `/377` and `/732` and every one prints
+`no framing stored` — no framing can be recalled or usefully kept for this
+source. `VideoSourceLine::forDuty()` and `SyncProcessor::retimeStopFor()` place
+the capture from it, and three consecutive boots gave `/geometry` `fh` of 137,
+70 and 164.
+
+**A STEADINESS RUN IS THE FIX AND IT IS BLOCKED UPSTREAM.** A run that waits for
+the width fixes the duty completely — `fh` 137 on five boots of five, every
+excursion refused — and stops the source acquiring, because each waiting pass
+has the rate measured again, which on a dithering count installs a different
+divider and re-latches the ADC PLL: liveness 10.0% and 1.2% against 99.4% on the
+shipped build. A run filled from the passes the rate already spends costs no
+pass and no liveness, and leaves the excursion landing when the duty pass is
+reached before the run settles — `fh` 137, 165, 136.
+
+So the pass has to be made free first: a pass of the mode-change window must
+stop costing a rate re-measurement and a divider re-install. That is the same
+loop the rate re-solve and the terminal reference-retry cycle are made of.
+`investigations/the-sync-width-is-bimodal-on-sync-on-green.md`.
+
 
 ## Fixed, kept here until the next session has seen them
 
