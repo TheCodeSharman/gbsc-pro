@@ -83,6 +83,51 @@ TEST_CASE("a jump of more than one is not a pair")
     CHECK_FALSE(feed(run, jumping, 4));
 }
 
+// A count that keeps RETURNING to a second value is one source alternating,
+// however far apart the two are. The Wii at 480p reads 521 and 524 -- 400
+// crossings in 110 s -- and a run fixed at one apart restarted on every one, so
+// the source was never present for two consecutive polls.
+TEST_CASE("an alternating pair as wide as the run allows settles")
+{
+    SteadyRun run(Samples, 3);
+    const uint16_t bimodal[] = {524, 521, 524, 521, 524, 521, 524};
+
+    CHECK(feed(run, bimodal, 7));
+    CHECK(run.value() == 524);
+}
+
+TEST_CASE("a pair wider than the run allows is not one measurement")
+{
+    SteadyRun run(Samples, 3);
+    const uint16_t apart[] = {524, 519, 524, 519, 524, 519, 524};
+
+    CHECK_FALSE(feed(run, apart, 7));
+}
+
+// What separates a pair from a mode change is the RETURNING, not the distance:
+// 310, 311 and 312 are three real sources on this bench and none of them
+// alternates with another.
+TEST_CASE("a count that moves by more than one and holds is adopted, not paired")
+{
+    SteadyRun run(Samples, 3);
+    const uint16_t settling[] = {524, 524, 524, 524};
+    REQUIRE(feed(run, settling, 4));
+
+    for (uint8_t i = 0; i < SteadyRun::CollapseSamples; ++i)
+        run.sample(521);
+
+    CHECK(run.value() == 521);
+    CHECK_FALSE(run.alternated());
+}
+
+TEST_CASE("a run states one apart unless it was given a wider pair")
+{
+    SteadyRun run(Samples);
+    const uint16_t bimodal[] = {524, 521, 524, 521, 524, 521, 524};
+
+    CHECK_FALSE(feed(run, bimodal, 7));
+}
+
 TEST_CASE("nothing has alternated before the run completes")
 {
     SteadyRun run(Samples);

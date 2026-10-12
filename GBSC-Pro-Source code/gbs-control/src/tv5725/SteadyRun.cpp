@@ -5,10 +5,20 @@ namespace Tv5725 {
 const uint8_t SteadyRun::CollapseSamples;
 const uint8_t SteadyRun::CrossingsForInterlace;
 const uint8_t SteadyRun::AlternationStaleRun;
+const uint16_t SteadyRun::InterlacedPairSpread;
 
-SteadyRun::SteadyRun(uint8_t samples)
-    : samples_(samples), run_(0), same_(0), crossings_(0), high_(0), low_(0), latest_(0),
-      candidate_(0)
+namespace {
+
+bool within(uint16_t a, uint16_t b, uint16_t spread)
+{
+    return (a > b ? a - b : b - a) <= spread;
+}
+
+}  // namespace
+
+SteadyRun::SteadyRun(uint8_t samples, uint16_t pairSpread)
+    : samples_(samples), pairSpread_(pairSpread), run_(0), same_(0), crossings_(0),
+      high_(0), low_(0), latest_(0), candidate_(0)
 {
 }
 
@@ -20,7 +30,12 @@ void SteadyRun::forgetCandidate()
 
 bool SteadyRun::agree(uint16_t a, uint16_t b)
 {
-    return (a > b ? a - b : b - a) <= 1;
+    return within(a, b, InterlacedPairSpread);
+}
+
+bool SteadyRun::agrees(uint16_t a, uint16_t b) const
+{
+    return within(a, b, pairSpread_);
 }
 
 void SteadyRun::restart(uint16_t value)
@@ -58,8 +73,8 @@ bool SteadyRun::sample(uint16_t value)
     latest_ = value;
 
     if (value != high_ && value != low_) {
-        const bool widensByOne = run_ > 0 && low_ == high_ && agree(value, high_);
-        if (!widensByOne) {
+        const bool widensPair = run_ > 0 && low_ == high_ && agrees(value, high_);
+        if (!widensPair) {
             high_ = value;
             low_ = value;
             run_ = 1;

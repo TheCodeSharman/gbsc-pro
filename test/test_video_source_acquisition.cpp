@@ -2013,6 +2013,35 @@ TEST_CASE("a count alternating by one is the same source, not a mode change")
     CHECK(g_probeCalls == 1);
 }
 
+// The count the chip miscounts alternates further than an interlaced field's
+// half line, and the spread that forgives one did not reach it.
+//
+// Measured on the Wii at 480p, 110 s of console: 400 `source absent: 524 lines`
+// and 400 `source acquired: 521 lines`, alternating ~3.6 times a second with
+// nothing else between them. 524 is correct for a 525-line raster; 521 is the
+// chip losing three. Each crossing restarted the presence run AND armed a
+// re-solve, so the source was never present for two consecutive polls.
+TEST_CASE("a count alternating by three is the same source, not a mode change")
+{
+    seedBenchSource();
+    Acquiring unit;
+    unit.path.useSyncTypeProbe(probeOwnVsync);
+
+    g_hasOwnVsync = true;
+    g_probeCalls = 0;
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+    REQUIRE(g_probeCalls == 1);
+
+    for (uint8_t i = 0; i < 16 * SourceMeasurement::SteadySamples; ++i) {
+        seedSourceLines(i % 2 == 0 ? 311 : 308);
+        unit.poll();
+    }
+
+    CHECK(g_probeCalls == 1);
+    CHECK(unit.acquisition.sourceIsPresent());
+}
+
 TEST_CASE("a count that moves by more than one is still a mode change")
 {
     // The tolerance is one count, not a licence to ignore the count. 311 to 524

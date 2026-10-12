@@ -20,7 +20,23 @@ namespace Tv5725 {
 // docs/investigations/interlaced-source-measurement.md
 class SteadyRun {
 public:
-    explicit SteadyRun(uint8_t samples);
+    // How far apart the two values of an alternating pair may sit. An
+    // interlaced field's half line moves the count by one, so that is the
+    // default and it is what the scan decision reads.
+    static const uint16_t InterlacedPairSpread = 1;
+
+    // **THE SPREAD IS THE CALLER'S**, because the runs over this register are
+    // not asking the same question: whether a field is interlaced and whether
+    // the source moved have different answers. A count the chip miscounts
+    // alternates further than one -- the Wii at 480p reads 521 against a true
+    // 524 -- and a run fixed at the interlaced spread reads that as the source
+    // leaving and arriving several times a second.
+    //
+    // It never merges two modes, because what earns a pair is the count
+    // RETURNING: CrossingsForInterlace crossings, where a one-way move holds
+    // and is adopted instead.
+    explicit SteadyRun(uint8_t samples,
+                       uint16_t pairSpread = InterlacedPairSpread);
 
     // A run of identical samples that collapses a widened pair back onto one
     // value. Without it the pair never narrows and alternated() is true for the
@@ -62,6 +78,9 @@ public:
     // ../../../../docs/known-issues.md
     static bool agree(uint16_t a, uint16_t b);
 
+    // The same question at this run's own spread.
+    bool agrees(uint16_t a, uint16_t b) const;
+
     // Take one sample. True once enough have agreed, and on every sample that
     // keeps agreeing after that.
     bool sample(uint16_t value);
@@ -92,6 +111,7 @@ public:
 
 private:
     uint8_t samples_;
+    uint16_t pairSpread_;
     uint8_t run_;
     uint8_t same_;
     uint8_t crossings_;

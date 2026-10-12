@@ -298,6 +298,26 @@ public:
     // How many consecutive agreeing samples make the source worth measuring.
     static const uint8_t SteadySamples = 4;
 
+    // How far apart the two values of a MISCOUNTED source may sit and still be
+    // one source standing still. Wider than SteadyRun's interlaced default,
+    // which asks a different question -- whether a field carries a half line.
+    //
+    // Measured on the Wii at 480p: the sync processor reads 521 where the
+    // raster is 525 lines, 79 per cent of samples against 19 for the correct
+    // 524, and at the interlaced spread every crossing read as the source
+    // leaving -- 400 of each in 110 s, so it was never present for two
+    // consecutive polls.
+    //
+    // **THE SOLVE'S OWN RUN KEEPS THE INTERLACED SPREAD.** Widening it changes
+    // nothing: it stops being fed once the rate is taken, so it settles after
+    // SteadySamples with too few crossings to widen a pair and reports the
+    // same value either way. Only the question "has the source moved" is
+    // asked at this spread.
+    //
+    // It cannot merge two modes, because a pair is earned by the count
+    // RETURNING and a one-way move is adopted instead.
+    static const uint16_t CountPairSpread = 3;
+
     // How many readings may disagree before the rate is taken as it stands, and
     // how many may be refused before one is. A source whose period genuinely
     // wanders would otherwise hold the mode change open for ever, and the

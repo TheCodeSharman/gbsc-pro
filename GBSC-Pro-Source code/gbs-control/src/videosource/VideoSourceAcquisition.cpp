@@ -30,7 +30,8 @@ VideoSourceAcquisition::VideoSourceAcquisition(Tv5725::SourceMeasurement &sampli
       mayRun_(0), passThroughSwitch_(0), passThroughAllowed_(false), resolution_(0),
       detectedMs_(0),
       detectedEver_(false), solvedLines_(0), solvedLineRateHz_(0),
-      idle_(Tv5725::SourceMeasurement::SteadySamples),
+      idle_(Tv5725::SourceMeasurement::SteadySamples,
+            Tv5725::SourceMeasurement::CountPairSpread),
       unusableCountArmed_(false), dynamicApplied_(false),
       dynamicForSearch_(false), sourceMeasured_(false),
       sourceState_(SourceAbsent),
@@ -643,7 +644,11 @@ bool VideoSourceAcquisition::sourceMoved()
     //
     // The latched disturbance is an event INSIDE that question rather than an
     // arm of its own, because the engine's own writes raise it too.
-    const bool countMoved = !Tv5725::SteadyRun::agree(lines, solvedLines_);
+    // Asked of the run that holds the pair, so the arm and the presence verdict
+    // answer the same question: a count the chip miscounts by three alternates
+    // without the source moving, and comparing a raw sample against the solve's
+    // raw sample armed a re-solve on every crossing.
+    const bool countMoved = !idle_.agrees(lines, solvedLines_);
     if (!countMoved && !rateMoved())
         return false;
 
