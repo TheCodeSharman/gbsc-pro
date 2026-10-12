@@ -583,11 +583,62 @@ raises the ceiling to 2046, which latches, and the unit then reads a correct 524
 with `DAC_RGBS_PWDNZ` 1. The output is then sized for 40 Hz and the capture is
 magenta noise, so this is a clue about the divider rather than a recovery.
 
-**What would settle it**: place the coast window from the rate the engine still
-HOLDS -- `SourceMeasurement::lineRateHz()` reports the last believed rate, not
-the current one, so 31468 is available throughout -- on the path that has not
-acquired, and read the count at 1446 with the window placed. That separates the
-divider from the window in one pass, which no row above does.
+**50 Hz ON THE SAME OUTPUT AND THE SAME BUILD ACQUIRES IN 6 SECONDS**, so
+1920x1080 is not broken and the band is. `vga` at 320x256@50: `PLLAD_MD` 2200
+against `STATUS_SYNC_PROC_HTOTAL` 2200, `STATUS_SYNC_PROC_VTOTAL` 311,
+`SP_H_CST_SP` a placed 1672, `DAC_RGBS_PWDNZ` 1 and `state: acquired` held for
+105 s. Its line is DOUBLED, so the ceiling is in ADC samples at two per unit --
+about 3448 against the 1916 raster -- and 2200 sits well inside it. The Wii is
+undoubled at 1447, which is the whole of the difference.
+
+**PLACING THE COAST WINDOW FROM THE HELD RATE IS REFUTED, AND IT IS HARMFUL.**
+Tried: `placeCoastWindow()`/`placeClampWindow()` on the retry path, after
+`tryNextReferenceClock()` returns, pinned by two host cases that fail without
+it. On the bench it changes nothing and then makes it worse:
+
+- `mayWriteForSource()` refuses it for most of the cycle, `STATUS_SYNC_PROC_VTOTAL`
+  sitting at 97..100 where `countIsSource()` wants 200, so `SP_H_CST_SP` reads
+  `DefaultCoastStop` at every one of six samples across 132 s.
+- when it does write, it writes from a rate that has STRANDED. Measured
+  `SP_H_CST_SP` 3187 on a line of 2040 samples, which is `0.968 x 27e6/8198`
+  -- past the end of the line, the value this page's trap says only `/restart`
+  clears.
+
+**So the held rate strands at a garbage value and everything derived from it
+follows.** `/geometry` reported `lineRateHz` 31467 at +32 s and **8198** from
++52 s onward, unchanged for the rest of the run. 8198 is a count of 269 against
+a field rate of about 30.5, both inside `VideoSignal`'s bounds, so `isVideo()`
+passes it and `HeldRateRejectionLimit` lets it past `rateFollowsCount()` -- and
+the engine is then anchored to it, rejecting correct readings of 31468 against
+it. **Fix the stranding before placing anything from the held rate.**
+
+**AND THE COUNT IS NOT WHAT FAILS AT THE SOLVED CLOCK.** One boot, latched,
+no `UNLATCHED` on either line:
+
+```
+measured: 269 lines x 0.00 Hz -> line rate 0, clock 1446@31467 htotal 1446
+measured: 524 lines x 30.91 Hz -> line rate 0, clock 1446@31467 htotal 1446
+```
+
+`htotal 1446` against the divider is the latch and 524 is the source's own
+count, so what is left is the field rate -- 30.91 Hz against 59.93, about a
+half, where the entry below measured two thirds. The missed-edge multiple is
+not fixed at 1.5.
+
+**`InputFormatter::writeReferenceVerticalBlank()` IS AN OPEN CANDIDATE AND ITS
+COMMENT IS UNPROVEN.** It parks `IF_VB_ST`/`IF_VB_SP` at 0..2 and says being
+inside every frame means it cannot be the window that stops the block
+measuring. The field rate is timed off that block, and in the retry state
+`/testbus?ms=150&if=3` reads `tb,0` **0 transitions** against `tb,2` 18 as the
+control, where the post-coast entry below reads `tb,0` 18 at the `IF_VB_ST` 512
+a solve lands on. **The reading does not settle it**, because the ADC PLL is
+unlatched throughout -- `PLLAD_MD` 2040 against `STATUS_SYNC_PROC_HTOTAL` 350
+-- and the input formatter is clocked from it, so a dead bus and a wrong window
+are indistinguishable there. **A hand-written window cannot settle it either**:
+`prepareToMeasure()` rewrites the pair every pass and a write loses the race
+even with the sweep holding `loop()`, five candidate windows all reading back
+0..2. What would settle it is changing the parked pair in the firmware and
+asking whether the rate reads right, which costs one flash.
 
 ### FIXED: a solve re-armed and re-blanked itself on a source standing still
 
