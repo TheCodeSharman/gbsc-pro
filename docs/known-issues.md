@@ -640,6 +640,42 @@ even with the sweep holding `loop()`, five candidate windows all reading back
 0..2. What would settle it is changing the parked pair in the firmware and
 asking whether the rate reads right, which costs one flash.
 
+**THE TERMINAL STATE IS NOT 1080p's, AND THE HELD RATE IS WHAT MAKES IT
+TERMINAL.** Reached at 720x480 output too, from a boot that acquired properly
+-- `duty: 136 pulse / 1858 divider, htotal 1858`, the sampling phase chosen,
+`sync pad: driven` and `frame time lock: running` -- so the output only decides
+whether the FIRST solve lands. Four samples over 45 s once it has fallen in:
+
+```
+state=absent lineRate=26921 | PLLAD_MD=1446/2040 HTOTAL=436 VTOTAL=201
+                              SP_H_CST_SP=969 IF_VB_ST=0 IF_VB_SP=2
+```
+
+**`STATUS_SYNC_PROC_VTOTAL` pins at 201, one line above
+`VideoSignal::SourceVerticalTotalMin`**, and 26921 is 201 x 133.9 Hz -- a count
+one line inside its floor against a field rate well inside its 150 Hz ceiling.
+`isVideo()` passes the pair, so after `HeldRateRejectionLimit` refusals it
+becomes the held good rate, and `rateFollowsCount()` then refuses every correct
+31468 against it. `SP_H_CST_SP` 969 is `0.968 x 27e6/26921`, so the window is
+sized from it as well.
+
+**The bounds are checked per quantity and nothing checks the PAIR.** 201 lines
+and 133.9 Hz are each admissible and their product is not a raster any source
+runs; `FrameSync`'s `rateIsPlausible()` is the same kind of bound and is
+`FrameSync`'s alone, so `SourceMeasurement`'s held rate has no corroboration at
+all. The garbage values differ per fall -- 6791 and 8198 and 26921 -- which is
+what says the bound rather than any one value is the hole.
+
+**And the pinned count is why nothing resets the block.** 201 satisfies
+`countIsSource()`, so `sourceIsSearching()` is false and `applyForSearch()`
+never runs, while `sourceIsPresent()` is false so no solve runs either. The
+state is outside both branches of `applyDynamic()` for as long as it lasts.
+
+**What would settle it**: refuse a held rate the source's own identity does not
+admit -- the pair, not each bound -- and check whether the engine then leaves
+this state on its own. The count and the field rate are both already read in one
+pass, so the pair is available where the decision is made.
+
 ### FIXED: a solve re-armed and re-blanked itself on a source standing still
 
 Three defects measured 2026-10-12 on `ypbpr` at 480p, each of which on its own
