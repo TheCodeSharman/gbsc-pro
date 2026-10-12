@@ -128,6 +128,27 @@ TEST_CASE("the sample carries the chip's interrupt status")
     CHECK(g_lastLine.substr(g_lastLine.rfind(',')) == ",8");
 }
 
+// The sync width belongs in the ROW rather than in a second poll beside it.
+//
+// Measured on the Wii at 480p: the count reads 521 where the raster is 525
+// lines, and reads the correct 524 only in ~45 ms bursts that carry the
+// latched SOG switch with a dropped PLL lock and a railed HPERIOD_IF. Whether
+// the sync width moves with that switch is the next question, and two readings
+// taken through separate HTTP polls cannot answer it -- they are two states,
+// not two instruments.
+TEST_CASE("the row carries the sync processor's measured sync width")
+{
+    sourceOnTheBus(2250);
+    GBS::STATUS_SYNC_PROC_HLOW_LEN::write(181);
+
+    SamplingLog log;
+    log.monitor(0, 10, 1000);
+    log.poll(10);
+
+    CHECK(g_lastLine.rfind("smp,", 0) == 0);
+    CHECK(g_lastLine.find(",181,") != std::string::npos);
+}
+
 TEST_CASE("an event names the branch a decision took, with the count it took it on")
 {
     // The sync watcher's RGBHV decisions are taken on a line count against a

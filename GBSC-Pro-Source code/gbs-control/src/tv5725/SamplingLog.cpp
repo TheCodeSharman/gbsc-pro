@@ -34,12 +34,13 @@ uint8_t ifStatusBits()
 void emitLine(uint32_t sinceMs, uint16_t divider)
 {
     char line[96];
-    snprintf(line, sizeof(line), "smp,%lu,%u,%u,%u,%u,%u,%u,%u,%u,%u",
+    snprintf(line, sizeof(line), "smp,%lu,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u",
              (unsigned long)sinceMs,
              (unsigned)divider,
              (unsigned)GBS::STATUS_MISC_PLLAD_LOCK::read(),
              (unsigned)GBS::STATUS_SYNC_PROC_VTOTAL::read(),
              (unsigned)GBS::STATUS_SYNC_PROC_HTOTAL::read(),
+             (unsigned)GBS::STATUS_SYNC_PROC_HLOW_LEN::read(),
              (unsigned)GBS::HPERIOD_IF::read(),
              (unsigned)GBS::VPERIOD_IF::read(),
              (unsigned)GBS::STATUS_SYNC_PROC_HSACT::read(),
@@ -147,7 +148,7 @@ void SamplingLog::monitor(uint32_t nowMs, uint16_t intervalMs,
     durationMs_ = durationMs;
     solveValid_ = false;
     tv5725Log("smp,header,ms,divider,pllad_lock,sp_vtotal,sp_htotal,"
-              "hperiod_if,vperiod_if,hsact,ifbits,intstatus");
+              "hlow_len,hperiod_if,vperiod_if,hsact,ifbits,intstatus");
     tv5725Log("sol,header,ms,vds_hsync_rst,vds_vsync_rst,vds_hscale,vds_vscale,"
               "dis_hb_st,dis_hb_sp,dis_vb_st,dis_vb_sp,hs_st,hs_sp,vs_st,vs_sp,"
               "if_hsync_rst,if_hbin_sp,hb_st,hb_sp,vb_st,vb_sp,if_hb_sp2,"
@@ -176,7 +177,7 @@ void SamplingLog::sweep(uint32_t nowMs, uint16_t low, uint16_t high,
     restoreDivider_ = GBS::PLLAD_MD::read();
     divider_ = low;
     tv5725Log("smp,header,ms_since_latch,divider,pllad_lock,sp_vtotal,"
-              "sp_htotal,hperiod_if,vperiod_if,hsact,ifbits,intstatus");
+              "sp_htotal,hlow_len,hperiod_if,vperiod_if,hsact,ifbits,intstatus");
     applyStep(nowMs);
 }
 
