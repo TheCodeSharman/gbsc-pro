@@ -509,6 +509,86 @@ reference-clock retry cycles indefinitely, 98 retries in 30 s. `/restart`
 recovers it in about 15 s; `/input?src=ypbpr` does not, for the reason the
 entry below gives.
 
+### 1920x1080 is the mode with the LEAST raster room, and only there does the count collapse
+
+The output raster's horizontal total is the display clock over the output's own
+lines and **the source's field rate**, so one output resolution is several
+rasters and `VideoPath::dividerCeilingForOutput()` follows it. Computed from
+`OutputMode::solve()` at `EngineCeilingHz`, for a 524-line 59.94 Hz source:
+
+| output | raster total | capture the raster can show | divider installed |
+|---|---|---|---|
+| 1920x1080 | 1602 | 1447 | **1446** |
+| 720x480 | 2060 | 1858 | 1858 |
+| 768x576 | 2162 | 2004 | 2004 |
+| 1280x720 | 2402 | 2149 | 2046, the line counter |
+
+1080p is the tightest because 1125 lines at 59.94 Hz leave the shortest line at
+108 MHz. **The same output at 50 Hz solves 1920 and affords 1724**, so the
+divider a mode asks for is a property of the source's rate as much as of the
+output, and the 50 Hz bench `vga` source never reaches the band this fails in.
+
+**THE DIVIDER IS NOT THE FAULT -- 1446 LATCHES AND MEASURES THE DUTY
+CORRECTLY.** One clean boot at 1080p:
+
+```
+installing: divider from line rate 31468, doubled 0 -> 1446
+duty: 106 pulse / 1446 divider, htotal 1446, negative
+source absent:   219 lines, 1446 samples against divider 1446
+source acquired: 219 lines, 1446 samples against divider 1446
+measure: start, TIMINGS change (count), 219 lines, solved 524
+measure: the reference clock measured nothing, trying the next   x241 in 75 s
+```
+
+`htotal 1446` against the divider is the latch, and 106/1446 is 7.33% against
+480p's own 7.2%. So **a divider the solve chooses latches here as it does at
+1858**, and anything resting on 1446 being outside the PLL's range is refuted.
+
+**WHAT MOVES WITH THE DIVIDER IS THE COUNT, AND THE POPULATION AT 1446 IS A
+DIFFERENT ONE.** Three dividers, same source, same input:
+
+| divider | output it came from | `STATUS_SYNC_PROC_VTOTAL` |
+|---|---|---|
+| 2046 | 1080p solved for a bogus 40 Hz | 524, correct, DACs powered |
+| 1858 | 720x480 | 521 / 524 bimodal, 433..494 at 10% |
+| 1446 | 1920x1080 | **210..247**, and 97..163 once searching |
+
+The 1446 population is below the 521/524 pair the entry above measures, and it
+dips under `VideoSignal::SourceVerticalTotalMin` -- so it is not that pair seen
+again at a different clock.
+
+**AND THE COAST WINDOW IS NEVER PLACED AT 1446, WHICH IS WHY THE THREE ROWS ARE
+NOT COMPARABLE.** `SP_H_CST_SP` reads `SyncProcessor::DefaultCoastStop` for the
+whole of the 1080p state, measured repeatedly on the live unit, where the
+working rows carry a placed window -- 834 at 1858 and 1245 at 2046.
+`VideoSourceAcquisition::placeCoastWindow()` has four callers and in this state
+none can run: `holdSolvedSource()` needs a completed solve, both sketch gates
+need `sourceIsPresent()` with `acquiredPasses()` at 7 and 4, and the selection
+path runs once per input change. The solve needs a duty, the duty needs a
+latched clock, and the entry above gives no reference clock that latches on
+`ypbpr` -- so the measurement that would place the window is taken through the
+window it would place.
+
+**A SOURCE AT 219 IS NEITHER SEARCHING NOR PRESENT, AND NOTHING CONFIGURES THAT
+STATE.** `sourceIsSearching()` is `!countIsSource(lineCount()) && !present`, and
+any count from 200 to 1300 is a source -- so at 219 it is false, and
+`applyDynamic()` gives the source neither the search's coast inversion nor
+`applyForSearch()`'s defaults, while no solve reaches the placement either. The
+count crossing 200 is what flips it, which is why `SP_H_CST_SP` returns to the
+default without any path appearing to write it.
+
+**A WIDER RASTER IS MEASURED TO ESCAPE IT, BY ACCIDENT.** A field rate solved at
+about 40 Hz widens the 1080p raster to 2403 -- `108e6 / (1125 x 39.95)` -- which
+raises the ceiling to 2046, which latches, and the unit then reads a correct 524
+with `DAC_RGBS_PWDNZ` 1. The output is then sized for 40 Hz and the capture is
+magenta noise, so this is a clue about the divider rather than a recovery.
+
+**What would settle it**: place the coast window from the rate the engine still
+HOLDS -- `SourceMeasurement::lineRateHz()` reports the last believed rate, not
+the current one, so 31468 is available throughout -- on the path that has not
+acquired, and read the count at 1446 with the window placed. That separates the
+divider from the window in one pass, which no row above does.
+
 ### FIXED: a solve re-armed and re-blanked itself on a source standing still
 
 Three defects measured 2026-10-12 on `ypbpr` at 480p, each of which on its own
