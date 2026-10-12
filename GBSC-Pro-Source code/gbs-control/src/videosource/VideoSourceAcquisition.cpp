@@ -35,7 +35,7 @@ VideoSourceAcquisition::VideoSourceAcquisition(Tv5725::SourceMeasurement &sampli
       dynamicForSearch_(false), sourceMeasured_(false),
       sourceState_(SourceAbsent),
       solvedLinePeriod_(0), rateRun_(0), recheckPasses_(0),
-      sourceInterrupted_(false),
+      sourceInterrupted_(false), unacquiredPasses_(0),
       unsettledPasses_(0), unsettledArmed_(false),
       vsyncAbsentPasses_(0), vsyncAbsentArmed_(false),
       passThroughFieldRateHz_(0.0f),
@@ -534,15 +534,21 @@ bool VideoSourceAcquisition::sourceMoved()
     // The state changing is worth a line because the fault it exists to name is
     // INTERMITTENT and a poll fast enough to catch it changes what the unit
     // does. This costs no bus traffic the answer did not already need.
-    //
-    // AND IT IS WHERE THE OUTPUT BLANK BELONGS, half a second ahead of any arm:
-    // the arms below have runs to sit through first, and until one fires the
-    // panel is showing the previous mode's geometry applied to a source that
-    // has left. Presenting is not decided here: acquired is the first step of
-    // a setup rather than the last, and presentWhenSettled() waits for the rest.
-    if (sourceState_ != was) {
+    if (sourceState_ != was)
         logSourceState(sourceState_, lines, lineSamples, Tv5725::Adc::dividerInForce());
-        if (sourceState_ != SourceAcquired)
+
+    // AND THE OUTPUT BLANK BELONGS HERE, ahead of any arm: the arms below have
+    // runs to sit through first, and until one fires the panel is showing the
+    // previous mode's geometry applied to a source that has left. It waits
+    // OutputBlankPasses, because a state that comes back sooner than the pad
+    // can is not a source that left. Presenting is not decided here: acquired
+    // is the first step of a setup rather than the last, and
+    // presentWhenSettled() waits for the rest.
+    if (sourceState_ == SourceAcquired) {
+        unacquiredPasses_ = 0;
+    } else if (unacquiredPasses_ < OutputBlankPasses) {
+        ++unacquiredPasses_;
+        if (unacquiredPasses_ >= OutputBlankPasses)
             videoPath_.showOutput(false);
     }
 
@@ -628,21 +634,21 @@ bool VideoSourceAcquisition::sourceMoved()
         vsyncAbsentArmed_ = false;
     }
 
-    // The rate and the interrupt each say the source moved where the count
-    // cannot: the same number of lines at a different field rate, which is what
-    // 320x256 at 50, 55 and 60 all are. Both wait behind the SAME steadiness run
-    // rather than firing on arrival, because a source measured mid-transition
-    // yields a rate that passes every check and is tens of percent out --
-    // measured at 18806 Hz against a real 31440, held, with every register
-    // self-consistent.
-    const bool interrupted = sourceInterrupted_;
+    // The rate says the source moved where the count cannot: the same number of
+    // lines at a different field rate, which is what 320x256 at 50, 55 and 60
+    // all are. It waits behind a steadiness run rather than firing on arrival,
+    // because a source measured mid-transition yields a rate that passes every
+    // check and is tens of percent out -- measured at 18806 Hz against a real
+    // 31440, held, with every register self-consistent.
+    //
+    // The latched disturbance is an event INSIDE that question rather than an
+    // arm of its own, because the engine's own writes raise it too.
     const bool countMoved = !Tv5725::SteadyRun::agree(lines, solvedLines_);
-    if (!interrupted && !countMoved && !rateMoved())
+    if (!countMoved && !rateMoved())
         return false;
 
     idle_.reset();
-    return armMove(interrupted ? "interrupt" : countMoved ? "count" : "rate",
-                   lines, false);
+    return armMove(countMoved ? "count" : "rate", lines, false);
 }
 
 // The cheap half asks only whether the line period MOVED, and the expensive half
@@ -659,25 +665,37 @@ static_assert(VideoSourceAcquisition::RateCorroborationPerThousand
 
 bool VideoSourceAcquisition::rateMoved()
 {
-    // The solve could not settle a reading to compare against, so this is the
-    // first one that holds still.
-    if (solvedLinePeriod_ == 0) {
+    // The solve could not settle a reading to compare against, so this takes
+    // the first one that holds still. **IT DOES NOT GATE THE QUESTION**, only
+    // the cheap half of it: HPERIOD_IF is the one register that may never hold
+    // still, and a source whose period never settles is the one that most needs
+    // the other two events below.
+    // ../../../../docs/investigations/hperiod-if-railing.md
+    if (solvedLinePeriod_ == 0)
         solvedLinePeriod_ = sampling_.settledLinePeriod();
-        rateRun_ = 0;
-        return false;
-    }
 
     // The register moving is the cheap half's event. THE RECHECK IS THE OTHER
     // WAY IN, and without it nothing on the board ever asks whether the held
     // rate is still the source's: every arm here detects a CHANGE, so a rate
     // taken mid-change and wrong by a per cent is kept for as long as the
     // source stands still.
-    const bool periodMoved = sampling_.hasLineRateMoved(solvedLinePeriod_);
+    //
+    // AND THE LATCHED DISTURBANCE IS THE THIRD, which is the only thing that
+    // sees a rate change the line period missed -- measured at 449 lines in
+    // both 59.96 Hz and 70.08 Hz with the register still. It opens the
+    // expensive half rather than arming anything, because the engine's own
+    // divider, clamp and coast placements switch the separator too and the chip
+    // latches that about a second after they land. Read as an arm, a solve
+    // re-arms itself for ever on a source standing still.
+    // ../../../../docs/investigations/the-reference-clock-is-applied-to-a-working-picture.md
+    const bool periodMoved = solvedLinePeriod_ != 0
+                             && sampling_.hasLineRateMoved(solvedLinePeriod_);
     if (recheckPasses_ < RateRecheckPasses)
         ++recheckPasses_;
     const bool recheckDue = recheckPasses_ >= RateRecheckPasses;
 
-    if (solvedLineRateHz_ == 0 || !(periodMoved || recheckDue)) {
+    if (solvedLineRateHz_ == 0
+        || !(periodMoved || recheckDue || sourceInterrupted_)) {
         rateRun_ = 0;
         return false;
     }
@@ -688,6 +706,9 @@ bool VideoSourceAcquisition::rateMoved()
     }
     rateRun_ = 0;
     recheckPasses_ = 0;
+
+    // Spent by the reading that answers it, the way an arm spends it.
+    sourceInterrupted_ = false;
 
     // THE FIRST RECHECK OF A BOOT IS MEASURED BETTER RATHER THAN TRUSTED LESS.
     // A corroboration timed over one pulse cannot reject what it is asked

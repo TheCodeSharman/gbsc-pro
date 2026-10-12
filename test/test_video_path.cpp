@@ -843,14 +843,16 @@ TEST_CASE("a settled source is solved on the first poll that can measure it")
         poisonChip();
         CHECK_FALSE(pollOnce(acquisition));
 
-        // The display aperture, and nothing else. A poisoned chip reads as a
-        // source that has gone, and blanking the picture is what the engine
-        // owes that -- no geometry is re-derived, which is what this is asking.
-        // The output sync pad is NOT among them: it reaches the encoder, and
-        // the sink's re-acquisition costs seconds the engine never gets back.
-        CHECK(registersWritten() == 3);
+        // NOTHING. A poisoned chip reads as a source that has gone, and no
+        // geometry is re-derived for one -- which is what this is asking. The
+        // display aperture is not among them either: closing it waits
+        // VideoSourceAcquisition::OutputBlankPasses, so a state that comes
+        // back sooner than the pad could costs no write at all. The output
+        // sync pad is never among them: it reaches the encoder, and the sink's
+        // re-acquisition costs seconds the engine never gets back.
+        CHECK(registersWritten() == 0);
         CHECK_FALSE(Wire.touched[0][0x49]);   // PAD_SYNC_OUT_ENZ
-        CHECK(Wire.touched[3][0x13]);         // VDS_DIS_VB_ST
+        CHECK_FALSE(Wire.touched[3][0x13]);   // VDS_DIS_VB_ST
     }
 }
 

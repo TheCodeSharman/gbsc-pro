@@ -207,12 +207,22 @@ public:
 
 
 
+
     // The least a transition keeps the output sync away. Long enough for the
     // encoder to see the sync go, short enough to stay inside the sink's first
     // re-acquisition attempt: the panel's dark period quantises at about
     // 3.7 s, so a blank that runs past one costs a whole second attempt.
     // docs/investigations/the-transition-is-mostly-the-encoder.md
     static const uint32_t MinimumSyncAwayMs = 300;
+    // How long the source must read unacquired before the OUTPUT is dropped.
+    //
+    // DERIVED FROM WHAT THE DROP COSTS rather than chosen: presentWhenSettled()
+    // holds the pad away for MinimumSyncAwayMs once it goes, so a blank the
+    // engine will undo sooner than that shortens nothing and buys an encoder
+    // relock. A count that alternates by more than the steadiness run holds
+    // reads absent for the passes it takes to re-earn, and dropping on each one
+    // is a panel that flickers under a solve that never moved.
+    static const uint16_t OutputBlankPasses = MinimumSyncAwayMs / DetectionIntervalMs;
 
     // Where the acquired run stops counting. Every threshold keyed on it is
     // well below this, and a run that saturates says the same thing as one that
@@ -261,8 +271,10 @@ public:
     // then a count is answered twice or not at all.
     bool runAdvanced() const;
 
-    // Tell it the chip latched a disturbance. Arms a re-measure for a source
-    // that returns at the same line count and a different field rate.
+    // Tell it the chip latched a disturbance. Opens the expensive half of the
+    // rate question, which is what sees a source returning at the same line
+    // count and a different field rate. NOT an arm: the engine's own writes
+    // raise the same latch, so only a rate that moved is a source that moved.
     void sourceInterrupted();
 
     // What a load leaves the sketch holding. Pointers rather than values
@@ -437,6 +449,10 @@ private:
     uint16_t recheckPasses_;
 
     bool sourceInterrupted_;
+
+    // Consecutive polls the source has not read acquired on, which is what the
+    // output blank waits out.
+    uint16_t unacquiredPasses_;
 
     // Consecutive detection passes whose line count was inside the source
     // bounds and never settled. What it has to sit through is noise: one

@@ -427,6 +427,15 @@ TEST_CASE("an interrupt re-measures a source whose line count did not move")
     // returns at the same count and a different field rate is invisible to it.
     // The chip latches the disturbance instead, and measuring is now an act that
     // moves the sampling clock, so it needs an event rather than a schedule.
+    //
+    // **IT IS AN EVENT FOR THE RATE TO ANSWER, NOT AN ARM OF ITS OWN.** The
+    // engine's own divider, clamp and coast placements switch the separator
+    // too, and the chip latches that about a second after they land -- so a
+    // solve re-arms itself for ever on a source standing still. Measured on a
+    // component source at 480p the engine was measuring perfectly: 19 solves in
+    // 60 s, each one blanking the output for an encoder relock, so a correct
+    // measurement never reached the panel.
+    // docs/investigations/the-reference-clock-is-applied-to-a-working-picture.md
     seedBenchSource();
     Acquiring unit;
 
@@ -442,7 +451,17 @@ TEST_CASE("an interrupt re-measures a source whose line count did not move")
         CHECK(g_fieldRateCalls == 0);
     }
 
-    SUBCASE("an interrupted one is measured again") {
+    SUBCASE("an interrupted one whose rate has not moved is left alone") {
+        unit.acquisition.sourceInterrupted();
+
+        for (uint8_t i = 0;
+             i < 4 * (SourceMeasurement::SteadySamples
+                      + SourceMeasurement::LatchSettlePasses); ++i)
+            CHECK_FALSE(unit.poll());
+    }
+
+    SUBCASE("an interrupted one whose rate has moved is measured again") {
+        g_fieldRate = 51.0f;
         unit.acquisition.sourceInterrupted();
         g_fieldRateCalls = 0;
         CHECK(unit.pollUntilSolved());
@@ -455,13 +474,14 @@ TEST_CASE("an interrupt re-measures a source whose line count did not move")
         // bench source is line-doubled and 15 kHz, which no panel takes raw.
         unit.path.setOutputMode(&ModeBypass);
         VideoRoute::toHdBypassChannel();
+        g_fieldRate = 51.0f;
         unit.acquisition.sourceInterrupted();
         CHECK(unit.pollUntilSolved(8));
         CHECK_FALSE(unit.path.outputMode()->isBypass());
     }
 }
 
-TEST_CASE("the separator interrupt arms a re-measure only on the csync path")
+TEST_CASE("the separator interrupt reaches the rate only on the csync path")
 {
     // STATUS_INT_SOG_SW says the sync separator switched, and a separate-sync
     // source does not go through one -- so the bit cannot be reporting that
@@ -493,13 +513,24 @@ TEST_CASE("the separator interrupt arms a re-measure only on the csync path")
         CHECK(Wire.touched[0][0x58]);
     }
 
-    SUBCASE("a composite-sync source is measured again") {
+    SUBCASE("a composite-sync source has its rate read") {
         SyncMeasurement::set(true);
 
         g_fieldRateCalls = 0;
         seedField(0, 0x0F, 1, 1, 1);         // STATUS_INT_SOG_SW, latched
-        CHECK(unit.pollUntilSolved());
+        for (uint8_t i = 0;
+             i < 4 * (SourceMeasurement::SteadySamples
+                      + SourceMeasurement::LatchSettlePasses); ++i)
+            unit.poll();
         CHECK(g_fieldRateCalls > 0);
+    }
+
+    SUBCASE("a composite-sync source whose rate has moved is measured again") {
+        SyncMeasurement::set(true);
+
+        g_fieldRate = 51.0f;
+        seedField(0, 0x0F, 1, 1, 1);         // STATUS_INT_SOG_SW, latched
+        CHECK(unit.pollUntilSolved());
     }
 }
 
@@ -670,14 +701,14 @@ TEST_CASE("a rate confirmed once is not re-measured again")
           == doctest::Approx(50.4744f).epsilon(0.0002f));
 }
 
-TEST_CASE("a disturbance answered by one re-measure does not arm a second")
+TEST_CASE("one source mode change is one solve, however the latch falls")
 {
     // The 640x480 -> 320x256 leg, measured on the bench: the source's own mode
     // change latches the separator interrupt, and by the time it lands the
     // count is already outside the source bounds, so the branch that reads the
     // latch is unreachable. The change is armed by the unsettled-count arm
-    // instead, which leaves the latch set -- and it fires the moment the solve
-    // lands, on the count that solve has just measured:
+    // instead, and a latch left set fires the moment the solve lands, on the
+    // count that solve has just measured:
     //
     //     source moved: unsettled count (227 lines, solved 524)
     //     externalClockGenSyncInOutRate()
@@ -700,7 +731,10 @@ TEST_CASE("a disturbance answered by one re-measure does not arm a second")
         unit.poll();
     }
 
-    seedBenchSource();
+    // The leg lands on a count of its own, which is what makes it a mode change
+    // rather than a wobble: the engine has one to arm on, and a latch left set
+    // is what would arm the second solve after it.
+    seedSourceLines(524);
     seedLineSamples(BenchDivider);
 
     unsigned solves = 0;
@@ -796,6 +830,7 @@ TEST_CASE("a route taken away underneath pass-through is claimed again")
     REQUIRE(g_passThroughSwitches == 1);
 
     VideoRoute::toScaler();
+    g_fieldRate = 61.0f;
     unit.acquisition.sourceInterrupted();
 
     REQUIRE(unit.pollUntilSolved(8));
@@ -2295,9 +2330,11 @@ TEST_CASE("the output sync goes as soon as the source stops being acquired")
     unit.poll();
     REQUIRE_FALSE(outputBlanked());
 
-    // One pass, on a count no source runs: too early for any arm.
+    // On a count no source runs, and inside OutputBlankPasses: still well
+    // ahead of any arm.
     seedSourceLines(57);
-    unit.poll();
+    for (uint16_t i = 0; i < VideoSourceAcquisition::OutputBlankPasses; ++i)
+        unit.poll();
     CHECK(outputBlanked());
 }
 
@@ -2314,7 +2351,8 @@ TEST_CASE("the output sync comes back for a source that returns unchanged")
     unit.poll();
 
     seedSourceLines(57);
-    unit.poll();
+    for (uint16_t i = 0; i < VideoSourceAcquisition::OutputBlankPasses; ++i)
+        unit.poll();
     REQUIRE(outputBlanked());
 
     seedSourceLines(311);
@@ -2437,6 +2475,42 @@ TEST_CASE("a source that comes back raises the whole output, not just the pad")
     CHECK(Chip::PAD_SYNC_OUT_ENZ::read() == 0);
     CHECK(Chip::DAC_RGBS_PWDNZ::read() == 1);
     CHECK(Chip::OUT_SYNC_CNTRL::read() == 1);
+}
+
+TEST_CASE("a count that wobbles does not drop the output")
+{
+    // Measured on the Wii at 480p on ypbpr, whose vertical count alternates
+    // 521/524 in bursts: a pair three apart restarts the idle steadiness run,
+    // the state reads absent for the few passes it takes to re-earn, and the
+    // output was dropped on every one of them -- 111 blanks in 30 s on a solve
+    // that never moved, with no arm and no install behind any of them. The
+    // panel flickers and the encoder relocks each time.
+    seedBenchSource();
+    seedLineSamples(BenchDivider);
+    Acquiring unit;
+    unit.acquisition.allowMaintenance(true);
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+    for (uint8_t i = 0; i < 40; ++i)
+        unit.poll();
+    REQUIRE(Chip::PAD_SYNC_OUT_ENZ::read() == 0);
+
+    SUBCASE("a pair the steadiness run cannot hold is ridden out") {
+        for (uint8_t burst = 0; burst < 6; ++burst) {
+            for (uint8_t i = 0; i < 6; ++i) {
+                seedSourceLines(burst % 2 ? 308 : 311);
+                unit.poll();
+            }
+        }
+        CHECK_FALSE(outputBlanked());
+    }
+
+    SUBCASE("a source that stays away is still dropped") {
+        seedSourceLines(0);
+        for (uint16_t i = 0; i < VideoSourceAcquisition::OutputBlankPasses; ++i)
+            unit.poll();
+        CHECK(outputBlanked());
+    }
 }
 
 TEST_CASE("an output resolution change makes the encoder look again")
