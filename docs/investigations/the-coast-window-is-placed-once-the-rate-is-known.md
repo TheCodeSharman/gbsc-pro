@@ -59,6 +59,66 @@ The same 75 s watch either side, sampling every 2.5 s:
 | before | 2 of 28 samples | ~11% | flapping |
 | after | 22 of 29 | 69% | 52% |
 
+## The window spans the line, and the stop is the whole of the choice
+
+`SP_H_CST_ST` is `H coast start position (total-this value)`, so it counts
+backward from the line end. The pair the engine writes is therefore
+`[total - 16, 0.968 x total]`, a window that wraps the line start and leaves
+only the 12 counts between the stop and the start uncoasted -- so the
+non-auto window coasts the line, and `SP_H_CST_SP` alone decides how much of
+it.
+
+Measured on the Wii at 480p, each value re-asserted before every sample so a
+solve cannot take it back, 60 s a row:
+
+| `SP_H_CST_SP` | the line it coasts | 524/525 | acquired |
+|---|---|---|---|
+| 834, the engine's `0.968 x total` | 97% | 92.0% | 80.0% |
+| 862, the whole `total` | 100% | 89.5% | 78.9% |
+| 1800, past the line end | -- | 12.0% | 16.0% |
+
+So the two are indistinguishable and a stop past the end of the line is not:
+the window must stop INSIDE the line, and where inside does not matter. The
+0.968 is arbitrary -- it is upstream's `updateCoastPosition()`, where it
+multiplied an average of eight `HPERIOD_IF` reads -- but nothing is bought by
+replacing it with 1.0.
+
+What that makes wrong is the DEFAULT. `[total - 16, 256]` coasts 272 counts of
+a 862-count 480p line and of a 1728-count SD line: **32% and 16%**, which is
+the 11.7% row above. A static default is wrong for every source, and a maximal
+one is worse than a short one, so the value wants deriving from the shortest
+line the engine will accept rather than replacing with another constant.
+
+## The coast lengths cannot be measured on this source
+
+`SP_PRE_COAST` has had three writers holding 7, 9 and 16, and removing one of
+them does not make the field measurable. The pair is swept through
+`overrideCoast()`, so the engine re-applies the candidate on every solve, with
+the engine's own 7/6 between every candidate as the control:
+
+| | 524/525 | acquired | rate plausible |
+|---|---|---|---|
+| owner 7/6 | 13.8% | 13.8% | 100.0% |
+| pre 9 | 0.0% | 0.0% | 100.0% |
+| owner 7/6 | 0.0% | 0.0% | 86.7% |
+| pre 16 | 0.0% | 0.0% | 0.0% |
+| owner 7/6 | 0.0% | 0.0% | 0.0% |
+| pre 5 | 10.3% | 0.0% | 79.3% |
+| owner 7/6 | 82.1% | 75.0% | 96.4% |
+
+**The control spans 13.8% to 82.1% for one unchanged configuration**, which is
+wider than any candidate's distance from it. The source strands its held rate
+and takes minutes to come back, so adjacent rows are not independent and a
+60 s row measures the recovery rather than the coast. That is what closes this
+question for now, and it is NOT the writer count: one writer fewer changes
+none of it.
+
+So 7 stands on what the field means rather than on a measurement. It is the
+number of lines before vertical sync at which the coast becomes valid, the
+coast has to cover the irregular part of the vertical interval and no more --
+longer holds the PLL across lines carrying good hsync -- and 480p's 6-line
+vertical sync, NTSC's 3 lines of equalisation and PAL's 2.5 all fit inside it.
+
 ## What this does not fix
 
 The source still falls out, and `SP_H_CST_SP` still returns to the default
