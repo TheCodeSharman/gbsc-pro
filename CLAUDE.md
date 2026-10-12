@@ -152,6 +152,21 @@ it, "the feature is missing" and "the feature is there and broken" are
 indistinguishable from this end, and a session has been spent inventing probes
 to guess between them.
 
+**A MODE READ BACK WITH `F-1` IS A SOURCE THAT IS NOT EMITTING A USABLE RASTER,
+AND EVERYTHING DOWNSTREAM OF IT READS AS A SCALER FAULT.** `SYNC` and `MODE`
+answer with the mode read back from the hardware, frame rate included, and a
+frame rate of `-1` means VIDC20 has no field rate to report -- so the reply
+names the right resolution while the machine is not driving a raster the scaler
+can acquire. From this end it looks exactly like a dead board: `own V sync: no
+after 1001ms` on a source whose sync type is separate, `STATUS_SYNC_PROC_VTOTAL`
+97, `HSACT` 1 with no vertical count, both inputs failing, and neither `/sc?~`,
+`/restart` nor a mains and USB power cycle clearing it. **Re-issuing `MODE`
+fixes it outright**, and the same source then acquires in about four seconds.
+**So read the frame rate back before diagnosing the scaler**, and re-issue the
+mode before reaching for the HC32 -- a measurement taken against `F-1` is
+evidence about nothing, and a build compared across one is a build compared
+across two different sources.
+
 **WHICH MONITOR DEFINITION IS LOADED IS WHAT `MODES` SAYS, AND NOTHING ELSE
 SAYS IT.** 28 modes at C256, none above 37.9 kHz, is the stock AKF50; 80 modes
 reaching 1280x720 and 1920x1080 is `RetroScaler-Acorn.mdf`. ModeServ has no
@@ -655,6 +670,14 @@ mistake that has been made and cost a wrong diagnosis — bypass produces a work
   is back in under a minute -- measured four times. **Flashing a different image
   appears to fix it and is only the reset**, which costs four minutes and reads
   as evidence about the build.
+  **THE SAME SIGNATURE REACHED BY AN INPUT CHANGE DOES NOT ANSWER TO IT.** An
+  `ypbpr` to `vga` change leaves the separator in circuit on the VGA input --
+  `SP_SOG_MODE` 1 and `ADC_SOGEN` 1 -- so hsync is sought on green, where the
+  RiscPC puts none, and `STATUS_SYNC_PROC_HSACT` reads 0 beside
+  `own V sync: no after 1000ms` on a separate-sync source. `/sc?~` failed to
+  clear that twice where a `/restart` cleared it at once, in about twelve
+  seconds. So the TRIGGER decides the recovery and the registers do not say
+  which trigger it was. `docs/known-issues.md`.
 - **Power-cycle the SOURCE too, before spending a session on the scaler.** The
   intermittent shear glitch — a few scanlines high, content compressed and
   diagonally sheared, ~3% of frames — cost several sessions on this board and
