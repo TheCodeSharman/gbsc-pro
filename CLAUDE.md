@@ -29,6 +29,13 @@ picture.
 **Do not budget minutes for a source to appear**; a source that has not solved
 in about ten seconds is not settling.
 
+**BUT ACQUISITION ON `ypbpr` DEPENDS ON THE OUTPUT MODE, AND AT 1920x1080 IT
+DOES NOT ACQUIRE AT ALL.** The output decides the divider, so it decides whether
+the source can be measured -- a ypbpr source retrying for ever is the open
+defect in `docs/known-issues.md` rather than a regression to diagnose. **Read
+which output is set before judging an acquisition**, and compare a change
+against the same one at both ends.
+
 **ESTABLISH WHICH WII OUTPUT MODE IS SET BEFORE JUDGING THE INPUT.** All three
 solve and hold. 480p solves in 15 s. 480i alternates 259/260 and still acquires,
 because `SteadyRun::agree()` treats a pair alternating by one as agreeing -- an
@@ -1379,6 +1386,17 @@ twelve tables while they existed, which is what `BringUp` was built from.
   `SP_CS_CLP_ST`/`SP` (26 and 150), small enough to be either — and misplaced
   under both readings, landing inside the hsync pulse rather than the back
   porch. `docs/scaler-geometry-model.md`.
+
+  **`SP_H_CST_SP` IS A SECOND SUCH EXCEPTION, AND THE 1667 DOES NOT SETTLE
+  IT.** Above the IF line rules out IF units and nothing more: the third
+  candidate is **27 MHz counts**, and `SyncProcessor::coastLineFor()` writes the
+  register in exactly those — `27e6 / lineRate`, which is 1728 on that source,
+  so the 1667 read back is the firmware's own `0.968 x 1728` and is evidence
+  about the formula rather than about the hardware. **The two readings only
+  diverge away from the divider the formula was fitted at**, 1728 against 2553
+  there and 858 against 1446 on the Wii at 1080p, so a coast window that scores
+  well at one divider says nothing about another. Ask the COUNT at two
+  dividers with the window placed, not the register.
 - **EDID is unreachable.** The MS9288A HDMI encoder is on no MCU's I2C bus (see
   the schematic), so output rasters are chosen blind.
 - **Sync stability does not mean the divider is right.** `getStatus16SpHsStable()`
@@ -1423,15 +1441,31 @@ twelve tables while they existed, which is what `BringUp` was built from.
   `OutputMode::EngineCeilingHz` is a *usability* limit, not an electrical one.
   Three constants, three different questions — do not collapse them.
 
-  **But its original justification is GONE, and nobody has re-tested the
-  alternative.** It read: at 129.6 MHz the raster is 2298, the zoom floor lands
-  exactly on the default framing, and horizontal zoom-in has no travel. That was
-  true at `scaleMin` 500. With the floor following the raster over the axis's
-  floor it is about `768` against an 890 default — **travel, rather than none** — so
-  the usability argument for 108 over 129.6 no longer holds on its own terms. 129.6 MHz would buy a
-  third more horizontal resolution and is already measured as working and sharp.
-  Raising `EngineCeilingHz` is now a live bench experiment
-  rather than a settled no; it has not been tried, so do not assume it works.
+  **RAISING IT HAS BEEN TRIED AND IT IS A SETTLED NO — do not propose it as an
+  untried experiment.** The reason is not the zoom travel an earlier reading
+  gave, which is spent: a clock buys raster width and **raster width costs
+  MAGNIFICATION**, because the capture is the source's and the solve magnifies
+  it to fill whatever raster it was handed. Past a magnification the part does
+  not state, the playback pipeline has no data for the head of each line and
+  shows zeros as green then stale memory as a grey comb. Measured on the RiscPC
+  at 320x256@50 with a capture of 973 units, 108 MHz gives 1.84x and is clean
+  where 129.6 MHz gives 2.22x and a run-up on the picture. **It cannot be
+  blanked or moved** — blanking opens the display window later and clips panned
+  content, and moving the output hsync slides the whole picture, the encoder
+  holding its sampling window fixed to that pulse — and framing cannot escape it
+  either, a 2304 px raster magnifying past the onset even at the whole
+  capturable region. `src/tv5725/OutputMode.h` carries the sweep and
+  `docs/investigations/display-window-opens-early.md` the measurements.
+
+  **AND THE RASTER IS NARROWER FOR A 60 Hz SOURCE THAN A 50 Hz ONE, WHICH MOVES
+  THE CAPTURE BOUND WITH IT.** The horizontal total is the display clock over
+  the output's own lines and **the SOURCE's field rate**, so one output
+  resolution is several rasters: 1080p solves 1920 at 50 Hz and 1602 at 59.94,
+  and `VideoPath::dividerCeilingForOutput()` follows it — 1724 against 1446 for
+  the same source line. So **1080p is the mode with the LEAST horizontal room,
+  and a 60 Hz source is its worst case**, which is why a fault keyed on the
+  divider shows on the Wii and never on the 50 Hz bench RiscPC. Judge a divider
+  against the raster the source's rate solves, never against the output's name.
 
   The live trap is the inverse: `ofw_RGBS` and `ofw_ypbpr` are the only presets
   that **clear** bit 3, so loading either brings HBOUT/VBOUT alive carrying
