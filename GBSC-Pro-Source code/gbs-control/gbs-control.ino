@@ -1532,8 +1532,6 @@ uint8_t detectAndSwitchToActiveInput()
 
                         if (decodeSuccess >= 2 && !ownVsync) {
                             // SerialMprintln(F(" (with CSync)"));
-                            GBS::SP_PRE_COAST::write(0x10); 
-                            delay(40);
                             Tv5725::SyncMeasurement::set(true);
                         } else {
                             // SerialMprintln();
@@ -1624,7 +1622,6 @@ uint8_t detectAndSwitchToActiveInput()
                     return 1;
                 }
 
-                GBS::SP_SOG_MODE::write(1);
                 Tv5725::SyncProcessor::reset();
                 Tv5725::ModeDetect::reset();
                 delay(40);
