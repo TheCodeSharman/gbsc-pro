@@ -8,6 +8,7 @@
 #include "InputFormatter.h"   // the line and frame periods, counted at 27 MHz
 #include "ModeDetect.h"   // whether the source is interlaced, which it measures
 #include "SyncMeasurement.h"   // whether the arrangement can state a polarity
+#include "SyncOnGreen.h"
 #include "SyncProcessor.h"   // SP_EXT_SYNC_SEL, the path this switches
 
 
@@ -94,7 +95,8 @@ SourceMeasurement::SourceMeasurement(InputFormatter &inputFormatter)
       agreedRateHz_(0.0f), judgedLines_(0), judgedRateHz_(0), goodLineRateHz_(0),
       rateRejections_(0), hsyncPolarity_(SourceKey::Undetermined),
       vsyncPolarity_(SourceKey::Undetermined), verticalPeriod_(0),
-      rateConfirmed_(false), dutyMeasured_(false), settlePasses_(0),
+      rateConfirmed_(false), probesAgreed_(false), rateTaken_(false),
+      dutyMeasured_(false), settlePasses_(0),
       steady_(SteadySamples), scanSteady_(SteadySamples), rateAttempts_(0),
       scanReported_(-1)
 {
@@ -165,6 +167,8 @@ bool SourceMeasurement::sampleSteady()
 
 void SourceMeasurement::modeChanged()
 {
+    rateTaken_ = false;
+    probesAgreed_ = false;
     steady_.reset();
     scanSteady_.reset();
     agreedRateHz_ = 0.0f;
@@ -179,6 +183,8 @@ void SourceMeasurement::samplingClockLatched()
     settlePasses_ = LatchSettlePasses;
 }
 
+bool SourceMeasurement::clockSettling() const { return settlePasses_ > 0; }
+
 // **WHAT A LATER READING IS JUDGED AGAINST MUST NOT ITSELF BE A TRANSIENT.**
 // rateFollowsCount() accepts anything at a moved count, because a moved count
 // IS a mode change -- so a mid-change reading admitted there can become the
@@ -188,6 +194,7 @@ void SourceMeasurement::samplingClockLatched()
 // until HeldRateRejectionLimit drained.
 void SourceMeasurement::takeJudgedRate()
 {
+    rateTaken_ = true;
     judgedLines_ = sourceLines_;
     judgedRateHz_ = lineRateHz_;
     rateRejections_ = 0;
@@ -204,6 +211,8 @@ float SourceMeasurement::settledFieldRateHz() const
 bool SourceMeasurement::rateConfirmed() const { return rateConfirmed_; }
 
 void SourceMeasurement::confirmRate() { rateConfirmed_ = true; }
+
+bool SourceMeasurement::probesAgreed() const { return probesAgreed_; }
 
 void SourceMeasurement::forgetHeldRate()
 {
@@ -226,21 +235,129 @@ float SourceMeasurement::medianOfThree(float a, float b, float c)
 // docs/investigations/single-sample-rate-jitter.md
 float SourceMeasurement::sampleFieldRateHz()
 {
-    // A source that did not pulse has nothing for the other two to time, and a
-    // sample that reports none has already waited out two timeouts.
-    // A MEDIAN REJECTS AN OUTLIER AND NOT A SPREAD. It returns the middle
-    // sample whatever the three are, so three readings on three different rungs
-    // of the boot's ladder yield a rung. What the boot needs is samples that are
-    // closer together, which is what spanning pulses buys.
-    const uint32_t pulses = rateConfirmed_ ? 1 : UnconfirmedRatePulses;
+    // **A MEDIAN REJECTS AN OUTLIER AND NOT A SPREAD**, and a rate nothing has
+    // confirmed can be a spread rather than a reading with noise on it: a sync
+    // separator inventing and dropping edges makes each reading span k fields,
+    // so three readings land on three different multiples and the middle one is
+    // a multiple. Measured on a component source at 480p, the true rate is in
+    // 14% of readings and a median of three returns it in about 5% of trials.
+    // The estimator that finds it asks which value RECURS.
+    if (!probesAgreed_) {
+        bool agreed = false;
+        const float hz = recurringFieldRateHz(&agreed);
+        probesAgreed_ = agreed && hz > 0.0f;
+        return hz;
+    }
 
-    const float first = TestBusRateMeasurement::sourceFieldRateHz(false, pulses);
+    // Every probe agreed, so the readings differ by the instrument's own spread
+    // and a median is the right answer. A source that
+    // did not pulse has nothing for the other two to time, and a sample that
+    // reports none has already waited out two timeouts.
+    const float first = TestBusRateMeasurement::sourceFieldRateHz(false, 1);
     if (first == 0.0f)
         return 0.0f;
 
-    const float second = TestBusRateMeasurement::sourceFieldRateHz(false, pulses);
-    const float third = TestBusRateMeasurement::sourceFieldRateHz(false, pulses);
+    const float second = TestBusRateMeasurement::sourceFieldRateHz(false, 1);
+    const float third = TestBusRateMeasurement::sourceFieldRateHz(false, 1);
     return medianOfThree(first, second, third);
+}
+
+bool SourceMeasurement::sourceIsMeasurable()
+{
+    const uint16_t lines = SyncProcessor::lineCount();
+
+    uint32_t readings[MeasurableReads];
+    bool video = true;
+    for (uint8_t i = 0; i < MeasurableReads; ++i) {
+        const float hz =
+            TestBusRateMeasurement::sourceFieldRateHz(false, MeasurablePulses);
+        readings[i] = (uint32_t)(hz * 1000.0f + 0.5f);
+        if (!VideoSignal::isVideo(lines, hz))
+            video = false;
+    }
+
+    bool agree = true;
+    for (uint8_t i = 1; i < MeasurableReads; ++i)
+        if (!VideoSignal::ratesAgree(readings[0], readings[i],
+                                     MeasurableAgreementPerThousand))
+            agree = false;
+
+    char line[80];
+    snprintf(line, sizeof(line), "sog,%u,%u,%lu,%lu,%lu,%u",
+             (unsigned)SyncOnGreen::level(), (unsigned)lines,
+             (unsigned long)readings[0], (unsigned long)readings[1],
+             (unsigned long)readings[2], (unsigned)(video && agree));
+    tv5725Log(line);
+
+    return video && agree;
+}
+
+float SourceMeasurement::recurringFieldRateHz(bool *everyProbeAgreed)
+{
+    if (everyProbeAgreed != NULL)
+        *everyProbeAgreed = false;
+
+    uint32_t mHz[RecurringRateSamples];
+    uint8_t taken = 0;
+    for (uint8_t i = 0; i < RecurringRateSamples; ++i) {
+        const float hz = TestBusRateMeasurement::sourceFieldRateHz(false, 1);
+
+        // A SOURCE THAT DID NOT PULSE HAS NOTHING FOR THE REST TO TIME, and
+        // each reading that reports none has already waited out two timeouts --
+        // so a silent source must cost one reading and not a run of them. The
+        // first answers whether anything is pulsing at all; a later zero is a
+        // dropped reading and the run carries on without it.
+        if (hz == 0.0f) {
+            if (i == 0)
+                return 0.0f;
+            continue;
+        }
+        mHz[taken++] = (uint32_t)(hz * 1000.0f + 0.5f);
+    }
+
+    uint8_t bestAt = 0;
+    uint8_t best = 0;
+    for (uint8_t i = 0; i < taken; ++i) {
+        uint8_t agreeing = 0;
+        for (uint8_t j = 0; j < taken; ++j)
+            if (VideoSignal::ratesAgree(mHz[i], mHz[j], RecurringRatePerThousand))
+                ++agreeing;
+        if (agreeing > best) {
+            best = agreeing;
+            bestAt = i;
+        }
+    }
+
+    if (best < RecurringRateAgreements)
+        return 0.0f;
+
+    if (everyProbeAgreed != NULL)
+        *everyProbeAgreed = best == taken;
+
+    // WHICH MULTIPLE IS THE TRUTH IS WHAT THE SINGLE PULSES ANSWERED; HOW
+    // PRECISELY IT IS KNOWN IS NOT. One pulse carries the whole of both edge
+    // ISRs' latency -- 3.2 per thousand at 311 lines -- which is wider than the
+    // tolerance a boot's rate is later confirmed against, so a spanned reading
+    // is taken and kept only if it lands in the cluster the probes found. That
+    // is the test a span alone cannot do: a spanned reading on this source is
+    // wrong 86% of the time and says nothing about it.
+    const float spanned =
+        TestBusRateMeasurement::sourceFieldRateHz(false, UnconfirmedRatePulses);
+    const uint32_t spannedMHz = (uint32_t)(spanned * 1000.0f + 0.5f);
+    if (spanned > 0.0f
+        && VideoSignal::ratesAgree(mHz[bestAt], spannedMHz, RecurringRatePerThousand))
+        return spanned;
+
+    // The cluster's mean, so one pulse's latency averages down across the
+    // readings that agreed rather than being carried by whichever was picked.
+    uint32_t total = 0;
+    uint8_t counted = 0;
+    for (uint8_t j = 0; j < taken; ++j)
+        if (VideoSignal::ratesAgree(mHz[bestAt], mHz[j], RecurringRatePerThousand)) {
+            total += mHz[j];
+            ++counted;
+        }
+    return (float)total / (float)counted / 1000.0f;
 }
 
 bool SourceMeasurement::rateSettled()
@@ -298,10 +415,23 @@ bool SourceMeasurement::measureLineRate()
     if (lineRateHz_ != 0)
         goodLineRateHz_ = lineRateHz_;
 
-    char line[80];
-    snprintf(line, sizeof(line), "sampling: %u lines x %u.%02u Hz -> line rate %u",
+    // THE CLOCK THE READING WAS TAKEN THROUGH, WITH THE READING. The count and
+    // the field rate survive a divider the PLL never latched -- measured, a
+    // correct 524 lines and 59.93 Hz with STATUS_SYNC_PROC_HTOTAL reading 425
+    // against a divider of 2040 -- so a reading can look healthy while the
+    // pipeline runs the 27 MHz reference instead. Nothing else on the board
+    // reports a missing latch.
+    const uint16_t divider = Adc::dividerInForce();
+    const uint16_t lineSamples = SyncProcessor::lineSamples();
+    char line[128];
+    snprintf(line, sizeof(line),
+             "measured: %u lines x %u.%02u Hz -> line rate %u, "
+             "clock %u@%lu htotal %u%s",
              (unsigned)sourceLines_, (unsigned)fieldRateHz_,
-             (unsigned)(fieldRateHz_ * 100) % 100, (unsigned)lineRateHz_);
+             (unsigned)(fieldRateHz_ * 100) % 100, (unsigned)lineRateHz_,
+             (unsigned)divider, (unsigned long)Adc::rateInForce(),
+             (unsigned)lineSamples,
+             Adc::dividerLatched(lineSamples) ? "" : " UNLATCHED");
     tv5725Log(line);
 
     return lineRateHz_ != 0;
@@ -331,6 +461,25 @@ SourceMeasurement::MeasurementStatus SourceMeasurement::measureRate()
         return ClockSettling;
     }
 
+    // TAKEN, AND THE DUTY STILL OUTSTANDING, so what is left of this
+    // measurement is the duty. The divider in force was derived from this rate,
+    // so reading the rate again asks the chip for a value the engine itself
+    // chose -- and stakes a completed acquisition on one reading of it, taken
+    // through a clock that has just moved. The duty is the half that cannot
+    // survive the install, it being a ratio of the pulse to the LINE in ADC
+    // samples, so that is what the passes after a latch are for.
+    //
+    // ONLY UNTIL THE DUTY PASS RUNS, which is what releases it.
+    // ../../../docs/investigations/the-rate-is-re-read-through-the-clock-it-chose.md
+    if (rateTaken_) {
+        char line[72];
+        snprintf(line, sizeof(line),
+                 "measure: rate held %u.%02u Hz, measuring duty",
+                 (unsigned)fieldRateHz_, (unsigned)(fieldRateHz_ * 100) % 100);
+        tv5725Log(line);
+        return Measured;
+    }
+
     if (!sampleSteady())
         return NotSteady;
 
@@ -350,6 +499,15 @@ SourceMeasurement::MeasurementStatus SourceMeasurement::measureDuty()
         --settlePasses_;
         return ClockSettling;
     }
+
+    // THE PAIR ENDS HERE, however the duty reads. What measureRate() holds back
+    // is one re-read of a rate the divider in force was derived from, not the
+    // rate for the rest of the mode change -- a source may change rate at an
+    // unchanged count, and rateFollowsCount() is what refuses the transient.
+    // Released on the pass RUNNING, not on the duty succeeding: a source whose
+    // duty cannot be read at all would otherwise never let the rate be read
+    // again.
+    rateTaken_ = false;
 
     return readSource() ? Measured : Settling;
 }
@@ -479,6 +637,11 @@ bool SourceMeasurement::takeDuty(bool latched, const HsyncPulse &reading)
 uint16_t SourceMeasurement::sourceLines() const { return sourceLines_; }
 
 uint16_t SourceMeasurement::steadyLines() const { return steady_.value(); }
+
+uint16_t SourceMeasurement::settledSourceLines() const
+{
+    return steady_.settled() ? steady_.value() : 0;
+}
 
 float SourceMeasurement::fieldRateHz() const { return fieldRateHz_; }
 

@@ -10,6 +10,7 @@
 #include "../../gbs_types.h"
 #include "Adc.h"
 #include "SourceMeasurement.h"
+#include "SyncOnGreen.h"
 #include "Tv5725Log.h"
 
 namespace Tv5725 {
@@ -179,14 +180,38 @@ void SamplingLog::sweep(uint32_t nowMs, uint16_t low, uint16_t high,
     applyStep(nowMs);
 }
 
-void SamplingLog::rates(uint32_t nowMs, uint16_t count)
+void SamplingLog::rates(uint32_t nowMs, uint16_t count, bool useSyncProcessorBus,
+                        uint8_t pulses)
 {
     mode_ = Rating;
     remaining_ = count;
     interval_ = 0;
     startedMs_ = nowMs;
     lastSampleMs_ = nowMs;
+    syncProcessorBus_ = useSyncProcessorBus;
+    readsPerLevel_ = pulses;
     tv5725Log("rate,header,ms,sp_vtotal,field_rate_mhz");
+    // readsPerLevel_ carries the pulse span here, which is what a run is
+    // compared across: a reading spans N pulses, so a spurious edge costs 1/N.
+
+}
+
+void SamplingLog::separator(uint32_t nowMs, uint8_t low, uint8_t high,
+                            uint16_t reads)
+{
+    mode_ = Separating;
+    low_ = low;
+    high_ = high > SyncOnGreen::LevelMax ? SyncOnGreen::LevelMax : high;
+    readsPerLevel_ = reads < 1 ? 1 : (reads > 255 ? 255 : (uint8_t)reads);
+    remaining_ = readsPerLevel_;
+    interval_ = 0;
+    startedMs_ = nowMs;
+    lastSampleMs_ = nowMs;
+    restoreLevel_ = SyncOnGreen::level();
+    level_ = low;
+    tv5725Log("sog,header,level,ms,sp_vtotal,field_rate_mhz");
+    SyncOnGreen::choose(level_);
+    SyncOnGreen::putInForce();
 }
 
 void SamplingLog::applyStep(uint32_t nowMs)
@@ -233,6 +258,10 @@ void SamplingLog::finish(uint32_t nowMs)
         divider_ = restoreDivider_;
         applyStep(nowMs);
     }
+    if (mode_ == Separating) {
+        SyncOnGreen::choose(restoreLevel_);
+        SyncOnGreen::putInForce();
+    }
     mode_ = Idle;
     tv5725Log("smp,done");
 }
@@ -255,9 +284,42 @@ void SamplingLog::poll(uint32_t nowMs)
         lastSampleMs_ = now;
         // Millihertz, because the whole question is a spread of parts per
         // thousand and %f on this part costs more than the reading is worth.
-        const float hz = TestBusRateMeasurement::sourceFieldRateHz(false);
+        const float hz = TestBusRateMeasurement::sourceFieldRateHz(
+            syncProcessorBus_, readsPerLevel_ == 0 ? 1 : readsPerLevel_);
         char line[64];
         snprintf(line, sizeof(line), "rate,%lu,%u,%lu",
+                 (unsigned long)(now - startedMs_),
+                 (unsigned)GBS::STATUS_SYNC_PROC_VTOTAL::read(),
+                 (unsigned long)(hz * 1000.0f + 0.5f));
+        tv5725Log(line);
+        return;
+    }
+
+    if (mode_ == Separating) {
+        if (remaining_ == 0) {
+            if (level_ >= high_) {
+                finish(now);
+                return;
+            }
+            level_ = (uint8_t)(level_ + 1);
+            remaining_ = readsPerLevel_;
+            SyncOnGreen::choose(level_);
+            SyncOnGreen::putInForce();
+            return;
+        }
+        --remaining_;
+        lastSampleMs_ = now;
+
+        // Re-asserted per reading rather than per step: the recovery ladder
+        // writes this register too, so a level set once at the step can be
+        // walked out from under the readings taken at it.
+        SyncOnGreen::choose(level_);
+        SyncOnGreen::apply();
+
+        const float hz = TestBusRateMeasurement::sourceFieldRateHz(false);
+        char line[64];
+        snprintf(line, sizeof(line), "sog,%u,%lu,%u,%lu",
+                 (unsigned)level_,
                  (unsigned long)(now - startedMs_),
                  (unsigned)GBS::STATUS_SYNC_PROC_VTOTAL::read(),
                  (unsigned long)(hz * 1000.0f + 0.5f));

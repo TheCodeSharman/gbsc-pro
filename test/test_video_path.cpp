@@ -59,9 +59,16 @@ static float g_fieldRate = 50.08f;
 // in front of it is that loop() cannot afford it on every pass.
 static unsigned g_fieldRateCalls = 0;
 
-// One reading of the field rate is a median of three of these, so a case about
-// how often the source is READ counts in multiples of it.
-static const unsigned TimingsPerReading = 3;
+// One reading of a source nothing has been observed about is a run of
+// single-pulse probes plus the spanned reading that confirms which multiple
+// they settled on, so a case about how often the source is READ counts in
+// these rather than in timings.
+static const unsigned TimingsPerFirstReading =
+    SourceMeasurement::RecurringRateSamples + 1;
+
+// And one of a source whose probes all agreed is a median of three single
+// timings, which is what unanimity earns.
+static const unsigned TimingsPerAgreedReading = 3;
 
 // The divider actually in force at the moment the rate is sampled. The rate is
 // timed off the input formatter's test bus and the IF's line counter is the
@@ -386,7 +393,13 @@ static void checkBenchGeometry()
     // controller and both FIFOs are laid out for the geometry this solve chose.
     // s3_26 is VDS_D_RAM_BYPS, the one-line delay: what it can carry is bounded
     // by the window this solve just wrote, so the solve is what owns it.
-    CHECK(registersWritten() == 94);
+    // s5_4c..s5_50 are the clamp and the coast window an UNMEASURED source is
+    // counted through, returned to a defined state as the change starts: the
+    // sync processor counts WITHIN them, and the previous source's can be a
+    // window this one is not inside, in which case STATUS_SYNC_PROC_HTOTAL does
+    // not follow the divider even written and latched by hand. The solve places
+    // both properly once there is a measurement.
+    CHECK(registersWritten() == 99);
     CHECK(Wire.touched[0][0x49]);   // PAD_SYNC_OUT_ENZ
 
     // Three of those are the measurement rather than the geometry: timing the
@@ -516,6 +529,134 @@ TEST_CASE("a measurement that solved nothing keeps the clock, and never writes a
                                             Adc::BringUpLineDoubled));
     CHECK(InputFormatter::IF_HS_DEC_FACTOR::read()
           == (Adc::BringUpLineDoubled ? 1u : 0u));
+}
+
+// THE COUNTER HAS TO RUN BEFORE A DUTY CAN BE MEASURED, and an input selection
+// resets the sync processor, which zeroes the origin. A clock install that
+// declines to replace a zero leaves the block unable to retime, unable to
+// count, and so unable to measure the duty that would replace it -- measured on
+// the bench as SP_RT_HS_SP 0 beside STATUS_SYNC_PROC_VTOTAL 97, surviving six
+// divider installs through the engine's own owner.
+TEST_CASE("a clock installed before any duty is measured leaves the counter an origin")
+{
+    seedBenchSource();
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+
+    engine.setOutputMode(benchMode());
+
+    // What an input selection leaves: the reference clock, and a sync processor
+    // reset that took the origin with it.
+    Adc::applyResetParameters();
+    SyncProcessor::SP_RT_HS_SP::write(0);
+    REQUIRE(retimeStopInForce() == 0);
+    REQUIRE(Adc::dividerInForce() != 0);
+
+    engine.inputTimingsChanged(4);
+
+    CHECK(retimeStopInForce()
+          == SyncProcessor::retimeOriginFor(Adc::dividerInForce(),
+                                            Adc::oversampleInForce()));
+}
+
+// THE SCAN AND THE LINE IT IS SIZED FOR ARE ONE SETTING, and the retry moves the
+// divider. setResetParameters() and the input selection both pair a reference
+// divider with the scan for it; the retry installed the next one through Adc
+// alone, so the counter stayed sized for the reference before it -- measured on
+// the bench as PLLAD_MD 1400 beside IF_HSYNC_RST 2040, and PLLAD_MD 2040 beside
+// IF_HSYNC_RST 1446, the source's field rate being timed off this block's
+TEST_CASE("the scan is not decided from a count that has not settled")
+{
+    // Nothing counted in ADC samples is the source's until the PLL is running
+    // the divider written, and the scan decision takes any count from 200 to
+    // 1300 at face value. One below DoubleBelowLines reads as a short source,
+    // which puts a progressive 524-line source on the DOUBLED scan at twice the
+    // divider, where the eleven-bit line counter cannot hold it -- IF_HSYNC_RST
+    // held at half, which is the doubled scan on a progressive source.
+    //
+    // Measured on the Wii at 480p into 1080p, from one measurement: 1446
+    // undoubled, then 2200 doubled with the counter held at 1100, then 1446
+    // again. The reference clock reads UNLATCHED on that source --
+    // STATUS_SYNC_PROC_HTOTAL 1660 against a divider of 2040, drifting one a
+    // reading -- while the count and the field rate both read correctly, so
+    // waiting out the settle does not make the count the source's.
+    // ../docs/known-issues.md
+    seedBenchSource();
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+
+    engine.setOutputMode(benchMode());
+    engine.prepareToMeasure(524);
+    REQUIRE(!engine.lineDoubled());
+
+    // No settled count, which is what the caller hands over on a reading that
+    // has not repeated.
+    engine.prepareToMeasure(0);
+
+    CHECK(!engine.lineDoubled());
+}
+
+TEST_CASE("installing a reference clock leaves the capture counter an origin")
+{
+    // SP_RT_HS_SP is where the capture counter ZEROES, and SyncProcessor::reset()
+    // leaves it 0 -- a block with no origin cannot retime, so it never counts,
+    // so the duty that would replace the 0 is never measured. Measured on the
+    // Wii at 480p: STATUS_SYNC_PROC_HTOTAL reads the 27 MHz reference over the
+    // line rate -- 434, 843, 873 -- rather than the divider, which reads
+    // exactly like an ADC PLL that will not lock.
+    //
+    // So a reference clock is the PLL group, the scan its line implies and this
+    // origin, installed together. A selection pairs the first two and resets the
+    // block, which is what leaves the origin at 0.
+    // ../docs/investigations/the-retime-stop-is-the-counters-origin.md
+    seedBenchSource();
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+
+    engine.setOutputMode(benchMode());
+    SyncProcessor::SP_RT_HS_SP::write(0);
+    REQUIRE(SyncProcessor::SP_RT_HS_SP::read() == 0);
+
+    engine.installReferenceClock();
+
+    CHECK(SyncProcessor::SP_RT_HS_SP::read() != 0);
+}
+
+// vertical in both.
+TEST_CASE("the reference clock the retry installs brings its own scan")
+{
+    seedBenchSource();
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+
+    engine.setOutputMode(benchMode());
+
+    // The first reference and the scan sized for it, which is what a selection
+    // leaves behind.
+    Adc::applyResetParameters();
+    REQUIRE(inputFormatter.applyScan(Adc::BringUpDivider, Adc::BringUpLineDoubled,
+                                     false));
+    REQUIRE(Adc::dividerInForce() == Adc::BringUpDivider);
+
+    // On to a reference whose DIVIDER moved, because that is what the line
+    // counter is sized from -- a clock differing only in its crossover row
+    // leaves the counter where it was and could not show the pairing.
+    for (uint8_t i = 0; i < Adc::referenceDividerCount()
+                        && Adc::dividerInForce() == Adc::BringUpDivider; ++i)
+        REQUIRE(engine.tryNextReferenceClock(true));
+    REQUIRE(Adc::dividerInForce() != Adc::BringUpDivider);
+
+    CHECK(lineCounterInForce()
+          == InputFormatter::lineCounterFor(Adc::dividerInForce(),
+                                            Adc::BringUpLineDoubled));
 }
 
 // The state a measurement is taken through, on an input change. The reference
@@ -886,14 +1027,19 @@ TEST_CASE("the source is measured once per poll, not once per thing that needs i
     engine.setOutputMode(benchMode());
     engine.inputTimingsChanged(4);
 
-    // Three for a mode change, and no more. One reading has nothing to agree
+    // TWO READINGS for a mode change, and no more. One has nothing to agree
     // with, so the pass that takes it stops there; the next settles the rate
-    // and the sampling clock goes in from it; and the pass after that settle
-    // reads the duty through the clock it installed, taking its own reading on
-    // the way. Installing before the duty costs exactly that one extra sample.
+    // and the sampling clock goes in from it. The duty is then read through
+    // that clock without the rate being asked again -- the divider was derived
+    // from it, so a re-read stakes the acquisition on one reading of a value
+    // the engine itself chose.
+    //
+    // Only the FIRST runs the probes: this source's nine agreed unanimously,
+    // which is what says a single timing speaks for it.
     const unsigned before = g_fieldRateCalls;
     REQUIRE(pollUntilSolved(acquisition));
-    CHECK(g_fieldRateCalls - before == 3 * TimingsPerReading);
+    CHECK(g_fieldRateCalls - before
+          == TimingsPerFirstReading + TimingsPerAgreedReading);
 
     SUBCASE("and not at all for a pad press") {
         // A press moves the framing, not the source. Every quantity the windows
@@ -3146,4 +3292,38 @@ TEST_CASE("a confirmed rate drifting inside tolerance keeps the framing in force
     REQUIRE(pollUntilSolved(acquisition));
 
     CHECK(engine.aspect().fills());
+}
+
+TEST_CASE("the sync path is configured with the separator level the input needs")
+{
+    // Nothing on the board measures the sync amplitude, so the level cannot be
+    // derived from the source, and sync on green is weaker than a dedicated
+    // sync line. A component source left on DefaultLevel slices its sync badly
+    // enough that the field rate cannot be measured -- and every walk descends,
+    // so a working level is then unreachable. docs/known-issues.md
+    seedBenchSource();
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+
+    SUBCASE("a component source takes the component level") {
+        Adc::selectInput(0);
+        REQUIRE(Adc::inputIsComponent());
+        SyncOnGreen::choose(SyncOnGreen::DefaultLevel);
+
+        engine.configureSyncPath();
+
+        CHECK(SyncOnGreen::level() == SyncOnGreen::ComponentLevel);
+    }
+
+    SUBCASE("a source on the other ADC input takes the default") {
+        Adc::selectInput(1);
+        REQUIRE(!Adc::inputIsComponent());
+        SyncOnGreen::choose(SyncOnGreen::ComponentLevel);
+
+        engine.configureSyncPath();
+
+        CHECK(SyncOnGreen::level() == SyncOnGreen::DefaultLevel);
+    }
 }

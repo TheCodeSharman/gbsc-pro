@@ -2,6 +2,7 @@
 #define TV5725_SOURCE_MEASUREMENT_H_
 
 #include <Arduino.h>   // `boolean`
+#include <stddef.h>   // NULL
 #include <stdint.h>
 
 #include "HsyncPulse.h"
@@ -50,6 +51,26 @@ public:
     // counted a line at the new rate.
     void samplingClockLatched();
 
+    // Whether the clock was latched too recently for anything counted in ADC
+    // samples to be the source's. Asked by a caller that decides something from
+    // the count OUTSIDE the two halves below -- the scan mode is one -- because
+    // those two carry the same gate themselves and a decision taken before them
+    // would be taken through a clock that has just moved.
+    bool clockSettling() const;
+
+    // Whether every probe of the arriving source agreed, which is what licenses
+    // timing it over a SINGLE pulse from then on. A separator that invents and
+    // drops edges makes each timing span a different number of fields, so the
+    // readings land on multiples of the rate and a median of three returns one
+    // -- a rate the count then refuses, on a source that was fully acquired.
+    //
+    // Observed rather than concluded: it is a property of the source's sync
+    // separator and no amount of agreement about what the RATE is can stand in
+    // for it. Cleared by modeChanged(), because which source is arriving is
+    // exactly when the separator's behaviour may differ.
+    // ../../../docs/investigations/the-cheap-field-rate-is-earned-by-the-probes.md
+    bool probesAgreed() const;
+
     // The source is about to move, so the steadiness run and the rate agreed
     // on mean nothing.
     void modeChanged();
@@ -58,6 +79,7 @@ public:
     // is what refuses a settling transient, and a confirmed rate change is the
     // only thing that makes it the obstacle instead.
     void forgetHeldRate();
+
 
     enum MeasurementStatus {
         ClockSettling, // the sampling clock was latched too recently to read through
@@ -186,9 +208,69 @@ public:
     // rate arms no solve -- so the caller forgets it where it arms one.
     void confirmRate();
 
+    // The reading that RECURS across a run of them, or 0 where none did, with
+    // `everyProbeAgreed` saying whether the run was unanimous -- probesAgreed().
+    //
+    // **A MEDIAN IS THE WRONG ESTIMATOR WHERE THE ERROR IS NOT NOISE.** A sync
+    // separator inventing and dropping edges makes a reading span k fields, so
+    // the truth recurs to the digit where the errors scatter: measured on a
+    // component source at 480p, the true 59.939 Hz is exact in 32 of 228
+    // readings and a median of three returns it in about 5% of trials. One
+    // pulse a reading, not UnconfirmedRatePulses.
+    // ../../../docs/investigations/the-cheap-field-rate-is-earned-by-the-probes.md
+    static float recurringFieldRateHz(bool *everyProbeAgreed = NULL);
+
+    // How many single-pulse readings recurringFieldRateHz() takes, how many of
+    // them have to agree before a value is believed, and how far apart two may
+    // be and still be the same reading.
+    //
+    // The tolerance is WIDER than RateAgreementPerThousand because a single
+    // pulse carries the whole of both edge ISRs' latency -- 3.2 per thousand at
+    // 311 lines, where a spanned reading divides it -- so holding these to a
+    // settled source's tolerance would reject two readings of one clean rate.
+    static const uint8_t RecurringRateSamples = 9;
+    static const uint8_t RecurringRateAgreements = 3;
+    static const uint16_t RecurringRatePerThousand = 5;
+
+    // Whether the source can be measured where the separator level now sits:
+    // three field-rate readings that agree with each other and make video
+    // against the sync processor's count.
+    //
+    // **A SPREAD IS THE SIGNAL, NOT A WRONG VALUE.** A sync separator slicing
+    // badly puts extra edges in and misses real ones, so the readings scatter
+    // either side of the true rate and one of them landing on it is luck rather
+    // than evidence -- measured on a component source at 480p, two readings of
+    // seven read 59.93 Hz among 62 to 89 Hz with the count a correct 524. So no
+    // single reading can answer this and agreement is what does.
+    static bool sourceIsMeasurable();
+
+    // How far apart the three readings of that test may be. Wider than the
+    // agreement a settled source is held to: this one has to pass a level that
+    // merely slices cleanly enough to measure, before any divider is sized for
+    // the source.
+    static const uint16_t MeasurableAgreementPerThousand = 20;
+
+    // How many readings that test takes, and how many pulses each spans. Three
+    // is the fewest that can show a spread rather than a pair that happens to
+    // agree.
+    //
+    // **ONE PULSE, BECAUSE THE SWEEP IS INSIDE loop().** The whole field is 32
+    // levels, so spanning this the way a measurement does would block the loop
+    // for thirteen seconds -- measured, and long enough that the heap gate
+    // refuses routes and OTA cannot be armed. A level that works is found on
+    // the first probe, so the long case is the one that finds nothing.
+    static const uint8_t MeasurableReads = 3;
+    static const uint32_t MeasurablePulses = 1;
+
 
     // The count the steadiness gate settled on, which is not the last sample.
     uint16_t steadyLines() const;
+
+    // That count, or 0 where the run has not settled on one yet. For a caller
+    // deciding something from the count rather than measuring: a single reading
+    // dips -- measured on a source reading 524 whose count reaches 390 between
+    // readings -- and a decision keyed on one is taken on the dip.
+    uint16_t settledSourceLines() const;
 
     // The vertical period the last reading came from, or 0 where it did not
     // complete. verticalTapFor() and the relock want the period itself.
@@ -311,6 +393,7 @@ private:
     static const uint16_t RateAgreementPerThousand = 1;
 
 
+
     // How far settledLinePeriod() must move to count as movement. A different
     // quantity from the one above: HPERIOD_IF is a change detector read in its
     // own units, compared only against its own earlier value.
@@ -340,6 +423,8 @@ private:
     SourceKey::Polarity vsyncPolarity_;
     uint16_t verticalPeriod_;
     bool rateConfirmed_;
+    bool probesAgreed_;
+    bool rateTaken_;
     bool dutyMeasured_;
     uint8_t settlePasses_;
     SteadyRun steady_;

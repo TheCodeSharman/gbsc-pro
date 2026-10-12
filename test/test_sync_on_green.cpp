@@ -7,6 +7,7 @@
 
 FakeTwoWire Wire;
 
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Adc.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SyncOnGreen.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SyncProcessor.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SyncMeasurement.h"
@@ -109,6 +110,7 @@ static void seedSlicer(uint8_t hsActive, uint8_t sliceBus)
     Wire.poison(Poison);
     Wire.bank[0][0x16] = hsActive ? 0x02 : 0x00;   // STATUS_SYNC_PROC_HSACT, bit 1
     Wire.bank[0][0x2F] = sliceBus;                 // TEST_BUS_2F
+    Adc::selectInput(1);
     g_reads = 0;
     g_inForce = 0;
 }
@@ -122,7 +124,7 @@ TEST_CASE("a sync separator that is not in the sync path is left alone")
     SyncOnGreen::acquire(testClock, putInForce);
 
     CHECK(g_inForce == 0);
-    CHECK(SyncOnGreen::level() == SyncOnGreen::DefaultLevel);
+    CHECK(SyncOnGreen::level() == 7);
 }
 
 TEST_CASE("a sync separator already producing clean edges keeps the level chosen")
@@ -167,6 +169,131 @@ TEST_CASE("the level reaches the sync separator through the injected action")
     CHECK(g_inForce >= 1);
     CHECK(g_lastInForce == 9);
     CHECK(SyncOnGreen::ADC_SOGCTRL::read() == 9);
+}
+
+// The full-field sweep. Its acceptance test is the caller's, so these supply
+// one that passes at a chosen level and nowhere else.
+static uint8_t g_passesAt = 0;
+static unsigned g_tested = 0;
+
+static bool measurableAtChosenLevel()
+{
+    ++g_tested;
+    return SyncOnGreen::level() == g_passesAt;
+}
+
+static bool neverMeasurable()
+{
+    ++g_tested;
+    return false;
+}
+
+TEST_CASE("the sweep stops at the first level the source can be measured at")
+{
+    seedSlicer(1, 0x05);
+    Adc::selectInput(0);
+    SyncMeasurement::set(true);
+    g_passesAt = 20;
+    g_tested = 0;
+
+    CHECK(SyncOnGreen::sweep(measurableAtChosenLevel, putInForce));
+
+    CHECK(SyncOnGreen::level() == 20);
+}
+
+TEST_CASE("the sweep reaches a level above the one the input needs")
+{
+    // The whole point of it: every other walk descends from ComponentLevel, so
+    // a component source needing 24 is unreachable by all of them.
+    seedSlicer(1, 0x05);
+    Adc::selectInput(0);
+    SyncMeasurement::set(true);
+    g_passesAt = 24;
+    g_tested = 0;
+
+    CHECK(SyncOnGreen::sweep(measurableAtChosenLevel, putInForce));
+
+    CHECK(SyncOnGreen::level() == 24);
+}
+
+TEST_CASE("a source measurable at the level the input needs is not moved")
+{
+    seedSlicer(1, 0x05);
+    Adc::selectInput(0);
+    SyncMeasurement::set(true);
+    g_passesAt = SyncOnGreen::ComponentLevel;
+    g_tested = 0;
+
+    CHECK(SyncOnGreen::sweep(measurableAtChosenLevel, putInForce));
+
+    CHECK(SyncOnGreen::level() == SyncOnGreen::ComponentLevel);
+    CHECK(g_tested == 1);
+}
+
+TEST_CASE("the sweep covers every level in the field")
+{
+    seedSlicer(1, 0x05);
+    Adc::selectInput(0);
+    SyncMeasurement::set(true);
+    g_tested = 0;
+
+    CHECK_FALSE(SyncOnGreen::sweep(neverMeasurable, putInForce));
+
+    CHECK(g_tested == SyncOnGreen::LevelMax + 1);
+}
+
+TEST_CASE("a sweep that finds nothing leaves the level the input needs")
+{
+    seedSlicer(1, 0x05);
+    Adc::selectInput(0);
+    SyncMeasurement::set(true);
+    g_tested = 0;
+
+    CHECK_FALSE(SyncOnGreen::sweep(neverMeasurable, putInForce));
+
+    CHECK(SyncOnGreen::level() == SyncOnGreen::ComponentLevel);
+}
+
+TEST_CASE("a sync separator out of the sync path is not swept")
+{
+    seedSlicer(1, 0x05);
+    SyncMeasurement::set(false);
+    SyncOnGreen::choose(7);
+    g_tested = 0;
+
+    CHECK_FALSE(SyncOnGreen::sweep(neverMeasurable, putInForce));
+
+    CHECK(g_tested == 0);
+    CHECK(SyncOnGreen::level() == 7);
+}
+
+TEST_CASE("an exhausted walk returns to the level the input needs")
+{
+    // Every walk descends, so a fallback below the level the input was
+    // configured for cannot be climbed back out of: a component source landing
+    // on DefaultLevel slices its sync badly enough that the field rate never
+    // measures, and no later pass can reach ComponentLevel again.
+    // docs/known-issues.md
+    seedSlicer(1, 0x00);
+    Adc::selectInput(0);
+    SyncMeasurement::set(true);
+    SyncOnGreen::choose(SyncOnGreen::ComponentLevel);
+
+    SyncOnGreen::acquire(testClock, putInForce);
+
+    CHECK(SyncOnGreen::level() == SyncOnGreen::ComponentLevel);
+}
+
+TEST_CASE("an exhausted coarse pass returns to the level the input needs")
+{
+    seedSlicer(1, 0x00);
+    Adc::selectInput(0);
+    SyncMeasurement::set(true);
+    SyncOnGreen::choose(SyncOnGreen::ComponentLevel);
+
+    SyncOnGreen::acquireCoarse(putInForce);
+
+    CHECK(SyncOnGreen::level() == SyncOnGreen::ComponentLevel);
 }
 
 // The coarse pass: two at a time, no settling runs. The sketch reaches for it

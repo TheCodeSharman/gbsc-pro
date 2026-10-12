@@ -56,7 +56,18 @@ public:
     //
     // One reading per poll rather than a burst: each spins on vsync for up to
     // two field periods, and the loop has to keep running.
-    void rates(uint32_t nowMs, uint16_t count);
+    void rates(uint32_t nowMs, uint16_t count, bool useSyncProcessorBus = false,
+               uint8_t pulses = 8);
+
+    // Walk the sync separator's level across a range, timing the source's field
+    // rate `reads` times at each one. Nothing on the board measures the sync
+    // amplitude, so which levels slice a given source cleanly is a measurement
+    // and not a calculation -- and the SPREAD of the readings at one level is
+    // what says so, a separator slicing badly putting extra edges in and
+    // missing real ones rather than reporting a wrong rate steadily.
+    //
+    // The level held on entry goes back at the end, however the walk ends.
+    void separator(uint32_t nowMs, uint8_t low, uint8_t high, uint16_t reads);
 
     // A decision, as it is taken. The sync watcher chooses between scaling and
     // bypass on a line count, inside loop(), and the choice is over before any
@@ -113,11 +124,13 @@ private:
     void reportSolve(uint32_t nowMs);
     void finish(uint32_t nowMs);
 
-    enum Mode : uint8_t { Idle, Monitoring, Sweeping, Rating };
+    enum Mode : uint8_t { Idle, Monitoring, Sweeping, Rating, Separating };
 
     Mode mode_;
     uint16_t low_, high_, step_, dwellMs_, interval_, restoreDivider_;
     uint16_t divider_;
+    uint8_t level_, restoreLevel_, readsPerLevel_;
+    bool syncProcessorBus_;
     uint32_t lineRateHz_;
     uint8_t oversample_;
     uint32_t durationMs_;

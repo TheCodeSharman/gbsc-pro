@@ -206,6 +206,12 @@ static bool probeOwnVsync()
 // sync processor counts along the line once the ADC is locked to it -- so the
 // seeds below are taken from it rather than written out, and a count that does
 // not match it is a source locked to every other hsync.
+// Long enough that a source has plainly been absent rather than momentarily
+// unread. No longer a firmware constant: nothing is timed against a source
+// being gone, because every measurement a source change needs is taken when the
+// source changes.
+static const uint32_t AbsentForMs = 10000;
+
 static const uint16_t BenchDivider = 2200;
 
 // And for the 524-line 60 Hz mode the transition cases move to, which is
@@ -1337,132 +1343,241 @@ TEST_CASE("a measured source is not running a reference clock")
     CHECK(!Adc::referenceSamplingClockInForce());
 }
 
+TEST_CASE("a count that dips between readings does not move the scan")
+{
+    // THE SCAN MODE IS A PROPERTY OF THE SOURCE, so it is decided from the
+    // SETTLED count like every other decision here. Taken from the last reading
+    // instead it follows a dip: any count from 200 to 1300 is a source, so one
+    // below DoubleBelowLines reads as a short source and puts a progressive one
+    // on the doubled scan at twice the divider, which the eleven-bit line
+    // counter cannot hold -- IF_HSYNC_RST held at half, which IS the doubled
+    // scan.
+    //
+    // Measured on the Wii at 480p into 1080p, from one measurement: 1446
+    // undoubled, then 2200 doubled with the counter held at 1100, then 1446
+    // again, and the count reading 524, 524, 524, then 390.
+    // ../docs/known-issues.md
+    seedBenchSource();
+    seedSourceLines(524);
+
+    Acquiring unit;
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+    REQUIRE(!unit.path.lineDoubled());
+
+    // The source moved, which is what arms the measurement again -- and the
+    // first readings after one are the dips.
+    unit.path.inputTimingsChanged(4);
+    seedSourceLines(390);
+    unit.poll();
+
+    CHECK(!unit.path.lineDoubled());
+}
+
 TEST_CASE("a source the reference clock cannot measure is given another one")
 {
     seedBenchSource();
     Adc::installReferenceSamplingClock();
     REQUIRE(Adc::dividerInForce() == Adc::BringUpDivider);
 
+    // A CLOCK IS THE DIVIDER AND THE RATE ITS CROSSOVER ROW IS READ AGAINST,
+    // so either moving is another clock: the row alone decides whether the PLL
+    // locks, measured at one divider on two rows.
+    const uint16_t divider = Adc::dividerInForce();
+    const uint32_t rate = Adc::rateInForce();
+
     Acquiring unit;
     unit.acquisition.allowMaintenance(true);
     unit.start();
 
     // The free-running count, which settles on no value, so no pass measures
-    // the source and the divider is never chosen.
+    // the source and the divider is never chosen. COUNTED IN PASSES, not timed:
+    // trying the next reference is part of measuring the source, and it waits
+    // only as long as a reading takes to settle.
     for (uint16_t i = 0;
-         i < (VideoSourceAcquisition::RecoveryBudgetMs + 100)
-                 / VideoSourceAcquisition::DetectionIntervalMs; ++i) {
+         i < VideoSourceAcquisition::ReferenceRetryPasses + 4; ++i) {
         seedSourceLines((uint16_t)(97 + (i % 60)));
         unit.poll();
     }
 
     REQUIRE(unit.acquisition.sourceState() == VideoSourceAcquisition::SourceAbsent);
-    CHECK(Adc::dividerInForce() != Adc::BringUpDivider);
+    CHECK((Adc::dividerInForce() != divider || Adc::rateInForce() != rate));
 }
 
-TEST_CASE("a count that never settles leaves the divider the source was solved on")
+TEST_CASE("a count that never steadies through a solved divider gets another clock")
 {
-    // Noise is not a divider fault, so there is nothing here for a rewrite to
-    // put right -- and one would re-latch the ADC PLL on a source that is
-    // already sampled correctly, restarting the settle every time the count
-    // happened to hold. The divider is sized from the rate measured, so a run
-    // that measures none writes nothing and the ladder escalates instead.
+    // A COUNT THAT NEVER STEADIES IS A CLOCK THAT CANNOT COUNT THE SOURCE, and
+    // the recovery was reachable only from the Unmeasurable exit. measureRate()
+    // answers NotSteady every pass where the count is outside the source bounds
+    // -- sampleSteady() restarts the run and the pass returns before
+    // measureLineRate(), so nothing is printed and no status the retry tests is
+    // ever produced.
     //
-    // The real 640x480 -> 320x256 leg is the opposite case, a count that is
-    // wrong BECAUSE the divider is the previous mode's. The correction against
-    // the divider in force resolves that, which is where it is tested.
-    //
-    // Long enough that every recovery act has come round twice.
+    // Measured on `ypbpr` at 480p: 45 s and 97 s windows of total console
+    // silence at `state: absent` with a full solve held, PLLAD_MD 1446 latched
+    // against STATUS_SYNC_PROC_HTOTAL 1448 and STATUS_SYNC_PROC_VTOTAL 98, with
+    // loop() demonstrably running. A recovery that cannot be reached is a stall.
+    // ../docs/known-issues.md
     seedBenchSource();
-    seedLineSamples(BenchDivider);
+
     Acquiring unit;
+    unit.acquisition.allowMaintenance(true);
     unit.start();
     REQUIRE(unit.pollUntilSolved());
-    REQUIRE(Adc::PLLAD_MD::read() == BenchDivider);
+    REQUIRE(!Adc::referenceSamplingClockInForce());
 
+    // The source moved, which is what the measurement is armed by -- the bench
+    // arms it off the latched interrupt.
+    unit.path.inputTimingsChanged(4);
+    g_logLines.clear();
+
+    // A count outside the source bounds, never twice the same, with the source
+    // still pulsing -- which is what says the signal is there and this clock
+    // cannot count it.
+    // The settle first, because the state stays acquired through it and the
+    // retry's own passes only start counting once a reading has failed.
     for (uint16_t i = 0;
-         i < 2 * (VideoSourceAcquisition::RecoveryBudgetMs + 3 * VideoSourceAcquisition::RecoveryBudgetMs)
-                 / VideoSourceAcquisition::DetectionIntervalMs; ++i) {
-        seedSourceLines((uint16_t)(191 + (i % 64)));
+         i < SourceMeasurement::LatchSettlePasses
+             + VideoSourceAcquisition::ReferenceRetryPasses + 4; ++i) {
+        seedSourceLines((uint16_t)(97 + (i % 60)));
         unit.poll();
     }
 
-    CHECK(Adc::PLLAD_MD::read() == BenchDivider);
-    CHECK(unit.acquisition.sourceState() == VideoSourceAcquisition::SourceAbsent);
+    CHECK(loggedContaining("the reference clock measured nothing"));
 }
 
-TEST_CASE("an ordinary mode change reuses the sync type instead of re-probing")
+TEST_CASE("each reference clock gets its own run of passes")
 {
-    // THE SYNC TYPE IS A PROPERTY OF THE SOURCE, NOT OF ITS MODE, and it changes
-    // far more rarely than the mode does. Probing costs the path settle plus the
-    // probe's own window -- measured at 1.00 s of a 2.0 s transition on a
-    // composite source, which has no V to arrive and so spends the whole window
-    // every time. So a mode change reuses what is held and the escalation ladder
-    // pays for a change of sync type, which is the rare event.
-    // docs/investigations/own-vsync-probe-window.md
+    // ONE CLOCK AT A TIME. Advancing on every pass past the threshold walks the
+    // whole list in a few hundred milliseconds and gives none of them a chance
+    // to be measured through -- and each advance re-latches the ADC PLL and
+    // forgets the sync processor's positions, so the source is left worse than
+    // any single wrong clock left it.
     seedBenchSource();
+    Adc::installReferenceSamplingClock();
     Acquiring unit;
-    unit.path.useSyncTypeProbe(probeOwnVsync);
-
-    g_hasOwnVsync = true;
-    g_probeCalls = 0;
+    unit.acquisition.allowMaintenance(true);
     unit.start();
-    REQUIRE(unit.pollUntilSolved());
-    REQUIRE(g_probeCalls == 1);
 
-    seedPassThroughSource();
-    bool solved = false;
-    for (uint8_t i = 0; i < 8 * SourceMeasurement::SteadySamples && !solved; ++i)
-        solved = unit.poll();
-    REQUIRE(solved);
-
-    CHECK(g_probeCalls == 1);
-}
-
-TEST_CASE("a count no source runs re-establishes the sync type")
-{
-    // The wrong sync path counts 97..137 on a 311-line source, held for twenty
-    // seconds on the bench, and every one of those is outside the source
-    // bounds. So the state that most needs the sync type re-probed is exactly
-    // the state that used to guarantee it never would.
-    seedBenchSource();
-    Acquiring unit;
-    unit.path.useSyncTypeProbe(probeOwnVsync);
-
-    g_hasOwnVsync = true;
-    g_probeCalls = 0;
-    unit.start();
-    REQUIRE(unit.pollUntilSolved());
-    REQUIRE(g_probeCalls == 1);
-
-    seedSourceLines(97);
-    for (uint8_t i = 0;
-         i < 4 * (SourceMeasurement::SteadySamples
-                  + SourceMeasurement::LatchSettlePasses); ++i)
+    g_logLines.clear();
+    for (uint16_t i = 0; i < 6 * VideoSourceAcquisition::ReferenceRetryPasses; ++i) {
+        seedSourceLines((uint16_t)(97 + (i % 60)));
         unit.poll();
+    }
 
-    CHECK(g_probeCalls == 2);
+    CHECK(loggedCountContaining("the reference clock measured nothing") <= 6);
 }
 
-TEST_CASE("a count no source runs arms the probe once, not once a poll")
+TEST_CASE("a source that cannot be measured is still retried once the pass count saturates")
 {
-    // The probe moves the sync path and costs a settle plus a window. A fault
-    // that persists is the normal case here -- the count stays wrong until the
-    // probe has fixed the path -- so arming per poll is a probe storm.
+    // **A RETRY CLOCK MUST NOT SATURATE.** unmeasuredPasses_ stops at
+    // AcquiredPassCeiling, so a retry keyed on the gap between it and the pass
+    // an attempt was last made on stops firing five seconds in -- and the
+    // engine then sits absent and silent for as long as the source is
+    // attached, with nothing left that re-measures it.
+    //
+    // Measured on a component source at 480p: the source reads correctly at
+    // the reference clock, a divider is chosen, the count falls to 97, and the
+    // console then carries not one sampling line for 150 s across a
+    // re-detection and a restart.
+    seedBenchSource();
+    Adc::installReferenceSamplingClock();
+    Acquiring unit;
+    unit.acquisition.allowMaintenance(true);
+    unit.start();
+
+    // Past the ceiling, so the saturation has happened before the window the
+    // retry is asked about.
+    for (uint16_t i = 0;
+         i < VideoSourceAcquisition::AcquiredPassCeiling
+                 + VideoSourceAcquisition::ReferenceRetryPasses; ++i) {
+        seedSourceLines((uint16_t)(97 + (i % 60)));
+        unit.poll();
+    }
+
+    g_logLines.clear();
+    for (uint16_t i = 0;
+         i < 4 * VideoSourceAcquisition::ReferenceRetryPasses; ++i) {
+        seedSourceLines((uint16_t)(97 + (i % 60)));
+        unit.poll();
+    }
+
+    CHECK(loggedCountContaining("the reference clock measured nothing") > 0);
+}
+
+// A DIVIDER A MEASUREMENT CHOSE CAN STILL FAIL TO MEASURE, which is what the
+// guard on referenceSamplingClockInForce() assumed away. Measured on the Wii at
+// 480p on ypbpr: the source is read correctly at the reference clock -- 524
+// lines x 59.93 Hz, twice -- a divider of 1446 is chosen and latched, and
+// through that divider the field rate reads a stable 39.93 Hz, exactly 1.5
+// field periods, with the count a correct 524 and STATUS_SYNC_PROC_HTOTAL equal
+// to PLLAD_MD. So the clock is locked, the count is right, and the rate cannot
+// be measured through it -- and with no route back to the reference the engine
+// never measures the source again.
+TEST_CASE("a source its own solved divider cannot measure is given a reference back")
+{
+    seedBenchSource();
+    seedLineSamples(BenchDivider);
+
+    Acquiring unit;
+    unit.acquisition.allowMaintenance(true);
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+    REQUIRE(!Adc::referenceSamplingClockInForce());
+
+    // The count holds and the ADC stays locked to the line it is counting, so
+    // nothing here is a source that left: only the rate stops being readable.
+    // The count moves once, which is what arms a re-measure -- on the bench the
+    // reading taken right after the latch read 214 lines where the source has
+    // 524, and a moved count is accepted uncorroborated.
+    for (uint8_t i = 0; i < SourceMeasurement::SteadySamples + 2; ++i) {
+        seedSourceLines(214);
+        unit.poll();
+    }
+
+    // From here the count is the source's again and the ADC stays locked to the
+    // line it counts, so nothing says the source left: only the rate will not
+    // read through the divider the measurement chose.
+    // A rate the count refuses, steady across every reading -- 39.9 Hz against
+    // a 50.08 Hz source is the shape the bench produced, where a silent source
+    // would keep its divider instead.
+    g_fieldRate = 39.9f;
+    for (uint16_t i = 0; i < 4 * VideoSourceAcquisition::ReferenceRetryPasses; ++i) {
+        seedSourceLines(311);
+        seedLineSamples(BenchDivider);
+        unit.poll();
+    }
+
+    CHECK(Adc::referenceSamplingClockInForce());
+}
+
+TEST_CASE("a source change puts the sync processor in the state an unmeasured source is counted through")
+{
+    // **THE ENTRY SEQUENCE IS: DETECT THE CHANGE, BLANK THE OUTPUT, RETURN THE
+    // BLOCKS THE MEASUREMENT READS TO A DEFINED STATE, THEN MEASURE.** Step
+    // three is the one that was missing: the coast window and the clamp are
+    // what an unmeasured source is counted within, and left from the previous
+    // source they can be a window this one is not inside -- then
+    // STATUS_SYNC_PROC_HTOTAL does not follow the divider even written and
+    // latched by hand, which is the bench signature.
+    //
+    // A DEFINED STATE, NOT A RESET. Pulsing SFTRST_SYNC_RSTZ zeroes SP_RT_HS_SP
+    // and leaves the block with no origin to retime from, which is worse than
+    // what it was found in -- measured on the bench as a source that stopped
+    // acquiring at all.
     seedBenchSource();
     Acquiring unit;
-    unit.path.useSyncTypeProbe(probeOwnVsync);
-
-    g_hasOwnVsync = true;
-    g_probeCalls = 0;
     unit.start();
     REQUIRE(unit.pollUntilSolved());
 
-    seedSourceLines(97);
-    for (uint8_t i = 0; i < 16 * SourceMeasurement::SteadySamples; ++i)
-        unit.poll();
+    // A coast window the previous source left, which this one is not inside.
+    seedField(5, 0x4D, 0, 12, 0x600);    // SP_H_CST_ST
+    seedField(5, 0x4F, 0, 12, 0x700);    // SP_H_CST_SP
 
-    CHECK(g_probeCalls == 2);
+    unit.path.inputTimingsChanged(4);
+
+    CHECK(SyncProcessor::SP_H_CST_ST::read() == 0x10);
+    CHECK(SyncProcessor::SP_H_CST_SP::read() == 0x100);
 }
 
 TEST_CASE("a source held as separate sync that drives no V re-establishes the sync type")
@@ -1678,66 +1793,6 @@ TEST_CASE("a source that stops counting is not present")
     unit.poll();
 
     CHECK_FALSE(unit.acquisition.sourceIsPresent());
-}
-
-TEST_CASE("a source that comes back puts the recovery away")
-{
-    // Unlocked rather than absent, so the recovery is exercised against a source
-    // that can then be re-acquired: the run must retreat, or a source that has
-    // recovered keeps being recovered.
-    seedBenchSource();
-    seedLineSamples(BenchDivider);
-    Acquiring unit;
-    unit.acquisition.allowMaintenance(true);
-
-    unit.start();
-    REQUIRE(unit.pollUntilSolved());
-
-    g_logLines.clear();
-    seedLineSamplesUnlocked(3250);
-    unit.pollForMs(VideoSourceAcquisition::RecoveryBudgetMs + 100);
-    REQUIRE(loggedCountContaining("recovery: the sampling clock") == 1);
-
-    seedLineSamples(BenchDivider);
-    unit.pollForMs(VideoSourceAcquisition::RecoveryBudgetMs + 100);
-
-    CHECK(loggedCountContaining("recovery: the sampling clock") == 1);
-}
-
-TEST_CASE("a recovery names what it ran and how long the source had been gone")
-{
-    // THE RECOVERY IS INVISIBLE OTHERWISE. Every act is a register write made to
-    // a source nobody can see, so without this a unit that has been hunting for
-    // a minute gives no account of what it has already tried.
-    seedBenchSource();
-    Acquiring unit;
-    unit.acquisition.allowMaintenance(true);
-    unit.start();
-    REQUIRE(unit.pollUntilSolved());
-
-    g_logLines.clear();
-    seedSourceLines(0);
-    unit.pollForMs(VideoSourceAcquisition::RecoveryBudgetMs + 100);
-
-    CHECK(loggedContaining("recovery: the sampling clock after 10s"));
-}
-
-TEST_CASE("a recovery runs once, not once a pass")
-{
-    // The timer names the act whose window the reading falls in, so without an
-    // edge the act would run every 20 ms for the whole ten seconds it is given
-    // to work in.
-    seedBenchSource();
-    Acquiring unit;
-    unit.acquisition.allowMaintenance(true);
-    unit.start();
-    REQUIRE(unit.pollUntilSolved());
-
-    g_logLines.clear();
-    seedSourceLines(0);
-    unit.pollForMs(VideoSourceAcquisition::RecoveryBudgetMs + VideoSourceAcquisition::RecoveryBudgetMs - 100);
-
-    CHECK(loggedCountContaining("recovery: the sampling clock") == 1);
 }
 
 TEST_CASE("the run of acquired passes is the layer's too")
@@ -2672,28 +2727,6 @@ TEST_CASE("a source that changes rate while passed through is re-sized")
     CHECK(HdBypass::HD_HSYNC_RST::read() != sizedFor524);
 }
 
-TEST_CASE("an acquisition is given its whole budget before anything is recovered")
-{
-    // A component source takes 4.4 to 6.9 s to acquire and a pass was 20 ms, so
-    // the whole ladder -- sync-type re-probe, sampling clock restart, full reset
-    // -- ran DURING an ordinary selection rather than after a failure. Measured
-    // on a ypbpr leg that then failed: the engine read 263 lines at 15576 Hz and
-    // installed its divider at 2.16 s, and the coast-window rung reset that
-    // window 20 ms later, after which the count read 271 and
-    // STATUS_SYNC_PROC_HTOTAL 3268 against a 2200 divider.
-    // docs/investigations/the-recovery-ladder-fired-into-its-own-acquisition.md
-    seedBenchSource();
-    Acquiring unit;
-    unit.acquisition.allowMaintenance(true);
-    unit.start();
-
-    g_logLines.clear();
-    seedSourceLines(0);
-    unit.pollForMs(VideoSourceAcquisition::RecoveryBudgetMs - 100);
-
-    CHECK_FALSE(loggedContaining("recovery:"));
-}
-
 TEST_CASE("the boot's own input selection is not a source change")
 {
     // The acquisition layer is constructed before setup() applies the saved
@@ -2723,33 +2756,6 @@ TEST_CASE("the boot's own input selection is not a source change")
     unit.pollFor(4);
 
     CHECK_FALSE(loggedContaining("source moved: input"));
-    VideoSourceSelection::forgetSelection();
-}
-
-TEST_CASE("selecting another input gives the arriving source its own budget")
-{
-    // The bench case: the RISC PC is acquired on `vga`, `ypbpr` is selected, and
-    // the Wii needs several seconds. Without this the budget is spent on the
-    // source being left rather than the one arriving.
-    seedBenchSource();
-    seedLineSamples(BenchDivider);
-    VideoSourceSelection::select(VideoSourceSelection::Vga);
-    Acquiring unit;
-    unit.acquisition.allowMaintenance(true);
-    unit.start();
-    REQUIRE(unit.pollUntilSolved());
-
-    // Long enough that the budget would already be spent were it timed from the
-    // source being left.
-    seedLineSamplesUnlocked(3250);
-    unit.pollForMs(VideoSourceAcquisition::RecoveryBudgetMs - 100);
-
-    VideoSourceSelection::select(VideoSourceSelection::Ypbpr);
-    g_logLines.clear();
-    seedSourceLines(0);
-    unit.pollForMs(VideoSourceAcquisition::RecoveryBudgetMs - 100);
-
-    CHECK_FALSE(loggedContaining("recovery:"));
     VideoSourceSelection::forgetSelection();
 }
 
@@ -2803,8 +2809,8 @@ TEST_CASE("nothing parks the sync separator fully open")
 
     seedSourceLines(97);
     bool parked = false;
-    for (uint32_t ms = 0; ms < VideoSourceAcquisition::RecoveryBudgetMs
-                                   + 6 * VideoSourceAcquisition::RecoveryBudgetMs;
+    for (uint32_t ms = 0; ms < AbsentForMs
+                                   + 6 * AbsentForMs;
          ms += VideoSourceAcquisition::DetectionIntervalMs) {
         unit.poll();
         if (SyncOnGreen::level() == 0)

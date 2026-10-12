@@ -43,6 +43,14 @@ public:
     // that is otherwise permanent.
     static const uint16_t RateRecheckPasses = 500;
 
+    // How many failed passes a reading gets before the clock it was taken
+    // through is blamed. DERIVED FROM THE MEASUREMENT rather than tuned: it is
+    // what a reading takes to settle, so a correction that can complete has
+    // completed by then.
+    static const uint16_t ReferenceRetryPasses =
+        2 * Tv5725::SourceMeasurement::LatchSettlePasses
+        + Tv5725::SourceMeasurement::SteadySamples;
+
     // How far the boot's held rate and a fresh reading of it may sit apart and
     // still be the same measurement, in parts per thousand.
     //
@@ -157,6 +165,12 @@ public:
     // what the input is due: a component source runs sync on green, which is
     // weaker than a dedicated sync line, so it starts one step wider. Nothing
     // is walked on a board that may not be there.
+    // The sync separator's level for the source arriving, swept across the
+    // whole field until the source can be timed. One of the measurements a
+    // source change takes, beside the sync type: both are facts nothing on the
+    // board can calculate, and both have to be settled before the rate is read.
+    static void establishSeparatorLevel();
+
     static void acquireSeparatorLevel();
 
     // How long each block reset is given before the next write.
@@ -192,6 +206,7 @@ public:
     static const uint32_t DetectionIntervalMs = 20;
 
 
+
     // The least a transition keeps the output sync away. Long enough for the
     // encoder to see the sync go, short enough to stay inside the sink's first
     // re-acquisition attempt: the panel's dark period quantises at about
@@ -212,17 +227,6 @@ public:
     bool sourceLowLineRate() const;
 
     SourceState sourceState() const;
-
-    // How long a source gets to arrive before anything is recovered, and how
-    // long each recovery is then given to show its effect. It is the acquisition
-    // BUDGET rather than a tuned figure: a source change is allowed ten seconds
-    // to the picture being shown, so a source still absent at ten has spent it.
-    //
-    // **NOTHING ON THE ACQUISITION PATH WAITS FOR THIS.** The only recovery left
-    // is a reference sampling clock that has measured nothing, which is a
-    // deadlock no measurement escapes -- so what this times is a source that
-    // would otherwise never arrive, not one that is merely slow.
-    static const uint32_t RecoveryBudgetMs = 10000;
 
     // The run starts again, for a selection that gives the arriving source its
     // own budget rather than spending what the departing one used.
@@ -261,6 +265,28 @@ public:
     // that returns at the same line count and a different field rate.
     void sourceInterrupted();
 
+    // What a load leaves the sketch holding. Pointers rather than values
+    // because the sequence sets them part way through, and the bypass leg
+    // deliberately leaves applyPresetDoneStage alone.
+    struct LoadState {
+        bool *sourceDisconnected;
+        uint8_t *applyPresetDoneStage;
+        bool syncWatcherEnabled;
+
+        // A source property the sketch still owns, so it is asked rather than
+        // re-derived here.
+        bool scalingRgbhv;
+    };
+
+    // Configure the path for the load that has just landed: the sync path, the
+    // separator and phases, the clamp and coast windows, and the solve armed
+    // against the arriving source.
+    //
+    // `forgetFrameLock` drops the frame time lock's stale state part way
+    // through the sequence. It is handed in because the lock is constructed
+    // around this class, so depending on it would close a cycle.
+    void configureAfterLoad(void (*forgetFrameLock)(), const LoadState &state);
+
 private:
     // The resolution to RUN: the one chosen wherever the encoder can transmit it
     // at the rate measured, and the tallest that fits where it cannot. 0 where
@@ -284,7 +310,11 @@ private:
 
     // Report a source event and spend the latched disturbance on it, whichever
     // reason is being reported.
-    bool armMove(const char *why, uint16_t lines);
+    // `mux` says a DIFFERENT SOURCE is arriving rather than the same one
+    // having moved, which is what decides whether anything held about the
+    // previous source is still evidence. Stated by the caller rather than
+    // matched on `why`, so a renamed reason cannot silently change the kind.
+    bool armMove(const char *why, uint16_t lines, bool mux);
 
     // Re-apply the pass-through sampling for the source as last measured.
     void resizePassThrough();
@@ -343,7 +373,13 @@ private:
 
     // The maintenance a settled source is due, and the ladder a lost one is.
     void maintainSource();
-    void recoverSource();
+    // What a pass that could not measure the source records. NOT A RECOVERY:
+    // every measurement a source change needs is taken when the source changes,
+    // so there is nothing left for a timer to re-try. A ladder firing block
+    // resets at a source it could not measure destroyed the reading it was
+    // trying to rescue -- measured on a component source at 480p, a correct
+    // count of 524 reset to 97 within ten seconds and never returning.
+    void noteSourceAbsent();
 
     // The channel's emitted sync polarity, and the latched bit that freshens
     // it. Both are due on a wall-clock cadence of their own rather than on the
@@ -433,19 +469,20 @@ private:
     // reading is the same source as. Zero where the route is not taken.
     float passThroughFieldRateHz_;
     uint16_t unmeasuredPasses_;
+
+    // Passes since a reference clock was last advanced, so each one gets its
+    // own run of passes to be measured through. Without it the whole list is
+    // walked in a few hundred milliseconds, and every advance re-latches the
+    // ADC PLL and forgets the sync processor's positions.
+    //
+    // **COUNTED, NOT STAMPED AGAINST unmeasuredPasses_.** That counter stops at
+    // AcquiredPassCeiling, so the gap between it and a stamp taken from it
+    // stops growing five seconds in -- and the retry stops with it, leaving a
+    // source that cannot be measured with nothing that ever tries again.
+    uint16_t referenceRetryPasses_;
+
     uint16_t acquiredPasses_;
 
-    // When the current run of non-acquisition started, and how long it has run.
-    // A WALL CLOCK RATHER THAN THE PASS COUNT: passes are missed wherever
-    // loop() stalls, so a count under-reads the time a source has been missing
-    // and the acquisition budget is what the recovery is timed against.
-    // unmeasuredPasses_ at 0 is what says the timer is not running.
-    uint32_t unacquiredSinceMs_;
-    uint32_t unacquiredForMs_;
-
-    // What unacquiredForMs_ read when a recovery last ran, so the next waits a
-    // whole budget rather than firing on every pass of the one it is given.
-    uint32_t recoveredAtMs_;
 
     // The act whose window the run is in, and the one already run in it. An act
     // is due on the EDGE: without this it would run every pass of the ten

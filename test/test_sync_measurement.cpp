@@ -164,12 +164,62 @@ TEST_CASE("a source with no V sync of its own is not given one")
     CHECK(SyncMeasurement::hasOwnVsync(testClock) == false);
 }
 
+static const uint8_t SOG_MODE_BIT = 0x01;       // s5_56[0]
+
+// Whether the separator was ever in the path on a pass of the poll. Sampled
+// from the clock because that is the only thing that runs WHILE the probe is
+// reading, and what the probe leaves behind afterwards is a different question.
+static bool g_separatorSeenIn = false;
+static uint32_t watchingClock()
+{
+    if (Wire.bank[5][0x56] & SOG_MODE_BIT)
+        g_separatorSeenIn = true;
+    return testClock();
+}
+
+TEST_CASE("the probe takes the separator out of the path before it reads")
+{
+    // **STATUS_SYNC_PROC_VSACT REPORTS THE PATH IN FORCE, NOT THE SOURCE.** With
+    // the separator in circuit it reads 0 whatever the source drives, so a probe
+    // that clears SP_EXT_SYNC_SEL alone can only ever answer "no" -- and that
+    // answer holds a separate-sync source as composite, which latches.
+    //
+    // Measured on the bench, the RiscPC at 320x256@50 with SYNC 0 and confirmed
+    // emitting, after a session on a component input: `own V sync: no` on every
+    // attempt with SP_SOG_MODE 1, where the same source and mode answered
+    // `yes after 2ms` from a boot on which the separator had never been
+    // enabled. docs/known-issues.md
+    vsyncArrivesAt(10);
+    Wire.bank[5][0x56] |= SOG_MODE_BIT;
+    g_separatorSeenIn = false;
+
+    SyncMeasurement::hasOwnVsync(watchingClock);
+
+    CHECK_FALSE(g_separatorSeenIn);
+}
+
+TEST_CASE("the separator the probe took out goes back")
+{
+    // A source genuinely on composite separation is left off it otherwise, and
+    // the probe runs on a source that is working. The arrangement HELD is what
+    // it goes back to: the held answer is the authority on which path is in
+    // force, not the register the probe happened to find.
+    vsyncArrivesAt(10);
+    SyncMeasurement::set(true);
+
+    SyncMeasurement::hasOwnVsync(testClock);
+
+    CHECK((Wire.bank[5][0x56] & SOG_MODE_BIT) == SOG_MODE_BIT);
+}
+
 TEST_CASE("the sync path the probe borrowed goes back")
 {
-    // The probe answers by MOVING SP_EXT_SYNC_SEL, so a source already on
-    // composite separation is left off it if this does not restore.
+    // The probe measures in the separate-sync arrangement, so a source already
+    // on composite separation is left off it if this does not restore. The
+    // arrangement HELD is what it goes back to, not the register value found:
+    // the held answer is the authority on which path is in force.
     vsyncArrivesAt(10);
-    Wire.bank[5][0x20] |= EXT_SYNC_SEL_BIT;
+    SyncMeasurement::set(true);
     SyncMeasurement::hasOwnVsync(testClock);
     CHECK((Wire.bank[5][0x20] & EXT_SYNC_SEL_BIT) == EXT_SYNC_SEL_BIT);
 }

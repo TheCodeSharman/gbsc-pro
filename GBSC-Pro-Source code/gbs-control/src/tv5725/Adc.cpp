@@ -30,21 +30,54 @@ const uint32_t PostDividerRowHz[] = {80000000u, 40000000u, 20000000u};
 const uint8_t PostDividerRows = 3;
 
 // The reference clocks, tried in turn until one measures the arriving source.
-// Each is read against BringUpLineRateHz for its crossover row, and each has to
-// fit the input formatter's eleven-bit line counter undoubled:
+// A clock is a DIVIDER AND THE LINE RATE ITS CROSSOVER ROW IS READ AGAINST,
+// because the row is what the PLL locks or fails to lock on: measured on the
+// Wii at 480p, divider 1446 at row 1 reads STATUS_SYNC_PROC_HTOTAL 1446 and the
+// same divider at row 2 reads 412. So a divider alone does not name a clock, and
+// a list of dividers read against one rate lands every entry on one row.
 //
-//   2040   CKO 31.9 MHz   VCO 127.5 MHz   measures every bench source
-//   1400   CKO 21.9 MHz   VCO  87.5 MHz   measures all but interlaced SOG
+// One entry per line-rate band, each putting the VCO near 127.5 MHz for a source
+// IN that band. A source outside the band of the row in force asks for the VCO
+// shifted by the bands between them -- 257 MHz for 480p at the 15.6 kHz row,
+// against a MaxSampleRateHz of 162.
 //
-// A selection installs the first. **THE SECOND IS NOT A SPARE FOR THE BENCH**,
-// which both of these measure: it is there because a reference that cannot be
-// measured through is a DEADLOCK rather than a slow start, and no measurement
-// can choose its way out of one. A source neither suits is a source that never
-// acquires, so the list is what stops one stated pair being the whole answer.
+//   2040 @ 15.6 kHz   row 2   VCO 127.5 MHz   counts both bench sources
+//   2040 @ 31.2 kHz   row 1   VCO 127.5 MHz
+//   1446 @ 15.6 kHz   row 2   VCO  90.4 MHz   latches on vga, not on ypbpr
+//   1446 @ 31.2 kHz   row 1   VCO  90.4 MHz
+//
+// **NO ENTRY LATCHES ON BOTH BENCH SOURCES, WHICH IS WHY THERE IS A LIST.**
+// Measured: 2040 reads STATUS_SYNC_PROC_HTOTAL exactly 2040 on vga and 1670 on
+// ypbpr at 480p, and 1446 reads 1446 on vga and 871..1201 on ypbpr with the
+// count collapsing from 524 to 213. The VCO gain crossover does not separate
+// them -- 2040's 127.5 MHz sits 2.5 MHz under HighVcoGainAboveHz and runs the
+// low gain at the top of its range on BOTH -- so which entry suits a source is
+// not derivable and is searched.
+// ../../../docs/investigations/the-reference-clock-latches-on-one-bench-source.md
+//
+// Both bench bands are covered and nothing here runs faster, so a third band is
+// unmeasured rather than ruled out. Each divider fits the input formatter's
+// eleven-bit line counter undoubled.
+//
+// A selection installs the first. **A SECOND ENTRY IS NOT A SPARE FOR THE
+// BENCH**: it is there because a reference that cannot be measured through is a
+// DEADLOCK rather than a slow start, and no measurement can choose its way out
+// of one. A source no entry suits is a source that never acquires, so the list
+// is what stops one stated pair being the whole answer.
 // ../../../docs/investigations/the-reference-clock-can-deadlock-the-measurement.md
-const uint16_t ReferenceDividers[] = {Adc::BringUpDivider, 1400};
+struct ReferenceClock {
+    uint16_t divider;
+    uint32_t lineRateHz;
+};
+
+const ReferenceClock ReferenceClocks[] = {
+    {Adc::BringUpDivider, Adc::BringUpLineRateHz},
+    {Adc::BringUpDivider, 2 * Adc::BringUpLineRateHz},
+    {1446, Adc::BringUpLineRateHz},
+    {1446, 2 * Adc::BringUpLineRateHz},
+};
 const uint8_t ReferenceClockCount =
-    sizeof(ReferenceDividers) / sizeof(ReferenceDividers[0]);
+    sizeof(ReferenceClocks) / sizeof(ReferenceClocks[0]);
 }  // namespace
 
 uint32_t Adc::sampleRateHz(uint16_t divider, uint32_t lineRateHz,
@@ -541,16 +574,17 @@ void Adc::forgetReferenceClock() { referenceInForce_ = false; }
 
 void Adc::installReferenceStep()
 {
-    installReferenceDivider(ReferenceDividers[referenceStep_]);
+    installReferenceDivider(ReferenceClocks[referenceStep_].divider,
+                            ReferenceClocks[referenceStep_].lineRateHz);
 }
 
-void Adc::installReferenceDivider(uint16_t divider)
+void Adc::installReferenceDivider(uint16_t divider, uint32_t lineRateHz)
 {
     // The whole group, not the divider alone. A divider written without the
     // crossover row and the VCO gain puts the PLL on a frequency the hardware
     // will not run, which is a solid green screen with every register
     // self-consistent.
-    applySampleRate(divider, BringUpLineRateHz, OversampleAsClockAllows);
+    applySampleRate(divider, lineRateHz, OversampleAsClockAllows);
     referenceInForce_ = true;
 }
 

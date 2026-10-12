@@ -35,8 +35,7 @@ bool inLowPowerMode;
 
 void sendFrame(uint8_t frame) { steps.push_back("frame"); frameSent = frame; }
 void selectionChanged() { steps.push_back("selectionChanged"); }
-void installReferenceSamplingClock() { steps.push_back("referenceClock"); }
-void applyBringUpScan() { steps.push_back("scan"); }
+void installReferenceClock() { steps.push_back("referenceClock"); }
 void resetSyncProcessor() { steps.push_back("syncReset"); }
 void applyRegisters(const VideoSourceSelection::Settings &s)
 {
@@ -57,8 +56,7 @@ VideoSourceSelector make()
     VideoSourceSelector::Actions actions;
     actions.sendFrame = sendFrame;
     actions.selectionChanged = selectionChanged;
-    actions.installReferenceSamplingClock = installReferenceSamplingClock;
-    actions.applyBringUpScan = applyBringUpScan;
+    actions.installReferenceClock = installReferenceClock;
     actions.resetSyncProcessor = resetSyncProcessor;
     actions.applyRegisters = applyRegisters;
     actions.persist = persist;
@@ -72,8 +70,16 @@ VideoSourceSelector make()
     return VideoSourceSelector(actions, state);
 }
 
+// THE RESET COMES BEFORE THE CLOCK. A sync-processor reset leaves SP_RT_HS_SP
+// at 0, which is where the capture counter zeroes -- so a reset after the
+// install takes away the origin the install wrote, and the block never retimes,
+// never counts, and never measures the duty that would replace the 0.
+//
+// The scan is not a step of its own: it is part of installing a clock, the line
+// counter being sized from the divider the clock put in force.
+// ../docs/investigations/the-retime-stop-is-the-counters-origin.md
 const std::vector<std::string> Sequence = {
-    "frame", "selectionChanged", "referenceClock", "scan", "syncReset", "registers"};
+    "frame", "selectionChanged", "syncReset", "referenceClock", "registers"};
 
 }  // namespace
 

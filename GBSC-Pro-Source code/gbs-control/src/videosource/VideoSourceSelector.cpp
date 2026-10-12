@@ -24,9 +24,8 @@ void VideoSourceSelector::apply(VideoSourceSelection::Id id, bool persist)
     actions_.sendFrame(settings.frame);
 
     actions_.selectionChanged();
-    actions_.installReferenceSamplingClock();
-    actions_.applyBringUpScan();
     actions_.resetSyncProcessor();
+    actions_.installReferenceClock();
     actions_.applyRegisters(settings);
 
     *state_.brightnessSet = settings.brightnessSet;

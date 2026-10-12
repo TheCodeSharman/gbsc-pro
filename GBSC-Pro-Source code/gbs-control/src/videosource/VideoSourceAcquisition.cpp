@@ -18,6 +18,7 @@
 #include "../tv5725/VideoRoute.h"
 #include "../tv5725/VideoSignal.h"
 #include "VideoSourceSelection.h"
+#include "../tv5725/TestBus.h"
 #include "../tv5725/SyncProcessor.h"
 #include "../tv5725/Tv5725Log.h"
 
@@ -30,15 +31,16 @@ VideoSourceAcquisition::VideoSourceAcquisition(Tv5725::SourceMeasurement &sampli
       detectedMs_(0),
       detectedEver_(false), solvedLines_(0), solvedLineRateHz_(0),
       idle_(Tv5725::SourceMeasurement::SteadySamples),
-      unusableCountArmed_(false), dynamicApplied_(false), dynamicForSearch_(false), sourceMeasured_(false),
+      unusableCountArmed_(false), dynamicApplied_(false),
+      dynamicForSearch_(false), sourceMeasured_(false),
       sourceState_(SourceAbsent),
       solvedLinePeriod_(0), rateRun_(0), recheckPasses_(0),
       sourceInterrupted_(false),
       unsettledPasses_(0), unsettledArmed_(false),
       vsyncAbsentPasses_(0), vsyncAbsentArmed_(false),
       passThroughFieldRateHz_(0.0f),
-      unmeasuredPasses_(0), acquiredPasses_(0),
-      unacquiredSinceMs_(0), unacquiredForMs_(0), recoveredAtMs_(0),
+      unmeasuredPasses_(0), referenceRetryPasses_(0),
+      acquiredPasses_(0),
       selectionSeen_(VideoSourceSelection::None), selectionEstablished_(false),
       runAdvanced_(false) {}
 
@@ -319,6 +321,79 @@ bool VideoSourceAcquisition::sourceIsSearching() const
            && !sourceIsPresent();
 }
 
+void VideoSourceAcquisition::configureAfterLoad(void (*forgetFrameLock)(),
+                                                const LoadState &state)
+{
+    videoPath_.configureSyncPath();
+
+    if (state.scalingRgbhv) {
+        if (Tv5725::SyncMeasurement::isCsync()) {
+            Tv5725::SyncOnGreen::choose(Tv5725::HdBypass::CsyncSogLevel);
+        }
+        Tv5725::Adc::choosePhaseAdc(Tv5725::Adc::MidField);
+    }
+
+    if (!Tv5725::VideoRoute::isHdBypassChannel()
+        && !videoPath_.scalingRgbhvInForce()) {
+        applySyncProcessorDynamic();
+    }
+
+    Tv5725::SyncProcessor::holdClamp();
+
+    videoPath_.putSeparatorAndPhasesInForce();
+    *state.sourceDisconnected = false;
+    Tv5725::Chip::holdPower(true);
+
+    if (Tv5725::SyncMeasurement::isCsync()) {
+        if (Tv5725::TestBus::readHigh() == 0) {
+            delay(4);
+            if (Tv5725::TestBus::readHigh() == 0) {
+                acquireSeparatorLevel();
+                delay(4);
+            }
+        }
+    }
+
+    videoPath_.armSolveForSource();
+
+    forgetFrameLock();
+
+    placeCoastWindow(0);
+    placeClampWindow();
+
+    videoPath_.restartAndLatch();
+
+    if (Tv5725::VideoRoute::isHdBypassChannel()) {
+        Tv5725::Interrupts::acknowledgeAll();
+
+        // Video routes around the VDS here, so the mode change armed above has
+        // no solve coming and the freeze it took would never be released.
+        videoPath_.setOutputMode(&Tv5725::ModeBypass);
+        return;
+    }
+
+    placeClampWindow();
+    Tv5725::SyncProcessor::releaseClampIfPlaced();
+
+    applySyncProcessorDynamic();
+
+    if (!state.syncWatcherEnabled) {
+        Tv5725::SyncProcessor::releaseClamp();
+    }
+
+    Tv5725::Interrupts::acknowledgeAll();
+
+    // Pass-through is not decided here. It is a statement about the measured
+    // source, and this runs at the end of a load with whatever the PREVIOUS
+    // source measured still held -- passSourceThrough() owns it and re-answers
+    // it from each measurement. docs/video-source-acquisition.md
+    *state.applyPresetDoneStage = 1;
+
+    // Capture stays frozen: it is released by the poll() that lands the
+    // windows, once the source has settled into the new mode. Releasing it here
+    // shows the previous mode's geometry against the new source until then.
+}
+
 void VideoSourceAcquisition::sourceInterrupted() { sourceInterrupted_ = true; }
 
 bool VideoSourceAcquisition::runAdvanced() const { return runAdvanced_; }
@@ -345,11 +420,18 @@ static void logSourceState(VideoSourceAcquisition::SourceState state, uint16_t l
     tv5725Log(line);
 }
 
-static void logSourceMoved(const char *why, uint16_t lines, uint16_t solved)
+// WHICH KIND OF CHANGE, because the two need different things of the pass that
+// follows. A MUX change means a different source is arriving, so nothing held
+// about the previous one is evidence; a TIMINGS change means the same source
+// moved, and the sync type it was measured on still stands unless the probe
+// says otherwise. Only "input" is the mux.
+static void logSourceMoved(const char *why, bool mux, uint16_t lines,
+                           uint16_t solved)
 {
-    char line[72];
-    snprintf(line, sizeof(line), "source moved: %s (%u lines, solved %u)",
-             why, (unsigned)lines, (unsigned)solved);
+    char line[88];
+    snprintf(line, sizeof(line),
+             "measure: start, %s change (%s), %u lines, solved %u",
+             mux ? "MUX" : "TIMINGS", why, (unsigned)lines, (unsigned)solved);
     tv5725Log(line);
 }
 
@@ -359,10 +441,10 @@ static void logSourceMoved(const char *why, uint16_t lines, uint16_t solved)
 // the moment the solve completes, on the count that solve has just measured,
 // and the output is blanked for a second encoder relock nothing asked for.
 // docs/investigations/the-reference-clock-is-applied-to-a-working-picture.md
-bool VideoSourceAcquisition::armMove(const char *why, uint16_t lines)
+bool VideoSourceAcquisition::armMove(const char *why, uint16_t lines, bool mux)
 {
     sourceInterrupted_ = false;
-    logSourceMoved(why, lines, solvedLines_);
+    logSourceMoved(why, mux, lines, solvedLines_);
     return true;
 }
 
@@ -430,7 +512,7 @@ bool VideoSourceAcquisition::sourceMoved()
         // verdict included: inputTimingsChanged() blanks the pad, and a state
         // left at acquired would be read as one the new source had earned.
         sourceState_ = SourceAbsent;
-        return armMove("input", lines);
+        return armMove("input", lines, true);
     }
 
     // ONE ADVANCE OF THE RUN PER POLL. countHeld() mutates it, so a second
@@ -478,7 +560,7 @@ bool VideoSourceAcquisition::sourceMoved()
         // arm below is a source that moved, which says nothing about how it
         // carries sync, so only this one stops trusting the held answer.
         videoPath_.forgetSyncType();
-        return armMove("unusable count", lines);
+        return armMove("unusable count", lines, false);
     }
 
     unusableCountArmed_ = false;
@@ -500,7 +582,7 @@ bool VideoSourceAcquisition::sourceMoved()
         if (unsettledPasses_ < UnsettledArmPasses || unsettledArmed_)
             return false;
         unsettledArmed_ = true;
-        return armMove("unsettled count", lines);
+        return armMove("unsettled count", lines, false);
     }
     unsettledPasses_ = 0;
     unsettledArmed_ = false;
@@ -519,7 +601,7 @@ bool VideoSourceAcquisition::sourceMoved()
     // count -- so this answers for all of them rather than falling through to
     // one that would fire for the wrong reason.
     if (solvedLines_ == 0)
-        return armMove("first count", lines);
+        return armMove("first count", lines, false);
 
     // A composite-sync source held as separate-sync runs uncoasted: the count
     // loses the lines the vertical pulse occupies -- 308 against 311 -- dithers,
@@ -539,7 +621,7 @@ bool VideoSourceAcquisition::sourceMoved()
         if (vsyncAbsentPasses_ >= VsyncAbsentArmPasses && !vsyncAbsentArmed_) {
             vsyncAbsentArmed_ = true;
             videoPath_.forgetSyncType();
-            return armMove("no source V sync", lines);
+            return armMove("no source V sync", lines, false);
         }
     } else {
         vsyncAbsentPasses_ = 0;
@@ -559,7 +641,8 @@ bool VideoSourceAcquisition::sourceMoved()
         return false;
 
     idle_.reset();
-    return armMove(interrupted ? "interrupt" : countMoved ? "count" : "rate", lines);
+    return armMove(interrupted ? "interrupt" : countMoved ? "count" : "rate",
+                   lines, false);
 }
 
 // The cheap half asks only whether the line period MOVED, and the expensive half
@@ -607,11 +690,12 @@ bool VideoSourceAcquisition::rateMoved()
     recheckPasses_ = 0;
 
     // THE FIRST RECHECK OF A BOOT IS MEASURED BETTER RATHER THAN TRUSTED LESS.
-    // It used to re-solve unconditionally, because corroboration could not
-    // reject what it was asked about: both readings were timed over one pulse,
-    // which carries a whole source line of edge latency, so the tolerance had
-    // to be wider than the error being looked for. A re-solve blanks the output
-    // for the encoder relook, so a boot whose rate was right paid for it.
+    // A corroboration timed over one pulse cannot reject what it is asked
+    // about: one pulse carries a whole source line of edge latency, so the
+    // tolerance has to be wider than the error being looked for. Both readings
+    // are spanned here instead, which is the tolerance
+    // BootRateConfirmPerThousand states -- and a re-solve blanks the output for
+    // the encoder relook, so a boot whose rate is right must not pay for it.
     //
     // THE RECHECK AND NOT WHATEVER REACHES HERE FIRST. A line period that
     // twitches early spends the confirmation inside the window it exists to
@@ -726,16 +810,19 @@ bool VideoSourceAcquisition::poll(uint32_t nowMs)
 
     if (sourceState_ == SourceAcquired) {
         unmeasuredPasses_ = 0;
-        unacquiredForMs_ = 0;
+        referenceRetryPasses_ = 0;
         if (acquiredPasses_ < AcquiredPassCeiling)
             ++acquiredPasses_;
     } else {
         acquiredPasses_ = 0;
-        if (unmeasuredPasses_ == 0)
-            unacquiredSinceMs_ = nowMs;
         if (unmeasuredPasses_ < AcquiredPassCeiling)
             ++unmeasuredPasses_;
-        unacquiredForMs_ = nowMs - unacquiredSinceMs_;
+
+        // Held one past the threshold rather than left to grow: a retry has to
+        // stay reachable for as long as the source is unmeasurable, and the
+        // reset on a successful advance is what paces it.
+        if (referenceRetryPasses_ <= ReferenceRetryPasses)
+            ++referenceRetryPasses_;
     }
 
     // Ungated: an output left away is a dark panel, and whether maintenance is
@@ -840,7 +927,7 @@ void VideoSourceAcquisition::keepSourceComing(uint32_t nowMs)
     followSearchState();
 
     if (!sourceIsPresent())
-        recoverSource();
+        noteSourceAbsent();
     else
         maintainSource();
 
@@ -850,8 +937,7 @@ void VideoSourceAcquisition::keepSourceComing(uint32_t nowMs)
 void VideoSourceAcquisition::restartRecovery()
 {
     unmeasuredPasses_ = 0;
-    unacquiredForMs_ = 0;
-    recoveredAtMs_ = 0;
+    referenceRetryPasses_ = 0;
 }
 
 bool VideoSourceAcquisition::selectionMoved()
@@ -893,8 +979,19 @@ bool VideoSourceAcquisition::runPass(uint32_t nowMs, bool &detectionPass)
     // point: the sync path decides what the sync processor counts, and the scan
     // mode decides the divider the measurement asks for.
     // docs/video-source-acquisition.md
+    // THE SETTLED COUNT, NOT A READING. The scan mode is a property of the
+    // source, and every other decision here waits for SteadySamples agreeing
+    // counts. Any count from 200 to 1300 is a source, so one reading dipping
+    // below DoubleBelowLines puts a progressive source on the doubled scan at
+    // twice the divider, which the eleven-bit line counter cannot hold.
+    // Measured on the Wii at 480p: 524 for three readings, then 390.
+    //
+    // The sync processor's own count rather than the latch: it counts the source
+    // directly and does not care what the input formatter is doing, which is
+    // what breaks the circularity -- a scan mode left wrong makes the line rate
+    // unmeasurable, and one derived after that gate is never reached.
     videoPath_.establishSyncType((uint8_t)VideoSourceSelection::selected());
-    videoPath_.prepareToMeasure(sampling_.readSourceLines());
+    videoPath_.prepareToMeasure(sampling_.settledSourceLines());
 
     // The rate, then the output that rate can be carried at, then the clock
     // that output bounds, then the duty against that clock. The idle pass is
@@ -902,9 +999,38 @@ bool VideoSourceAcquisition::runPass(uint32_t nowMs, bool &detectionPass)
     // without the absent verdict here the answer holds whatever that pass last
     // concluded -- present -- for as long as the source cannot be read.
     bool settling = false;
-    if (!reading(sampling_.measureRate(), settling)) {
-        if (!settling)
+    const Tv5725::SourceMeasurement::MeasurementStatus status = sampling_.measureRate();
+    if (!reading(status, settling)) {
+        if (!settling) {
             sourceState_ = SourceAbsent;
+
+            // STILL PART OF MEASURING THE SOURCE, not a timed recovery: once
+            // a reading has had longer than one takes to settle, the clock it
+            // was taken through is what has failed, so the next reference is
+            // tried. VideoPath decides whether there is one.
+            //
+            // **NOT ON THE FIRST FAILURES.** A count the divider correction can
+            // recover is recovered by comparing it AGAINST the divider in
+            // force, so moving the clock underneath that prevents any
+            // correction from completing -- measured on a 311-line source left
+            // on a progressive mode's 1124, where the count never reaches 310.
+            // A COUNT THAT NEVER STEADIES IS ALSO A CLOCK THAT CANNOT MEASURE
+            // THE SOURCE. NotSteady returns before the line rate is read, so it
+            // produces no reading and prints nothing: a recovery reachable only
+            // from the Unmeasurable exit never runs here, and the state is a
+            // silent stall rather than a cycle. What both exits share is the
+            // discriminator -- something is pulsing, so the signal is there and
+            // this clock cannot count it.
+            const bool clockCannotMeasure =
+                (status == Tv5725::SourceMeasurement::Unmeasurable
+                 || status == Tv5725::SourceMeasurement::NotSteady)
+                && sampling_.fieldRateHz() > 0.0f;
+            if (referenceRetryPasses_ > ReferenceRetryPasses
+                && videoPath_.tryNextReferenceClock(clockCannotMeasure)) {
+                referenceRetryPasses_ = 0;
+                tv5725Log("measure: the reference clock measured nothing, trying the next");
+            }
+        }
         gaveBackPassThrough();
         return false;
     }
@@ -1076,6 +1202,31 @@ void VideoSourceAcquisition::applySyncProcessorDynamic()
     Tv5725::SyncProcessor::applyDynamic(source);
 }
 
+// The sync separator's level, swept until the source can be timed. It sits with
+// establishSyncType() because it is the same kind of fact: nothing on the board
+// measures the sync amplitude, so the level cannot be calculated and is found by
+// probing -- and it has to be right before anything tries to measure the rate,
+// which is what a separator slicing badly makes unmeasurable.
+//
+// The acceptance test is Tv5725::SourceMeasurement's because the measurement is.
+void VideoSourceAcquisition::establishSeparatorLevel()
+{
+    if (!Tv5725::Chip::hasPower())
+        return;
+
+    const bool found = Tv5725::SyncOnGreen::sweep(
+        Tv5725::SourceMeasurement::sourceIsMeasurable,
+        Tv5725::SyncOnGreen::putInForce);
+    if (!Tv5725::SyncOnGreen::inSyncPath())
+        return;
+
+    char line[64];
+    snprintf(line, sizeof(line), "separator level: %u%s",
+             (unsigned)Tv5725::SyncOnGreen::level(),
+             found ? "" : ", nothing measured");
+    tv5725Log(line);
+}
+
 void VideoSourceAcquisition::acquireSeparatorLevel()
 {
     if (!Tv5725::Chip::hasPower()) {
@@ -1083,13 +1234,11 @@ void VideoSourceAcquisition::acquireSeparatorLevel()
         return;
     }
 
-    Tv5725::SyncOnGreen::choose(Tv5725::Adc::inputIsComponent()
-                                    ? Tv5725::SyncOnGreen::ComponentLevel
-                                    : Tv5725::SyncOnGreen::DefaultLevel);
+    Tv5725::SyncOnGreen::chooseForInput();
     Tv5725::SyncOnGreen::acquire(clock_, Tv5725::SyncOnGreen::putInForce);
 }
 
-void VideoSourceAcquisition::recoverSource()
+void VideoSourceAcquisition::noteSourceAbsent()
 {
     report_.vsyncLockStale = true;
 
@@ -1099,28 +1248,6 @@ void VideoSourceAcquisition::recoverSource()
         return;
 
     Tv5725::Adc::forgetPhase();
-
-    if ((uint32_t)(unacquiredForMs_ - recoveredAtMs_) < RecoveryBudgetMs)
-        return;
-    recoveredAtMs_ = unacquiredForMs_;
-
-    char line[72];
-    snprintf(line, sizeof(line), "recovery: the sampling clock after %us",
-             (unsigned)(unacquiredForMs_ / 1000));
-    tv5725Log(line);
-
-    // The blocks first and the clock after, which is the order measured to clear
-    // a stall from outside the engine.
-    if (Tv5725::SyncProcessor::hsyncActive())
-        Tv5725::FrameBuffer::releaseCapture();
-    Tv5725::SyncProcessor::reset();
-    delay(BlockResetSettleMs);
-
-    // WHICH CLOCK THIS IS IS NOT THIS CLASS'S TO DECIDE. A reference still in
-    // force says nothing has measured the source, so the next reference is
-    // tried; a divider a measurement chose is re-asserted under a restarted PLL.
-    // VideoPath owns that, and asking here would be a second owner.
-    videoPath_.restartSamplingClock();
 }
 
 void VideoSourceAcquisition::maintainSource()

@@ -38,6 +38,16 @@ uint16_t SyncProcessor::retimeStopFor(uint16_t divider, const HsyncPulse &pulse,
     return (uint16_t)(stop == 0 ? 1 : stop);
 }
 
+uint16_t SyncProcessor::retimeOriginFor(uint16_t divider, uint8_t oversample)
+{
+    if (divider == 0)
+        return 0;
+
+    const uint16_t origin =
+        RetimeOriginSamples + (oversample <= 1 ? UndecimatedOriginSamples : 0);
+    return (uint16_t)(origin % divider == 0 ? 1 : origin % divider);
+}
+
 void SyncProcessor::driveTestBus(uint8_t module, uint8_t signal)
 {
     Tv5725::Tie<SP_TEST_EN, SP_TEST_MODULE, SP_TEST_SIGNAL_SEL>::write(1, module,

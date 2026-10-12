@@ -134,8 +134,103 @@ static void seedSource(uint16_t lines, uint16_t lineSamples, uint16_t divider)
 
 // The bench: RiscPC at 320x256@50, VTOTAL 311, so 311 x 50 = 15550 lines/sec.
 // PLLAD_MD 2553 and IF_HSYNC_RST 1276 are what the unit actually holds.
+TEST_CASE("a reading says whether the clock it was taken through was latched")
+{
+    // STATUS_SYNC_PROC_HTOTAL counts real ADC clocks and so reports the LATCHED
+    // divider, which is the one witness on the board that a write reached the
+    // PLL. Unlatched, nothing counted in ADC samples is the source's -- the
+    // duty's two sides least of all -- and the count and the field rate survive,
+    // so a reading can look entirely healthy while the clock under it is the
+    // 27 MHz reference. Measured on the Wii at 480p: HTOTAL 425 against a
+    // divider of 2040, with the count a correct 524.
+    //
+    // STATUS_MISC_PLLAD_LOCK is not this witness: it reads 0 on a state whose
+    // count matches the divider exactly.
+    // ../docs/investigations/pllad-lock-is-a-duty-cycle-not-a-state.md
+    InputFormatter inputFormatter;
+    SourceMeasurement sampling(inputFormatter);
+
+    seedSource(524, 425, 2040);
+    g_fieldRate = 59.93f;
+    measureToFirstReading(sampling);
+
+    CHECK(loggedContaining("UNLATCHED"));
+}
+
 static const uint32_t BenchLineRate = 15550;
 static const uint16_t BenchDivider = 2553;
+
+// The recurring-rate estimator. A sync separator inventing and dropping edges
+// makes each reading span k fields rather than one, so the readings scatter
+// across rational multiples of the true rate while the true rate itself recurs.
+TEST_CASE("the rate that recurs across a run is the one returned")
+{
+    // Measured on a component source at 480p: the true 59.939 Hz came back in
+    // 32 of 228 readings while every wrong value was a different multiple of
+    // it, appearing once or twice. A median of three returns a wrong one
+    // whenever two of the three are wrong, which is most of the time.
+    Wire.reset();
+    g_fieldRates = {59.939f, 72.32f, 59.939f, 80.57f, 73.11f,
+                    59.939f, 95.84f, 67.86f, 119.88f};
+
+    const float measured = SourceMeasurement::recurringFieldRateHz();
+
+    CHECK(measured == doctest::Approx(59.939f).epsilon(0.001));
+}
+
+TEST_CASE("a run with nothing recurring is not measured")
+{
+    // 0 rather than a best guess: sizing a divider from a rate nothing
+    // corroborated is the harm the estimator exists to avoid, and the caller
+    // has other things to try.
+    Wire.reset();
+    g_fieldRates = {59.939f, 72.32f, 80.57f, 73.11f, 95.84f,
+                    67.86f, 119.88f, 140.16f, 152.83f};
+
+    CHECK(SourceMeasurement::recurringFieldRateHz() == 0.0f);
+}
+
+TEST_CASE("a clean source is measured from every reading agreeing")
+{
+    Wire.reset();
+    g_fieldRates.clear();
+    g_fieldRate = 50.08f;
+
+    CHECK(SourceMeasurement::recurringFieldRateHz()
+          == doctest::Approx(50.08f).epsilon(0.001));
+}
+
+TEST_CASE("the probes are single pulses and the confirmation is spanned")
+{
+    // A spanned reading needs every period in the span clean, so spanning the
+    // probes turns a reading that usually works into one that usually does not:
+    // 14% of eight-pulse readings were right on the source this exists for.
+    // But one pulse carries the whole of both edge ISRs' latency, so the value
+    // finally returned comes from a span -- which is kept only when it lands
+    // where the probes said it should.
+    Wire.reset();
+    g_fieldRates.clear();
+    g_pulsesAsked = 0;
+
+    SourceMeasurement::recurringFieldRateHz();
+
+    CHECK(g_pulsesAsked == SourceMeasurement::UnconfirmedRatePulses);
+}
+
+TEST_CASE("a spanned reading that misses the cluster is not believed")
+{
+    // The probes say which multiple of the rate is the source's; the span says
+    // it precisely. A span landing somewhere else is one of the 86% that are
+    // wrong on this source, and taking it would undo the whole estimate.
+    Wire.reset();
+    g_fieldRates = {59.939f, 59.939f, 59.939f, 59.939f, 59.939f,
+                    59.939f, 59.939f, 59.939f, 59.939f,
+                    95.84f};   // the spanned reading, on another multiple
+
+    const float measured = SourceMeasurement::recurringFieldRateHz();
+
+    CHECK(measured == doctest::Approx(59.939f).epsilon(0.001));
+}
 
 TEST_CASE("the ADC has a rated sampling ceiling and the divider must respect it")
 {
@@ -677,7 +772,7 @@ TEST_CASE("the line rate is measured rather than handed in")
     }
 
     SUBCASE("the diagnostic names both inputs and the result") {
-        CHECK(logged("sampling: 311 lines x 50.08 Hz -> line rate 15624"));
+        CHECK(loggedContaining("measured: 311 lines x 50.08 Hz -> line rate 15624"));
     }
 }
 
@@ -703,7 +798,7 @@ TEST_CASE("a rate that moves without the line count is refused, and says so")
 
     SUBCASE("and reports what it saw, both halves") {
         CHECK(measurement.sourceLines() == 311);
-        CHECK(logged("sampling: 311 lines x 57.90 Hz -> line rate 0"));
+        CHECK(loggedContaining("measured: 311 lines x 57.90 Hz -> line rate 0"));
     }
 
     SUBCASE("an unmeasurable field rate is refused the same way") {
@@ -2091,8 +2186,55 @@ TEST_CASE("the settled field rate is the judged pair, not a fresh reading")
 // of both edge ISRs' latency; spanning N pulses divides that fixed error by N.
 // ../docs/investigations/one-source-takes-many-keys.md
 
-TEST_CASE("a reading taken before the rate is confirmed spans several pulses")
+TEST_CASE("a rate already taken is not read again through the clock it chose")
 {
+    // THE MEASUREMENT IS TWO HALVES AND ONLY THE SECOND SURVIVES THE INSTALL.
+    // The divider in force was derived from the rate, so re-reading the rate
+    // through it asks the chip for a value the engine itself chose -- and puts
+    // the whole acquisition at the mercy of one reading of it.
+    //
+    // Measured on the Wii at 480p: 524 lines x 59.93 Hz measured and divider
+    // 1446 latched against STATUS_SYNC_PROC_HTOTAL 1446, then five passes later
+    //
+    //     sampling: 215 lines x 30.88 Hz -> line rate 6670
+    //     sampling: 277 lines x 0.00 Hz -> line rate 0
+    //
+    // and rateFollowsCount() refuses every one of them against the rate it
+    // holds. The duty is the half that genuinely cannot survive the install --
+    // it is a ratio of the pulse to the LINE in ADC samples -- so that is what
+    // the pass after a latch is for.
+    // ../docs/investigations/the-rate-is-re-read-through-the-clock-it-chose.md
+    SourceMeasurement sampling(inputFormatter);
+    Adc::applyDivider(BenchDivider);
+    seedSourceLines(311);
+    Wire.sourceHsync(181, BenchDivider, false);
+    g_fieldRate = 50.08f;
+
+    SourceMeasurement::MeasurementStatus rate = SourceMeasurement::NotSteady;
+    for (uint8_t pass = 0; pass < 4 * SourceMeasurement::SteadySamples; ++pass) {
+        rate = sampling.measureRate();
+        if (rate == SourceMeasurement::Measured)
+            break;
+    }
+    REQUIRE(rate == SourceMeasurement::Measured);
+    REQUIRE(sampling.lineRateHz() == 15624u);
+
+    // What the caller does BETWEEN the halves: a divider chosen from the rate
+    // just measured, latched.
+    sampling.samplingClockLatched();
+
+    // And what the re-read returns through a clock that has just moved.
+    g_fieldRate = 30.88f;
+    for (uint8_t pass = 0; pass < SourceMeasurement::LatchSettlePasses; ++pass)
+        REQUIRE(sampling.measureRate() == SourceMeasurement::ClockSettling);
+
+    CHECK(sampling.measureRate() == SourceMeasurement::Measured);
+}
+
+TEST_CASE("the first reading of a source spans several pulses")
+{
+    // Nothing has been observed about the source yet, so the probes have to
+    // run: a single timing cannot be told apart from a multiple of itself.
     SourceMeasurement sampling(inputFormatter);
     Adc::applyDivider(BenchDivider);
     seedSourceLines(311);
@@ -2100,27 +2242,58 @@ TEST_CASE("a reading taken before the rate is confirmed spans several pulses")
     g_fieldRate = 50.08f;
 
     g_pulsesAsked = 0;
-    REQUIRE(measurePastGate(sampling) == SourceMeasurement::Measured);
+    REQUIRE(rateMeasured(measureToFirstReading(sampling)));
 
     CHECK(g_pulsesAsked == SourceMeasurement::UnconfirmedRatePulses);
 }
 
-TEST_CASE("a reading taken after the rate is confirmed spans one pulse")
+TEST_CASE("a source whose probes all agree is read over one pulse after that")
 {
-    // The spread is the boot's. Every later acquisition reads the source
-    // exactly, so paying several field periods a sample afterwards buys
-    // nothing and costs a mode change its budget.
+    // Spanning costs a field period a pulse, which a mode change pays out of
+    // its budget, so a source that does not need it must stop paying.
+    //
+    // WHAT EARNS IT IS THE PROBES AGREEING, which is a property of the source's
+    // sync separator and the only evidence there is about it. Nothing the
+    // engine's own confirmation protocol concludes will do: that asks whether
+    // the held RATE is still right, and a rate can be right while every single
+    // timing of it lands on a different multiple.
     SourceMeasurement sampling(inputFormatter);
     Adc::applyDivider(BenchDivider);
     seedSourceLines(311);
     Wire.sourceHsync(181, BenchDivider, false);
     g_fieldRate = 50.08f;
-    sampling.confirmRate();
+    REQUIRE(measurePastGate(sampling) == SourceMeasurement::Measured);
 
     g_pulsesAsked = 0;
     REQUIRE(measurePastGate(sampling) == SourceMeasurement::Measured);
 
     CHECK(g_pulsesAsked == 1);
+}
+
+TEST_CASE("a source whose probes scatter is never read over one pulse")
+{
+    // Measured on the Wii at 480p: 524 lines x 59.93 Hz solved, divider 1446
+    // latched against STATUS_SYNC_PROC_HTOTAL 1446 -- fully acquired -- and
+    // from the next reading on, a steady ~40 Hz, two thirds of the truth, which
+    // rateFollowsCount() refuses. The refusal reaches tryNextReferenceClock(),
+    // which replaces the latched divider with a reference that cannot measure
+    // this source, and no input change, low-power entry or preset load got back:
+    // only a boot did.
+    //
+    // Three of nine probes agreeing is the whole of what this source offers, so
+    // the cheap instrument must never come into force on it.
+    // ../docs/investigations/the-cheap-field-rate-is-earned-by-the-probes.md
+    SourceMeasurement sampling(inputFormatter);
+    Adc::applyDivider(BenchDivider);
+    seedSourceLines(311);
+    Wire.sourceHsync(181, BenchDivider, false);
+    g_fieldRates = {50.08f, 72.32f, 50.08f, 80.57f, 73.11f,
+                    50.08f, 95.84f, 67.86f, 119.88f,
+                    50.08f};   // the spanned reading, landing in the cluster
+
+    REQUIRE(rateMeasured(measureToFirstReading(sampling)));
+
+    CHECK_FALSE(sampling.probesAgreed());
 }
 
 TEST_CASE("the rate read is the same whatever the span")
@@ -2137,7 +2310,9 @@ TEST_CASE("the rate read is the same whatever the span")
     SourceMeasurement single(inputFormatter);
     seedSourceLines(311);
     Wire.sourceHsync(181, BenchDivider, false);
-    single.confirmRate();
+    REQUIRE(measurePastGate(single) == SourceMeasurement::Measured);
+    seedSourceLines(311);
+    Wire.sourceHsync(181, BenchDivider, false);
     REQUIRE(measurePastGate(single) == SourceMeasurement::Measured);
 
     CHECK(spanned.fieldRateHz() == doctest::Approx(single.fieldRateHz()));

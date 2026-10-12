@@ -29,8 +29,7 @@ public:
     // The widest slice the field carries.
     static const uint8_t LevelMax = 31;
 
-    // Where the walk starts a source it knows nothing about, and where it
-    // returns when it reaches the floor without finding a level that works.
+    // Where a source the input says nothing about starts.
     static const uint8_t DefaultLevel = 13;
 
     // At or below this the separator is too starved for a sampling-phase sweep
@@ -66,6 +65,12 @@ public:
     // climb back out of.
     static void choose(uint8_t level);
 
+    // The level the live input needs, chosen before anything tries to measure
+    // the source. Sync on green is weaker than a dedicated sync line, so a
+    // component source starts wider -- and every walk descends, so a source
+    // left on the default cannot climb to a level that works.
+    static void chooseForInput();
+
     // Choose it and put it in force.
     static void apply(uint8_t level);
 
@@ -96,21 +101,38 @@ public:
     static const uint16_t SearchStepCycles = 180;
 
     // Walk the chosen level down until the sync processor holds clean edges
-    // over a run, and put DefaultLevel back if the floor is reached without
-    // finding one. Chooses DefaultLevel and touches nothing when the sync separator is
-    // not in the sync path.
+    // over a run, and return to the level the input needs if the floor is
+    // reached without finding one -- the walk only descends, so a fallback
+    // below that level could never be climbed back out of.
     //
     // Putting a level in force also latches the sampling phases and the ADC
     // PLL, which are Adc's.
     static void acquire(uint32_t (*nowMs)(), void (*putInForce)());
 
+    // Walk the level across the WHOLE field and stop at the first one the
+    // source can be measured at, starting from the level the input needs and
+    // going up before going down.
+    //
+    // **THE OTHER WALKS ONLY DESCEND, SO A LEVEL ABOVE THE STARTING GUESS IS
+    // UNREACHABLE BY THEM.** Nothing on the board measures the sync amplitude,
+    // so there is no guess worth trusting that far: a component source needing
+    // 24 cannot be found by a walk that steps down from 14, and the levels
+    // below 14 are what those walks already cover -- which is why this one goes
+    // up first.
+    //
+    // `measurable` is the caller's because the measurement is not this class's.
+    // Taking a reading of the source's field rate here would make this a second
+    // owner of it, and two owners of one measured fact is the defect
+    // docs/investigations/the-frame-time-lock-saturates.md records.
+    //
+    // Returns whether any level passed. The level the input needs is left in
+    // force when none did.
+    static bool sweep(bool (*measurable)(), void (*putInForce)());
+
     // The same walk, two levels at a time and without the settling runs, for a
     // source whose sync has only just gone: the windows acquire() waits out
     // cost more than the attempt is worth there. Judges the sync separator's output
     // alone rather than pairing it with a run of HSACT.
-    //
-    // Leaves the level where it is when the sync separator is not in the sync path,
-    // where acquire() puts the default back.
     static void acquireCoarse(void (*putInForce)());
 
     // Re-acquire the level for a source that will not lock. The separator's own

@@ -164,6 +164,7 @@ Tv5725::SamplingLog samplingLog;
 volatile bool pendingSamplingMonitor = false;
 volatile bool pendingSamplingSweep = false;
 volatile bool pendingSamplingRates = false;
+volatile bool pendingSamplingSeparator = false;
 volatile uint16_t pendingSamplingA = 0;
 volatile uint16_t pendingSamplingB = 0;
 volatile uint16_t pendingSamplingC = 0;
@@ -203,6 +204,7 @@ volatile bool pendingSampleClock = false;
 volatile bool pendingSampleClockApply = false;
 volatile bool pendingReferenceClock = false;
 volatile uint16_t pendingReferenceClockDivider = 0;
+volatile uint32_t pendingReferenceClockRateHz = 0;
 volatile uint16_t pendingSampleClockDivider = 0;
 volatile uint8_t pendingSampleClockOversample = 0;
 volatile bool pendingDividerHold = false;
@@ -1060,10 +1062,16 @@ void chooseOutputMode(const Tv5725::OutputMode *mode)
   uopt->outputResolution[OutputResolutionBytes - 1] = '\0';
 }
 
+void forgetFrameLockForLoad()
+{
+    frameSync.cleanup();
+    frameTimeLock.forgiveFailures();
+}
+
 // A preset load: the mode state a load decides, and nothing else. Every
 // register is computed afterwards, from `choice` -- the output resolution this
-// load asks for, remembered for doPostPresetLoadSteps(), which hands it to the
-// engine to resolve and solve the raster from.
+// load asks for, remembered for the engine to resolve and solve the raster
+// from once the load lands.
 //
 // s1_2B and s1_2C are cleared here because nothing else clears them and they
 // latch across loads.
@@ -2289,90 +2297,6 @@ static void changeOutputResolution()
     frameSync.matchRate(sourceSampling.settledFieldRateHz());
 }
 
-void doPostPresetLoadSteps()
-{
-    // Only where something held the blocks and so discarded their
-    // configuration -- low power and the RGBHV watchdog through
-    // setResetParameters(), and setOutModeHdBypass(). Boot brings the chip up,
-    // so a mode change does not repeat it.
-    geometry.configureSyncPath();
-
-    if (scalingRgbhv()) {
-        if (Tv5725::SyncMeasurement::isCsync()) {
-            Tv5725::SyncOnGreen::choose(24);
-        }
-        Tv5725::Adc::choosePhaseAdc(Tv5725::Adc::MidField);
-    }
-
-    if (!Tv5725::VideoRoute::isHdBypassChannel() && !geometry.scalingRgbhvInForce()) {
-        inputAcquisition.applySyncProcessorDynamic();
-    }
-
-    Tv5725::SyncProcessor::holdClamp();
-
-    geometry.putSeparatorAndPhasesInForce();
-    rto->sourceDisconnected = false;
-    Tv5725::Chip::holdPower(true);
-
-
-
-    if (Tv5725::SyncMeasurement::isCsync()) {
-        if (Tv5725::TestBus::readHigh() == 0) {
-            delay(4);
-            if (Tv5725::TestBus::readHigh() == 0) {
-                inputAcquisition.acquireSeparatorLevel();
-                delay(4);
-            }
-        }
-    }
-
-    geometry.armSolveForSource();
-
-    frameSync.cleanup();
-    frameTimeLock.forgiveFailures();
-
-    inputAcquisition.placeCoastWindow(0);
-    inputAcquisition.placeClampWindow();
-
-
-    geometry.restartAndLatch();
-
-    if (Tv5725::VideoRoute::isHdBypassChannel()) {
-        Tv5725::Interrupts::acknowledgeAll();
-
-        // Video routes around the VDS here, so the mode change armed above
-        // has no solve coming and the freeze it took would never be
-        // released.
-        geometry.setOutputMode(&Tv5725::ModeBypass);
-
-        return;
-    }
-
-    inputAcquisition.placeClampWindow();
-    Tv5725::SyncProcessor::releaseClampIfPlaced();
-
-    inputAcquisition.applySyncProcessorDynamic();
-
-    if (!rto->syncWatcherEnabled) {
-        Tv5725::SyncProcessor::releaseClamp();
-    }
-
-    Tv5725::Interrupts::acknowledgeAll();
-
-    // Pass-through is not decided here. It is a statement about the
-    // measured source, and this runs at the end of a preset load with
-    // whatever the PREVIOUS source measured still held --
-    // VideoSourceAcquisition::passSourceThrough() owns it and re-answers it
-    // from each measurement. docs/video-source-acquisition.md
-    rto->applyPresetDoneStage = 1;
-
-    // Capture stays frozen: it is released by the poll() that lands the
-    // windows, seconds from now once the source has settled into the new
-    // mode. Releasing it here shows the previous mode's geometry against
-    // the new source until then.
-
-}
-
 void applyPresets()
 {
     // Frozen: docs/gbs-control-debug-interface.md
@@ -2511,7 +2435,14 @@ void applyPresets()
         rto->isValidForScalingRGBHV = true;
     }
 
-    doPostPresetLoadSteps();
+    {
+        VideoSourceAcquisition::LoadState load;
+        load.sourceDisconnected = &rto->sourceDisconnected;
+        load.applyPresetDoneStage = &rto->applyPresetDoneStage;
+        load.syncWatcherEnabled = rto->syncWatcherEnabled;
+        load.scalingRgbhv = scalingRgbhv();
+        inputAcquisition.configureAfterLoad(forgetFrameLockForLoad, load);
+    }
 }
 
 
@@ -2566,15 +2497,20 @@ static void restartAfterBypassSwitch()
 // /sampleclock installs. The route takes its crossover row from the rate the
 // engine is holding, so the same divider lands on a different post divider and
 // VCO gain depending on what was last believed -- measured, KS 1 against a
-// reference install's KS 2 at the same 1400. A reference is read against
-// Adc::BringUpLineRateHz instead, so only this can ask whether a candidate can
-// measure a source at all.
+// reference install's KS 2 at the same 1400. A reference is read against a
+// STATED rate instead, so only this can ask whether a candidate can measure a
+// source at all.
+//
+// The rate is half the clock rather than a detail of it: the row is read from
+// its product with the divider, and the row is what the PLL locks or fails to
+// lock on.
 // docs/investigations/the-reference-clock-can-deadlock-the-measurement.md
-static void applyReferenceClock(uint16_t divider)
+static void applyReferenceClock(uint16_t divider, uint32_t lineRateHz)
 {
-    Tv5725::Adc::installReferenceDivider(divider);
-    debugPrintf("reference clock: MD %u against %lu Hz\n", (unsigned)divider,
-                (unsigned long)Tv5725::Adc::BringUpLineRateHz);
+    geometry.installReferenceClock(divider, lineRateHz);
+    debugPrintf("reference clock: MD %u against %lu Hz, htotal %u\n",
+                (unsigned)divider, (unsigned long)lineRateHz,
+                (unsigned)Tv5725::SyncProcessor::lineSamples());
 }
 
 // The one entry to pass-through, for every source that reaches it.
@@ -4830,7 +4766,8 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
         }
         if (pendingReferenceClock) {
             pendingReferenceClock = false;
-            applyReferenceClock(pendingReferenceClockDivider);
+            applyReferenceClock(pendingReferenceClockDivider,
+                                pendingReferenceClockRateHz);
         }
         if (pendingDividerHold) {
             pendingDividerHold = false;
@@ -4866,7 +4803,8 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
 #if GBS_SAMPLING_LOG
         if (pendingSamplingRates) {
             pendingSamplingRates = false;
-            samplingLog.rates(millis(), pendingSamplingA);
+            samplingLog.rates(millis(), pendingSamplingA, pendingSamplingB != 0,
+                              (uint8_t)pendingSamplingC);
         }
         if (pendingSamplingMonitor) {
             pendingSamplingMonitor = false;
@@ -4878,6 +4816,11 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                               pendingSamplingC, (uint16_t)pendingSamplingD,
                               Tv5725::Adc::oversampleInForce(),
                               inputAcquisition.sourceLineRateHz());
+        }
+        if (pendingSamplingSeparator) {
+            pendingSamplingSeparator = false;
+            samplingLog.separator(millis(), (uint8_t)pendingSamplingA,
+                                  (uint8_t)pendingSamplingB, pendingSamplingC);
         }
 #endif
         if (pendingTuneSteps != 0) {
@@ -5896,6 +5839,9 @@ void startWebserver()
 
     // Ask whether a candidate reference clock can measure the source that is
     // on. Read the console, not the reply: the group latches together.
+    //
+    // `rate` is the band the crossover row is read against, which is the half
+    // of the clock a divider alone cannot state.
     server.on("/refclock", HTTP_GET, [](AsyncWebServerRequest *request) {
         if (!request->hasParam("md")) {
             request->send(200, "application/json",
@@ -5904,6 +5850,10 @@ void startWebserver()
         }
         pendingReferenceClockDivider =
             (uint16_t)request->getParam("md")->value().toInt();
+        pendingReferenceClockRateHz =
+            request->hasParam("rate")
+                ? (uint32_t)request->getParam("rate")->value().toInt()
+                : Tv5725::Adc::BringUpLineRateHz;
         pendingReferenceClock = true;
         request->send(200, "application/json", "{\"queued\":\"refclock\"}");
     });
@@ -6033,6 +5983,7 @@ void startWebserver()
     //
     //   /samplinglog?ms=5&for=60000              follow a source that changes
     //   /samplinglog?low=1600&high=2900&step=100&dwell=400   walk the divider
+    //   /samplinglog?sog=0&to=31&reads=5         walk the sync separator's level
     //
     // Queued, like /input: this answers from a network callback and must not
     // touch the bus.
@@ -6048,7 +5999,14 @@ void startWebserver()
 
         if (request->hasParam("rates")) {
             pendingSamplingA = (uint16_t)number("rates", 200);
+            pendingSamplingB = (uint16_t)number("sp", 0);
+            pendingSamplingC = (uint16_t)number("pulses", 8);
             pendingSamplingRates = true;
+        } else if (request->hasParam("sog")) {
+            pendingSamplingA = (uint16_t)number("sog", 0);
+            pendingSamplingB = (uint16_t)number("to", Tv5725::SyncOnGreen::LevelMax);
+            pendingSamplingC = (uint16_t)number("reads", 5);
+            pendingSamplingSeparator = true;
         } else if (request->hasParam("low")) {
             pendingSamplingA = (uint16_t)number("low", 1600);
             pendingSamplingB = (uint16_t)number("high", 2900);
@@ -7312,7 +7270,14 @@ static void handleRemoteKey()
             /////////new
             // loadDefaultUserOptions();
             loadComputedPreset(&Tv5725::Mode480p); 
-            doPostPresetLoadSteps();
+            {
+                VideoSourceAcquisition::LoadState load;
+                load.sourceDisconnected = &rto->sourceDisconnected;
+                load.applyPresetDoneStage = &rto->applyPresetDoneStage;
+                load.syncWatcherEnabled = rto->syncWatcherEnabled;
+                load.scalingRgbhv = scalingRgbhv();
+                inputAcquisition.configureAfterLoad(forgetFrameLockForLoad, load);
+            }
             GBS::VDS_DIS_HB_ST::write(0x00);
             GBS::VDS_DIS_HB_SP::write(0xffff);
             Tv5725::FrameBuffer::freezeCapture();                  

@@ -235,6 +235,16 @@ public:
     static uint16_t retimeStopFor(uint16_t divider, const HsyncPulse &pulse,
                                   uint8_t oversample);
 
+    // The counter's origin with no sync-width compensation, for a block that has
+    // measured no duty yet. THE COUNTER HAS TO RUN BEFORE A DUTY CAN BE
+    // MEASURED, and a reset leaves this register 0, which retimeStopFor()
+    // declines to replace because nothing was measured -- so the block cannot
+    // retime, cannot count, and never measures the duty that would restore it.
+    // Nothing is solved and the output is away until a measurement settles, so
+    // this places no window: the measured stop replaces it on the first one.
+    // ../../../docs/investigations/the-retime-stop-is-the-counters-origin.md
+    static uint16_t retimeOriginFor(uint16_t divider, uint8_t oversample);
+
     // Whether ANY sync is reaching this block, counted off its own output stage
     // on the test bus rather than read off a status bit. STATUS_SYNC_PROC_HSACT
     // reads like the answer and is not one: measured, it held 0 across a 450 ms

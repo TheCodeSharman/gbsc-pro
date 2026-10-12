@@ -537,12 +537,17 @@ public:
     // matters is that a measurement got far enough to choose.
     static void forgetReferenceClock();
 
-    // Install one stated divider as a reference clock: the whole group, with the
-    // crossover row and the VCO gain read against BringUpLineRateHz rather than
+    // Install one stated clock as a reference: the whole group, with the
+    // crossover row and the VCO gain read against `lineRateHz` rather than
     // against any rate the engine is holding. That distinction is the whole
     // difference between a reference and a solved clock, so asking whether a
     // candidate can measure a source needs this rather than an ordinary apply.
-    static void installReferenceDivider(uint16_t divider);
+    //
+    // The rate is the clock's own band and not a measurement, and the two
+    // together are what the PLL locks on: the row is read from their product, so
+    // the same divider at two rates is two clocks.
+    static void installReferenceDivider(uint16_t divider,
+                                        uint32_t lineRateHz = BringUpLineRateHz);
 
     static void applyResetParameters();
 

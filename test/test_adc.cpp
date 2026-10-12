@@ -1214,21 +1214,26 @@ TEST_CASE("a stated divider installs as a reference, against the bring-up rate")
     CHECK(Adc::referenceSamplingClockInForce());
 }
 
-TEST_CASE("each reference clock in turn is a different divider")
+TEST_CASE("each reference clock in turn is a different clock")
 {
     // A reference the ADC PLL will not lock to on the arriving source leaves
     // nothing measurable, and a divider is installed only FROM a measurement --
     // so the next one tried has to be a different clock, not the same one
     // re-latched. Measured on the Wii at 480i on ypbpr: no measurement at all
     // completes through the first for as long as it is left.
+    //
+    // A clock is the divider AND its crossover row, so either moving is a
+    // different clock -- the row alone changes whether the PLL locks.
     // ../docs/investigations/the-reference-clock-can-deadlock-the-measurement.md
     Wire.reset();
     Adc::installReferenceSamplingClock();
-    const uint16_t first = Adc::dividerInForce();
+    const uint16_t firstDivider = Adc::dividerInForce();
+    const uint8_t firstRow = Adc::PLLAD_KS::read();
 
     Adc::installNextReferenceSamplingClock();
 
-    CHECK(Adc::dividerInForce() != first);
+    CHECK((Adc::dividerInForce() != firstDivider
+           || Adc::PLLAD_KS::read() != firstRow));
 }
 
 TEST_CASE("the reference clocks cycle, so a source needing the first gets it back")
@@ -1243,6 +1248,32 @@ TEST_CASE("the reference clocks cycle, so a source needing the first gets it bac
         Adc::installNextReferenceSamplingClock();
 
     CHECK(Adc::dividerInForce() == first);
+}
+
+TEST_CASE("a reference clock states the row a 31.5 kHz source needs")
+{
+    // THE ROW IS HALF THE CLOCK, AND A DIVIDER ALONE DOES NOT NAME ONE. Measured
+    // on the Wii at 480p on ypbpr: divider 1446 at row 1 reads
+    // STATUS_SYNC_PROC_HTOTAL 1446 and a duty of 106, and the same 1446 at row 2
+    // reads 412 with the duty dithering 1..5. The row is written from the rate
+    // the reference is read against, so every entry read against one rate lands
+    // on one row -- and a source whose line rate is outside that row's band asks
+    // the VCO for a frequency the part will not run: 257 MHz against a
+    // MaxSampleRateHz of 162.
+    // ../docs/investigations/the-reference-clock-latches-on-one-bench-source.md
+    const uint32_t sourceLineRateHz = 31469;
+    Wire.reset();
+
+    bool suits = false;
+    Adc::installReferenceSamplingClock();
+    for (uint8_t i = 0; i < Adc::referenceDividerCount(); ++i) {
+        const uint32_t cko = (uint32_t)Adc::dividerInForce() * sourceLineRateHz;
+        if (Adc::PLLAD_KS::read() == Adc::postDividerFor(cko))
+            suits = true;
+        Adc::installNextReferenceSamplingClock();
+    }
+
+    CHECK(suits);
 }
 
 TEST_CASE("the reference clock is latched, so the PLL leaves on it")

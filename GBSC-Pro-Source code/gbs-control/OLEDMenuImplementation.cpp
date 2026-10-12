@@ -599,6 +599,10 @@ void applyInputRegisters(const VideoSourceSelection::Settings &settings)
     Tv5725::Adc::enableSyncOnGreen(settings.adcSogEn);
     Tv5725::SyncProcessor::selectExternalSync(settings.extSyncSel);
     Tv5725::Adc::selectInput(settings.adcInputSel);
+
+    // After the input is selected, which is what it follows. Nothing can
+    // measure the source without it, so it cannot wait for a load.
+    Tv5725::SyncOnGreen::chooseForInput();
 }
 
 // **SAID AFTER THE SEQUENCE, NOT DURING IT.** A console write inside the window
@@ -606,19 +610,8 @@ void applyInputRegisters(const VideoSourceSelection::Settings &settings)
 // next pass counts the arriving source in -- so the one fact worth reading off
 // this line is that it precedes detection's first DETECT.
 // docs/investigations/a-ypbpr-detection-that-succeeds-first-pass-skips-the-preparation.md
-// The scan the reference divider's line implies, which has to be stated with
-// it: 2506 ADC samples is a line no progressive counter can hold, so the
-// previous source's scan left beside it makes the input formatter count
-// several lines per line.
-static void applyBringUpScan()
-{
-    inputFormatter.applyScan(Tv5725::Adc::BringUpDivider,
-                             Tv5725::Adc::BringUpLineDoubled,
-                             Tv5725::Adc::inputIsComponent());
-}
-
 static void noteSelectionChanged() { sourceAbsence.selectionChanged(); }
-static void installReferenceSamplingClock() { Tv5725::Adc::installReferenceSamplingClock(); }
+static void installReferenceClock() { geometry.installReferenceClock(); }
 static void resetSyncProcessorForSelection() { resetSyncProcessor(); }
 
 // Built per call rather than held: rto is a pointer the sketch fills in at
@@ -628,9 +621,8 @@ static VideoSourceSelector videoSourceSelector()
     VideoSourceSelector::Actions actions;
     actions.sendFrame = sendInputFrame;
     actions.selectionChanged = noteSelectionChanged;
-    actions.installReferenceSamplingClock = installReferenceSamplingClock;
-    actions.applyBringUpScan = applyBringUpScan;
     actions.resetSyncProcessor = resetSyncProcessorForSelection;
+    actions.installReferenceClock = installReferenceClock;
     actions.applyRegisters = applyInputRegisters;
     actions.persist = saveUserPrefs;
 

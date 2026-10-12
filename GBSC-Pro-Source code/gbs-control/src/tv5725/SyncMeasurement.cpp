@@ -45,8 +45,22 @@ bool SyncMeasurement::syncType(bool (*hasOwnVsyncNow)())
 
 bool SyncMeasurement::hasOwnVsync(uint32_t (*nowMs)())
 {
-    const uint8_t extSyncBackup = SyncProcessor::SP_EXT_SYNC_SEL::read();
-    SyncProcessor::SP_EXT_SYNC_SEL::write(0);
+    // **THE MEASURING CONFIGURATION IS THE SEPARATE-SYNC ONE, PUT IN FORCE AS A
+    // DEFINED STATE RATHER THAN POKED FIELD BY FIELD.**
+    // STATUS_SYNC_PROC_VSACT below reports the path the processor is CONFIGURED
+    // for, not what the source drives -- so with the separator still in circuit
+    // it reads 0 whatever arrives, and clearing SP_EXT_SYNC_SEL on its own
+    // leaves SP_SOG_MODE set and the separator in. The answer is then always
+    // "no", which holds a separate-sync source as composite, and that latches:
+    // only a source change re-probes, and the count a wrong path produces is
+    // outside the source bounds.
+    //
+    // One owner writes it, so the state the probe measures in is the same state
+    // a separate-sync source runs in.
+    // ../../../../docs/known-issues.md
+    tv5725Log("measure: sync type, probing for the source's own V sync");
+
+    SyncProcessor::applyForSyncType(false);
     delay(OwnVsyncSettleMs);
 
     bool active = false;
@@ -65,11 +79,15 @@ bool SyncMeasurement::hasOwnVsync(uint32_t (*nowMs)())
     // How far into the window V arrived, because OwnVsyncWindowMs is sized from
     // that distribution and nothing else on the board reports it.
     char line[64];
-    snprintf(line, sizeof(line), "own V sync: %s after %ums",
-             active ? "yes" : "no", (unsigned)rose);
+    snprintf(line, sizeof(line), "measured: own V sync %s after %ums",
+             active ? "YES, separate H/V" : "no, composite or SOG",
+             (unsigned)rose);
     tv5725Log(line);
 
-    SyncProcessor::SP_EXT_SYNC_SEL::write(extSyncBackup);
+    // Back to the arrangement HELD, which is a defined state too. The caller
+    // applies whatever this answer decides, so the only requirement here is to
+    // leave nothing half configured behind.
+    SyncProcessor::applyForSyncType(isCsync());
 
     // THE PROBE ANSWERS FOR ITS OWN DISTURBANCE. Both writes above take the
     // sync separator in and out of the path, which the chip latches exactly as

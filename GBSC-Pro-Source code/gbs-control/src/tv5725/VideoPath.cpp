@@ -467,6 +467,22 @@ void VideoPath::inputTimingsChanged(uint8_t oversample)
     // rate, and at the reference divider that picks a crossover row for a CKO
     // this source never produces.
     applySamplingClock(Adc::dividerInForce(), Adc::rateInForce());
+
+    // AND THE BLOCK THE COUNT COMES FROM, RETURNED TO THE STATE AN UNMEASURED
+    // SOURCE IS COUNTED THROUGH. The clamp and the coast window are what the
+    // sync processor counts WITHIN, and the previous source's can be a window
+    // this one is not inside -- STATUS_SYNC_PROC_HTOTAL then does not follow
+    // the divider even written and latched by hand.
+    //
+    // **A DEFINED STATE, NOT A RESET.** Pulsing SFTRST_SYNC_RSTZ zeroes
+    // SP_RT_HS_SP and leaves the counter with no origin to retime from, and
+    // none can be derived until a duty has been measured through the block that
+    // will not retime without one. The solve places both windows properly once
+    // there is a measurement, and the acquisition layer releases the clamp this
+    // holds.
+    //
+    // After the clock, because the clamp is positioned from it.
+    SyncProcessor::prepareForDetection();
 }
 
 bool VideoPath::passedThrough() const
@@ -556,6 +572,7 @@ void VideoPath::sourceMeasured(const HsyncPulse &reading)
 void VideoPath::prepareToMeasure(uint16_t sourceLines)
 {
     buildUpIfTornDown();
+
     solveLineDoubling(sourceLines);
 
     // Pass-through solves nothing, so there is no window here to strand and
@@ -629,7 +646,8 @@ bool VideoPath::installSampling(SamplingReason reason)
     installedRateHz_ = rate;
 
     char line[80];
-    snprintf(line, sizeof(line), "sampling: rate %lu doubled %u -> divider %u",
+    snprintf(line, sizeof(line),
+             "installing: divider from line rate %lu, doubled %u -> %u",
              (unsigned long)rate, (unsigned)lineDoubled_, (unsigned)divider);
     tv5725Log(line);
 
@@ -744,7 +762,7 @@ void VideoPath::buildUpIfTornDown()
         return;
 
     BringUp::init(inputFormatter_);
-    Adc::installReferenceSamplingClock();
+    installReferenceClock();
 }
 
 void VideoPath::configureScalingPath()
@@ -758,13 +776,13 @@ void VideoPath::configureScalingPath()
     // installs the reference clock before it measures for exactly this reason:
     // the channel's divider is sized for the rate pass-through was ENTERED on,
     // so the measurement that follows would count the arriving source in the
-    // previous mode's samples. The scan goes with it, because the one on the
-    // chip is the one the last install put there.
+    // previous mode's samples.
+    //
+    // THE RESET FIRST, because it leaves the capture counter's origin at 0 and
+    // the install is what writes it.
     // ../../../../docs/investigations/leaving-pass-through-measures-through-the-channels-divider.md
-    Adc::installReferenceSamplingClock();
-    inputFormatter_.applyScan(Adc::BringUpDivider, Adc::BringUpLineDoubled,
-                              Adc::inputIsComponent());
     SyncProcessor::reset();
+    installReferenceClock();
 
     // Configured, then restarted. Chip::init() leaves the VDS and the input
     // formatter held -- only this releases them, and only on the scaling
@@ -810,6 +828,9 @@ void VideoPath::configureSyncPath()
     // Whatever is held, which is what makes this the load's application of the
     // path rather than a write beside one.
     putSyncTypeInForce(csync);
+
+    SyncOnGreen::chooseForInput();
+
     SyncProcessor::prepare(csync);
 }
 
@@ -1034,20 +1055,6 @@ void VideoPath::applySampling(uint16_t divider, bool doubled, uint8_t oversample
     applySamplingClock(divider, sampling_.lineRateHz());
 }
 
-// The retime window's stop is the capture counter's ORIGIN, so it takes the
-// source's own sync width rather than a fraction of the line: the counter
-// zeroes on the retimed pulse, and a pulse laid anywhere but on the incoming
-// one moves every window the solve places in it. From the reading the windows
-// were sized from, or they are placed against an origin they never saw.
-void VideoPath::writeRetimeStop()
-{
-    if (installedDivider_ == 0)
-        return;
-    SyncProcessor::writeRetimeStop(
-        SyncProcessor::retimeStopFor(installedDivider_, reading_,
-                                     Adc::oversampleInForce()));
-}
-
 void VideoPath::applySamplingClock(uint16_t divider, uint32_t lineRateHz)
 {
     if (divider == 0)
@@ -1055,7 +1062,7 @@ void VideoPath::applySamplingClock(uint16_t divider, uint32_t lineRateHz)
 
     Adc::applySampleRate(divider, lineRateHz, modeOversample_);
     installedDivider_ = divider;
-    writeRetimeStop();
+    writeRetimeOrigin();
 
     // The clamp is a fraction of the LINE, so it moves with the divider. Left
     // where a previous one put it, the stop reaches past the back porch and the
@@ -1093,6 +1100,97 @@ void VideoPath::restartSamplingClock()
         applySamplingClock(Adc::dividerInForce(), Adc::rateInForce());
     SyncProcessor::forgetPositions();
 }
+
+void VideoPath::installReferenceClock()
+{
+    Adc::installReferenceSamplingClock();
+    completeReferenceInstall();
+}
+
+void VideoPath::installReferenceClock(uint16_t divider, uint32_t lineRateHz)
+{
+    Adc::installReferenceDivider(divider, lineRateHz);
+    completeReferenceInstall();
+}
+
+bool VideoPath::tryNextReferenceClock(bool rateUnmeasurable)
+{
+    if (!Adc::referenceSamplingClockInForce()) {
+        // A source that pulses nothing keeps its divider: the count and the duty
+        // are both read through whatever is latched, so leaving it is what lets
+        // such a state measure its way out. What cannot is a clock that answers
+        // CONFIDENTLY AND WRONGLY -- a steady rate the count refuses -- because
+        // every later reading through it agrees with the first.
+        if (!rateUnmeasurable)
+            return false;
+        Adc::installReferenceSamplingClock();
+    } else {
+        Adc::installNextReferenceSamplingClock();
+    }
+
+    completeReferenceInstall();
+    return true;
+}
+
+// What the PLL group alone does not establish. THE SCAN THE REFERENCE LINE
+// IMPLIES: the line counter is a count of IF units and the decimation is what
+// an IF unit IS, so a divider installed through Adc alone leaves the block
+// counting the line the PREVIOUS clock implied -- and the source's field rate
+// is timed off this block's vertical, so the rate is then measured through a
+// line that is not arriving.
+//
+// AND THE CAPTURE COUNTER'S ORIGIN, because the retime stop is where it zeroes
+// and a sync-processor reset leaves that 0: a block that will not retime never
+// counts, so the duty that would replace the 0 is never measured.
+// ../../../../docs/investigations/the-field-rate-reads-exactly-double-after-a-sync-reset.md
+// ../../../../docs/investigations/the-retime-stop-is-the-counters-origin.md
+void VideoPath::completeReferenceInstall()
+{
+    SyncProcessor::forgetPositions();
+    lineDoubled_ = Adc::BringUpLineDoubled;
+    scanSolved_ = false;
+    applyScan(Adc::dividerInForce(), lineDoubled_);
+    writeRetimeOrigin();
+
+    // This re-latched the ADC PLL like any other install, so nothing counted in
+    // ADC samples is the source's for the next few passes. Said here because the
+    // group went in through Adc rather than through applySamplingClock().
+    sampling_.samplingClockLatched();
+}
+
+bool VideoPath::samplingClockLatched() const
+{
+    return Adc::dividerLatched(SyncProcessor::lineSamples());
+}
+
+// The capture counter's ORIGIN, so it takes the source's own sync width rather
+// than a fraction of the line: the counter zeroes on the retimed pulse, and a
+// pulse laid anywhere but on the incoming one moves every window the solve
+// places in it. From the reading the windows were sized from, or they are
+// placed against an origin they never saw.
+//
+// The measured stop where there is one, the bare origin where there is not. A
+// block that has measured no duty may not be left holding what it had, because
+// a reset leaves that 0 -- and a counter with no origin cannot retime, so it
+// never counts, so the duty that would replace the 0 is never measured. The
+// divider is Adc's rather than the last one this installed: a reference clock
+// goes in through Adc alone, and the origin belongs to the clock the counter is
+// running on.
+// ../../../../docs/investigations/the-retime-stop-is-the-counters-origin.md
+void VideoPath::writeRetimeOrigin()
+{
+    const uint16_t divider = Adc::dividerInForce();
+    if (divider == 0)
+        return;
+
+    const uint8_t oversample = Adc::oversampleInForce();
+    const uint16_t measured =
+        SyncProcessor::retimeStopFor(divider, reading_, oversample);
+    SyncProcessor::writeRetimeStop(
+        measured != 0 ? measured
+                      : SyncProcessor::retimeOriginFor(divider, oversample));
+}
+
 
 uint16_t VideoPath::chooseDivider() const
 {
@@ -1378,7 +1476,7 @@ void VideoPath::write(const OutputWindow &solved, const CaptureWindow &capture)
     // The install invalidates the duty, so the sync width this needs arrives on
     // a later pass than the divider does: derived here as well, or the counter's
     // origin keeps the PREVIOUS source's sync width for the life of the mode.
-    writeRetimeStop();
+    writeRetimeOrigin();
 
     GBS::IF_LINE_ST::write(capture.progressiveWindow().stop());
     GBS::IF_LINE_SP::write(capture.progressiveWindow().start());

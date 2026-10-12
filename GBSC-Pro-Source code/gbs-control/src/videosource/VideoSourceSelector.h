@@ -4,10 +4,14 @@
 // Putting a video source in force: the HC32's half of the mux and the TV5725's,
 // in the one order, for every caller.
 //
-// **THE SEQUENCE IS NOT THE REGISTERS.** A selection also installs a reference
-// sampling clock, states the scan that clock's line implies, and resets the sync
-// processor, because the first measurement of the arriving source is taken
-// through whatever divider the chip was left holding otherwise.
+// **THE SEQUENCE IS NOT THE REGISTERS.** A selection also resets the sync
+// processor and installs a reference sampling clock, because the first
+// measurement of the arriving source is taken through whatever divider the chip
+// was left holding otherwise.
+//
+// THE RESET COMES FIRST, because it leaves the capture counter's origin at 0 and
+// the install is what writes it.
+// ../../../../docs/investigations/the-retime-stop-is-the-counters-origin.md
 //
 // VideoSourceSelection is the table; this is the acting on it. What it cannot
 // own -- the UART, the register writes, the preferences -- is injected, which is
@@ -23,9 +27,8 @@ public:
     struct Actions {
         void (*sendFrame)(uint8_t frame);
         void (*selectionChanged)();
-        void (*installReferenceSamplingClock)();
-        void (*applyBringUpScan)();
         void (*resetSyncProcessor)();
+        void (*installReferenceClock)();
         void (*applyRegisters)(const VideoSourceSelection::Settings &settings);
         void (*persist)();
     };

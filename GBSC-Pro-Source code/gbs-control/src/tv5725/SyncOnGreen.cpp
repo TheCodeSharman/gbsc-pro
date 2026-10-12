@@ -135,6 +135,7 @@ uint16_t SyncOnGreen::badSamples_ = 0;
 bool SyncOnGreen::steppedInWindow_ = false;
 
 const uint8_t SyncOnGreen::DefaultLevel;
+const uint8_t SyncOnGreen::ComponentLevel;
 const uint8_t SyncOnGreen::FrozenLevel;
 const uint8_t SyncOnGreen::LevelMax;
 const uint16_t SyncOnGreen::WindowMs;
@@ -147,6 +148,11 @@ void SyncOnGreen::choose(uint8_t level)
         return;
 
     level_ = level;
+}
+
+void SyncOnGreen::chooseForInput()
+{
+    choose(Adc::inputIsComponent() ? ComponentLevel : DefaultLevel);
 }
 
 void SyncOnGreen::apply(uint8_t level)
@@ -181,10 +187,8 @@ bool SyncOnGreen::inSyncPath() { return SyncMeasurement::isCsync(); }
 
 void SyncOnGreen::acquire(uint32_t (*nowMs)(), void (*putInForce)())
 {
-    if (!inSyncPath()) {
-        choose(DefaultLevel);
+    if (!inSyncPath())
         return;
-    }
 
     putInForce();
 
@@ -196,13 +200,42 @@ void SyncOnGreen::acquire(uint32_t (*nowMs)(), void (*putInForce)())
             return;
 
         const bool exhausted = level_ < 2;
-        choose(exhausted ? DefaultLevel : (uint8_t)(level_ - 1));
+        if (exhausted)
+            chooseForInput();
+        else
+            choose((uint8_t)(level_ - 1));
         putInForce();
         delay(8);
 
         if (exhausted)
             return;
     }
+}
+
+bool SyncOnGreen::sweep(bool (*measurable)(), void (*putInForce)())
+{
+    if (!inSyncPath())
+        return false;
+
+    chooseForInput();
+    const uint8_t from = level_;
+
+    // The input's level first, then up, then down: a source already measurable
+    // where it sits must not be moved, and the levels BELOW the guess are what
+    // every other walk here already covers.
+    for (uint8_t step = 0; step <= LevelMax; ++step) {
+        const uint8_t at = step <= LevelMax - from
+                               ? (uint8_t)(from + step)
+                               : (uint8_t)(LevelMax - step);
+        choose(at);
+        putInForce();
+        if (measurable())
+            return true;
+    }
+
+    chooseForInput();
+    putInForce();
+    return false;
 }
 
 void SyncOnGreen::reacquire(void (*walk)(), void (*putInForce)())
@@ -235,7 +268,10 @@ void SyncOnGreen::acquireCoarse(void (*putInForce)())
 
     while ((bus.read() & SeparatingCleanly) != SeparatingCleanly) {
         const bool exhausted = level_ < 4;
-        choose(exhausted ? DefaultLevel : (uint8_t)(level_ - 2));
+        if (exhausted)
+            chooseForInput();
+        else
+            choose((uint8_t)(level_ - 2));
         putInForce();
         delay(exhausted ? 40 : 28);
 

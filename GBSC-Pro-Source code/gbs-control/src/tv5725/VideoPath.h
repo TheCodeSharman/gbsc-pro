@@ -445,6 +445,51 @@ public:
     // ../../../docs/investigations/the-reference-clock-can-deadlock-the-measurement.md
     void restartSamplingClock();
 
+    // A reference sampling clock, installed WHOLE: the ADC PLL group, the scan
+    // its line implies, and the capture counter's origin.
+    //
+    // **THE THREE ARE ONE ACT.** The line counter counts IF units and the
+    // decimation is what an IF unit is, so a group installed alone leaves the
+    // counter sized for the previous clock; and SP_RT_HS_SP is where the
+    // capture counter zeroes, which a sync-processor reset leaves at 0, so a
+    // block with no origin never retimes and never counts. Either omission
+    // reads as an ADC PLL that will not lock -- STATUS_SYNC_PROC_HTOTAL
+    // reporting the 27 MHz reference over the line rate instead of the divider.
+    //
+    // Without an argument it is the one the list starts at, which is what a
+    // selection and the exit from pass-through install. With one it is a stated
+    // candidate, which is how the bench asks whether a clock can measure a
+    // source at all.
+    // ../../../docs/investigations/the-retime-stop-is-the-counters-origin.md
+    void installReferenceClock();
+    void installReferenceClock(uint16_t divider, uint32_t lineRateHz);
+
+    // Try the next reference sampling clock, for a measurement that has just
+    // failed at this one. True where it moved.
+    //
+    // A REFERENCE STILL IN FORCE HAS ALREADY FAILED TO MEASURE THIS SOURCE, and
+    // one reference is not enough: measured on the Wii at 480i on ypbpr,
+    // nothing measures at the bring-up divider for as long as it is left --
+    // STATUS_SYNC_PROC_VTOTAL 97..156 against 525 with the ADC PLL unlocked
+    // throughout -- while a different divider measures inside 0.1 s.
+    //
+    // A DIVIDER A MEASUREMENT CHOSE CAN ITSELF BE UNMEASURABLE, so it is
+    // replaced too: measured on the Wii at 480p, the rate reads a stable 39.93
+    // Hz -- 1.5 field periods -- through the 1446 a correct reading of it
+    // chose, with the count right and the ADC locked. The caller's pass gate is
+    // what keeps this off a source that is merely settling.
+    // ../../../docs/investigations/the-reference-clock-can-deadlock-the-measurement.md
+    bool tryNextReferenceClock(bool rateUnmeasurable);
+
+    // Whether the ADC PLL is running the clock last installed, which is the one
+    // witness on the board that the crossover row suits the arriving source.
+    // Nothing read in ADC samples is the source's until this holds.
+    //
+    // STATUS_MISC_PLLAD_LOCK is not this question: it reads 0 on a state whose
+    // count matches the divider exactly, being a duty cycle rather than a
+    // verdict. docs/investigations/pllad-lock-is-a-duty-cycle-not-a-state.md
+    bool samplingClockLatched() const;
+
     // What the output is doing, as one question. Null only before anything has
     // been solved; ModeBypass -- isBypass() -- while video routes around the VDS.
     const OutputMode *outputMode() const;
@@ -538,11 +583,12 @@ private:
     // fits. The window decides, so this follows the solve that wrote it.
     void applyLineFilter(const CaptureWindow &capture);
 
-    // The capture counter's origin, from the divider installed and the sync
+    // The capture counter's origin, from the divider in force and the sync
     // width measured through it. Written at the install and again on every
     // solve, because the two arrive at different moments and either can move
     // without the other.
-    void writeRetimeStop();
+    void writeRetimeOrigin();
+    void completeReferenceInstall();
 
     // The divider this solve wants, held or recommended. Chooses; writes
     // nothing. The oversampling must have settled first: the sample clock is

@@ -46,7 +46,7 @@ CLOCK_SRC = src/clock/ClockGen.cpp src/clock/ClockRamp.cpp \
 # IF_HSYNC_RST and SP_RT_HS_SP -- and writes all three, so the blocks that
 # declare them link wherever it does.
 SAMPLING_SRC = src/tv5725/SourceMeasurement.cpp src/tv5725/HsyncPulse.cpp \
-  src/tv5725/VideoSignal.cpp \
+  src/tv5725/VideoSignal.cpp src/tv5725/SyncOnGreen.cpp \
 	src/tv5725/TestBusRateMeasurement.cpp src/tv5725/SyncMeasurement.cpp \
 	src/tv5725/Interrupts.cpp src/tv5725/TestBus.cpp src/tv5725/SamplingClock.cpp \
 	src/tv5725/SteadyRun.cpp src/tv5725/Adc.cpp \
@@ -644,7 +644,7 @@ chip:
 	@mkdir -p "$(OUT)"
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_chip" \
-	  "$(HERE)/test_chip.cpp" src/tv5725/Chip.cpp src/tv5725/HdBypass.cpp src/tv5725/SyncOnGreen.cpp \
+	  "$(HERE)/test_chip.cpp" src/tv5725/Chip.cpp src/tv5725/HdBypass.cpp \
 	  src/tv5725/VideoRoute.cpp \
 	  src/tv5725/ColourSpace.cpp src/tv5725/ColourBalance.cpp \
 	  src/tv5725/MemoryBus.cpp src/tv5725/SdramTimings.cpp \
@@ -660,7 +660,7 @@ hd-bypass:
 	@mkdir -p "$(OUT)"
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_hd_bypass" \
-	  "$(HERE)/test_hd_bypass.cpp" src/tv5725/HdBypass.cpp src/tv5725/SyncOnGreen.cpp \
+	  "$(HERE)/test_hd_bypass.cpp" src/tv5725/HdBypass.cpp \
 	  src/tv5725/Chip.cpp src/tv5725/VideoRoute.cpp src/tv5725/ColourSpace.cpp \
 	  src/tv5725/ColourBalance.cpp \
 	  src/tv5725/MemoryBus.cpp src/tv5725/SdramTimings.cpp \
