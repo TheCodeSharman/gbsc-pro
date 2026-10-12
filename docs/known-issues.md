@@ -499,6 +499,35 @@ the host suite, the divider reads 2200 either side of a retry that demonstrably
 ran. So the state is a cycle rather than a stall, and the cycle does not reach a
 clock that can measure the source.
 
+### The OLED cannot change input while the reference retry is cycling, and HTTP can
+
+Observed 2026-10-12 on `ypbpr` at 480p, in the state the entries above leave:
+the engine cycles the reference-clock retry about three times a second,
+indefinitely, and the console repeats `measure: the reference clock measured
+nothing, trying the next` and nothing else. **The OLED menu will not select
+another input in that state.**
+
+**`/input?src=vga` DOES work from there, and is the way out.** Measured from the
+request: `input selected` at 0.4 s, the sync-type probe answering at 0.6 s,
+`clock 2040@15625 htotal 2040` at 4.4 s, and `state: acquired` with a clean
+picture at 7.0 s. So the selection path itself is sound and this is the OLED's
+route to it.
+
+**It is not a stalled `loop()`, which is the obvious reading and is excluded.**
+The retry fires every `ReferenceRetryPasses` passes and the retries are ~300 ms
+apart, so `loop()` is turning over at about 21 ms throughout. `/input` is queued
+for `loop()` and is acted on, which says the same thing a second way.
+
+`SyncProcessor::PathSettleMs` is 500 ms and `VideoPath::establishSyncType()`
+does `delay()` for it, but it returns early unless the sync type actually
+changes, so it is not spending the loop here. **What the OLED path does that
+`/input` does not is unestablished** -- it needs someone at the bench with the
+remote, which is why it is filed rather than diagnosed.
+
+Free heap reads 9720 in this state, below the 10000 `/fs/*` requires -- so
+`/fs/download?f=/preferences.txt` refuses and the input cannot be read back --
+and above the 8000 the console broadcast needs.
+
 ### The sync-type probe cannot say yes once the separator is in the path
 
 **`hasOwnVsync()` clears `SP_EXT_SYNC_SEL` and reads
