@@ -139,3 +139,49 @@ other axis and a horizontal retime cannot reach it.
   most modes once `dividerCeilingForOutput()` binds. Measure the ring's edge
   instead, skipping the first ten columns for the bright artefact that sits ahead
   of any blanking.
+
+## A zero origin is a deadlock, and only the reference retry escaped it
+
+`retimeStopFor()` answers 0 where the source's sync was not measured, and
+`SyncProcessor::writeRetimeStop()` declines to write a 0 — which is right, since
+a value invented from the divider alone places every window against an origin
+nothing observed. What that leaves depends on what the register already held,
+and an input selection resets the sync processor, which zeroes it.
+
+So the block is handed an origin of 0, and **a counter with no origin cannot
+retime, so it never counts, so the duty that would replace the 0 is never
+measured.** `SyncProcessor::retimeOriginFor()` is the way out: the bare origin,
+no sync-width compensation, enough for the counter to run until a real duty
+arrives. It places no window, because nothing is solved and the output is away
+until a measurement settles.
+
+Measured on `ypbpr`, the Wii in 480p, `SP_RT_HS_SP` 0 beside
+`STATUS_SYNC_PROC_VTOTAL` 97. Frozen, the whole PLL group written through
+`/sampleclock` — the call the bypass switch makes, which restarts the PLL after
+it — six times across two dividers:
+
+| divider | `SP_RT_HS_SP` | `STATUS_SYNC_PROC_VTOTAL` | `STATUS_SYNC_PROC_HTOTAL` |
+|---|---|---|---|
+| 2040, oversample 2 and 4 | 0 | 100 | 424 |
+| 1446, oversample 2 and 4 | 0 | 0 | 212 |
+| 2040 again | 0 | 100 | 425 |
+
+The origin stays 0 through every one of them, so **sweeping the clock cannot
+escape it** — a reference install goes through `Adc` alone, which writes the
+clock group and not the origin.
+
+`VideoPath::writeRetimeOrigin()` is now the one writer, and both the install and
+the solve go through it: the measured stop where there is one, the bare origin
+where there is not. It previously existed twice, and only the copy
+`tryNextReferenceClock()` called carried the fallback — so the reference retry
+could escape a zero origin and the divider install could not.
+
+Two things the same measurements rule out, neither to be reached for again:
+
+- **The held clamp is not the cause.** `prepareForDetection()` holds it and the
+  release is inside a preset load, so an unmeasurable source keeps
+  `SP_NO_CLAMP_REG` 1. Released by hand and held released for 12 s, the count
+  stays 97..100 and `STATUS_SYNC_PROC_HLOW_LEN` goes on dithering 1..32.
+- **The divider VALUE is not the cause.** 2040 measures this source correctly
+  from a boot and fails from the collapsed state, so what separates the two
+  states is not the number in `PLLAD_MD`.

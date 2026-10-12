@@ -153,3 +153,38 @@ the divider in force carrying the previous source's scan. Both install the
 reference pair whole now, and `inputTimingsChanged()` re-asserts the clock
 alone -- the divider being the one already in force, the line beside it already
 describes it.
+
+## The reference-clock retry installed a divider without its scan
+
+`setResetParameters()` and the input selection each pair a reference divider with
+`InputFormatter::applyScan()` for it, because the line counter is a count of IF
+units and the decimation is what an IF unit IS. `VideoPath::tryNextReferenceClock()`
+installed the next reference through `Adc::installNextReferenceSamplingClock()`,
+which writes the PLL group and nothing else — so the counter stayed sized for
+whatever line the previous clock implied, and the field rate, timed off this
+block's vertical, was read through a line that was not arriving.
+
+Measured on `ypbpr`, the Wii in 480p, in both unmeasurable states:
+
+| reached by | `PLLAD_MD` | `IF_HSYNC_RST` | the line each describes |
+|---|---|---|---|
+| input change | 1400 | 2040 | the retry's second reference, beside the first's scan |
+| boot | 2040 | 1446 | the first reference, beside the solve's scan |
+
+Neither pair is `MD` or `MD/2`, so neither state satisfies the one-quantity rule
+at all. After the fix, on the same source and both paths, `PLLAD_MD` 2040 with
+`IF_HSYNC_RST` 2040 and `PLLAD_MD` 1446 with `IF_HSYNC_RST` 1446.
+
+**The divider separates the lock from the count on this source**, which is what
+makes the pairing matter rather than merely being untidy: at the output ceiling's
+1446 the ADC PLL latches — `STATUS_SYNC_PROC_HTOTAL` 1446 against `PLLAD_MD`
+1446 — and at the reference 2040 it does not, reading 430..439. The one correct
+measurement of the source is taken at 2040, above `dividerCeilingForOutput()`'s
+1446 for a 1080p raster, so the clock the source can be measured through and the
+clock the output can show it at are not the same clock.
+
+**A held divider cannot test that.** `/sampleclock?hold=` is read by
+`chooseDivider()`, which runs inside the solve — and the solve is never reached
+on a source whose rate will not measure, so the held value is applied to whatever
+state was in force when it was set rather than to the source under test. Releasing
+it afterwards is still required: it outlives the run that set it.

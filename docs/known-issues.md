@@ -10,7 +10,14 @@ regardless of which step is in flight.
 
 ## Reaches the picture
 
-### The Wii's 480p does not acquire: the field rate reads whole multiples of the frame
+### The Wii's 480p does not acquire at 1920x1080 -- the field rate is FIXED
+
+**The title named the field rate for two sessions and the field rate was the
+engine's own estimator, not the separator.** Read the four entries that follow
+this one for what is actually left -- the scan oscillation is FIXED, and what
+remains is the reference clock's latch and a field rate that reads two thirds at
+the solved clock. Everything below here is the measurement trail, kept because
+four of its hypotheses are refuted and worth not repeating.
 
 **480i acquires and 480p does not, on the same input, cable and sync
 arrangement.** Measured 2026-10-11 on `ypbpr`, sync on green. `/geometry` sits at
@@ -84,6 +91,517 @@ extra edge; 32.93 takes a missed one. Both appear in one run, so the signal
 reaching `DEBUG_IN_PIN` is ragged on this source rather than simply absent -- the
 direction a sync-on-green separator fails in on a progressive source. Why 480i
 survives the same path is the open question.
+
+**THE READING AT THE REFERENCE CLOCK IS CORRECT, AND THE FAILURE FOLLOWS THE
+INSTALLED DIVIDER.** Measured on two consecutive boots, from `/bootlog`:
+`524 lines x 60.00 Hz`, then `59.93`, then `59.93` -- three correct readings at
+reference divider 2040 -- then `rate 31467 doubled 0 -> divider 1446`, and
+nothing after it. So the source is measurable where the engine starts and
+unmeasurable through what it solves, which narrows this from "the field rate" to
+"the field rate through this divider".
+
+**1446's ORIGIN IS `VideoPath::dividerCeilingForOutput()`**, and a previous
+reading of it as unknown is withdrawn: it is the capture a 1080p raster can
+show, in IF units, which is what `OutputWindow::maximumCapture()` returns for
+that raster, and `test_video_source_acquisition.cpp`'s own `RasterDivider` of
+1444 states the same arithmetic. `docs/sampling-table.md`'s 2046 is not in
+conflict -- that ceiling is the line counter's and the table never models the
+output's.
+
+**THE ENGINE USED TO STOP TRYING AFTER FIVE SECONDS. THAT IS FIXED.** The
+reference-clock retry was stamped against `unmeasuredPasses_`, which saturates
+at `AcquiredPassCeiling`, so the gap it was keyed on stopped growing 255 passes
+in and every retry stopped with it -- measured as total console silence across
+50 s, a `/sc?~` and a `/restart`, with `loop()` demonstrably running because
+`/samplinglog` and `/testbus` both answered and printed throughout. The retry is
+counted in its own passes now and stays reachable for as long as the source is
+unmeasurable, so the state is a cycle rather than a stall. **It does not make
+480p acquire**: the reading still fails through the solved divider.
+
+Confirmed on the unit, `ypbpr` unmeasurable, one 75 s window each:
+
+| build | reference-clock retries | span |
+|---|---|---|
+| before | 17 | 3.03 s to 7.95 s, then silent |
+| after | **235** | 2.21 s to 75.14 s, continuous |
+
+`investigations/the-recovery-clock-saturates-and-the-engine-goes-silent.md`.
+
+**THE INSTALL LEFT THE CAPTURE COUNTER WITH NO ORIGIN, AND THAT IS FIXED.**
+`SP_RT_HS_SP` read **0** through the whole unmeasurable state, and a selection's
+sync-processor reset is what zeroes it: `retimeStopFor()` answers 0 where no duty
+has been measured, `writeRetimeStop()` declines to write a 0, and a counter with
+no origin cannot retime, so it never counts, so the duty that would replace the 0
+never arrives. Frozen, the whole PLL group written through `/sampleclock` six
+times across dividers 2040 and 1446 left the origin at 0 every time -- so
+sweeping the clock could not escape it, because a reference install goes through
+`Adc` alone and does not write the origin. `VideoPath::writeRetimeOrigin()` is
+now the one writer for both the install and the solve, and the fallback origin it
+already carried for the reference retry reaches both. Measured after the fix on
+the same source: `SP_RT_HS_SP` **1963** at divider 2040, where it was 0.
+
+**That also closes the doubled-scan feedback.** A count taken after the install
+used to come back wrong -- 218, then 333 -- and `shouldDoubleLine()` reads a
+count that low as SD, so the engine re-decided line doubling and halved
+`IF_HSYNC_RST` to 723 against a 1446 divider on a source it had itself logged as
+`doubled 0`. The state then sustained itself: every later divider install kept
+the doubled scan. After the fix the scan stays progressive, `IF_PRGRSV_CNTRL` 1
+and `IF_HSYNC_RST` 2040 against divider 2040.
+
+**IT STILL DOES NOT ACQUIRE, AND WHAT REMAINS IS NARROWER.** With the origin
+written, the scan progressive and the divider at the reference, an input change
+to `ypbpr` reads `STATUS_SYNC_PROC_VTOTAL` 97 and
+`STATUS_SYNC_PROC_HTOTAL` 433 against `PLLAD_MD` 2040 -- the sync processor
+counting nothing coherent at a divider a BOOT counts 524 at. So the open question
+is no longer the field rate, the divider, the clamp or the scan: it is why the
+sync processor counts this source from a boot and not from an input change, with
+the measured arrangement identical. `investigations/the-retime-stop-is-the-counters-origin.md`.
+
+**Two causes are REFUTED by direct test and must not be reached for again:**
+
+| refuted | by |
+|---|---|
+| the held clamp starves the SOG slicer | `SP_NO_CLAMP_REG` cleared by hand and held clear 12 s: the count stays 97..100 and `HLOW_LEN` goes on dithering 1..32 |
+| the divider value 1446 | neither 2040 nor 1446 recovers the collapsed state, and 2040 measures the source correctly from a boot |
+
+**THE DIVIDER AND THE SCAN DESCRIBED DIFFERENT LINES AT EVERY REFERENCE, AND
+THAT IS FIXED.** `PLLAD_MD` and `IF_HSYNC_RST` disagreed in both unmeasurable
+states -- 1400 beside 2040 reached by an input change, 2040 beside 1446 reached
+by a boot. The line counter is a count of IF units and the decimation is what an
+IF unit IS, so the two are one setting: `setResetParameters()` and the input
+selection each pair a reference divider with the scan for it, and
+`tryNextReferenceClock()` installed the next one through `Adc` alone. The
+source's field rate is timed off that block's vertical, so every rate the retry
+read was timed through a line that was not arriving.
+`VideoPath::tryNextReferenceClock()` now applies the scan the reference line
+implies. Measured after the fix, on both paths:
+
+| path | `PLLAD_MD` | `IF_HSYNC_RST` | before |
+|---|---|---|---|
+| input change | 2040 | **2040** | 1400 beside 2040 |
+| boot | 1446 | **1446** | 2040 beside 1446 |
+
+**THE COLLAPSE IS NOT YET COVERED BY AN INSTRUMENT, AND THE OBVIOUS READING OF
+IT IS NOT LICENSED.** Across a boot the engine logs
+`524 lines x 59.93 Hz -> line rate 31468` twice at the reference, installs
+divider 1446, and then reads `524 lines x 0.00 Hz`, `39.88`, `40.04` and
+`192.50 Hz` against a true 59.93. A `/samplinglog?ms=25` run over the same boot
+reads `sp_vtotal` **97 or 98** steadily, with `sp_htotal` 1446 at divider 1446
+and 430 at 2040 -- but its first sample lands about a second AFTER the engine's
+last correct reading, so **the log does not cover the window the collapse happens
+in** and the two figures are a second apart rather than two instruments
+disagreeing. Reading them as a disagreement is the error
+`CLAUDE.md` warns about. What the log does establish is that the state after the
+collapse is steady rather than dithering. A log queued before detection is what
+would cover the transition, and nothing has done that yet.
+
+**THE DIVIDER SEPARATES THE LOCK FROM THE COUNT.** At the ceiling-chosen 1446
+the ADC PLL latches -- `STATUS_SYNC_PROC_HTOTAL` 1446 against `PLLAD_MD` 1446 --
+and at the reference 2040 it does not, reading 430..439. The boot's one correct
+measurement is taken at 2040, the divider the PLL does not latch at, and 2040 is
+above `dividerCeilingForOutput()`'s 1446 for a 1080p raster. So the clock the
+source can be measured through and the clock the output can show it at are not
+the same clock on this source.
+
+**WHAT STILL SEPARATES A BOOT FROM AN INPUT CHANGE IS `BringUp::init()`, AND IT
+IS NOT YET TESTED.** A boot runs it immediately after `applySavedInputSource()`,
+so `Adc::init()`, `SyncProcessor::init()` and `InputFormatter::init()` all run
+with the component input already selected; an input change reaches none of them
+unless a low-power entry has armed it. An earlier reading that the bring-up
+cannot be the difference was drawn from a `vga` diff of two states that had both
+been through boots, and does not reach this case.
+
+**THE `fieldRateHz() > 0.0f` PROXY IS NO LONGER FATAL, ONLY SLOW.** It gates the
+retry on having read SOME rate, which separates "the count refused a confident
+reading" from "nothing pulsed" -- and this source produces both, the boot log
+interleaving `0.00 Hz` readings with the 39.9 ones, so the gate fires
+intermittently on the very case it serves. With the retry reachable for as long
+as the source is unmeasurable, an intermittent gate costs passes rather than the
+whole recovery.
+
+**IT IS READ ON A BOOT AND NEVER ON AN INPUT CHANGE**, which is the sharpest
+split measured on it. Three boots of three produce the correct reading at the
+reference divider and then the strand; three input changes of three produce not
+one `sampling:` line -- `DETECT: 27ms, syncFound 2` and then nothing but the
+reference retry, from a bypassed output and from a scaled one alike. So whatever
+the boot establishes before `applySavedInputSource()` is part of what makes this
+source readable, and an input change does not establish it.
+
+**THE TWO TEST BUSES DISAGREE CATEGORICALLY, in one acquisition with a control
+repeat.** Frozen, `/samplinglog?rates=24&pulses=1` off each in turn:
+
+| bus | readings |
+|---|---|
+| input formatter's vertical, `sp=0` | **0 mHz, 24 of 24** |
+| sync processor's out proc, `sp=1` | **11.99 Hz** x19, ~14.9 Hz x5 |
+| input formatter's vertical again | **0 mHz, 24 of 24** |
+
+11.99 Hz is 59.94 / 5 exactly, and the IF bus reading 0 either side of the SP
+reading is what rules out the selection having been disturbed by the first run.
+**So the field rate is timed off a bus that carries nothing here** -- 
+`TestBusRateMeasurement::sourceFieldRateHz()` takes `selectInputVsync()` on
+every path a measurement uses, and the input formatter is configured FROM the
+divider the measurement sizes. In a second state both buses read 0 for 72 of 72,
+so neither is a usable instrument once the source has been lost.
+
+**AND THE RETRY HAS A SECOND GATE, WHICH IS STILL CLOSED.**
+`tryNextReferenceClock()` is passed `status == Unmeasurable && fieldRateHz() >
+0.0f`, and where no reference is in force that is the whole permission to
+install one. On the boot path the rate reads `0.00 Hz`, so **zero retries fired
+in 90 s** even with the saturation fixed -- the engine is silent again for a
+different reason, one gate further on. Removing or narrowing that proxy is the
+next change, and it is what the sampling-clock deadlock note in `Adc.cpp` argues
+for: a clock that cannot be measured through is a deadlock whether a rate was
+read or not.
+
+**THE ENTRY SEQUENCE RETURNS THE BLOCKS TO A DEFINED STATE NOW, AND IT HOLDS
+THE COUNT.** The sequence is: the change is detected, the output is blanked, the
+blocks the measurement reads are returned to the state an unmeasured source is
+counted through, then the source is measured.
+`VideoPath::inputTimingsChanged()` calls `SyncProcessor::prepareForDetection()`
+for the third step -- the clamp and the coast window, which the processor counts
+WITHIN and which the previous source's values can place outside this source.
+
+**A DEFINED STATE, NOT A RESET.** Pulsing `SFTRST_SYNC_RSTZ` there was tried and
+is withdrawn: the reset zeroes `SP_RT_HS_SP`, no origin can be derived until a
+duty has been measured through the block that will not retime without one, and
+the measured result was a source that stopped acquiring at all. Resetting on a
+cadence of its own was worse again -- the processor never got a quiet window to
+complete a count in, which is the ladder's own lesson.
+
+**What it bought is the count.** Before, the count collapsed 524 -> 219 -> 208
+-> 97 within seconds of the divider going in and never returned. After, it holds
+a correct **524 across every reading** while the rate is refused:
+
+```
+sampling: 524 lines x 39.88 Hz -> line rate 0
+sampling: 524 lines x 39.87 Hz -> line rate 0
+sampling: 524 lines x 40.01 Hz -> line rate 0
+sampling: 524 lines x  0.00 Hz -> line rate 0
+```
+
+**So what is left is the field rate alone**, which is what the entry at the head
+of this section describes -- and it is now the only thing left, on a count that
+is stable and correct.
+
+**AND THE RECOVERY IS GATED ON THE WRONG STATUS.** The reference retry fires
+only where `measureRate()` answers `Unmeasurable`, and a block that cannot count
+answers `NotSteady` -- the count never settles, so the pass returns before
+`measureLineRate()` and before any rate is read. Both of the engine's exits from
+an unmeasurable source are therefore shut in exactly the state that needs them:
+`NotSteady` skips the status test, and `fieldRateHz() > 0.0f` shuts the other
+when a rate was read as 0.00. Measured in the host suite as **0 advances across
+56 passes** on a wedged block, and on the unit as 0 retries in 90 s.
+
+**What settles it is a decision rather than a measurement.** The rule the proxy
+stands in for is *"a pass that measured nothing writes nothing"*, which
+`test_video_path_raster.cpp` and `test_video_path_windows.cpp` both pin with
+`g_fieldRate = 0.0f`. Narrowing it to *"a pass that measured nothing writes no
+divider DERIVED from the measurement, and may still install a reference to
+measure through"* opens both exits and changes what those two tests assert.
+
+**AND SILENCE IS NOT A STALLED LOOP HERE**, which is worth knowing before
+reading one as a wedge. `measureRate()` prints only from `measureLineRate()`, so
+a pass that returns `NotSteady` or `ClockSettling` runs and says nothing -- and
+a count whose vertical-sync reconciliation is fed a wandering `VPERIOD_IF`
+never settles, so every pass takes that exit.
+
+**THE FIELD RATE IS NO LONGER THE EXPLANATION, AND THE MULTIPLES ABOVE HAVE A
+CAUSE.** Two defects in the measurement are fixed and the readings quoted
+throughout this entry -- 39.88, 39.87, 40.01 Hz against a true 59.93, which is
+two thirds -- were the engine's own doing rather than the separator's.
+
+`sampleFieldRateHz()` has two estimators: the probes, which ask which value
+RECURS across nine single timings, and a median of three. On this source a single
+timing is right in 32 of 228 readings, so the median returns a multiple. Which
+one was in force was decided by `rateConfirmed_` -- a flag that answers whether
+the boot's one re-measurement has been TAKEN, set before the reading it took was
+judged, and cleared only by the constructor. So the recheck retired the only
+estimator that works on this source, permanently, a few hundred passes after a
+fully acquired state: `PLLAD_MD` 1446 latched against
+`STATUS_SYNC_PROC_HTOTAL` 1446, `STATUS_SYNC_PROC_VTOTAL` 524,
+`STATUS_MISC_PLLAD_LOCK` 1. The refusal that followed reached
+`tryNextReferenceClock()`, which replaced the latched divider.
+`investigations/the-cheap-field-rate-is-earned-by-the-probes.md`.
+
+The estimator follows the probes' own unanimity now, which is a measured property
+of the source. **And the rate is read once per rate/duty pair** rather than
+re-read five passes after the install, through the clock it was itself used to
+choose -- `investigations/the-rate-is-re-read-through-the-clock-it-chose.md`.
+
+**Measured after both fixes**, on `ypbpr` at 480p: the field rate reads a steady
+59.93 Hz through the solved divider, the source reaches `source acquired`, the
+duty is measured, a source key is formed and the rate match steers the display
+clock. At output 720x480 it acquires fully -- `installing: divider from line rate
+31468, doubled 0 -> 1858`, `duty: 136 pulse / 1858 divider, htotal 1858`,
+`source key: 520@59.94/732??`, `rate match: source 59938 mHz, output 59919 mHz`.
+`vga` is unaffected: acquired in 10.2 s, `PLLAD_MD` 2200 against
+`STATUS_SYNC_PROC_HTOTAL` 2200, count 311, frame time lock converged to an error
+of 11920 and holding.
+
+**IT STILL DOES NOT ACQUIRE AT 1920x1080**, and what is left is the two entries
+below rather than anything about the rate.
+
+### FIXED: the scan decision oscillated, and it was taken from one reading
+
+Measured 2026-10-12 on `ypbpr` at 480p into 1080p, from one boot's log, before
+the fix:
+
+```
+measured: 524 lines x 59.93 Hz -> line rate 31467
+installing: divider from line rate 31467, doubled 0 -> 1446
+measure: rate held 59.93 Hz, measuring duty
+installing: divider from line rate 31467, doubled 1 -> 2200
+if line counter: 2200 does not fit, holding 1100
+measured: 521 lines x 59.93 Hz -> line rate 31288
+installing: divider from line rate 31288, doubled 0 -> 1446
+```
+
+**`lineDoubled_` flipped between two installs of one measurement**, putting a
+progressive 524-line source on the doubled scan at a divider of 2200 — which the
+input formatter's eleven-bit line counter cannot hold, so `IF_HSYNC_RST` was held
+at 1100, which IS the doubled scan on a progressive source.
+
+**The scan was decided from the LAST READING of the count where every other
+decision waits for a settled run.** `runPass()` passed
+`SourceMeasurement::readSourceLines()` straight to
+`VideoPath::prepareToMeasure()`, and `VideoSignal::countIsSource()` accepts
+anything from 200 to 1300 — so a single reading below
+`InputFormatter::DoubleBelowLines` reads as a short source. The count on this
+source reads 524 for three readings and then 390.
+
+It takes `SourceMeasurement::settledSourceLines()` now, which is 0 until the
+steadiness run has agreed, and `solveLineDoubling()` ignores a count of 0.
+Guarded by `test_video_source_acquisition.cpp`, which fails against the old
+reading.
+
+**The latch is NOT the right gate here and must not be used as one.** The sync
+processor counts the source's vertical directly and does not care what the input
+formatter is doing, which is what breaks the circularity: a scan mode left wrong
+makes the line rate unmeasurable, and one derived after that gate is never
+reached. `test_video_path.cpp` asserts that circularity stays broken.
+
+Measured after the fix, one boot on `ypbpr` at 480p:
+
+```
+measured: 524 lines x 59.93 Hz -> line rate 31468, clock 2040@15625 htotal 1661 UNLATCHED
+installing: divider from line rate 31468, doubled 0 -> 1446
+measure: rate held 59.93 Hz, measuring duty
+duty: 106 pulse / 1446 divider, htotal 1446, negative
+source key: 524@59.94/733??
+```
+
+One install, one correct duty — 106/1446 is 7.33% against 480p's own 7.2%, where
+the oscillating state read 161 or 222 of 2200. `vga` acquires in 8.5 s with
+`sync pad: driven`.
+
+### The reference clock latches on `vga` and not on `ypbpr`
+
+Measured 2026-10-12, with the latch witness now on every reading. The reference
+clock is the clock every measurement of an arriving source is taken through, and
+`STATUS_SYNC_PROC_HTOTAL` against the divider is the only thing on the board that
+reports whether the PLL is running it.
+
+| clock | source | `STATUS_SYNC_PROC_HTOTAL` |
+|---|---|---|
+| 2040 @ 15625, the reference | `vga` 320x256@50 | **2040**, exact, every reading |
+| 2040 @ 15625, the reference | `ypbpr` 480p | 1670, 1670, 225 |
+| 1446, trialled as the reference | `vga` | **1446** |
+| 1446, trialled as the reference | `ypbpr` 480p | 877, 1199, 871, 197, count 524 -> 213 |
+| 2200, solved | `vga` | **2200** |
+| 1446, solved | `ypbpr` 480p | **1446** |
+
+**Every divider a measurement chooses latches. The reference latches on one of
+the two sources, and no single value fixes that** -- 1446 is as good as 2040 on
+`vga` and worse on `ypbpr`.
+
+**The count and the field rate both survive an unlatched clock** -- the sync
+processor counts the source's vertical directly and the field rate is an ESP
+timing off `DEBUG_IN_PIN` -- so a reading reads entirely healthy through a
+pipeline clocked by the 27 MHz crystal. **The duty does not**:
+`STATUS_SYNC_PROC_HLOW_LEN` reads 1..8 unlatched against a steady 106 latched,
+which is 7.33% against 480p's own 7.2%.
+
+**What this blocks is measuring the duty at the reference**, which is what would
+let the whole measurement happen in one place and need one solved install. The
+duty is dimensionless and portable across dividers, so what it needs is a LATCHED
+clock rather than the final one.
+
+**Two readings after the sync-type probe are not evidence.** 2073 then 2264 on
+`vga`, whose settled readings are exactly 2040: the probe writes
+`SP_EXT_SYNC_SEL` and the chip latches that as a SOG switch. Judge on settled
+readings.
+
+`docs/investigations/the-reference-clock-latches-on-one-bench-source.md` has the
+refuted divider sweep, why the VCO gain crossover explains nothing, and why a
+frozen poke cannot answer it.
+
+**Next**: a first stage that installs a candidate, waits the settle and tests
+`VideoPath::samplingClockLatched()`, advancing on a clock that did not latch
+rather than on a measurement that failed for any reason. The witness exists and
+no caller consults it yet.
+
+### The field rate reads two thirds at the solved clock, where the reference reads it right
+
+Measured 2026-10-12 on `ypbpr` at 480p, one boot, after the scan fix:
+
+```
+measured: 524 lines x 59.93 Hz -> line rate 31468, clock 2040@15625 htotal 1661 UNLATCHED
+duty: 106 pulse / 1446 divider, htotal 1446, negative
+measure: start, TIMINGS change (interrupt), 524 lines, solved 524
+measured: 524 lines x 40.18 Hz -> line rate 0, clock 1446@31468 htotal 1446
+measured: 524 lines x 40.01 Hz -> line rate 0, clock 1446@31468 htotal 1446
+measured: 524 lines x 39.98 Hz -> line rate 0, clock 1446@31468 htotal 1446
+```
+
+40.0 Hz is two thirds of 59.93 — a missed vertical edge every third field — and
+it is **steady at four digits across readings**, so no agreement test rejects it.
+`rateFollowsCount()` refuses each against the correct count, which is the `line
+rate 0`.
+
+**It is the LATCHED clock that reads wrong and the unlatched reference that reads
+right**, so the latch is not what the rate's correctness follows. The count is a
+correct 524 throughout, so the sync processor sees the source while the edge at
+`DEBUG_IN_PIN` does not arrive every field.
+
+`SP_PRE_COAST` 7 / `SP_POST_COAST` 6 are in force, on sync on green with
+`SP_SOG_MODE` 1. The composite post coast entry further down this page is what
+decides whether the vertical blanking reaches the pin, and that is the untested
+candidate. **A frozen comparison cannot be used**: freezing on this source takes
+`STATUS_SYNC_PROC_VTOTAL` to 97..135 and both test buses time nothing, 0 in 60 of
+60 readings on each.
+
+### FIXED in part: a count that never steadies no longer stalls the engine
+
+The recovery gates were opened for `Unmeasurable` with a non-zero rate, and that
+is not the exit this state takes. With the rate reading correctly and the count
+collapsed, `measureRate()` answers `NotSteady` every pass: `sampleSteady()`
+refuses a count outside the source bounds and restarts the run, so the pass
+returns before `measureLineRate()`, before any status the retry tested, and
+without printing anything.
+
+Measured: 45 s and 97 s windows of total console silence with `state: absent`, a
+full solve held (`/geometry` capture 1447x522, `lineRateHz` 31288), `PLLAD_MD`
+1446 latched against `STATUS_SYNC_PROC_HTOTAL` 1448 and
+`STATUS_SYNC_PROC_VTOTAL` 98. `loop()` is running throughout -- HTTP field reads
+answer, which are deferred to it. Reproduced in the host suite, which prints
+nothing across the window either.
+
+**The `NotSteady` exit reaches the recovery now.** What both exits share is the
+discriminator: something is pulsing, so the signal is there and this clock cannot
+count it. Guarded by `test_video_source_acquisition.cpp`, which fails against the
+old condition.
+
+**WHAT IS NOT FIXED IS THAT THE SOLVED DIVIDER GOES STRAIGHT BACK.** The retry
+installs a reference and the next pass re-derives the solved divider from the
+rate still held, so the clock the recovery chose survives one pass -- measured in
+the host suite, the divider reads 2200 either side of a retry that demonstrably
+ran. So the state is a cycle rather than a stall, and the cycle does not reach a
+clock that can measure the source.
+
+### The sync-type probe cannot say yes once the separator is in the path
+
+**`hasOwnVsync()` clears `SP_EXT_SYNC_SEL` and reads
+`STATUS_SYNC_PROC_VSACT`, and that bit reports the sync path in force rather
+than the source.** With the separator still in circuit -- `SP_SOG_MODE` 1 and
+`ADC_SOGEN` 1 -- it reads 0 whatever the source drives, so the probe answers
+`own V sync: no` and the engine holds a separate-sync source as composite.
+
+Measured 2026-10-11, the RiscPC at `MODE X320 Y256 C256 F50`, `SYNC 0`,
+confirmed emitting, after a session on `ypbpr`:
+
+| | |
+|---|---|
+| probe | `own V sync: no after 1000..1002ms`, every attempt |
+| held | `SP_SOG_MODE` 1, `ADC_SOGEN` 1, `SP_EXT_SYNC_SEL` 1 on the VGA input |
+| count | 303, 328, 316, 317, 315, 318 at ~50 Hz -- read, dithering, never settling |
+| `STATUS_SYNC_PROC_VSACT` | 0 |
+
+**The same source and mode answered `own V sync: yes after 2ms` earlier the same
+day, from a boot on which the separator had never been enabled.** So the
+discriminator is not the source: it is whether anything has put the separator in
+the path since the chip was powered.
+
+**IT IS SELF-LATCHING AND NOTHING REACHABLE CLEARS IT.** Tried and failed:
+`/sc?~` three times, `/restart`, re-issuing the source's `MODE`, an input bounce
+through `rgbs`, and clearing `SP_SOG_MODE`, `ADC_SOGEN` and `SP_EXT_SYNC_SEL` by
+hand -- detection's own separator sweep re-enables them while it hunts, so a
+hand-cleared state does not survive to the next probe.
+
+**FIXED, AND THE FIX IS WHAT RECOVERED THE LATCHED STATE.** `hasOwnVsync()`
+now puts the processor in the DEFINED separate-sync arrangement for the
+measurement -- `SyncProcessor::applyForSyncType(false)`, one owner rather than
+a field cleared by hand -- and restores the arrangement held afterwards, which
+the caller re-applies from the answer. Measured on the unit, from the state
+above that `/sc?~`, `/restart`, a source re-issue, an input bounce and three
+registers cleared by hand had all failed to clear:
+
+```
+own V sync: yes after 13ms
+own V sync: yes after 3ms
+sync type: 0/3 field rate probes plausible, own V sync yes -> separate H/V
+sampling: 311 lines x 50.08 Hz -> line rate 15627
+sync pad: driven
+```
+
+No power cycle. `STATUS_SYNC_PROC_VSACT`'s entry below stands: clearing
+`SP_EXT_SYNC_SEL` alone does not revive the bit, and that is why the whole
+arrangement is what the probe puts in force.
+
+**CORROBORATED ON THE PATH THAT USED TO FAIL.** A `vga` -> `ypbpr` -> `vga`
+round trip, the RiscPC held at `MODE X320 Y256 C256 F50` `SYNC 0` throughout,
+answers `own V sync: yes after 2ms` on the return and acquires -- 311 lines at
+50.08 Hz, frame time lock converging. The input change was the one path the
+probe was last seen failing on, so the arrangement the probe puts in force is
+what carries it there too, not only out of a latched state.
+
+### An input change out of RGBHV bypass never completes detection
+
+**Selecting a different input while the output is in RGBHV bypass leaves the
+output in bypass and detection unfinished.** Measured 2026-10-11, the RiscPC on
+`vga` at 1280x720 in bypass (`scale-rgbhv = 0`), `/input?src=ypbpr`:
+
+```
+input selected: ypbpr, reference divider 2040, applied +68ms
+source moved: input (0 lines, solved 749)
+sync pad: away
+DETECT: enter t=900902ms ADCsel=0 S16=0x01 srcVT=0 HPERIOD=511
+evt,900903,det enter,0
+                       <- nothing for the remaining 37 s
+```
+
+`DAC_RGBS_BYPS2DAC` and `OUT_SYNC_SEL` both stay 1 throughout, so the route is
+still bypass; `/geometry` reports `lineRateHz` 45013, which is the **vga** rate,
+with `present: false, state: absent`.
+
+**The arm is not what fails, and an earlier reading that the engine reports the
+previous source as acquired and never re-detects is withdrawn.** The selection
+is noticed, the pad goes away and detection ENTERS -- it is detection that does
+not come back, and the verdict is absent rather than acquired.
+
+**What holds the bypass is the order in `runPass()`:** the route leaves bypass
+at `setOutputMode(carriedResolution())`, which sits past `reading(...)`, so it
+is reached only once the ARRIVING source has been measured. A source that cannot
+be measured therefore leaves the departing source's timing on the encoder for as
+long as it takes, and bypass passes that timing straight through.
+
+A `/restart` recovers it: the next boot selects `ypbpr` from the saved
+preference and reads `524 lines x 59.93 Hz` at the reference divider, so neither
+the board nor the source is at fault.
+
+**IT IS NOT A BYPASS-ONLY FAULT.** The same input change out of a SCALED vga
+state -- 320x256@50, acquired, full geometry -- also reaches `DETECT: 27ms,
+syncFound 2` and then produces no reading at all. So bypass is one state it
+happens in rather than the cause.
+
+**AND THE SYNC TYPE LATCHES IN THE OTHER DIRECTION TOO.** Coming back
+`ypbpr` -> `vga` leaves the separator in circuit on the VGA input --
+`SP_SOG_MODE` 1 and `ADC_SOGEN` 1 -- so hsync is sought on green, where the
+RiscPC puts none, and `STATUS_SYNC_PROC_HSACT` reads **0** with
+`own V sync: no after 1000ms` on a source whose sync type is separate.
+**`/sc?~` did NOT clear it, twice**, which contradicts the recovery this page
+and CLAUDE.md both record for the same signature; a `/restart` cleared it at
+once and the source came back in about twelve seconds.
 
 ### The default framing loses the source's outermost COLUMN on every mode
 
