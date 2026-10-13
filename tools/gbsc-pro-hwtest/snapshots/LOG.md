@@ -1056,6 +1056,13 @@ at each end, and that is the expected difference rather than a finding.
 |---|---|
 | `golden-800x600-bypass-2026-09-21` | the reference for a correct RGBHV **pass-through**: the RISC PC at 800x600@60 on `vga`, divider 2038, `HD_HS_ST` 33, blanking open to the source's own active video at `HD_HB_SP` 340 / `HD_HB_ST` 2037. Both of the card's corner blocks measure the same width, so nothing is clipped at either end, and the frequency wedge sits at the camera's noise floor with no beat. A **full 1536-register** capture for `snapdiff.py`, with `…dump.json` beside it for `dump_registers.py --restore`. `docs/photos/2026-09-21-golden-800x600-bypass/README.md` carries how each of those is measured, and why the engine's own `HD_HB_SP` 417 / `HD_HB_ST` 1961 crops a border the standard does not know about |
 
+## The Wii held steady on ypbpr
+
+| snapshot | what it shows |
+|---|---|
+| `wii-480p-1080p-ypbpr-stable-2026-10-13` | the first `ypbpr` state here with the emitted frame measured IDENTICAL across a burst: the Wii at 480p into 1920x1080, `STATUS_SYNC_PROC_VTOTAL` 524 against `HTOTAL` 1446 and the divider latched at 1446, `SP_H_PULSE_IGNOR` **14** from the measured scan rather than the fraction's 70. Four 40-frame bursts off the dongle over two minutes, 40/40 identical in each, mean RGB 218.9 / 226.7 / 221.8 against 219.7 / 70.4 / 225.2 on the fraction. A full 1536-register capture for `snapdiff.py`, with `…dump.json` beside it. **What it is NOT is a colour reference** -- the level sits well above the vendor image's 133 / 137 / 137 and `docs/known-issues.md` carries that open. `docs/investigations/the-pulse-ignore-fraction-breaks-a-progressive-source.md` |
+| the vendor image | **cannot provide one.** Its 310 `SerialM` prints are commented out, its `d` dump prints nothing and it has no read route, so a stock register snapshot needs the tag rebuilt with one added. `docs/bench-sources.md` |
+
 ## The golden full-screen framing
 
 | snapshot | what it shows |
