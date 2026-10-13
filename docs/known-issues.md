@@ -535,12 +535,33 @@ coast in force equals the coast the count implies. One residue of the same
 measurement: the coast is left at 834, derived from the rate the bad count
 gave, where 830 is right, because nothing re-places it once measuring stops.
 
-### The transmitted window's opening follows the field rate, and TransmittedWindowDelayPx cannot hold it
+### FIXED: the transmitted window's opening is a FRACTION of the line, and the field-rate band was the duration base
 
-`OutputMode::TransmittedWindowDelayPx` is 20 and places `VDS_DIS_HB_SP` at
-`sync + backPorch + 20`. There is no such constant. Four states, each a
-four-point fit with residuals under 0.3 columns, read off the USB capture with
-automation frozen:
+**The band is an artefact of what it was scored against.** `solve()` placed the
+window at `sync + backPorch` converted as DURATIONS, and the display clock is
+pinned near its ceiling, so that base sits at 139 samples whatever the raster
+while the sink's opening grows with the line. A 50 Hz raster is 316 units
+longer than a 60 Hz one, so the fraction grows 27 samples and a fixed base
+reports it as a jump. Scored against `T x (syncPx + backPorchPx) / totalPx`
+instead, the same readings plus two taken since are one residual of **6.01**,
+spread 1.28, over rasters 1590 to 2402, two inputs, two output standards and
+both field rates.
+
+`solve()` now opens the window on that fraction and
+`TransmittedWindowDelayPx` is 6. Measured on `vga` 320x256@50 into 1080p with
+the picture lifted: our emitted blanking goes from **14 columns at the right to
+0**, with 2 at the left. On 800x600@60 into 1080p it is 4 columns before and 4
+after, and the aperture solves to 145 against the 145 the sink's window starts
+at. `dividerCeilingForOutput()` recovers the standard's far edge correctly as a
+consequence, so the 480p ceiling rises 1804 -> 1852.
+[investigations/the-near-end-is-a-fraction-of-the-line.md](investigations/the-near-end-is-a-fraction-of-the-line.md)
+
+**The warning below against 6 was correct for the base it was written against**
+and does not transfer: on the duration base 6 leaves the 50 Hz raster 29 samples
+short, which is what it says. What follows is the measurement that stands.
+
+Four states, each a four-point fit with residuals under 0.3 columns, read off
+the USB capture with automation frozen:
 
 | source | input | output | T | field Hz | window opens | sync + porch | delay |
 |---|---|---|---|---|---|---|---|
@@ -565,16 +586,14 @@ the walk extrapolates to the value already in force, whatever it is. A
 measurement of this has to put BLACK at the aperture's edge or leave the
 aperture well past the own position.
 
-**So do not move it to 6 either**: it is wrong at 20 on every raster here and
-wrong at 6 on the 50 Hz raster by 29 samples. A table per output and field-rate
-band can close it; a constant cannot, and two sources sit outside any table.
 A change of placement is safe for the odd-width parity bias, which
 `OutputWindow::solve()` re-applies per solve inside whatever bounds it is handed
 -- insetting one edge or changing the span is what would break it.
 
-What it costs meanwhile is both edges at once on the 60 Hz rasters: 19 black
-columns at the left of the emitted frame and 18 columns of picture off the
-right.
+**What is left is the source's own leading blanking**, which the sink used to
+clip and now shows: 18 columns on the bench 320x256@50, none of it ours. That is
+a question about whether a mode's border belongs in the capture, not about where
+the window opens.
 [investigations/the-window-delay-is-a-field-rate-band-not-a-constant.md](investigations/the-window-delay-is-a-field-rate-band-not-a-constant.md)
 
 ### The RISC PC's composite sync shears about two frames a second, and the engine is not writing it

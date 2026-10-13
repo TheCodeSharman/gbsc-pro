@@ -112,3 +112,29 @@ width is biased odd in `OutputWindow::solve()` against the capture's own stop,
 inside whatever bounds the placement hands it, so a translation of the aperture
 is re-biased on the next solve. What would break it is insetting one edge or
 changing the span. [`horizontal-scale-corruption.md`](horizontal-scale-corruption.md).
+
+## Superseded: the band is the duration base
+
+**There is no band.** The delay column above is `opens - (sync + porch)` with the
+sync and porch converted as DURATIONS, and the display clock is pinned near its
+ceiling, so that base is 139 samples at every raster while the opening grows with
+the line. Scored against the standard's blanking as a FRACTION of our line, the
+same four rows and two taken since are one residual of 6.01, spread 1.28:
+
+| output | T | opens | `T x blank/total` | residual |
+|---|---|---|---|---|
+| 1080p | 1590 | 145.00 | 138.76 | +6.24 |
+| 1080p | 1600 | 145.19 | 139.64 | +5.55 |
+| 1080p | 1602 | 146.05 | 139.81 | +6.24 |
+| 1080p | 1916 | 173.78 | 167.21 | +6.57 |
+| 1080p | 1916 | 172.50 | 167.21 | +5.29 |
+| 720p | 2402 | 384.70 | 378.50 | +6.20 |
+
+The 50 Hz row is 28 samples away from the others only because its line is 316
+units longer: the fraction grew with it and the fixed base did not.
+`OutputMode::solve()` opens the window on the fraction now.
+[the-near-end-is-a-fraction-of-the-line.md](the-near-end-is-a-fraction-of-the-line.md)
+
+**The measurements on this page stand** -- the openings, the slope checks and the
+three things ruled out. It is the quantity they were differenced against that was
+wrong.
