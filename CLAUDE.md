@@ -1397,6 +1397,15 @@ twelve tables while they existed, which is what `BringUp` was built from.
   there and 858 against 1446 on the Wii at 1080p, so a coast window that scores
   well at one divider says nothing about another. Ask the COUNT at two
   dividers with the window placed, not the register.
+- **`SP_H_PULSE_IGNOR` IS IN ADC SAMPLES TOO, AND A BYTE THAT READS ONE DIVIDER
+  IGNORES THE SOURCE AT ANOTHER.** 107 was measured right through a 2200-sample
+  line and ignored the Wii's 106-sample pulse through the 1446 a 1080p raster
+  affords, which is the whole of why the Wii never acquired at 1920x1080. It
+  follows the divider now, 49 per thousand of the line, and the search writes
+  16 because an unlocked block counts at the 27 MHz reference, where the same
+  pulse is 63 or 31 samples -- so a threshold sized for a divider cannot be
+  written before the clock is latched.
+  `docs/investigations/the-pulse-ignore-is-a-fraction-of-the-line.md`.
 - **EDID is unreachable.** The MS9288A HDMI encoder is on no MCU's I2C bus (see
   the schematic), so output rasters are chosen blind.
 - **Sync stability does not mean the divider is right.** `getStatus16SpHsStable()`
