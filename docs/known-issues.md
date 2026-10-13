@@ -596,6 +596,81 @@ a question about whether a mode's border belongs in the capture, not about where
 the window opens.
 [investigations/the-window-delay-is-a-field-rate-band-not-a-constant.md](investigations/the-window-delay-is-a-field-rate-band-not-a-constant.md)
 
+### 640x480@60 clips the top border and 8 units of the left, with its raster exact
+
+Measured 2026-10-14 on `vga` into 1920x1080 at 16:9, the stored framing
+forgotten so the computed default is judged. **This is the one mode of six whose
+raster the engine matches EXACTLY and whose default still clips**:
+`published_rasters.py` scores the loaded file's 640x480@60 at `+0.0` on all four
+edges against DMT's row, and the engine places `oh` 260 against `144/800` of a
+1445-unit counter and `ov` 35 against `35/525`.
+
+What the card shows at that default: **the top border absent at every pan** --
+green dominance 0.0 against 215 on every other mode -- and the left border
+leaving between `oh` 252 and 254, which is 8 units before the default. The right
+and bottom borders are present throughout. So both clips are at the NEAR end of
+each axis.
+
+**The horizontal candidate is the measured pulse**, which `retimeStopFor()`
+subtracts straight into the counter's origin: `STATUS_SYNC_PROC_HLOW_LEN` reads
+167 of `PLLAD_MD` 1444 where DMT states `96/800`, which is 173.3 -- **6.3
+samples narrow**, and a pulse read narrow puts the stop high and the video early,
+so a window at the published fraction opens late by the same 6.3 units. The
+H-negative family reads 2.7 to 4.8 samples narrow and `RetimeOriginSamples` is
+calibrated on it; this mode is 2 to 4 samples worse than its family.
+[investigations/the-capture-origin-varies-by-mode-at-one-line-rate.md](investigations/the-capture-origin-varies-by-mode-at-one-line-rate.md)
+
+**The vertical has no candidate at all.** No pulse feeds it, the capture margin
+is 2 lines, and `videoAt()` puts the window 2 lines before the row's own start.
+It is one line, and `320x480@60` -- the same 525-line frame at the same divider,
+matched to a row whose `activeStartLine` is 34 rather than 35 -- keeps its top
+border. So the two differ by exactly the one line between the rows.
+
+**The mode-file collision is NOT the cause and was checked.** The loaded
+definition carries both an AKF-derived 640x480 whose picture starts at 138 and
+VESA's at 144, and the two are reachable separately -- `MODE X640 Y480 C256 F71`
+answers `F71` and `F60` answers `F60` -- so `F60` lands on the VESA entry, which
+is the row the engine matched.
+
+### Composite sync frames 8 units early where separate sync frames flush
+
+Measured 2026-10-14 on `vga`, 320x256@50 into 1920x1080 at 16:9, the stored
+framing forgotten with `/sc?B` so the computed default is what is judged, and
+the card's border read on all four edges of the emitted frame. One mode, one
+cable, one raster, `SYNC 1` then `SYNC 0` with `/sc?~` between so the engine
+re-probes:
+
+| sync | `SP_SOG_MODE` | `HLOW` | `SP_RT_HS_SP` | `IF_HB_SP2` | default `oh` | all four at |
+|---|---|---|---|---|---|---|
+| composite | 1 | 154 | 2123 | 191 | 237 | **245** |
+| separate | 0 | 156 | 2126 | 236 | 237 | **237** |
+
+The published placement is identical -- `oh` 237 is `110/512` of the counter on
+both -- and the 45 units between the two capture starts is
+`VideoSourceLine::forDuty()`'s separator lead. **So the 8 units are the lead's,
+not the raster's**: the lead applied is 45 units where this measurement wants
+37, which is `SeparatorPulseEndLeadSamples` 82 rather than 66 on this mode. One
+unit of the 8 is the `ceilf()` on `syncUnits`, which turns a 154-sample pulse
+into 156.
+
+**It is not today's origin term.** The lag is added to both sync types equally
+-- 2126 against 2123 is the 2-sample difference in the measured pulse -- so it
+cancels in the comparison.
+
+**What it disagrees with is the lead's own measurement**, which fitted
+`HLOW - 66` over six modes to an rms of 0.77 samples, this doubled mode among
+them at a residual of 1.4.
+[investigations/the-separator-lead-is-not-a-fraction-of-the-line.md](investigations/the-separator-lead-is-not-a-fraction-of-the-line.md)
+read the card's frame POSITION per sync type and differenced the two; this reads
+whether any black is left beside the border. **The two instruments differ by 8
+units on this mode and agree on separate sync**, so what is needed is the
+border criterion applied across the same six modes rather than another
+constant fitted to one.
+
+The dongle dropped two black frames out of nine during the composite sweep,
+which the shear below accounts for; the seven that delivered are monotonic in
+the black count and consistent.
+
 ### The RISC PC's composite sync shears about two frames a second, and the engine is not writing it
 
 Measured 2026-10-13 at 320x256@50 on `vga`, `PATTERN CARD`, read off the USB
@@ -694,47 +769,43 @@ px per raster unit, residuals <=0.5 px over 1120 units.
 the window reaches the end of the line -- `oh` 256 + `eh` 1189 against `ch` 1447
 -- before the border is gone.
 
-### The Wii's held sync duty reads 11.0% where the chip steadily measures 7.3%
+### The Wii's 480p matches its CEA raster on half its acquisitions
 
-Measured 2026-10-14 on `ypbpr`, the Wii in 480p into 1920x1080, acquired and
-holding. `STATUS_SYNC_PROC_HLOW_LEN` reads **105..106 of `PLLAD_MD` 1446** over
-six samples 1.5 s apart -- a duty of 7.33%, which is CEA-861's 62/858 to a tenth
-of a point. What the ENGINE holds is **11.0%**: `SP_RT_HS_SP` 1350 is
-`1446 - 159 + 63`, and `/geometry` reports `sh` 160 of a 1447-unit counter.
+Measured 2026-10-14 on `ypbpr`, 480p into 1920x1080, six acquisitions taken by
+switching to `vga` and back, each read once settled. **They fall into two
+families and nothing the engine reports distinguishes them:**
 
-Three consequences, and the first is why the framing is nothing like the
-standard's:
+| | `oh` | `eh` | placed from | black L R T B | lit |
+|---|---|---|---|---|---|
+| 3 of 6 | 206 | 1214 | **CEA 720x480p**, `122/858` and `720/858` | 39..40, 46, 33, 21 | 1834x1026 |
+| 3 of 6 | 169 | 1250 | the generic envelope, `Axis` 0.117 and 0.864 | 69..97, 42..70, 42, 27 | 1780x1011 |
 
-- **the source stops matching its own raster.** `SourceTiming::lookUpIn()` keys
-  on the duty within `SyncDutyTolerance` 0.015, and 0.110 against CEA's 0.0723
-  is 0.038 away -- so 480p is placed from the generic envelope, `Axis` 0.117 and
-  0.864, instead of the standard's `122/858` and `720/858`. Measured with it
-  held: `oh` 197 `eh` 1250 on a 1447-unit counter, the window running to the end
-  of the line.
-- **the capture floor rises 54 units.** `firstCapture()` is the sync interval,
-  so `fh` reads 160 where a duty read right gives 106 -- and the placement is
-  pinned at it, `IF_HB_SP2` 160 with the framing asking for less.
-- **the counter's origin is 54 samples early**, so every window the solve places
-  is counted from an origin nothing observed.
+`STATUS_SYNC_PROC_VTOTAL` is 524 on every one of them, so the frame is not it,
+and the held duty is inside `SyncDutyTolerance` of CEA's 62/858 on five of the
+six -- including two that still landed on the envelope. **So the duty is not the
+discriminator either**, and the candidate left is the held FIELD rate: the
+entry below has it reading two thirds at the solved clock, and 40 Hz against
+CEA's 60 fails `StandardRateDeviationPerThousand` outright where 59.94 passes.
+A timestamped console capture across the acquisition is what would say, since
+`/geometry` does not report the field rate.
 
-On the emitted frame that is 46 columns of black at the left and 94 at the
-right, with the picture 1780x1011 of 1920x1080.
+**A THIRD landing is worse than either.** One acquisition the same day held a
+sync duty of **11.0%** where `STATUS_SYNC_PROC_HLOW_LEN` read 105..106 of
+`PLLAD_MD` 1446 steadily over six samples -- 7.33%, which is CEA's to a tenth of
+a point. `SP_RT_HS_SP` 1350 is `1446 - 159 + 63` and `/geometry` reported `sh`
+160 against the 106 the other landings show, so the capture floor rose 54 units
+and the counter's origin sat 54 samples early. `SourceMeasurement::takeDuty()`
+takes whatever a latched pass offers and its own comment names that hazard.
 
-**It is not constant between acquisitions.** The separator-lead entry above was
-measured on 2026-10-13 with `firstCapture()` at 106, which is the duty read
-right, so the 11.0% is one acquisition's reading rather than the Wii's.
-
-`SourceMeasurement::takeDuty()` takes whatever a latched pass offers and its own
-comment names this hazard -- a count taken while the processor was counting
-another line length divides by a divider it never saw. What is NOT established
-is which pass lands the 11.0%: the guard is `Adc::dividerLatched()`, which reads
-true on the settled unit, and nothing re-takes the duty on a source that is not
-re-solving. A console capture across the Wii's acquisition, timestamped, is what
-would say.
-
-**Until it is settled, a Wii framing measurement says nothing about the
-framing derivation**, because the raster it would be placed from is not the one
-in force.
+**WHAT THIS DOES NOT MEAN IS THAT THE BLACK BORDER IS THE ENGINE'S.** On the
+landings that DO match CEA the capture is exactly the standard's active region --
+`IF_HB_SP2` 164 against the 164.8 the row puts video at, `IF_HB_ST2` 1380
+against 1379 -- and the Wii still shows 39 columns of black at the left, 46 at
+the right, 33 rows at the top and 21 at the bottom. In the source's own units
+that is about 15 px, 17 px, 15 lines and 9 lines: **a safe-area border the Wii
+draws inside its own active video**, confirmed against the RISC PC, whose modes
+put the card's border flush to all four edges from the computed default on the
+same output.
 
 ### The picture is washed out against the vendor image, and the ADC gain is the candidate
 
