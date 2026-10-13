@@ -124,10 +124,10 @@ TEST_CASE("the sync pulse is CEA-861's, converted to the clock the line runs at"
     OutputTiming at108 = Mode1080p.solve(50.0f, 108000000u);
     CHECK(at108.horizontalTotal == 1920);
     // The pulse is offset from the line's origin by HsyncStartPx and keeps the
-    // standard's width; the active window is not offset with it.
+    // standard's width. Where the active window opens is a separate quantity
+    // and a separate case below.
     CHECK(at108.hsyncStart == OutputMode::HsyncStartPx);
     CHECK(at108.hsyncStop == OutputMode::HsyncStartPx + 32);
-    CHECK(at108.activeStart == 32 + 108 + OutputMode::TransmittedWindowDelayPx);
 
     OutputTiming at1296 = Mode1080p.solve(50.0f, 129600000u);
     CHECK(at1296.horizontalTotal == 2304);
@@ -144,6 +144,27 @@ TEST_CASE("the sync pulse is CEA-861's, converted to the clock the line runs at"
         CHECK_MESSAGE(widthNs(at1296) < 320.0, "129.6 MHz pulse too long");
         CHECK_MESSAGE(widthNs(at648) > 280.0, "64.8 MHz pulse too short");
     }
+}
+
+// THE NEAR END IS A FRACTION TOO, for the same reason the far end is. The sink
+// places its window at the standard's blanking fraction of whatever line it
+// receives, so a start built from DURATIONS meets it at one raster only: the
+// display clock is pinned near its ceiling, so a duration-scaled porch lands on
+// the same sample count at every raster while the sink's start tracks the line.
+//
+// Measured by translating the whole output window a unit at a time and
+// re-latching the sync pad at each step, so the sink had placed its window for
+// the state under test. Its window starts at 172 of a 1916-unit raster and 145
+// of a 1590-unit one -- `total x 192/2200 + 6` at both, where the duration gave
+// 161 at each and left 15 emitted columns of our blanking at the right of the
+// wider raster.
+// docs/investigations/the-near-end-is-a-fraction-of-the-line.md
+TEST_CASE("the active window opens on the standard's blanking fraction of the line")
+{
+    const OutputTiming at108 = Mode1080p.solve(50.0f, 108000000u);
+    CHECK(at108.horizontalTotal == 1920);
+    CHECK(at108.activeStart
+          == 1920 * 192 / 2200 + OutputMode::TransmittedWindowDelayPx);
 }
 
 // The far end of the line is decided by the mode's active FRACTION, not by a
@@ -469,34 +490,23 @@ TEST_CASE("the active window is the standard's fraction of the line, not a porch
     CHECK(dmt.activeWidth() == 1536);    // 2026 x 1280 / 1688
 }
 
-TEST_CASE("the encoder's window opens a fixed count of samples after our blanking")
+TEST_CASE("the opening is each standard's own blanking fraction, not its duration")
 {
-    // The encoder does NOT start sampling where our blanking ends. Read off the
-    // EMITTED frame -- the USB capture, so a margin is a byte count rather than
-    // a photograph -- by walking `VDS_DIS_HB_SP` and `VDS_DIS_HB_ST` into the
-    // window and extrapolating the black margin back to zero. Neither edge then
-    // depends on where the picture happens to sit.
+    // The encoder does NOT start sampling where our blanking ends, and what it
+    // does start on is the standard's blanking as a FRACTION of whatever line
+    // we hand it. Read off the EMITTED frame -- the USB capture, so a margin is
+    // a byte count rather than a photograph -- with the aperture held far from
+    // the opening, which is what the earlier reading of ~20 lacked: with
+    // picture hard against the aperture the sink lands its window ON the
+    // aperture and the walk returns the value already in force.
     //
-    //   mode    raster   sync + porch   window opens at   delta
-    //   1080p     1916            140            159.52   +19.52
-    //   1024p     2024            360            380.25   +20.25
-    //   960p      2156            424            443.80   +19.80
-    //   720p      2156            284            304.78   +20.78
-    //
-    // A constant count of SAMPLES and not a time: 720p runs a 25% slower clock
-    // and carries the same delta. It is not our sync pulse either -- the window
-    // does not move when `VDS_HS_SP` is walked 16..64.
-    //
-    // Uncharged, the picture is pinned that far before the window, so the
-    // leading samples fall off the emitted frame and the same width comes back
-    // as black at the far end: 27 px of 1920 at 1080p.
-    // ../docs/investigations/the-transmitted-window-opens-late.md
-    // Stated as the mode's own sync and back porch plus the delay, so these do
-    // not have to be re-derived every time the delay is tuned.
+    // The two standards have different fractions, so a duration and a fraction
+    // cannot both fit them: 1080p blanks 192 of 2200 and 1024p 360 of 1688.
+    // ../docs/investigations/the-near-end-is-a-fraction-of-the-line.md
     CHECK(Mode1080p.solve(50.0f, 108000000u).activeStart
-          == 140 + OutputMode::TransmittedWindowDelayPx);
+          == 1920 * 192 / 2200 + OutputMode::TransmittedWindowDelayPx);
     CHECK(Mode1024p.solve(50.0f, 108000000u).activeStart
-          == 360 + OutputMode::TransmittedWindowDelayPx);
+          == 2026 * 360 / 1688 + OutputMode::TransmittedWindowDelayPx);
 
     SUBCASE("and the window's WIDTH is unchanged, so the picture only moves") {
         // Measured 1671.09 against the 1675 the fraction states at 1080p and
@@ -594,15 +604,28 @@ TEST_CASE("the output hsync pulse starts thirteen samples into the line")
 }
 
 // WHAT PINS THE DELAY'S VALUE, which nothing did. Every other assertion states
-// activeStart as the mode's own sync and back porch PLUS the delay, so the
-// constant moves without any of them failing -- and it was cut to 3, which
-// leaves 25 of the emitted frame's 1920 columns black at the right and throws
-// the same width of picture off the left. The four measured deltas are what it
-// has to satisfy.
+// activeStart as the blanking fraction PLUS the delay, so the constant moves
+// without any of them failing.
+//
+// It is the residual once the base is the fraction, and against that base the
+// six measured openings are one number rather than a field-rate band:
+//
+//   output   T      field Hz   opens    T x blank/total   residual
+//   1080p    1590     60.35    145.00         138.76        +6.24
+//   1080p    1600     60.02    145.19         139.64        +5.55
+//   1080p    1602     59.94    146.05         139.81        +6.24
+//   1080p    1916     50.08    173.78         167.21        +6.57
+//   1080p    1916     50.08    172.50         167.21        +5.29
+//   720p     2402     59.94    384.70         378.50        +6.20
+//
+// Two inputs, two output standards, both field rates, rasters 1590 to 2402.
+// The band of ~6, ~7, ~6 and ~35 that this was a table for is what the DURATION
+// base produces: it sits at 139 whatever the raster, so the 50 Hz row's longer
+// line reads as a 28-sample jump rather than as the fraction growing.
 TEST_CASE("the transmitted window's delay is the measured one")
 {
-    CHECK(OutputMode::TransmittedWindowDelayPx >= 19);
-    CHECK(OutputMode::TransmittedWindowDelayPx <= 21);
+    CHECK(OutputMode::TransmittedWindowDelayPx >= 5);
+    CHECK(OutputMode::TransmittedWindowDelayPx <= 7);
 }
 
 // THE ENCODER'S CEILING, and it is the datasheet's rather than a swept one.

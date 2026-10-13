@@ -1275,6 +1275,12 @@ uint16_t VideoPath::dividerCeilingForOutput() const
     // which moves the capture, the scale and the stride -- so the aperture that
     // was correct before the change is not correct after it, and the constant
     // cannot be tuned at all.
+    //
+    // What is left once the delay is off is the standard's own far edge,
+    // `total x (sync + backPorch + carried) / totalPx`, because the window now
+    // opens on the blanking FRACTION: 1842 of a 1920 raster against the 1843.6
+    // the standard states. Opening it on the duration instead put that edge at
+    // 1815, 28 units short, and held the divider under what the raster can show.
     const uint16_t showable =
         OutputWindow::maximumCapture(AxisHorizontal, raster.horizontalTotal, 0,
                                      (uint16_t)(raster.activeStop

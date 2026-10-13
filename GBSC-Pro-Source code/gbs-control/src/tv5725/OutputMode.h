@@ -127,15 +127,16 @@ public:
     // the far end.
     //
     // **IT IS NOT ONE COUNT, AND 20 IS RIGHT ON NO RASTER MEASURED.** The
-    // opening is the sink's own window position, which moves with the output's
-    // FIELD RATE: ~6 to 7 samples on the 60 Hz rasters of 1080p and 720p and
-    // ~35 on the 50 Hz 1080p one, alike on both inputs. The four readings of
-    // ~20 that put it here were taken with picture hard against the aperture's
-    // edge, where the sink lands its window ON the aperture and the walk
-    // returns the value already in force.
-    // docs/investigations/the-window-delay-is-a-field-rate-band-not-a-constant.md
+    // opening is the sink's own window position, and it is taken from the
+    // standard's blanking FRACTION of our line rather than from its duration --
+    // solve() places activeStart on that fraction for this reason. Against it
+    // the six measured openings are one residual: +5.29 to +6.57 over rasters
+    // 1590 to 2402, two inputs, two output standards and both field rates.
     //
-    // A table per output and field-rate band is what can close it.
+    // The field-rate band this was a table for is what the DURATION base
+    // produces. That base sits at 139 samples whatever the raster, so a 50 Hz
+    // line reads as a 28-sample jump where the fraction simply grew with it.
+    // docs/investigations/the-near-end-is-a-fraction-of-the-line.md
     //
     // **MOVING IT IS SAFE FOR THE ODD-WIDTH PARITY BIAS.** That bias is on the
     // MEMORY window's width, memoryStart - windowStop, and OutputWindow::solve()
@@ -159,7 +160,7 @@ public:
     // the scale and the stride, so the value that was correct before the change
     // is wrong after it and the constant cannot be tuned at all.
     // docs/investigations/full-screen-framing-on-the-vesa-modes.md
-    static const uint16_t TransmittedWindowDelayPx = 20;
+    static const uint16_t TransmittedWindowDelayPx = 6;
 
     // Where the output hsync pulse STARTS. Not zero: on the line's own origin
     // the left-most two columns lose two bands of 34 emitted rows -- measured

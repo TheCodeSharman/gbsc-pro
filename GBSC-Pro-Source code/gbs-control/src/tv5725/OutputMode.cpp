@@ -203,14 +203,12 @@ OutputTiming OutputMode::solve(float fieldRateHz, uint32_t ceilingHz) const
     // The sync pulse is the standard's DURATION, and it is load-bearing: the
     // encoder drops the link outright at 90, 140 or 60 where 112 carries a
     // picture, so it has to arrive when the standard says whatever clock the
-    // line runs at. The back porch is a duration for symmetry and is NOT
-    // load-bearing -- the transmitted window opens later than it, by a fixed
-    // count of samples -- so it is what gives way below.
+    // line runs at. The back porch is NOT load-bearing, and it is a fraction
+    // rather than a duration -- see the active window below.
     // ../../../docs/investigations/the-transmitted-window-opens-late.md
     long width = scaled(syncPx_, clockHz);
     if (width < 1)
         width = 1;
-    long porch = scaled(backPorchPx_, clockHz);
 
     // The pulse is offset from the line's origin, and the active window is NOT
     // offset with it: the window is placed against the back porch as before,
@@ -229,17 +227,16 @@ OutputTiming OutputMode::solve(float fieldRateHz, uint32_t ceilingHz) const
     long span = (long)horizontalTotal * carriedPx_ / totalPx_;
     long lastUsable = (long)horizontalTotal - FrontPorchMinPx;
 
-    // The window opens TransmittedWindowDelayPx after the back porch ends, not
-    // on it. Charged here so the picture is placed inside what the chain
-    // carries; uncharged it starts that far before the window, loses its leading
-    // samples and leaves the same width black at the far end.
-    //
-    // A rate the standard does not run at shortens the line while the porch,
-    // being a duration, stays where it was -- so the two stop fitting. THE SPAN
-    // IS THE PICTURE AND THE PORCH IS BLANKING: giving way at the porch costs
-    // nothing visible, and taking it out of the span throws picture away and
-    // makes the same source reach the panel differently at different rates.
-    long start = (long)width + porch + TransmittedWindowDelayPx;
+    // THE NEAR END IS A FRACTION FOR THE SAME REASON THE FAR END IS. The sink
+    // opens its window at the standard's blanking fraction of whatever line it
+    // receives, so a start built from the sync and porch as DURATIONS meets it
+    // at one raster only -- the display clock is pinned near its ceiling, so a
+    // duration lands on the same sample count however long the line is, while
+    // the sink's start grows with it. The error then changes sign about that
+    // one raster, which is why no value of the delay held it.
+    // docs/investigations/the-near-end-is-a-fraction-of-the-line.md
+    long start = (long)horizontalTotal * (syncPx_ + backPorchPx_) / totalPx_
+               + TransmittedWindowDelayPx;
     if (start + span > lastUsable)
         start = lastUsable - span;
     if (start < (long)width)

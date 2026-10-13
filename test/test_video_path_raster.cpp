@@ -479,8 +479,11 @@ TEST_CASE("an output too short for the doubled frame turns the line doubler off"
     CHECK(frameLinesWritten() == 525);
     // Not half of 2508: undoubled, one IF unit is one ADC sample. What binds
     // is the 480p raster -- Axis::maximumCapture of it, rounded even -- and
-    // not a constant of the part.
-    CHECK(Wire.field(5, 0x12, 0, 12) == 1804);
+    // not a constant of the part. The far edge it is sized from is the
+    // STANDARD's, `total x (sync + backPorch + carried) / totalPx`, which the
+    // window's fractional opening recovers; taken off a duration it fell short
+    // of that and held this under what the raster can show.
+    CHECK(Wire.field(5, 0x12, 0, 12) == 1852);
     CHECK(Wire.field(1, 0x0E, 0, 11) <= InputFormatter::LineCounterMax);
 }
 
