@@ -441,35 +441,83 @@ frozen poke cannot answer it.
 rather than on a measurement that failed for any reason. The witness exists and
 no caller consults it yet.
 
-### The VDS line filter puts a black band near the START of the line, not only at its end
+### FIXED: the black band 8% into the line is the ADC clamp, not the line filter
 
-Reported and measured 2026-10-13 on `ypbpr`, the Wii at 480p into 1920x1080 at
-16:9, `VDS_D_RAM_BYPS` 0 so the filter is IN circuit. The filter makes the
-picture visibly clearer, which is why it is wanted; what comes with it is
+Reported as the VDS line filter's, because it comes and goes with `/uc?m`. It is
+`SP_CS_CLP_ST`/`SP_CS_CLP_SP` sampling the black level off picture: the register
+counts the chip's 27 MHz reference, `VideoPath::applySamplingClock()` handed it
+the ADC divider and `VideoSourceAcquisition::placeClampWindow()` handed it the
+quarter-count the fractions were fitted to, and the pair held whichever wrote
+last. On the Wii at 480p into 1920x1080 at divider 1212 that is a start of 108
+against 19, which lands 41 source pixels inside the picture.
 
-| | frame columns | reading |
-|---|---|---|
-| a black band | **155..161** (8.3% from the left) | luma 10.4 against 124.2 local, so 114 levels below |
-| the shimmer | **164..173**, immediately right of it | frame-to-frame sd 1.81 against a 0.25 median |
+The correlation with the filter is the DIVIDER: the filter's line buffer caps it
+at 1212 where it is otherwise 1446, and the broken writer placed the clamp from
+whatever the divider was.
 
-The band itself is steady -- sd 0.09 at its deepest column -- so the shimmer is
-the few columns beside it rather than the band moving.
+Two costs, and the bar is the smaller: the frame is also clamped dark, a picture
+mean of 152.4 against 205.7 at a start of 19. Both writers convert inside
+`SyncProcessor` now.
+[investigations/the-clamp-had-two-owners-and-two-units.md](investigations/the-clamp-had-two-owners-and-two-units.md)
 
-**THIS IS NOT THE TAIL BAND.** `the-tail-green-is-the-vds-line-filter.md` records
-the filter's one-line delay showing as a band at the END of the line whose edge
-moves with the divider, and that is what defaulted the filter off. A band 8% in
-from the HEAD is a second artefact and nothing explains it.
+### The line filter cannot be turned back on once it has been turned off
 
-State it was measured in: `PLLAD_MD` 1212 against `STATUS_SYNC_PROC_HTOTAL`
-1212, `IF_HB_SP2` 149, `IF_HB_ST2` 1169, `VDS_HSCALE` 746, `VDS_HSYNC_RST` 1601.
-At 1.37 output pixels to the capture unit the band sits around capture unit 264,
-but the anchor was not measured, so that is arithmetic rather than a reading --
-convert it properly before designing an experiment around it.
+`VideoPath::setLineFilter()` re-installs the sampling and re-solves, and
+`installSampling()` skips when the rate has not moved -- so the divider stays
+where the previous setting left it. Turning the filter off takes the divider
+from 1212 to 1446; turning it back on leaves it at 1446, `applyLineFilter()`'s
+`fits` test fails against the 1020-sample line buffer, and `VDS_D_RAM_BYPS`
+stays 1. Measured twice on the Wii at 480p, the register unmoved either time,
+and `/restart` is what brings it back -- the unit boots with the stored
+preference, solves 1212 and puts the filter in circuit.
 
-**The obvious experiment is a pair at one acquisition**: `/uc?m` toggles
-`uopt->wantVdsLineFilter`, so take a frame with the filter in and one with it
-bypassed without re-acquiring, and difference them. That says whether the band
-is the filter's or merely revealed by it.
+So the option reports itself on and is not, which is the same shape as the
+six-tap entry below, by a different mechanism.
+
+### The display window's first unit is not picture
+
+One bright column at the window's opening on every line, emitted column 20 of a
+window opening at 19, reading 95/95/87 against the 4/4/0 of the blanking either
+side. Measured on the Wii at 480p into 1920x1080.
+
+**It does not ride the window's edge.** Walking `VDS_DIS_HB_SP` 159 -> 163 -> 167
+blanks it away and nothing bright appears at the new opening, so it is one unit
+of bad data at a fixed place in the output line rather than an artefact of
+opening the window.
+
+The window opens on the first written pixel by construction --
+`VDS_HB_SP + 55 + 25 x magnification` is 158.3 against a `VDS_DIS_HB_SP` of 159
+-- so a write origin one unit later than that arithmetic puts it would show one
+unit of whatever the memory held. That is the candidate and it is untested; the
+discriminator is whether the column tracks the magnification, which moves the
+per-magnification term and not the constant.
+
+Opening the window one unit later is NOT the fix: a window inset to hide stale
+memory hides a write that is in the wrong place.
+
+### The transmitted window opens about 6 samples after the back porch, not 20
+
+`OutputMode::TransmittedWindowDelayPx` is 20 and places `VDS_DIS_HB_SP` at
+`sync + backPorch + 20`. Measured on the Wii at 480p into 1920x1080 -- 1602 x
+1125, display clock 107.8 MHz -- the transmitted window opens at raster unit
+145.2 where the back porch ends at 139, so the delay is **6.2 samples** and the
+picture is placed 13.8 too late.
+
+What that costs is both edges at once: 19 black columns at the left of the
+emitted frame and 18 columns of picture off the right, the display window
+running to raster unit 1937.5 of a frame that ends at 1919.
+
+Read by differencing frames at two `VDS_DIS_HB_SP` and two `VDS_DIS_HB_ST`
+values, which gives 1.375 emitted columns per raster unit -- 2200/1600 -- and
+the anchor in the same pass. **It is not the lock's placement**: three
+`PAD_SYNC_OUT_ENZ` toggles leave the window opening at emitted column 19 every
+time, so the number is ours.
+
+The constant was measured at +19.5, +20.3, +19.8 and +20.8 on four output modes,
+so either it is not one constant across rasters or those readings carry
+something this one does not. Settling it takes the same differencing measurement
+on a second output mode and on `vga`, which is what the earlier readings were
+taken against.
 
 ### The RISC PC's composite sync shears about two frames a second, and the engine is not writing it
 
