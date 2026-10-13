@@ -1017,12 +1017,38 @@ for `loop()` and is acted on, which says the same thing a second way.
 `SyncProcessor::PathSettleMs` is 500 ms and `VideoPath::establishSyncType()`
 does `delay()` for it, but it returns early unless the sync type actually
 changes, so it is not spending the loop here. **What the OLED path does that
-`/input` does not is unestablished** -- it needs someone at the bench with the
-remote, which is why it is filed rather than diagnosed.
+`/input` does not is unestablished.**
+
+**THE OLED STOPS ON THE CONFIRMATION, WHICH IS THE PART TO DIAGNOSE FIRST.**
+Observed at the bench on an input with nothing plugged into it: selecting RGBs
+leaves the panel showing `Input RGBs` and it never returns to the input menu,
+nor does it answer any button press afterwards. So the panel is not refusing
+the selection -- it is not getting back to a page that can take one, which
+makes the input unreachable from the only display a sourceless unit has. The
+remote and `/input` are then the only ways out, and the remote draws on the
+television, which is dark.
 
 Free heap reads 9720 in this state, below the 10000 `/fs/*` requires -- so
 `/fs/download?f=/preferences.txt` refuses and the input cannot be read back --
 and above the 8000 the console broadcast needs.
+
+### An input with nothing plugged into it is never left again
+
+Selecting an input that carries no source leaves the unit with no picture
+indefinitely: nothing times out, nothing sweeps, and the engine runs its
+recovery ladder on an input where no recovery can succeed. Reached at the bench
+by picking RGBs with nothing on the connector, and the OLED entry above is what
+makes it unrecoverable from the panel.
+
+**An explicit selection is a command and stays one** -- it is honoured whether
+or not a signal arrives, because a user choosing an input with the source not
+yet powered must not have the choice taken away. What is missing is the bound:
+after a source has failed to acquire for long enough that it is not arriving at
+all, the engine should sweep the inputs until one carries a source, trying the
+input that last carried one first.
+
+`applySavedInputSource()`'s `default:` branch has the same hole from the other
+end -- nothing meaningful saved sends no frame and sweeps nothing.
 
 ### The sync-type probe cannot say yes once the separator is in the path
 
