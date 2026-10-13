@@ -160,7 +160,8 @@ void HdBypass::enterFor(bool component, bool csync, uint32_t lineRateHz,
 
     // The sync processor is configured here or nowhere: no preset load runs on
     // this route.
-    SyncProcessor::applyForSyncType(csync);
+    const uint16_t divider = dividerFor(lineRateHz);
+    SyncProcessor::applyForSyncType(csync, divider);
     if (csync)
         SyncOnGreen::choose(CsyncSogLevel);
     SyncProcessor::applyForPassThrough();
@@ -170,7 +171,7 @@ void HdBypass::enterFor(bool component, bool csync, uint32_t lineRateHz,
 
     // LAST of the group, because it installs the sampling the played-out
     // raster is derived from, and it is the one writer of PLLAD_MD here.
-    applyForSource(dividerFor(lineRateHz), lineRateHz, timing, frameLines,
+    applyForSource(divider, lineRateHz, timing, frameLines,
                    pulse);
 
     Chip::dacsFollowInput();

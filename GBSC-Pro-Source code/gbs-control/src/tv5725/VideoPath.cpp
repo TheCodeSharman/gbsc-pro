@@ -831,7 +831,7 @@ void VideoPath::configureSyncPath()
 
     SyncOnGreen::chooseForInput();
 
-    SyncProcessor::prepare(csync);
+    SyncProcessor::prepare(csync, Adc::dividerInForce());
 }
 
 void VideoPath::armSolveForSource()
@@ -980,7 +980,7 @@ void VideoPath::putSyncTypeInForce(bool csync)
                  arrangement, (unsigned)syncTypeChosenFor_);
     tv5725Log(line);
 
-    SyncProcessor::applyForSyncType(csync);
+    SyncProcessor::applyForSyncType(csync, Adc::dividerInForce());
     ModeDetect::applySyncType(csync ? ModeDetect::Csync : ModeDetect::SeparateSync);
     delay(SyncProcessor::PathSettleMs);
 }
@@ -1063,6 +1063,7 @@ void VideoPath::applySamplingClock(uint16_t divider, uint32_t lineRateHz)
     Adc::applySampleRate(divider, lineRateHz, modeOversample_);
     installedDivider_ = divider;
     writeRetimeOrigin();
+    writePulseIgnore();
 
     // The clamp is a fraction of the LINE, so it moves with the divider. Left
     // where a previous one put it, the stop reaches past the back porch and the
@@ -1189,6 +1190,14 @@ void VideoPath::writeRetimeOrigin()
     SyncProcessor::writeRetimeStop(
         measured != 0 ? measured
                       : SyncProcessor::retimeOriginFor(divider, oversample));
+}
+
+void VideoPath::writePulseIgnore()
+{
+    if (!syncTypeApplied_)
+        return;
+
+    SyncProcessor::applyPulseIgnore(syncTypeInForce_, Adc::dividerInForce());
 }
 
 

@@ -588,6 +588,7 @@ private:
     // solve, because the two arrive at different moments and either can move
     // without the other.
     void writeRetimeOrigin();
+    void writePulseIgnore();
     void completeReferenceInstall();
 
     // The divider this solve wants, held or recommended. Chooses; writes

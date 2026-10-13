@@ -282,7 +282,7 @@ public:
     // `serrated` comes in for the sub coast alone -- the coast WITHIN a line,
     // which only a source carrying serrations needs. The separation threshold
     // beside it does NOT key on it: see applyPulseIgnore().
-    static void applyForSyncType(bool csync);
+    static void applyForSyncType(bool csync, uint16_t divider);
 
     // The per-load sync processor setup that does not follow the sync type.
     //
@@ -294,7 +294,7 @@ public:
     //
     // Nor are the clamp and the coast window, which are prepareForDetection()'s:
     // on this path the solve places both afterwards.
-    static void prepare(bool csync);
+    static void prepare(bool csync, uint16_t divider);
 
 
     // The clamp and the coast window an UNMEASURED source is counted through.
@@ -380,32 +380,27 @@ public:
     // docs/investigations/the-pulse-ignore-value-is-measured-not-chosen.md
     static void applyPulseWidthDifference();
 
-    // How short a horizontal pulse must be to be ignored. The SYNC TYPE
-    // decides it and nothing else: a source carrying its own vertical sync has
-    // no serration to discriminate and every pulse can be ignored, while a
-    // composite one needs the threshold placed on its actual pulse width.
-    //
-    // ONE VALUE SERVES EVERY COMPOSITE SOURCE, which is what lets a selection
-    // write it. 107 is what reads a serrated source, and on the RISC PC's
-    // unserrated composite sync 2 and 107 are indistinguishable -- measured
-    // frozen, with controls, at 15 kHz and at 37.9 kHz. Keying it on serration
-    // instead read the source being LEFT, so the Wii took the narrow threshold
-    // whenever its predecessor ran above 15 kHz and the separator never locked.
-    // docs/investigations/the-pulse-ignore-value-is-measured-not-chosen.md
-    // docs/investigations/the-risc-pc-composite-sync-is-not-serrated.md
-    static void applyPulseIgnore(bool csync);
+    // How short a horizontal pulse must be to be ignored. The sync type decides
+    // whether any is: a source carrying its own vertical sync has no serration
+    // to discriminate, so every pulse can be ignored. A composite one takes a
+    // fraction of the line in ADC samples, between the equalising pulse and
+    // the sync pulse, so the value follows the divider in force: the one byte
+    // that reads a serrated source through a 2200-sample line ignores the
+    // source itself through the 1446 a 1080p raster affords.
+    // docs/investigations/the-pulse-ignore-is-a-fraction-of-the-line.md
+    static void applyPulseIgnore(bool csync, uint16_t divider);
 
     // Configure the separator to HUNT for a source rather than to read one it
     // has already found: coast on the default window without the sub coast, and
     // forget both placements so whatever locks is measured for itself rather
     // than against the source before.
     //
-    // IT SEPARATES ON THE SAME THRESHOLD AND PULSE WIDTH A SETTLED SOURCE IS
-    // READ WITH, and a value of its own here does not stay here. The count that
-    // ends the search is also what stops anything writing the threshold, so a
-    // search value becomes what the source is then read with -- measured as
-    // thirteen seconds of a count 11 lines high with the ADC PLL unlocked.
-    // docs/investigations/the-pulse-ignore-value-is-measured-not-chosen.md
+    // The pulse ignore is the search's own here, because nothing is locked and
+    // the block counts at the chip's reference, where a pulse is a third of the
+    // samples it will be at the divider. It is replaced by the solve's install
+    // and by the dynamic pass on a present source, both latched states; the
+    // count in range between them is not one on a sync-on-green source.
+    // docs/investigations/the-pulse-ignore-is-a-fraction-of-the-line.md
     static void applyForSearch(bool csync);
 
     // The block parked so the ADC can measure its own black level: nothing
@@ -427,6 +422,7 @@ public:
         bool present;
         bool csync;
         bool pathSource;
+        uint16_t divider;
     };
 
     static void applyDynamic(const Dynamic &source);

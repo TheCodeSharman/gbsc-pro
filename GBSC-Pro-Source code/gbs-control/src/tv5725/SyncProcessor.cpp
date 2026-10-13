@@ -68,7 +68,20 @@ bool coastOverridden_ = false;
 uint8_t preCoastOverride_ = 0;
 uint8_t postCoastOverride_ = 0;
 const uint8_t OwnVsyncPulseIgnore = 0xff;
-const uint8_t CsyncPulseIgnore = 0x6b;
+
+// 107 through a 2200-sample line is the value measured to read PAL 576i.
+const uint16_t CsyncPulseIgnorePerThousand = 49;
+
+// Under the narrowest sync pulse the block can be counting while nothing is
+// locked: 31 samples, a 7.3% pulse at half the 27 MHz reference.
+const uint8_t SearchPulseIgnore = 16;
+
+uint8_t pulseIgnoreFor(bool csync, uint16_t divider)
+{
+    if (!csync)
+        return OwnVsyncPulseIgnore;
+    return (uint8_t)((uint32_t)divider * CsyncPulseIgnorePerThousand / 1000u);
+}
 
 // The H timer the search asks for, measured as a don't-care across its whole
 // range and here to be written from one place rather than because a value was
@@ -165,9 +178,9 @@ uint8_t SyncProcessor::postCoastLines()
     return coastOverridden_ ? postCoastOverride_ : CompositePostCoastLines;
 }
 
-void SyncProcessor::applyPulseIgnore(bool csync)
+void SyncProcessor::applyPulseIgnore(bool csync, uint16_t divider)
 {
-    SP_H_PULSE_IGNOR::write(csync ? CsyncPulseIgnore : OwnVsyncPulseIgnore);
+    SP_H_PULSE_IGNOR::write(pulseIgnoreFor(csync, divider));
 }
 
 void SyncProcessor::applyPulseWidthDifference()
@@ -178,7 +191,7 @@ void SyncProcessor::applyPulseWidthDifference()
 void SyncProcessor::applyForSearch(bool csync)
 {
     applyPulseWidthDifference();
-    applyPulseIgnore(csync);
+    SP_H_PULSE_IGNOR::write(csync ? SearchPulseIgnore : OwnVsyncPulseIgnore);
     applyDefaultCoastWindow();
     SP_H_COAST::write(0);
     SP_H_TIMER_VAL::write(SearchHTimerValue);
@@ -205,7 +218,7 @@ void SyncProcessor::applyDynamic(const Dynamic &source)
         applySeparationThresholds(source.csync);
     } else if (source.present) {
         applyPulseWidthDifference();
-        applyPulseIgnore(source.csync);
+        applyPulseIgnore(source.csync, source.divider);
     }
 }
 
@@ -235,13 +248,13 @@ void SyncProcessor::applyDefaultCoastWindow()
     SP_H_CST_SP::write(DefaultCoastStop);
 }
 
-void SyncProcessor::prepare(bool csync)
+void SyncProcessor::prepare(bool csync, uint16_t divider)
 {
     SP_SOG_P_ATO::write(0);
     SP_JITTER_SYNC::write(0);
 
     applyPulseWidthDifference();
-    applyPulseIgnore(csync);
+    applyPulseIgnore(csync, divider);
 
     SP_H_TOTAL_EQ_THD::write(3);
 
@@ -281,7 +294,7 @@ void SyncProcessor::applyForPassThrough()
     SP_HS2PLL_INV_REG::write(0);
 }
 
-void SyncProcessor::applyForSyncType(bool csync)
+void SyncProcessor::applyForSyncType(bool csync, uint16_t divider)
 {
     // THE SYNC TYPE IS WHAT DECIDES THE SUB-COAST, and the line rate has no job
     // in it. Composite sync carries equalisation and serration pulses in the
@@ -303,7 +316,7 @@ void SyncProcessor::applyForSyncType(bool csync)
         SP_PRE_COAST::write(preCoastLines());
         SP_POST_COAST::write(postCoastLines());
         applyPulseWidthDifference();
-        applyPulseIgnore(csync);
+        applyPulseIgnore(csync, divider);
         SP_SYNC_BYPS::write(0);
         SP_HS_LOOP_SEL::write(0);
         SP_H_PROTECT::write(1);
@@ -315,7 +328,7 @@ void SyncProcessor::applyForSyncType(bool csync)
         SP_NO_COAST_REG::write(1);
         SP_PRE_COAST::write(0);
         SP_POST_COAST::write(0);
-        applyPulseIgnore(csync);
+        applyPulseIgnore(csync, divider);
         SP_SYNC_BYPS::write(0);
         SP_HS_POL_ATO::write(1);
         SP_VS_POL_ATO::write(1);

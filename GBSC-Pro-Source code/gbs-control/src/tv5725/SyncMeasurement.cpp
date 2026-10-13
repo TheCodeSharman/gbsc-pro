@@ -3,6 +3,7 @@
 #include <Arduino.h>
 #include <stdio.h>
 
+#include "Adc.h"
 #include "Chip.h"
 #include "Interrupts.h"
 #include "SyncProcessor.h"
@@ -60,7 +61,7 @@ bool SyncMeasurement::hasOwnVsync(uint32_t (*nowMs)())
     // ../../../../docs/known-issues.md
     tv5725Log("measure: sync type, probing for the source's own V sync");
 
-    SyncProcessor::applyForSyncType(false);
+    SyncProcessor::applyForSyncType(false, Adc::dividerInForce());
     delay(OwnVsyncSettleMs);
 
     bool active = false;
@@ -87,7 +88,7 @@ bool SyncMeasurement::hasOwnVsync(uint32_t (*nowMs)())
     // Back to the arrangement HELD, which is a defined state too. The caller
     // applies whatever this answer decides, so the only requirement here is to
     // leave nothing half configured behind.
-    SyncProcessor::applyForSyncType(isCsync());
+    SyncProcessor::applyForSyncType(isCsync(), Adc::dividerInForce());
 
     // THE PROBE ANSWERS FOR ITS OWN DISTURBANCE. Both writes above take the
     // sync separator in and out of the path, which the chip latches exactly as

@@ -24,12 +24,15 @@ using namespace Tv5725;
 
 static const uint8_t Poisons[2] = {0xA5, 0x5A};
 
+// The divider the pulse ignore was measured through, on PAL 576i.
+static const uint16_t MeasuredCsyncDivider = 2200;
+
 template <typename Field>
 static uint32_t applied(bool csync)
 {
     Wire.reset();
     Wire.poison(Poisons[0]);
-    SyncProcessor::applyForSyncType(csync);
+    SyncProcessor::applyForSyncType(csync, MeasuredCsyncDivider);
     return Field::read();
 }
 
@@ -40,7 +43,7 @@ static bool wasWritten(bool csync)
     for (int i = 0; i < 2; ++i) {
         Wire.reset();
         Wire.poison(Poisons[i]);
-        SyncProcessor::applyForSyncType(csync);
+        SyncProcessor::applyForSyncType(csync, MeasuredCsyncDivider);
         under[i] = Field::read();
     }
     return under[0] == under[1];
@@ -122,7 +125,7 @@ TEST_CASE("the polarity auto-corrects stay the separate-sync branch's")
     CHECK(wasWritten<SyncProcessor::SP_VS_POL_ATO>(false));
 }
 
-TEST_CASE("the separation threshold follows the sync type and nothing else")
+TEST_CASE("the separation threshold follows the sync type and the line in force")
 {
     // THE CSYNC BRANCH LEFT IT ON THE PREVIOUS SOURCE'S VALUE. Measured on the
     // bench, RISC PC on vga then the Wii selected on ypbpr: the arrangement
@@ -132,10 +135,10 @@ TEST_CASE("the separation threshold follows the sync type and nothing else")
     // configuration a selection should have made was a rung's side effect.
     //
     // AND A SELECTION CANNOT KEY IT ON SERRATION, because the serration it can
-    // read is the source being LEFT. One value serves every composite source
-    // instead: 107 is what reads a serrated one, and on the RISC PC's
-    // unserrated composite sync 2 and 107 are indistinguishable -- frozen, with
-    // controls, at 15 kHz and at 37.9 kHz alike.
+    // read is the source being LEFT. One fraction of the line serves every
+    // composite source instead -- 107 through the 2200-sample line it was
+    // measured at -- and on the RISC PC's unserrated composite sync 2 and 107
+    // are indistinguishable, frozen, with controls, at 15 kHz and at 37.9 kHz.
     // ../docs/investigations/the-risc-pc-composite-sync-is-not-serrated.md
     CHECK(wasWritten<SyncProcessor::SP_H_PULSE_IGNOR>(true));
     CHECK(wasWritten<SyncProcessor::SP_H_PULSE_IGNOR>(false));
@@ -245,7 +248,7 @@ TEST_CASE("the default coast window leaves the coast lengths alone")
     // the window over must not silently undo them.
     Wire.reset();
     Wire.poison(Poisons[0]);
-    SyncProcessor::applyForSyncType(true);
+    SyncProcessor::applyForSyncType(true, MeasuredCsyncDivider);
     const uint32_t pre = SyncProcessor::SP_PRE_COAST::read();
     const uint32_t post = SyncProcessor::SP_POST_COAST::read();
 
@@ -469,7 +472,7 @@ TEST_CASE("the composite coast pair counts a source's lines, not its serrations"
     Wire.reset();
     Wire.poison(Poisons[0]);
 
-    SyncProcessor::applyForSyncType(true);
+    SyncProcessor::applyForSyncType(true, MeasuredCsyncDivider);
 
     CHECK(SyncProcessor::SP_PRE_COAST::read() == 7);
     CHECK(SyncProcessor::SP_POST_COAST::read() == 6);
@@ -494,7 +497,7 @@ TEST_CASE("an overridden coast is what the sync type applies")
     SyncProcessor::overrideCoast(12, 9);
 
     Wire.reset();
-    SyncProcessor::applyForSyncType(true);
+    SyncProcessor::applyForSyncType(true, MeasuredCsyncDivider);
 
     CHECK(SyncProcessor::SP_PRE_COAST::read() == 12);
     CHECK(SyncProcessor::SP_POST_COAST::read() == 9);
@@ -523,7 +526,7 @@ TEST_CASE("forgetting the override returns the constants")
     SyncProcessor::forgetCoastOverride();
 
     Wire.reset();
-    SyncProcessor::applyForSyncType(true);
+    SyncProcessor::applyForSyncType(true, MeasuredCsyncDivider);
 
     CHECK(SyncProcessor::SP_PRE_COAST::read() == 7);
     CHECK(SyncProcessor::SP_POST_COAST::read() == 6);
@@ -548,31 +551,44 @@ TEST_CASE("the pulse-width difference threshold clears the measured floor")
     CHECK(SyncProcessor::SP_DLT_REG::read() >= 0x70);
 }
 
-// How short a horizontal pulse must be to be ignored. Two states, one per sync
-// type, because the serration that would pick a third is unknowable at the
-// moment the field has to be written.
+// How short a horizontal pulse must be to be ignored. One rule per sync type:
+// every pulse where the source carries its own vertical sync, a fraction of the
+// line in ADC samples where it is composite -- the serration that would pick a
+// value per source is unknowable at the moment the field has to be written.
 // docs/investigations/the-pulse-ignore-value-is-measured-not-chosen.md
+// docs/investigations/the-pulse-ignore-is-a-fraction-of-the-line.md
 // docs/investigations/the-risc-pc-composite-sync-is-not-serrated.md
 
 TEST_CASE("a source with its own vertical sync ignores every pulse")
 {
     Wire.reset();
-    SyncProcessor::applyPulseIgnore(false);
+    SyncProcessor::applyPulseIgnore(false, MeasuredCsyncDivider);
 
     CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 0xff);
 }
 
-TEST_CASE("every composite source is separated on the serrated threshold")
+TEST_CASE("a composite source's pulse ignore is a fraction of the line in ADC samples")
 {
-    // Measured on PAL 576i: 0x6B reads the source's 310 lines and every
-    // smaller value tried reads 314 to 316, steadily and wrongly. An
-    // unserrated composite source is indifferent to the same value -- frozen,
-    // with controls, 2 and 107 read alike at 15 kHz and at 37.9 kHz -- so the
-    // serrated one is what both get.
+    // The pulse widths it is compared against are counted in ADC samples, so
+    // one byte is a different fraction of every line. 107 was measured right on
+    // PAL 576i through a 2200-sample line -- every smaller value counted the
+    // serrations as lines. Through the 1446-sample line a 1080p raster affords
+    // the Wii at 480p, the same 107 sits above its 106-sample sync pulse and
+    // the separator ignores the source; lowered by hand, it measured within
+    // half a second. docs/investigations/the-pulse-ignore-is-a-fraction-of-the-line.md
     Wire.reset();
-    SyncProcessor::applyPulseIgnore(true);
-
+    SyncProcessor::applyPulseIgnore(true, MeasuredCsyncDivider);
     CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 0x6b);
+
+    SUBCASE("a shorter line in samples takes a threshold under its sync pulse") {
+        SyncProcessor::applyPulseIgnore(true, 1446);
+        CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 70);
+    }
+
+    SUBCASE("and the reference line likewise") {
+        SyncProcessor::applyPulseIgnore(true, 2040);
+        CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 99);
+    }
 }
 
 // Whether each window has been placed for the source in force. It is state, not
@@ -619,27 +635,28 @@ TEST_CASE("a new source forgets both windows")
 // has already found. The search runs when nothing is counting, so it asks for
 // the settings most likely to see a pulse at all.
 
-TEST_CASE("the search ignores the pulses the sync type says to ignore")
+TEST_CASE("the search admits the sync pulse at whatever clock the block is counting at")
 {
-    // A SEARCH VALUE OF ITS OWN OUTLIVES THE SEARCH. The count that ends the
-    // search is also what stops anything writing the field, so a third value
-    // written here is left in force until something re-applies the
-    // arrangement. Measured on a ypbpr selection from a 37.9 kHz predecessor:
-    // the search's 2 went in while nothing was counting, a count appeared a
-    // second later, and the field held 2 for thirteen seconds -- the separator
-    // reading 271 lines against the source's 260 and STATUS_SYNC_PROC_HTOTAL
-    // 3244 against a 2200 divider -- until the reprobe rung at pass 44.
+    // NOTHING IS LOCKED WHILE THE SEARCH RUNS, so the block counts at the
+    // chip's 27 MHz reference or half of it, and a 7.3% pulse is 63 or 31
+    // samples there -- under any threshold sized for a divider. Measured on a
+    // ypbpr selection from vga at 1920x1080: the retry cycled for 45 s with the
+    // divider's fraction in force, and 16 written by hand measured the source
+    // within half a second. docs/investigations/the-pulse-ignore-is-a-fraction-of-the-line.md
     //
-    // So the search reads a source with the threshold that source is read
-    // with, which is what the pulse width difference below already does.
-    Wire.reset();
-    SyncProcessor::applyPulseIgnore(true);
-    const uint32_t reading = SyncProcessor::SP_H_PULSE_IGNOR::read();
-
+    // The value does not outlive the search -- the dynamic pass below writes
+    // the divider's fraction the moment the count is in range -- because a
+    // search value that did was measured reading 271 lines against a source's
+    // 260 for thirteen seconds.
     Wire.reset();
     SyncProcessor::applyForSearch(true);
 
-    CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == reading);
+    CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 16);
+
+    SUBCASE("a source with its own vertical sync still ignores every pulse") {
+        SyncProcessor::applyForSearch(false);
+        CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 0xff);
+    }
 }
 
 TEST_CASE("the search separates on the threshold every source is read with")
@@ -780,6 +797,7 @@ static SyncProcessor::Dynamic settled()
     source.present = true;
     source.csync = false;
     source.pathSource = false;
+    source.divider = MeasuredCsyncDivider;
     return source;
 }
 
@@ -864,13 +882,19 @@ TEST_CASE("a settled source on the scaling path is read, not separated for")
     CHECK_FALSE(dynamicWrites<SyncProcessor::SP_PRE_COAST>(source));
 }
 
-TEST_CASE("a source neither searched for nor acquired is left alone")
+TEST_CASE("a source neither searched for nor acquired keeps the search's threshold")
 {
-    // Between the two: a live count in range with the run not earned back. The
-    // thresholds want a settled line length to be right about, so nothing is
-    // written until the run says there is one.
+    // Between the two: a live count in range with the run not earned back. On a
+    // sync-on-green source the count is in range through a reference clock the
+    // ADC PLL has not latched, so the line the block counts is not the
+    // divider's yet -- measured at 1187 samples against a 2040 reference, where
+    // the divider's fraction, 99, sits above the 87-sample pulse and the solve
+    // then reads 271 or 431 lines. The fraction arrives with the solve's own
+    // install and with the source present, both of them latched states.
     SyncProcessor::Dynamic source = settled();
     source.present = false;
+    source.csync = true;
+    source.divider = 1446;
 
     CHECK_FALSE(dynamicWrites<SyncProcessor::SP_DLT_REG>(source));
     CHECK_FALSE(dynamicWrites<SyncProcessor::SP_H_PULSE_IGNOR>(source));
@@ -988,9 +1012,9 @@ TEST_CASE("the per-load setup leaves the sync mode the sync type chose")
 {
     Wire.reset();
     Wire.poison(Poisons[0]);
-    SyncProcessor::applyForSyncType(false);
+    SyncProcessor::applyForSyncType(false, MeasuredCsyncDivider);
 
-    SyncProcessor::prepare(false);
+    SyncProcessor::prepare(false, MeasuredCsyncDivider);
 
     CHECK(SyncProcessor::SP_SOG_MODE::read() == 0u);
 }
@@ -999,9 +1023,9 @@ TEST_CASE("the per-load setup leaves the coast enable the sync type chose")
 {
     Wire.reset();
     Wire.poison(Poisons[0]);
-    SyncProcessor::applyForSyncType(false);
+    SyncProcessor::applyForSyncType(false, MeasuredCsyncDivider);
 
-    SyncProcessor::prepare(false);
+    SyncProcessor::prepare(false, MeasuredCsyncDivider);
 
     CHECK(SyncProcessor::SP_NO_COAST_REG::read() == 1u);
 }
@@ -1018,9 +1042,9 @@ TEST_CASE("the per-load setup leaves the overflow protect the sync type chose")
 {
     Wire.reset();
     Wire.poison(Poisons[0]);
-    SyncProcessor::applyForSyncType(false);
+    SyncProcessor::applyForSyncType(false, MeasuredCsyncDivider);
 
-    SyncProcessor::prepare(false);
+    SyncProcessor::prepare(false, MeasuredCsyncDivider);
 
     CHECK(SyncProcessor::SP_H_PROTECT::read() == 0u);
 }
@@ -1069,7 +1093,7 @@ static bool prepareWrote(bool csync)
     for (int i = 0; i < 2; ++i) {
         Wire.reset();
         Wire.poison(Poisons[i]);
-        SyncProcessor::prepare(csync);
+        SyncProcessor::prepare(csync, MeasuredCsyncDivider);
         under[i] = Field::read();
     }
     return under[0] == under[1];
@@ -1168,7 +1192,7 @@ TEST_CASE("the dynamic pass leaves the pulse ignore the arrangement chose")
     // rest of the window. The other two held 0x6b and acquired at 3.3 s. That
     // is the intermittency, and it is a second writer rather than a flaky part.
     Wire.reset();
-    SyncProcessor::applyForSyncType(true);
+    SyncProcessor::applyForSyncType(true, MeasuredCsyncDivider);
     REQUIRE(SyncProcessor::SP_H_PULSE_IGNOR::read() == 0x6b);
 
     SyncProcessor::applySeparationThresholds(true);

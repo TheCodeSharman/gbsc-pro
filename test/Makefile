@@ -106,7 +106,7 @@ test-bus:
 	  -o "$(OUT)/test_test_bus" \
 	  "$(HERE)/test_test_bus.cpp" src/tv5725/TestBus.cpp \
 	  src/tv5725/SyncProcessor.cpp src/tv5725/HsyncPulse.cpp src/tv5725/SyncMeasurement.cpp \
-	  src/tv5725/Interrupts.cpp
+	  src/tv5725/Interrupts.cpp src/tv5725/Adc.cpp
 	@"$(OUT)/test_test_bus"
 
 ## test-bus-rate-measurement: host unit tests for Tv5725::TestBusRateMeasurement
@@ -119,7 +119,7 @@ test-bus-rate-measurement:
 	  -o "$(OUT)/test_test_bus_rate_measurement" \
 	  "$(HERE)/test_test_bus_rate_measurement.cpp" \
 	  src/tv5725/TestBusRateMeasurement.cpp src/tv5725/SyncMeasurement.cpp src/tv5725/Interrupts.cpp \
-	  src/tv5725/TestBus.cpp src/tv5725/SyncProcessor.cpp src/tv5725/HsyncPulse.cpp
+	  src/tv5725/TestBus.cpp src/tv5725/SyncProcessor.cpp src/tv5725/HsyncPulse.cpp src/tv5725/Adc.cpp
 	@"$(OUT)/test_test_bus_rate_measurement"
 
 ## sync-on-green: host unit tests for Tv5725::SyncOnGreen
@@ -409,7 +409,7 @@ frame-sync:
 	  src/tv5725/DisplayClock.cpp src/tv5725/TestBus.cpp \
 	  src/tv5725/VideoRoute.cpp src/tv5725/TestBusRateMeasurement.cpp \
 	  src/tv5725/SyncMeasurement.cpp src/tv5725/SyncProcessor.cpp \
-	  src/tv5725/Interrupts.cpp src/tv5725/HsyncPulse.cpp $(CLOCK_SRC)
+	  src/tv5725/Interrupts.cpp src/tv5725/HsyncPulse.cpp src/tv5725/Adc.cpp $(CLOCK_SRC)
 	"$(OUT)/test_frame_sync"
 
 ## display-clock: host unit tests for the display clock and the raster it affords
@@ -726,7 +726,7 @@ sync-measurement:
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_sync_measurement" \
 	  "$(HERE)/test_sync_measurement.cpp" src/tv5725/SyncMeasurement.cpp \
-	  src/tv5725/SyncProcessor.cpp src/tv5725/HsyncPulse.cpp src/tv5725/Interrupts.cpp src/tv5725/TestBus.cpp
+	  src/tv5725/SyncProcessor.cpp src/tv5725/HsyncPulse.cpp src/tv5725/Interrupts.cpp src/tv5725/TestBus.cpp src/tv5725/Adc.cpp
 	@"$(OUT)/test_sync_measurement"
 
 ## colour-balance: host unit tests for Tv5725::ColourBalance

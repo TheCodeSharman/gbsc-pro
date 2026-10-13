@@ -1226,6 +1226,7 @@ void VideoSourceAcquisition::applySyncProcessorDynamic()
     source.searching = sourceIsSearching();
     source.present = sourceIsPresent();
     source.csync = Tv5725::SyncMeasurement::isCsync();
+    source.divider = Tv5725::Adc::dividerInForce();
     source.pathSource =
         VideoSourceSelection::isRgbhv(VideoSourceSelection::selected())
         || Tv5725::VideoRoute::isHdBypassChannel();

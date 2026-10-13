@@ -628,6 +628,7 @@ TEST_CASE("installing a reference clock leaves the capture counter an origin")
     CHECK(SyncProcessor::SP_RT_HS_SP::read() != 0);
 }
 
+
 // vertical in both.
 TEST_CASE("the reference clock the retry installs brings its own scan")
 {
@@ -2551,6 +2552,60 @@ TEST_CASE("a coast changed on a settled source reaches the chip")
     CHECK(applied == 12);
 }
 
+TEST_CASE("a reference install leaves the search's threshold in force")
+{
+    // A reference is installed on a source nothing has measured, so the block
+    // may be counting at the chip's own reference rather than the divider --
+    // and a threshold sized for the divider there ignores the pulse the search
+    // is trying to see. The fraction arrives with the count, from the dynamic
+    // pass, and with the solve's own install below.
+    // docs/investigations/the-pulse-ignore-is-a-fraction-of-the-line.md
+    seedBenchSource();
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+    engine.useSyncTypeProbe(probeOwnVsync);
+    engine.setOutputMode(benchMode());
+
+    g_hasOwnVsync = false;
+    engine.establishSyncType(4);
+    REQUIRE(SyncMeasurement::isCsync());
+
+    SyncProcessor::applyForSearch(true);
+    const uint32_t searching = SyncProcessor::SP_H_PULSE_IGNOR::read();
+
+    engine.installReferenceClock();
+    REQUIRE(Adc::dividerInForce() == Adc::BringUpDivider);
+    CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == searching);
+
+    for (uint8_t i = 0; i < Adc::referenceDividerCount()
+                        && Adc::dividerInForce() == Adc::BringUpDivider; ++i)
+        REQUIRE(engine.tryNextReferenceClock(true));
+    REQUIRE(Adc::dividerInForce() == 1446);
+
+    CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == searching);
+}
+
+TEST_CASE("a solve re-places the pulse ignore for the divider it installs")
+{
+    seedBenchSource();
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+    VideoSourceAcquisition acquisition(sampling, engine);
+    engine.useSyncTypeProbe(probeOwnVsync);
+
+    g_hasOwnVsync = false;
+    engine.setOutputMode(benchMode());
+    engine.inputTimingsChanged(4);
+    REQUIRE(pollUntilSolved(acquisition));
+    REQUIRE(Adc::PLLAD_MD::read() == 2200);
+
+    CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 107);
+}
+
 // --- what a mode change looks like when the line count cannot show it ---------
 //
 // sourceMoved() is the only thing that arms a solve while the engine is idle,
@@ -2560,7 +2615,7 @@ TEST_CASE("a source that measures its own lines is left on the pair it has")
 {
     seedBenchSource();
     seedSourceHalfLines(624);
-    SyncProcessor::applyForSyncType(true);
+    SyncProcessor::applyForSyncType(true, Adc::dividerInForce());
     const uint32_t before = SyncProcessor::SP_PRE_COAST::read();
 
     DisplayClock clock;
