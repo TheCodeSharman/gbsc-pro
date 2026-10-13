@@ -509,172 +509,60 @@ reference-clock retry cycles indefinitely, 98 retries in 30 s. `/restart`
 recovers it in about 15 s; `/input?src=ypbpr` does not, for the reason the
 entry below gives.
 
-### 1920x1080 is the mode with the LEAST raster room, and only there does the count collapse
+### FIXED: the Wii at 480p never acquired at 1920x1080, because the pulse ignore ignored its sync pulse
 
-The output raster's horizontal total is the display clock over the output's own
-lines and **the source's field rate**, so one output resolution is several
-rasters and `VideoPath::dividerCeilingForOutput()` follows it. Computed from
+`SP_H_PULSE_IGNOR` is compared against pulse widths counted in ADC samples, and
+it held one byte, 107, fitted through a 2200-sample line. The 1080p raster at
+59.94 Hz affords this source a divider of 1446, where its 7.33% sync pulse is
+106 samples -- one under the threshold -- so the separator ignored the source:
+the count collapsed to about half, the input formatter's vertical went quiet,
+and the reference retry cycled for ever. The field follows the divider now, 49
+per thousand of the line, and the search writes 16 because an unlocked block
+counts at the chip's 27 MHz reference, where the same pulse is 63 or 31
+samples. Measured after the fix, `vga` to `ypbpr` at 1920x1080: a reading 1.7 s
+after the selection, acquired at 4 s, held with `STATUS_SYNC_PROC_VTOTAL` 524
+against `PLLAD_MD` 1446 latched, the coast window placed, the DACs on and a
+picture on the USB capture.
+`investigations/the-pulse-ignore-is-a-fraction-of-the-line.md`.
+
+**What the hunt measured that stays true.** The output raster's horizontal
+total is the display clock over the output's own lines and the SOURCE's field
+rate, so one output resolution is several rasters and
+`VideoPath::dividerCeilingForOutput()` follows it. Computed from
 `OutputMode::solve()` at `EngineCeilingHz`, for a 524-line 59.94 Hz source:
 
 | output | raster total | capture the raster can show | divider installed |
 |---|---|---|---|
-| 1920x1080 | 1602 | 1447 | **1446** |
+| 1920x1080 | 1602 | 1447 | 1446 |
 | 720x480 | 2060 | 1858 | 1858 |
 | 768x576 | 2162 | 2004 | 2004 |
 | 1280x720 | 2402 | 2149 | 2046, the line counter |
 
-1080p is the tightest because 1125 lines at 59.94 Hz leave the shortest line at
-108 MHz. **The same output at 50 Hz solves 1920 and affords 1724**, so the
-divider a mode asks for is a property of the source's rate as much as of the
-output, and the 50 Hz bench `vga` source never reaches the band this fails in.
+1080p is the tightest because 1125 lines at 59.94 Hz leave the shortest line
+at 108 MHz; the same output at 50 Hz solves 1920 and affords 1724, and `vga` at
+320x256@50 is line doubled with a ceiling near 3448, which is why the band
+never showed on the bench RISC PC. The divider itself was never the fault:
+1446 latches, `duty: 106 pulse / 1446 divider, htotal 1446`, on every boot.
 
-**THE DIVIDER IS NOT THE FAULT -- 1446 LATCHES AND MEASURES THE DUTY
-CORRECTLY.** One clean boot at 1080p:
+What remains on this source at 1446 is the 521/524 count pair and its dips to
+433..494, the entry above: the state reads `absent` for a sample or two every
+half minute, a dip steady enough to pass the run solves once on it and once
+more on the true count, and an input change churns through a few such solves
+in its first ten seconds before holding.
 
-```
-installing: divider from line rate 31468, doubled 0 -> 1446
-duty: 106 pulse / 1446 divider, htotal 1446, negative
-source absent:   219 lines, 1446 samples against divider 1446
-source acquired: 219 lines, 1446 samples against divider 1446
-measure: start, TIMINGS change (count), 219 lines, solved 524
-measure: the reference clock measured nothing, trying the next   x241 in 75 s
-```
+### The held line rate takes any reading at a moved count
 
-`htotal 1446` against the divider is the latch, and 106/1446 is 7.33% against
-480p's own 7.2%. So **a divider the solve chooses latches here as it does at
-1858**, and anything resting on 1446 being outside the PLL's range is refuted.
-
-**WHAT MOVES WITH THE DIVIDER IS THE COUNT, AND THE POPULATION AT 1446 IS A
-DIFFERENT ONE.** Three dividers, same source, same input:
-
-| divider | output it came from | `STATUS_SYNC_PROC_VTOTAL` |
-|---|---|---|
-| 2046 | 1080p solved for a bogus 40 Hz | 524, correct, DACs powered |
-| 1858 | 720x480 | 521 / 524 bimodal, 433..494 at 10% |
-| 1446 | 1920x1080 | **210..247**, and 97..163 once searching |
-
-The 1446 population is below the 521/524 pair the entry above measures, and it
-dips under `VideoSignal::SourceVerticalTotalMin` -- so it is not that pair seen
-again at a different clock.
-
-**AND THE COAST WINDOW IS NEVER PLACED AT 1446, WHICH IS WHY THE THREE ROWS ARE
-NOT COMPARABLE.** `SP_H_CST_SP` reads `SyncProcessor::DefaultCoastStop` for the
-whole of the 1080p state, measured repeatedly on the live unit, where the
-working rows carry a placed window -- 834 at 1858 and 1245 at 2046.
-`VideoSourceAcquisition::placeCoastWindow()` has four callers and in this state
-none can run: `holdSolvedSource()` needs a completed solve, both sketch gates
-need `sourceIsPresent()` with `acquiredPasses()` at 7 and 4, and the selection
-path runs once per input change. The solve needs a duty, the duty needs a
-latched clock, and the entry above gives no reference clock that latches on
-`ypbpr` -- so the measurement that would place the window is taken through the
-window it would place.
-
-**A SOURCE AT 219 IS NEITHER SEARCHING NOR PRESENT, AND NOTHING CONFIGURES THAT
-STATE.** `sourceIsSearching()` is `!countIsSource(lineCount()) && !present`, and
-any count from 200 to 1300 is a source -- so at 219 it is false, and
-`applyDynamic()` gives the source neither the search's coast inversion nor
-`applyForSearch()`'s defaults, while no solve reaches the placement either. The
-count crossing 200 is what flips it, which is why `SP_H_CST_SP` returns to the
-default without any path appearing to write it.
-
-**A WIDER RASTER IS MEASURED TO ESCAPE IT, BY ACCIDENT.** A field rate solved at
-about 40 Hz widens the 1080p raster to 2403 -- `108e6 / (1125 x 39.95)` -- which
-raises the ceiling to 2046, which latches, and the unit then reads a correct 524
-with `DAC_RGBS_PWDNZ` 1. The output is then sized for 40 Hz and the capture is
-magenta noise, so this is a clue about the divider rather than a recovery.
-
-**50 Hz ON THE SAME OUTPUT AND THE SAME BUILD ACQUIRES IN 6 SECONDS**, so
-1920x1080 is not broken and the band is. `vga` at 320x256@50: `PLLAD_MD` 2200
-against `STATUS_SYNC_PROC_HTOTAL` 2200, `STATUS_SYNC_PROC_VTOTAL` 311,
-`SP_H_CST_SP` a placed 1672, `DAC_RGBS_PWDNZ` 1 and `state: acquired` held for
-105 s. Its line is DOUBLED, so the ceiling is in ADC samples at two per unit --
-about 3448 against the 1916 raster -- and 2200 sits well inside it. The Wii is
-undoubled at 1447, which is the whole of the difference.
-
-**PLACING THE COAST WINDOW FROM THE HELD RATE IS REFUTED, AND IT IS HARMFUL.**
-Tried: `placeCoastWindow()`/`placeClampWindow()` on the retry path, after
-`tryNextReferenceClock()` returns, pinned by two host cases that fail without
-it. On the bench it changes nothing and then makes it worse:
-
-- `mayWriteForSource()` refuses it for most of the cycle, `STATUS_SYNC_PROC_VTOTAL`
-  sitting at 97..100 where `countIsSource()` wants 200, so `SP_H_CST_SP` reads
-  `DefaultCoastStop` at every one of six samples across 132 s.
-- when it does write, it writes from a rate that has STRANDED. Measured
-  `SP_H_CST_SP` 3187 on a line of 2040 samples, which is `0.968 x 27e6/8198`
-  -- past the end of the line, the value this page's trap says only `/restart`
-  clears.
-
-**So the held rate strands at a garbage value and everything derived from it
-follows.** `/geometry` reported `lineRateHz` 31467 at +32 s and **8198** from
-+52 s onward, unchanged for the rest of the run. 8198 is a count of 269 against
-a field rate of about 30.5, both inside `VideoSignal`'s bounds, so `isVideo()`
-passes it and `HeldRateRejectionLimit` lets it past `rateFollowsCount()` -- and
-the engine is then anchored to it, rejecting correct readings of 31468 against
-it. **Fix the stranding before placing anything from the held rate.**
-
-**AND THE COUNT IS NOT WHAT FAILS AT THE SOLVED CLOCK.** One boot, latched,
-no `UNLATCHED` on either line:
-
-```
-measured: 269 lines x 0.00 Hz -> line rate 0, clock 1446@31467 htotal 1446
-measured: 524 lines x 30.91 Hz -> line rate 0, clock 1446@31467 htotal 1446
-```
-
-`htotal 1446` against the divider is the latch and 524 is the source's own
-count, so what is left is the field rate -- 30.91 Hz against 59.93, about a
-half, where the entry below measured two thirds. The missed-edge multiple is
-not fixed at 1.5.
-
-**`InputFormatter::writeReferenceVerticalBlank()` IS AN OPEN CANDIDATE AND ITS
-COMMENT IS UNPROVEN.** It parks `IF_VB_ST`/`IF_VB_SP` at 0..2 and says being
-inside every frame means it cannot be the window that stops the block
-measuring. The field rate is timed off that block, and in the retry state
-`/testbus?ms=150&if=3` reads `tb,0` **0 transitions** against `tb,2` 18 as the
-control, where the post-coast entry below reads `tb,0` 18 at the `IF_VB_ST` 512
-a solve lands on. **The reading does not settle it**, because the ADC PLL is
-unlatched throughout -- `PLLAD_MD` 2040 against `STATUS_SYNC_PROC_HTOTAL` 350
--- and the input formatter is clocked from it, so a dead bus and a wrong window
-are indistinguishable there. **A hand-written window cannot settle it either**:
-`prepareToMeasure()` rewrites the pair every pass and a write loses the race
-even with the sweep holding `loop()`, five candidate windows all reading back
-0..2. What would settle it is changing the parked pair in the firmware and
-asking whether the rate reads right, which costs one flash.
-
-**THE TERMINAL STATE IS NOT 1080p's, AND THE HELD RATE IS WHAT MAKES IT
-TERMINAL.** Reached at 720x480 output too, from a boot that acquired properly
--- `duty: 136 pulse / 1858 divider, htotal 1858`, the sampling phase chosen,
-`sync pad: driven` and `frame time lock: running` -- so the output only decides
-whether the FIRST solve lands. Four samples over 45 s once it has fallen in:
-
-```
-state=absent lineRate=26921 | PLLAD_MD=1446/2040 HTOTAL=436 VTOTAL=201
-                              SP_H_CST_SP=969 IF_VB_ST=0 IF_VB_SP=2
-```
-
-**`STATUS_SYNC_PROC_VTOTAL` pins at 201, one line above
-`VideoSignal::SourceVerticalTotalMin`**, and 26921 is 201 x 133.9 Hz -- a count
-one line inside its floor against a field rate well inside its 150 Hz ceiling.
-`isVideo()` passes the pair, so after `HeldRateRejectionLimit` refusals it
-becomes the held good rate, and `rateFollowsCount()` then refuses every correct
-31468 against it. `SP_H_CST_SP` 969 is `0.968 x 27e6/26921`, so the window is
-sized from it as well.
-
-**The bounds are checked per quantity and nothing checks the PAIR.** 201 lines
-and 133.9 Hz are each admissible and their product is not a raster any source
-runs; `FrameSync`'s `rateIsPlausible()` is the same kind of bound and is
-`FrameSync`'s alone, so `SourceMeasurement`'s held rate has no corroboration at
-all. The garbage values differ per fall -- 6791 and 8198 and 26921 -- which is
-what says the bound rather than any one value is the hole.
-
-**And the pinned count is why nothing resets the block.** 201 satisfies
-`countIsSource()`, so `sourceIsSearching()` is false and `applyForSearch()`
-never runs, while `sourceIsPresent()` is false so no solve runs either. The
-state is outside both branches of `applyDynamic()` for as long as it lasts.
-
-**What would settle it**: refuse a held rate the source's own identity does not
-admit -- the pair, not each bound -- and check whether the engine then leaves
-this state on its own. The count and the field rate are both already read in one
-pass, so the pair is available where the decision is made.
+`SourceMeasurement::rateFollowsCount()` accepts anything at a count that moved,
+because a moved count is a mode change -- so a garbage pair read through a
+collapsed count becomes `lineRateHz()` on ONE reading. Measured while the
+separator was ignoring the Wii's pulse: `214 lines x 38.13 Hz -> 8198`,
+`223 x 133.64 -> 29937` and a pinned 201 x 133.9 -> 26921, each reported by
+`/geometry` for the rest of its run, and the one coast window placed from such
+a rate landed at `SP_H_CST_SP` 3187 on a 2040-sample line. A count wrong by
+half is inside `VideoSignal`'s bounds and so is a field rate of 134 Hz; nothing
+checks the pair. No longer terminal now that the separator reads the source,
+and not fixed: a reading like it still strands the held rate until the next
+settled one replaces it.
 
 ### FIXED: a solve re-armed and re-blanked itself on a source standing still
 
