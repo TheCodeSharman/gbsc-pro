@@ -135,10 +135,16 @@ public:
     // returns the value already in force.
     // docs/investigations/the-window-delay-is-a-field-rate-band-not-a-constant.md
     //
-    // A table per output and field-rate band is what can close it. **Moving it
-    // is safe for the odd-width parity bias**, which OutputWindow::solve()
-    // re-applies per solve inside the bounds this hands it; insetting one edge
-    // or changing the span is what would break that.
+    // A table per output and field-rate band is what can close it.
+    //
+    // **MOVING IT IS SAFE FOR THE ODD-WIDTH PARITY BIAS.** That bias is on the
+    // MEMORY window's width, memoryStart - windowStop, and OutputWindow::solve()
+    // applies it after its own clamps -- so a translation of the bounds this
+    // hands it lands odd again on the next solve. Measured odd on seven solved
+    // states across a magnification of 1.03 to 1.89. What would defeat it is
+    // moving the memory window's far edge by a unit without re-running the
+    // bias, or pinning it against both bounds at once.
+    // docs/investigations/horizontal-scale-corruption.md
     //
     // **THE WINDOW DOES NOT FOLLOW OUR BLANKING**, which is what a value of 3
     // rested on. Walking VDS_DIS_HB_SP 143..200 leaves the window where it is
