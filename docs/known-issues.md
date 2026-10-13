@@ -460,86 +460,80 @@ mean of 152.4 against 205.7 at a start of 19. Both writers convert inside
 `SyncProcessor` now.
 [investigations/the-clamp-had-two-owners-and-two-units.md](investigations/the-clamp-had-two-owners-and-two-units.md)
 
-### The line filter cannot be turned back on once it has been turned off
+### FIXED: the line filter could not be turned back on, and the install moved the count
 
-The symptom: turning the filter off takes the divider from 1212 to 1446;
-turning it back on leaves it at 1446, `applyLineFilter()`'s `fits` test fails
-against the 1020-sample line buffer, and `VDS_D_RAM_BYPS` stays 1. Four presses
-in one run, the register unmoved after the first, and `/restart` is what brings
-it back.
+The symptom: turning the filter off took the divider from 1212 to 1446;
+turning it back on left it at 1446, `applyLineFilter()`'s `fits` test failed
+against the 1020-sample line buffer, and `VDS_D_RAM_BYPS` stayed 1. Four
+presses in one run, the register unmoved after the first.
 
-**`VideoPath::setLineFilter()` IS NOT WHERE IT IS, and an earlier reading of
-this entry said it was.** The route reaches `installSampling()` both ways -- the
-off press logs its install -- and given a key that matches a published raster
-the whole cycle works, which
-`test_video_path_windows.cpp` now holds still.
+**`VideoPath::setLineFilter()` is not where it was.** The route reaches
+`installSampling()` both ways, and given a key that matches a published raster
+the whole cycle works, which `test_video_path_windows.cpp` holds still.
 
-**The cause is a source key latched from a transient and never revised.** Read
-off the console for the off press:
+**THE CAUSE WAS OUR OWN WRITE BEING READ AS THE SOURCE MOVING.**
+`writePulseIgnore()` ran on every install declaring the scan unknown, so it put
+the fraction back over the value the measured scan chose. Polled across the off
+press on the Wii at 480p into 1080p:
 
-```
-installing: divider from line rate 31288, doubled 0 -> 1446
-measure: rate held 59.93 Hz, measuring duty
-duty: 159 pulse / 1446 divider, htotal 1446, negative
-source key: 521@59.94/1100??, no framing stored, shape 13333
-source acquired: 524 lines, 1446 samples against divider 1446
-```
+| t (s) | `SP_H_PULSE_IGNOR` | `SP_H_CST_SP` | `STATUS_SYNC_PROC_VTOTAL` |
+|---|---|---|---|
+| 0.03 | 14 | 830 | 524, settled |
+| 0.08 | **70** | 830 | **530** |
+| 0.23 | 70 | **256** | 514 |
+| 0.25..0.86 | 70 | 256 | 521, 455, 508, 521 |
+| 0.97 | 70 | **834** | 524, and 524 thereafter |
+| 1.46 | **14** | 834 | 524 |
 
-The count was read at 530, 527, 521, 521 while the divider was moving and the
-key took 521; the duty was read 30 ms after the install at 11.0% where the
-standard is 7.2%. **480p is 525 lines**, `SourceTiming::lookUpIn()` matches the
-count exactly, so `521@59.94/1100??` matches nothing --
-`dividerCeilingForLineFilter()` has no `activePixels()`, returns 0, and no later
-press has a bound to bring the divider down with.
+The byte alone took the count off the source. The engine read that as a source
+change, `inputTimingsChanged()` put the coast window back to `DefaultCoastStop`
+and the count was unusable for 740 ms -- which is where the key was taken. 480p
+is 525 lines and `SourceTiming::lookUpIn()` matches the count exactly, so
+`521@59.94/…` matched nothing, `dividerCeilingForLineFilter()` had no
+`activePixels()` and returned 0, and no later press had a bound to bring the
+divider down with.
 
-Measured afterwards, the chip reads `STATUS_SYNC_PROC_VTOTAL` 524 and a duty of
-7.26% -- **both of which would match** -- while `/geometry` still reports the
-held `cv` 522 and `fh` 160. A count three lines out did not arm a re-solve, so
-the wrong key is held indefinitely.
+**Fixed at both halves.** `writePulseIgnore()` asks `SourceMeasurement` for the
+scan, and the latch settle is a duration -- `SourceMeasurement::LatchSettleMs`,
+timed from the first reading after the latch, with the console saying how long
+each wait was. Re-measured on the same press:
 
-**THE DUTY HALF IS ADDRESSED: the settle is a duration.**
-`SourceMeasurement::LatchSettleMs` is 100 ms, timed from the first reading
-after the latch, and the console's `settle: spent after N ms` says how long
-each wait was. Four off presses from a restarted filter-IN state, one source
-and one output:
-
-| settle spent | duty at the install | key |
+| | before | after |
 |---|---|---|
-| 128 ms | 106 / 1446 = 7.33% | `524@59.94/733??`, framing recalled |
-| 128 ms | 106 / 1446 = 7.33% | `521@59.94/733??` |
-| 109 ms | 106 / 1446 = 7.33% | `521@59.94/733??` |
-| 115 ms | 159 / 1446 = 11.0% | `521@59.94/1100??` |
+| `SP_H_PULSE_IGNOR` | 14 -> 70 | 14 throughout |
+| `STATUS_SYNC_PROC_VTOTAL` | 530, then 514/521/455/508 for 740 ms | 524 in all 232 samples |
+| `SP_H_CST_SP` | 830 -> 256 -> 834 | 830 throughout |
+| `SP_RT_HS_SP` | 1441, from a duty of 68 | 1403, which is `1446 - 106 + 63` |
+| duty at the install | 68 of 1446, twice | 106 of 1446, the settled reading |
+| four presses | IN, OUT, OUT, OUT, OUT | IN, OUT, IN, OUT, IN |
 
-106 is what `STATUS_SYNC_PROC_HLOW_LEN` holds settled, steady over six reads,
-and 7.33% against the mode's own 7.23% keys a bucket that matches. The same
-press read 68 twice before, keying `470??`, and `SP_RT_HS_SP` was left at
-`1446 - 68 + 63` = 1441 against the 1403 the real duty gives -- so the bad
-reading places the capture counter's origin 38 samples out and stays there.
+The console across the four presses is now four `installing:` lines and nothing
+else: no source absent, no timings change, no re-solve, because the count never
+moved.
 
-**So the wait is right in kind and not always long enough.** One run in four
-still reads the duty before the sync processor has re-counted it, and
-`STATUS_SYNC_PROC_HTOTAL` echoes the divider throughout every one of them, so
-`Adc::dividerLatched()` cannot tell the bad reading from the good.
-
-**WHAT IS LEFT IS THE COUNT, AND IT IS THE DOMINANT HALF.** 521 against the
-source's 524 in all four runs, held for about a second after the install while
-the steadiness run agrees with it happily -- the same trap `HPERIOD_IF` has,
-a reading that is wrong and stays wrong. 480p is 525 lines and
-`SourceTiming::lookUpIn()` matches the count exactly, so the key lands on no
-published raster however good the duty is.
+**What the duration alone did not reach.** With the count still moving, the
+settle got the duty right in three runs of four and read 159 in the fourth, and
+`STATUS_SYNC_PROC_HTOTAL` echoed the divider through every one, so
+`Adc::dividerLatched()` could not tell the bad reading from the good. The scan
+fix removes the transient the duty was being read through rather than waiting
+it out, and the two together leave nothing to wait for on this press.
 
 **Whether the stale key also reaches the aspect is NOT established**, and the
 obvious reading of it is a trap. `aspect` was seen going 17778 to 13333 across
-the same press, but **`SourceTiming`'s 720x480p row declares `F43`**, so a key
-that matches gives 13333 too -- the 16:9 in force was the user's own `/uc?G`,
-and losing it on a re-derivation is a different defect. The reading does not
-separate the two. See the aspect entry below for the trigger that does isolate
-it.
+the press, but **`SourceTiming`'s 720x480p row declares `F43`**, so a key that
+matches gives 13333 too -- the 16:9 in force was the user's own `/uc?G`, and
+losing it on a re-derivation is a different defect. See the aspect entry below
+for the trigger that does isolate it.
 
-**Next**: a key that matches no published raster re-derived rather than held,
-where the chip's current readings would match one. It reaches the framing
-recall as well as the filter's bound, and it covers the duty reading above too
--- a duty that keys nothing is as suspect as a count that does.
+**Still open, on a GENUINE source change.** The coast window is a function of
+the source's line rate alone -- `27e6 / lineRateHz`, in the chip's own
+reference, so no divider moves it -- and it is reset to `DefaultCoastStop` when
+a new source arrives, which is correct there. The loop count -> rate -> coast
+-> count converges in two steps, but a key may still be adopted at the first
+step rather than at the fixed point. The test with a right answer is that the
+coast in force equals the coast the count implies. One residue of the same
+measurement: the coast is left at 834, derived from the rate the bad count
+gave, where 830 is right, because nothing re-places it once measuring stops.
 
 ### The display window's first unit is not picture
 
