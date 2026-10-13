@@ -329,10 +329,10 @@ static void checkBenchGeometry()
     // interpolator already fed.
     CHECK(VideoProcessor::VDS_HB_SP::read() == 42);
     CHECK(VideoProcessor::VDS_VB_SP::read() == 35);
-    // The aperture opens ON the picture, both axes: the margin before it is
-    // the source's own blanking, and showing it is a black band the picture
-    // never reaches.
-    CHECK(VideoProcessor::VDS_DIS_HB_SP::read() == 160);
+    // The aperture opens on the first unit the write FILLED: the margin before
+    // the picture is the source's own blanking, and the unit the write only
+    // enters shows what the last frame left in it.
+    CHECK(VideoProcessor::VDS_DIS_HB_SP::read() == 161);
     CHECK(VideoProcessor::VDS_DIS_VB_SP::read() == 41);
     CHECK(VideoProcessor::VDS_DIS_VB_SP::read() > VideoProcessor::VDS_VS_SP::read());
 

@@ -154,6 +154,11 @@ static float writeEndOf(const OutputMapping &solved, const Axis &axis)
     return cornerOf(solved, axis) + solved.produced();
 }
 
+// An edge lands exactly on a unit where the window stop is on its floor, and
+// the origin is computed in float, so the equality case loses a ulp. A
+// thousandth of a unit is not a framing defect.
+static const float UnitSlack = 1e-3f;
+
 // --- everything from the capture and the raster alone -------------------------
 
 TEST_CASE("nothing is inherited from the registers")
@@ -505,11 +510,15 @@ TEST_CASE("a filling framing reaches the raster at every edge")
 
     for (const Axis *axis : {&AxisHorizontal, &AxisVertical}) {
         const OutputMapping &m = on(solved, *axis);
-        // Never AFTER the write starts: the corner is a whole output pixel and
-        // the origin is not, so rounding it to nearest blanks a column the
-        // write had already reached.
-        CHECK_MESSAGE((float)m.display().stop() <= cornerOf(m, *axis),
-                      "the aperture opens on the picture, not past it");
+        // On the first unit the write FILLED: the ceiling across, where the unit
+        // below the fraction holds what the last frame left there, and the floor
+        // down, where it comes back as nothing.
+        const float picture = cornerOf(m, *axis);
+        const float opens = (float)m.display().stop();
+        CHECK_MESSAGE((axis->vertical()
+                           ? (opens <= picture && opens > picture - 1.0f)
+                           : (opens >= picture - UnitSlack && opens < picture + 1.0f)),
+                      "the aperture opens on a unit the write filled");
         // The far horizontal edge may give one unit to the width parity, which
         // is the single exception to filling the screen.
         const float owed = axis->vertical() ? 1.0f
@@ -629,7 +638,7 @@ TEST_CASE("the solver places every output register")
         // The memory window opens where the WRITE does; the aperture opens
         // where the picture does, a leading margin further in.
         CHECK(h.memory().stop() == 8);
-        CHECK(h.display().stop() == 103);
+        CHECK(h.display().stop() == 104);
     }
 
     SUBCASE("the memory window is exactly the display window") {
@@ -1014,14 +1023,44 @@ TEST_CASE("the horizontal memory window is an odd number of units wide")
     }
 }
 
+// Measured on the Wii at 480p into 1920x1080, capture 1216 at VDS_HSCALE 889 in
+// a 1602-unit raster: the picture starts at 159.948 and the floored aperture
+// opened at 159, emitting one column reading 191.0 against the 12.8 of the
+// source's own content either side.
+//
+// The write fills the unit ABOVE the fraction and does not enter the one below
+// it. Translating the memory window a unit at a time, with the aperture left
+// where the engine put it, grew the stale band 1:1 -- clean at VDS_HB_SP 74,
+// one unit at 75, two at 76, four at 78 -- and the column's level follows the
+// fractional part alone: 0.95 of a unit read 191.1, 0.85 read 72.7 and 0.09
+// read 22.8, at magnifications 1.15, 2.99 and 1.46. At every one of the three
+// the ceiling was clean and the floor was not.
+//
+// Vertically the floor stands: reading above the first written line comes back
+// as nothing rather than as memory, and a unit held back there is a black bar
+// across the top of the screen. See "the vertical aperture opens on the
+// picture, not a capture unit later".
+TEST_CASE("the horizontal aperture opens on the unit the write filled, not the one it entered")
+{
+    for (uint16_t capture = 600; capture <= 1500; capture += 3) {
+        const OutputWindow solved(capture, 512, rasterOf(1602, 1126));
+        const OutputMapping &h = solved.horizontal();
+        if (!h.usable())
+            continue;
+        const float picture = cornerOf(h, AxisHorizontal);
+        REQUIRE((float)h.display().stop() >= picture - UnitSlack);
+        REQUIRE((float)h.display().stop() < picture + 1.0f);
+    }
+}
+
 TEST_CASE("the display window is the picture, at both ends")
 {
     const OutputWindow solved(981, 512, rasterOf(1916, 1126));
     const OutputMapping &h = solved.horizontal();
     REQUIRE(h.scale().reg() == 557);
 
-    CHECK((float)h.display().stop() <= cornerOf(h, AxisHorizontal));
-    CHECK((float)h.display().stop() > cornerOf(h, AxisHorizontal) - 1.0f);
+    CHECK((float)h.display().stop() >= cornerOf(h, AxisHorizontal) - UnitSlack);
+    CHECK((float)h.display().stop() < cornerOf(h, AxisHorizontal) + 1.0f);
 
     CHECK((float)h.display().start() <= writeEndOf(h, AxisHorizontal));
     CHECK(writeEndOf(h, AxisHorizontal) - (float)h.display().start()
@@ -1039,10 +1078,6 @@ TEST_CASE("the display window is the picture, at both ends")
 // clears when the capture takes one more line, and it grows to a forty-line
 // band that does NOT flash while the source's border does when the capture
 // takes forty fewer.
-// The aperture lands exactly on a capture unit where the window stop is on its
-// floor, and the origin is computed in float, so the equality case loses a ulp.
-// A thousandth of a unit is not a framing defect.
-static const float UnitSlack = 1e-3f;
 
 static float lastCaptureUnitRead(const Axis &axis, const OutputMapping &solved)
 {

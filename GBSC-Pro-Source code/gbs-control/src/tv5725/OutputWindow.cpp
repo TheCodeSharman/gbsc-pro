@@ -337,18 +337,14 @@ OutputMapping OutputWindow::solve(const Axis &axis, uint16_t capture, Scale scal
     if (apertureStart > memoryStart)
         apertureStart = memoryStart;
 
-    // The near end opens ON the picture, both axes, for the reason the far end
-    // closes on it: the first capture unit is only partly written, and what
-    // pays for that is the capture opening a unit earlier, not the aperture
-    // opening a unit later. Inset, it is a black column down the left of a
-    // full-screen picture.
-    //
-    // FLOORED, like the far end, rather than taken from the rounded corner:
-    // the write starts at a fraction of a pixel and the register is a whole
-    // one, so rounding to nearest blanks a column the write had reached.
-    int32_t displayStop = (int32_t)floorf((float)placed.windowStop()
-                                          + pictureOffset(axis, scale.magnification(),
-                                                          margin));
+    // The near end opens on the first unit the write FILLED: the CEILING
+    // horizontally, where the unit below the fraction holds what the last frame
+    // left, and the floor vertically, where it reads as nothing and a line held
+    // back is a black bar. docs/scaler-geometry-model.md
+    const float pictureStarts = (float)placed.windowStop()
+                              + pictureOffset(axis, scale.magnification(), margin);
+    int32_t displayStop = (int32_t)(axis.vertical() ? floorf(pictureStarts)
+                                                    : ceilf(pictureStarts));
     if (displayStop < 0)
         displayStop = 0;
     if (displayStop > apertureStart)
