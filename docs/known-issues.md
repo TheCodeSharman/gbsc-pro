@@ -441,54 +441,41 @@ frozen poke cannot answer it.
 rather than on a measurement that failed for any reason. The witness exists and
 no caller consults it yet.
 
-### The Wii's 480p does not reach the frame's edges, and the black is TWO things
+### The Wii's 480p is placed by a separator lead that is wrong for its raster
 
 Measured 2026-10-13 on `ypbpr` at 480p into 1920x1080, engine's own solve, read
-off the USB capture. The emitted frame carries 142 black columns at the left, 42
-rows at the top and 27 at the bottom, with the picture running to the last
-column.
+off the USB capture. **The cause is `VideoSourceLine::SeparatorOriginPerThousand`
+being 70 where this raster wants about 23**, which is not a property of sync on
+green: the same lead measures 2.2% of the line on the RISC PC's composite sync at
+the same CEA raster and 7.6% at 640x480@60, so no single fraction covers both.
+[investigations/the-separator-lead-is-not-a-fraction-of-the-line.md](investigations/the-separator-lead-is-not-a-fraction-of-the-line.md)
 
-**Lift `VDS_Y_OFST` and the two separate.** True blanking on this path sits at
-zero and so does a captured black border, and on the panel they are
-indistinguishable. The offset is applied to the PICTURE, so raising it to 96
-leaves the blanking at zero and marks exactly how far the picture reaches:
+**It costs picture at BOTH ends, and only one of them looks like a fault.** The
+capture window's picture region is 107..1321 against content at 191.5..1348.7:
 
-| | emitted px | capture units | what it is |
-|---|---|---|---|
-| columns 0..10 | 11 | -- | **our display window**, opening late |
-| columns 11..141 | 131 | 92 | **captured source blanking** |
-| rows 0..41 | 42 | 19 | captured source blanking |
-| rows 1053..1079 | 27 | 12 | captured source blanking |
-| right edge | 0 | 0 | the picture reaches the last column |
+| | capture units | emitted px |
+|---|---|---|
+| black shown at the left | 84.5 | 134 |
+| content **cut** at the right | 27.7 | 44 |
+| our display window opening late | -- | 12 |
 
-**The 11 columns are the display window placed about 13 raster units late**,
-which is `OutputMode::HsyncStartPx`. Walking `VDS_DIS_HB_SP` and `VDS_DIS_HB_ST`
-inwards with the picture overrunning both ends puts the chain's own window at our
-raster units 145.7..1543.7 -- 1398 wide, which is exactly
-`carriedPx / totalPx x horizontalTotal`, so the WIDTH the engine blanks to is
-right and only the placement is out. The right-hand fit is 1.367 emitted px per
-raster unit with a residual of 0.0 px over four points.
+The window is already pinned at the capture floor -- `videoAt()` asks for 105 and
+`firstCapture()` is 106 -- so the lead is clamped and still 84 units out.
 
-**The rest is the capture window sitting where the source's active video is
-not**, and it is asymmetric -- 92 units early at the left against 0 at the right,
-19 early at the top against 12 short at the bottom. **The CEA row is matched and
-applied correctly**: `SourceTiming`'s 720x480p states start 122 of 858 and active
-720 of 858, and the engine's default capture of 208 + 1214 on a 1447-unit line is
-those fractions to a unit. So this is not a missing default and not a wrong row
--- it is where the capture COUNTER's origin sits.
+**The bound on the true lead needs no assumption about the source's border.**
+Content cannot lie outside active video, which CEA puts at 205.6..1419.0 of a
+1446-unit counter, so `205.6 - L <= 191.5` and `1419.0 - L >= 1348.7` give
+**14.1 <= L <= 70.2** against the 101 applied. A black border the source paints
+only ever makes the lit region smaller, so it cannot widen that bound.
 
-**The candidate is the origin on sync on green.**
-`SyncProcessor::retimeStopFor()` lays the counter's origin on the measured sync
-width, and that register is bimodal on this input --
-`investigations/the-sync-width-is-bimodal-on-sync-on-green.md`. The DMT rows on
-`vga` frame flush by the same arithmetic, `card_edges.py` reporting
-`across 0 (0|0) down 0 (0|0)`, so the arithmetic works where the sync is a
-logic-level pin.
+**`VDS_Y_OFST` does NOT separate captured blanking from the source's own black
+border.** It lifts everything inside the display window, so both read as the same
+grey -- which is why this is a bound and not a value, and why the RISC PC's card
+carries the measurement instead.
 
-**What would settle it** is walking the capture origin on this source with
-`VDS_Y_OFST` lifted until the border is symmetric and zero, and comparing the
-origin that lands there against what the measured sync width computes. 92 units
-of 1447 is 6.4% of the line, which is most of a sync pulse.
+**The 12 columns at the left are ours and separate**, the display window opening
+about 13 raster units late, which is `OutputMode::HsyncStartPx`. 1.37284 emitted
+px per raster unit, residuals <=0.5 px over 1120 units.
 
 **Panning cannot fix it and runs out.** The capture is cropped to compensate, and
 the window reaches the end of the line -- `oh` 256 + `eh` 1189 against `ch` 1447
