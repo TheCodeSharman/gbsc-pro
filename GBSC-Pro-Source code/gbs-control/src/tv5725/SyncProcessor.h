@@ -322,7 +322,7 @@ public:
     static const uint16_t PathSettleMs = 500;
 
     // The clamp is held off across a load and released once
-    // updateClampPosition() has found the back porch: a clamp whose window has
+    // acquireClampWindow() has found the back porch: a clamp whose window has
     // not been placed clamps to picture. The read exists because the release is
     // guarded -- writing it unconditionally costs a bus write per pass.
     static void holdClamp();
