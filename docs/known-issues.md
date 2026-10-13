@@ -441,6 +441,38 @@ frozen poke cannot answer it.
 rather than on a measurement that failed for any reason. The witness exists and
 no caller consults it yet.
 
+### The picture is washed out against the vendor image, and the ADC gain is the candidate
+
+Measured 2026-10-13 on the Wii's menu at 480p into 1920x1080, both images
+scored on the same 40-frame burst off the dongle through the same capture band,
+twenty-five minutes apart:
+
+| | ours | vendor 1.3 |
+|---|---|---|
+| mean RGB | 218.9 / 226.7 / 221.8 | 133.3 / 136.7 / 136.7 |
+| spatial standard deviation | 32.1 | 74.0 |
+| band above black | 98.7% | 78.1% |
+
+Neutral in both, so it is a LEVEL and contrast difference rather than a tint --
+the mean sits near the top of the range with the structure compressed to under
+half, which is what clipped highlights look like.
+
+**`ADC_RGCTRL`/`GGCTRL`/`BGCTRL` read 51 against the vendor's 123**, equal
+across the three channels in both, and they are the only gain in the 101-field
+diff between the two images on this source. `ADC_?OFCTRL` is 64/64/64 against
+65/69/62, which is too small to explain it. `HD_Y_GAIN`/`U`/`V` are 0 here and
+128 there, with `HD_MATRIX_BYPS` 0 in both, so whether that path is in circuit
+on a scaled component source has to be established before it is ruled in.
+
+**What would settle it** is writing 123 into the three gains by name on a
+frozen acquisition and scoring the same burst; the two candidates are
+distinguishable in one pass each. The 78.1% against 98.7% is a separate thing --
+the vendor pillarboxes this 4:3 source and the engine fills the raster, which is
+`aspect-ratio.md` and not a fault.
+
+Snapshots: `tools/gbsc-pro-hwtest/snapshots/wii-480p-1080p-ypbpr-stable-2026-10-13.json`
+is ours; the vendor's is not in the tree, `bench-sources.md` has how to take one.
+
 ### The Wii's 480p vertical count is bimodal, and that is what is left
 
 Measured 2026-10-12 on `ypbpr` at 480p, output 720x480, divider 1858 latched
@@ -466,6 +498,12 @@ row, which installs a different oversampling ratio -- and `PLLAD_CKOS` against
 the decimators is the solid-green cause this page already carries.
 `Tv5725::ColourSpace::applyYuv()` is correct and is not the place to look:
 `DEC_MATRIX_BYPS` 1, `ADC_RYSEL_*` 1/0/1 and equal gains are what it intends.
+
+**THE MAGENTA IS CONFIRMED A CONSEQUENCE AND IS GONE.** With the count held
+steady at 1080p the same capture band reads mean RGB 218.9 / 226.7 / 221.8 where
+it read 219.7 / 70.4 / 225.2 while it dipped -- the green channel alone moving,
+which is what a changed oversampling ratio does. Nothing in the colour path was
+touched. `investigations/the-pulse-ignore-fraction-breaks-a-progressive-source.md`.
 
 **THE COAST WINDOW IS THE ONLY THING MEASURED TO MOVE IT, AND ITS OPTIMUM IS
 NARROW AND FRAGILE.** Frozen, sweeping `SP_PRE_COAST`/`SP_POST_COAST`:
@@ -524,6 +562,19 @@ after the selection, acquired at 4 s, held with `STATUS_SYNC_PROC_VTOTAL` 524
 against `PLLAD_MD` 1446 latched, the coast window placed, the DACs on and a
 picture on the USB capture.
 `investigations/the-pulse-ignore-is-a-fraction-of-the-line.md`.
+
+**THE FRACTION ACQUIRES THIS SOURCE AND DOES NOT HOLD IT, and the threshold is
+now chosen by the measured scan.** 70 at 1446 is 66% of the source's 106-sample
+pulse, close enough that the separator drops a line whenever the slicer's output
+narrows: the count dipped off 524 in 5..8% of samples and 2 to 24 frames of 40
+were identical. The bound the fraction satisfies is a SERRATED vertical
+interval's -- above the equalising pulse, below the sync pulse -- and a
+progressive source's whole sync pulse is narrower than such a pulse, so one value
+cannot serve both. `SyncProcessor::ProgressiveCsyncPulseIgnore` is 14 and
+`SourceMeasurement::scanKnown()` decides when it may be used; unknown keeps the
+fraction, which is what acquires either scan. Measured after: 40 of 40 frames
+identical in each of four bursts over two minutes, count 524 steady.
+`investigations/the-pulse-ignore-fraction-breaks-a-progressive-source.md`.
 
 **What the hunt measured that stays true.** The output raster's horizontal
 total is the display clock over the output's own lines and the SOURCE's field

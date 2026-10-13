@@ -477,6 +477,45 @@ external register -- which is a different thing and stays on the `vga` input.
 Composite is the one path where a source arrives standard-conformant regardless
 of what the machine emits, because the ADV chain regenerates it.
 
+## The vendor image is a control, and it has to be rebuilt to be readable
+
+The 1.3 tag ships its own prebuilt binary at
+`GBSC-Pro-Source code/gbs-control/build/esp8266.esp8266.nodemcuv2/gbs-control.ino.bin`,
+and it is the answer to "can the chip and the board do this at all". On the Wii
+at 480p it scores 40 of 40 frames identical where this fork scored 2 to 24.
+
+**It cannot report a register.** All 310 of its `SerialM` prints are commented
+out, its `d` dump prints nothing, and it has no read route — so a stock
+snapshot needs the tag rebuilt with one. Five lines in the sketch plus a header
+is enough, and the instrumented build still scores 40/40 before and after a full
+1536-register dump, so the snapshot is of the machine that passes:
+
+```sh
+git worktree add /tmp/stock-1.3 1.3
+# a /getregs route in the fork's wire form, so dump_registers.py and
+# snapdiff.py read it unchanged. It must live in a HEADER: the sketch's first
+# function definition sits above the ESPAsyncWebServer include and arduino-cli
+# puts its generated prototypes there, where AsyncWebServerRequest is unknown.
+# The I2C read runs from loop(), not the request callback, which the async
+# server serves from the network stack.
+nix develop -c arduino-cli --config-file build/arduino-cli.yaml compile \
+  --fqbn 'esp8266:esp8266:nodemcuv2:xtal=80,vt=flash,exception=legacy,ssl=all,eesz=4M2M,led=2,ip=lm2f,dbg=Disabled,lvl=None____,wipe=none,baud=921600' \
+  --build-path /tmp/stock-build '/tmp/stock-1.3/GBSC-Pro-Source code/gbs-control'
+```
+
+`/sc?c` arms OTA on it too, so it goes on and comes off over the air.
+
+**IT REFORMATS THE FILESYSTEM**, being SPIFFS where this fork is LittleFS, so
+back `framing.txt`, `preferences.txt` and `slots.bin` up through `/fs/download`
+first and restore them through `/fs/upload` afterwards. `/fs/dir` and
+`/fs/download` refuse below 10 KB free heap, so take the backup on a
+`BOOTLOG_BYTES=0` build.
+
+**It picks its own input and output**, the preferences being gone, and it has no
+`/input` route — so what it lands on is what it detected and the comparison is
+against that. On the Wii at 480p it chose 1080p and a divider of 2558 at
+oversample 2, against this fork's 1446 at oversample 1.
+
 ## What nothing here covers
 
 - **RGBs and RGsB** have no source attached, so the SCART input and the
