@@ -5,17 +5,20 @@ the input formatter's line counter takes its origin from. Measured against the
 mode file at full framing, the source's active region lands anywhere from 2.5
 samples early to 10 late, and which it is varies by mode.
 
-**Two terms of that are found and corrected, and both were the scaler's.**
-Oversampling ratio one puts the origin 16 samples earlier than ratio two, which
-is what the two 108 MHz modes were reading 17 samples off for
-(`UndecimatedOriginSamples`); and the inverted sync path measures the pulse 5
-samples wide, which `retimeStopFor()` subtracts straight into the origin on
-every high-active source (`InvertedPulseWidthSamples`).
+**Three terms of that are found and corrected, two of them the scaler's and one
+the source's.** Oversampling ratio one puts the origin 16 samples earlier than
+ratio two, which is what the two 108 MHz modes were reading 17 samples off for
+(`UndecimatedOriginSamples`); the inverted sync path measures the pulse 5 samples
+wide, which `retimeStopFor()` subtracts straight into the origin on every
+high-active source (`InvertedPulseWidthSamples`); and what was left is **one line
+in sampling density, fitting seven modes to a residual rms of 0.48 samples**,
+with a slope of about four SOURCE PIXELS.
 
-**What is left is one line in sampling density, fitting seven modes to a
-residual rms of 0.48 samples**, with a slope of about four SOURCE PIXELS. That
-is the term at the source's end, and the scaler cannot see the pixel clock it
-would need to measure it.
+**That slope is the source's video lag and it is corrected too**, by the one
+route open to it: a published raster states the line's pixel count, so a source
+matching one has a knowable pixel clock where nothing on the chip can measure
+it. The last section below is the fix and the four golden framings that confirm
+it; a source matching no raster is left the origin as measured.
 
 **Two controls settle that the remainder is not one quantity.** Neither end of
 the cable can produce what the other's control measures, so both contribute and
@@ -346,6 +349,59 @@ is 16, added to the origin at ratio one, with the ratio-two path left alone:
 The realised movement is 18.1 and 15.6 samples against the 16 written, which is
 the two-samples-between-acquisitions spread below rather than a wrong constant --
 the two before-and-after pairs are different acquisitions either side of a flash.
+
+## The slope is the source's video lag, and it is corrected
+
+`SyncProcessor::SourceVideoDelayPixels` is **4.4 of the SOURCE's own pixels**,
+added to the origin wherever a raster is published. `SourceTiming::pixelSamples()`
+is what makes it computable -- the raster states the line's pixel count, so the
+divider over it is how many ADC samples one source pixel takes -- and it answers
+0 where no raster matched, which leaves such a source the origin exactly as it
+was measured. `RetimeOriginSamples` was walked on four states averaging
+`CalibratedPixelSamples` 1.12 samples a pixel, so it already carries the lag
+there and what is added is the difference.
+
+**ONE DIVIDER AND TWO PIXEL CLOCKS IS WHAT NAMES THE QUANTITY.** Each mode
+panned until the card's green border reached all four edges of the emitted frame
+with no black beside it, which is the acceptance the bench states:
+
+| mode | line px | `PLLAD_MD` | samples/px | default `oh` | golden `oh` | wanted |
+|---|---|---|---|---|---|---|
+| 800x600@60 | 1056 | 1436 | 1.360 | 294 | 296 | +2 |
+| 640x512@50 | 896 | 1746 | 1.949 | 328 | 330 | +2 |
+| 320x480@60 | 400 | 1444 | 3.610 | 246 | 252..258 | +9 |
+| 320x256@50 | 512 | 2200 | 4.297 | 237 | 243..247 | +16 |
+
+1436 against 1444 is the same divider and the same field rate, and the two want
+2 samples of origin and 9. **A term in the divider cannot do that**, and the
+pixel clock is the only quantity that differs between them. The last row is line
+DOUBLED, where a unit is two samples, so **the doubling is not the variable
+either**: the undoubled 3.610 wants 9 where a constant on the doubled path would
+want none.
+
+A line fitted to the four is `4.66 x density - 5.82` against the
+`4.44 x density - 6.23` above -- two instruments, one creeping the capture
+window's own start and one reading the border off the emitted frame, agreeing on
+the slope within 5%. The 1.8 samples between their intercepts is the
+anchored-against-anchor-free pedestal the traps below already carry.
+
+**Measured on the unit afterwards, each mode's STORED framing forgotten so the
+computed default is what is judged.** `/sc?B` is what forgets it; without that
+the entry answers and the default is never seen.
+
+| mode | default `oh` | all four edges at | golden by default? |
+|---|---|---|---|
+| 320x256@50 | 237 | 235, 237, 239 | yes |
+| 800x600@60 | 294 | 294 | yes |
+
+`SP_RT_HS_SP` went 2112 to 2127 on the bench mode, and the black down the left
+of the emitted frame went 22 columns to 2 with the right-hand border no longer
+cut.
+
+**What it does not reach is a source matching no raster**, which on this bench
+is the Wii: its key carries a sync duty the published row cannot answer, so
+`pixelSamples()` is 0 and the origin is the constant it always was. A Wii
+framing is therefore unchanged by this and its black border is its own question.
 
 ## Traps
 

@@ -694,6 +694,48 @@ px per raster unit, residuals <=0.5 px over 1120 units.
 the window reaches the end of the line -- `oh` 256 + `eh` 1189 against `ch` 1447
 -- before the border is gone.
 
+### The Wii's held sync duty reads 11.0% where the chip steadily measures 7.3%
+
+Measured 2026-10-14 on `ypbpr`, the Wii in 480p into 1920x1080, acquired and
+holding. `STATUS_SYNC_PROC_HLOW_LEN` reads **105..106 of `PLLAD_MD` 1446** over
+six samples 1.5 s apart -- a duty of 7.33%, which is CEA-861's 62/858 to a tenth
+of a point. What the ENGINE holds is **11.0%**: `SP_RT_HS_SP` 1350 is
+`1446 - 159 + 63`, and `/geometry` reports `sh` 160 of a 1447-unit counter.
+
+Three consequences, and the first is why the framing is nothing like the
+standard's:
+
+- **the source stops matching its own raster.** `SourceTiming::lookUpIn()` keys
+  on the duty within `SyncDutyTolerance` 0.015, and 0.110 against CEA's 0.0723
+  is 0.038 away -- so 480p is placed from the generic envelope, `Axis` 0.117 and
+  0.864, instead of the standard's `122/858` and `720/858`. Measured with it
+  held: `oh` 197 `eh` 1250 on a 1447-unit counter, the window running to the end
+  of the line.
+- **the capture floor rises 54 units.** `firstCapture()` is the sync interval,
+  so `fh` reads 160 where a duty read right gives 106 -- and the placement is
+  pinned at it, `IF_HB_SP2` 160 with the framing asking for less.
+- **the counter's origin is 54 samples early**, so every window the solve places
+  is counted from an origin nothing observed.
+
+On the emitted frame that is 46 columns of black at the left and 94 at the
+right, with the picture 1780x1011 of 1920x1080.
+
+**It is not constant between acquisitions.** The separator-lead entry above was
+measured on 2026-10-13 with `firstCapture()` at 106, which is the duty read
+right, so the 11.0% is one acquisition's reading rather than the Wii's.
+
+`SourceMeasurement::takeDuty()` takes whatever a latched pass offers and its own
+comment names this hazard -- a count taken while the processor was counting
+another line length divides by a divider it never saw. What is NOT established
+is which pass lands the 11.0%: the guard is `Adc::dividerLatched()`, which reads
+true on the settled unit, and nothing re-takes the duty on a source that is not
+re-solving. A console capture across the Wii's acquisition, timestamped, is what
+would say.
+
+**Until it is settled, a Wii framing measurement says nothing about the
+framing derivation**, because the raster it would be placed from is not the one
+in force.
+
 ### The picture is washed out against the vendor image, and the ADC gain is the candidate
 
 Measured 2026-10-13 on the Wii's menu at 480p into 1920x1080, both images
