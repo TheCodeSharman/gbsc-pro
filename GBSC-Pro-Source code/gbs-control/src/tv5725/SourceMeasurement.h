@@ -134,6 +134,12 @@ public:
     // Progressive until something has measured, for the same asymmetry.
     ScanType scanType() const;
 
+    // Whether a run of counts has settled, so scanType() is a measurement
+    // rather than its default. What CONFIGURES the separator asks here:
+    // separating an arriving interlaced source as progressive scatters the
+    // count the measurement itself needs, so the answer would never arrive.
+    bool scanKnown() const;
+
     // Measure the source's line count, corrected for a divider the ADC PLL
     // could not lock to. The ONE way the count is read, here and inside every
     // half of the measurement: a divider far from the source's line puts the

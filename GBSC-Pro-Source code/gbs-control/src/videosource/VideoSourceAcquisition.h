@@ -159,7 +159,15 @@ public:
     // 480i as SP_COAST_INV_REG 0 with STATUS_SYNC_PROC_VTOTAL at 97. Nothing
     // else reaches it on a component source: the separator tuning that applies
     // these settings is skipped there.
-    void followSearchState();
+    //
+    // The scan is the second such fact: unknown when the source arrives, and
+    // the separation threshold has to follow it the pass it settles rather than
+    // wait for the maintenance cadence.
+    void followDynamicFacts();
+
+    // False while the scan is unknown, which is the state the separator is
+    // configured for until a run of counts settles.
+    bool sourceIsProgressive() const;
 
     // Walk the sync separator's level for the source in force, starting from
     // what the input is due: a component source runs sync on green, which is
@@ -443,6 +451,7 @@ private:
     // indistinguishable from the ones a settled source wants.
     bool dynamicApplied_;
     bool dynamicForSearch_;
+    bool dynamicForProgressive_;
     SourceState sourceState_;
     uint16_t solvedLinePeriod_;
     uint8_t rateRun_;

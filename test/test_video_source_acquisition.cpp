@@ -3079,6 +3079,51 @@ TEST_CASE("a csync selection does not inherit the separate-sync pulse ignore")
     VideoSourceSelection::forgetSelection();
 }
 
+// THE SCAN IS WHAT DECIDES THE SEPARATION THRESHOLD, AND IT ARRIVES AFTER THE
+// SOURCE DOES. A serrated vertical interval needs the threshold above its
+// equalising pulse, and a progressive source's whole sync pulse is narrower
+// than such a pulse -- so the value cannot be chosen until a run of counts has
+// said which the source is, and until then it is the fraction that acquires
+// either. Measured on the Wii at 480p on ypbpr: the fraction's 70 through a
+// 1446-sample line leaves the count dipping off 524 in 8% of samples and the
+// emitted picture shearing, where 14 holds every frame identical.
+// docs/investigations/the-pulse-ignore-fraction-breaks-a-progressive-source.md
+TEST_CASE("a composite source's threshold follows the scan once the scan settles")
+{
+    seedBenchSource();
+    seedLineSamples(BenchDivider);
+    Acquiring unit;
+    unit.acquisition.allowMaintenance(true);
+    unit.path.useSyncTypeProbe(probeOwnVsync);
+
+    VideoSourceSelection::select(VideoSourceSelection::Ypbpr);
+    g_hasOwnVsync = false;
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+    REQUIRE(SyncProcessor::SP_SOG_MODE::read() == 1);
+
+    const uint32_t beforeTheScan = SyncProcessor::SP_H_PULSE_IGNOR::read();
+
+    SUBCASE("a steady count is a progressive source and takes the noise floor") {
+        for (uint8_t pass = 0; pass < 4 * SourceMeasurement::SteadySamples; ++pass)
+            unit.poll();
+
+        CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read()
+              == SyncProcessor::ProgressiveCsyncPulseIgnore);
+    }
+
+    SUBCASE("a count alternating by one keeps what acquired it") {
+        for (uint8_t pass = 0; pass < 4 * SteadyRun::CrossingsForInterlace; ++pass) {
+            seedSourceLines(pass % 2 ? 312 : 311);
+            unit.poll();
+        }
+
+        CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == beforeTheScan);
+    }
+
+    VideoSourceSelection::forgetSelection();
+}
+
 TEST_CASE("a boot rate the corroboration agrees with is not re-solved")
 {
     // A re-solve blanks the output for the encoder relook, so one taken on a

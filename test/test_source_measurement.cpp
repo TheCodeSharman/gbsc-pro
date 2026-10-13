@@ -979,6 +979,25 @@ TEST_CASE("a mode change abandons the run rather than counting through it")
     CHECK(measureOnce(measurement) == SourceMeasurement::NotSteady);
 }
 
+// The scan is a measured fact with an unmeasured state, because a consumer
+// that configures the separator from it cannot take the progressive default:
+// on an interlaced source the progressive configuration scatters the count the
+// measurement needs, so the answer would never arrive.
+TEST_CASE("the scan is known once its run settles, and a mode change forgets it")
+{
+    seedSourceLines(524);
+    SourceMeasurement measurement(inputFormatter);
+    CHECK_FALSE(measurement.scanKnown());
+
+    for (uint8_t i = 0; i < SourceMeasurement::SteadySamples; ++i)
+        measurement.measureScanType();
+    CHECK(measurement.scanKnown());
+    CHECK(measurement.scanType() == SourceMeasurement::ScanProgressive);
+
+    measurement.modeChanged();
+    CHECK_FALSE(measurement.scanKnown());
+}
+
 TEST_CASE("a near-integer multiple of the divider is a PLL counting several lines")
 {
     // The trap's signature: the sync processor reports a count too low and the

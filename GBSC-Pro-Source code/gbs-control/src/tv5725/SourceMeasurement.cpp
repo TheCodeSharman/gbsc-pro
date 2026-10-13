@@ -137,6 +137,8 @@ SourceMeasurement::ScanType SourceMeasurement::scanType() const
                                                    : ScanProgressive;
 }
 
+bool SourceMeasurement::scanKnown() const { return scanSteady_.settled(); }
+
 uint16_t SourceMeasurement::verticalPeriod() const { return verticalPeriod_; }
 
 uint16_t SourceMeasurement::countFrom(uint16_t correctedLines) const

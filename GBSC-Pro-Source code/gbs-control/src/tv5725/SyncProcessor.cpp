@@ -16,6 +16,8 @@ const uint16_t SyncProcessor::DefaultCoastStop;
 const uint16_t SyncProcessor::RetimeOriginSamples;
 const uint16_t SyncProcessor::UndecimatedOriginSamples;
 const uint16_t SyncProcessor::InvertedPulseWidthSamples;
+const uint8_t SyncProcessor::ProgressiveCsyncPulseIgnore;
+const bool SyncProcessor::ScanNotYetKnown;
 
 uint16_t SyncProcessor::retimeStopFor(uint16_t divider, const HsyncPulse &pulse,
                                      uint8_t oversample)
@@ -76,10 +78,12 @@ const uint16_t CsyncPulseIgnorePerThousand = 49;
 // locked: 31 samples, a 7.3% pulse at half the 27 MHz reference.
 const uint8_t SearchPulseIgnore = 16;
 
-uint8_t pulseIgnoreFor(bool csync, uint16_t divider)
+uint8_t pulseIgnoreFor(bool csync, uint16_t divider, bool progressive)
 {
     if (!csync)
         return OwnVsyncPulseIgnore;
+    if (progressive)
+        return SyncProcessor::ProgressiveCsyncPulseIgnore;
     return (uint8_t)((uint32_t)divider * CsyncPulseIgnorePerThousand / 1000u);
 }
 
@@ -178,9 +182,9 @@ uint8_t SyncProcessor::postCoastLines()
     return coastOverridden_ ? postCoastOverride_ : CompositePostCoastLines;
 }
 
-void SyncProcessor::applyPulseIgnore(bool csync, uint16_t divider)
+void SyncProcessor::applyPulseIgnore(bool csync, uint16_t divider, bool progressive)
 {
-    SP_H_PULSE_IGNOR::write(pulseIgnoreFor(csync, divider));
+    SP_H_PULSE_IGNOR::write(pulseIgnoreFor(csync, divider, progressive));
 }
 
 void SyncProcessor::applyPulseWidthDifference()
@@ -218,7 +222,7 @@ void SyncProcessor::applyDynamic(const Dynamic &source)
         applySeparationThresholds(source.csync);
     } else if (source.present) {
         applyPulseWidthDifference();
-        applyPulseIgnore(source.csync, source.divider);
+        applyPulseIgnore(source.csync, source.divider, source.progressive);
     }
 }
 
@@ -254,7 +258,7 @@ void SyncProcessor::prepare(bool csync, uint16_t divider)
     SP_JITTER_SYNC::write(0);
 
     applyPulseWidthDifference();
-    applyPulseIgnore(csync, divider);
+    applyPulseIgnore(csync, divider, ScanNotYetKnown);
 
     SP_H_TOTAL_EQ_THD::write(3);
 
@@ -316,7 +320,7 @@ void SyncProcessor::applyForSyncType(bool csync, uint16_t divider)
         SP_PRE_COAST::write(preCoastLines());
         SP_POST_COAST::write(postCoastLines());
         applyPulseWidthDifference();
-        applyPulseIgnore(csync, divider);
+        applyPulseIgnore(csync, divider, ScanNotYetKnown);
         SP_SYNC_BYPS::write(0);
         SP_HS_LOOP_SEL::write(0);
         SP_H_PROTECT::write(1);
@@ -328,7 +332,7 @@ void SyncProcessor::applyForSyncType(bool csync, uint16_t divider)
         SP_NO_COAST_REG::write(1);
         SP_PRE_COAST::write(0);
         SP_POST_COAST::write(0);
-        applyPulseIgnore(csync, divider);
+        applyPulseIgnore(csync, divider, ScanNotYetKnown);
         SP_SYNC_BYPS::write(0);
         SP_HS_POL_ATO::write(1);
         SP_VS_POL_ATO::write(1);

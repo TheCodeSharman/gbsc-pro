@@ -380,15 +380,23 @@ public:
     // docs/investigations/the-pulse-ignore-value-is-measured-not-chosen.md
     static void applyPulseWidthDifference();
 
+    // A noise floor and nothing more, there being no equalising pulse to tell
+    // from a progressive source's sync. Measured on the Wii at 480p on ypbpr
+    // through a 1446-sample line.
+    static const uint8_t ProgressiveCsyncPulseIgnore = 14;
+
+    // What a caller knows of the scan before anything has counted the source.
+    // It reads as the fraction, which is what acquires either scan.
+    static const bool ScanNotYetKnown = false;
+
     // How short a horizontal pulse must be to be ignored. The sync type decides
     // whether any is: a source carrying its own vertical sync has no serration
-    // to discriminate, so every pulse can be ignored. A composite one takes a
-    // fraction of the line in ADC samples, between the equalising pulse and
-    // the sync pulse, so the value follows the divider in force: the one byte
-    // that reads a serrated source through a 2200-sample line ignores the
-    // source itself through the 1446 a 1080p raster affords.
-    // docs/investigations/the-pulse-ignore-is-a-fraction-of-the-line.md
-    static void applyPulseIgnore(bool csync, uint16_t divider);
+    // to discriminate, so every pulse can be ignored. A composite source takes
+    // one of TWO, because no one threshold serves both scans -- a serrated
+    // vertical interval needs one above its equalising pulse, and a progressive
+    // source's whole sync pulse is narrower than such a pulse.
+    // docs/investigations/the-pulse-ignore-fraction-breaks-a-progressive-source.md
+    static void applyPulseIgnore(bool csync, uint16_t divider, bool progressive);
 
     // Configure the separator to HUNT for a source rather than to read one it
     // has already found: coast on the default window without the sub coast, and
@@ -416,12 +424,14 @@ public:
     // measured are not this block's to read, and `serrated` has one definition
     // above this layer. `pathSource` is a source whose sync carries no
     // broadcast vertical interval -- the RGBHV connector, or a component source
-    // through the channel.
+    // through the channel. `progressive` is false where the scan is not yet
+    // measured, an unmeasured scan being no fact to configure from.
     struct Dynamic {
         bool searching;
         bool present;
         bool csync;
         bool pathSource;
+        bool progressive;
         uint16_t divider;
     };
 

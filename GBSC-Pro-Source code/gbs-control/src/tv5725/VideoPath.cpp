@@ -1197,7 +1197,8 @@ void VideoPath::writePulseIgnore()
     if (!syncTypeApplied_)
         return;
 
-    SyncProcessor::applyPulseIgnore(syncTypeInForce_, Adc::dividerInForce());
+    SyncProcessor::applyPulseIgnore(syncTypeInForce_, Adc::dividerInForce(),
+                                    SyncProcessor::ScanNotYetKnown);
 }
 
 

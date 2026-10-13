@@ -551,10 +551,10 @@ TEST_CASE("the pulse-width difference threshold clears the measured floor")
     CHECK(SyncProcessor::SP_DLT_REG::read() >= 0x70);
 }
 
-// How short a horizontal pulse must be to be ignored. One rule per sync type:
-// every pulse where the source carries its own vertical sync, a fraction of the
-// line in ADC samples where it is composite -- the serration that would pick a
-// value per source is unknowable at the moment the field has to be written.
+// How short a horizontal pulse must be to be ignored. Every pulse where the
+// source carries its own vertical sync; where it is composite, a fraction of
+// the line in ADC samples until the scan is known, and a noise floor once the
+// scan is known to be progressive.
 // docs/investigations/the-pulse-ignore-value-is-measured-not-chosen.md
 // docs/investigations/the-pulse-ignore-is-a-fraction-of-the-line.md
 // docs/investigations/the-risc-pc-composite-sync-is-not-serrated.md
@@ -562,7 +562,7 @@ TEST_CASE("the pulse-width difference threshold clears the measured floor")
 TEST_CASE("a source with its own vertical sync ignores every pulse")
 {
     Wire.reset();
-    SyncProcessor::applyPulseIgnore(false, MeasuredCsyncDivider);
+    SyncProcessor::applyPulseIgnore(false, MeasuredCsyncDivider, false);
 
     CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 0xff);
 }
@@ -577,16 +577,16 @@ TEST_CASE("a composite source's pulse ignore is a fraction of the line in ADC sa
     // the separator ignores the source; lowered by hand, it measured within
     // half a second. docs/investigations/the-pulse-ignore-is-a-fraction-of-the-line.md
     Wire.reset();
-    SyncProcessor::applyPulseIgnore(true, MeasuredCsyncDivider);
+    SyncProcessor::applyPulseIgnore(true, MeasuredCsyncDivider, false);
     CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 0x6b);
 
     SUBCASE("a shorter line in samples takes a threshold under its sync pulse") {
-        SyncProcessor::applyPulseIgnore(true, 1446);
+        SyncProcessor::applyPulseIgnore(true, 1446, false);
         CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 70);
     }
 
     SUBCASE("and the reference line likewise") {
-        SyncProcessor::applyPulseIgnore(true, 2040);
+        SyncProcessor::applyPulseIgnore(true, 2040, false);
         CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 99);
     }
 }
@@ -797,6 +797,7 @@ static SyncProcessor::Dynamic settled()
     source.present = true;
     source.csync = false;
     source.pathSource = false;
+    source.progressive = false;
     source.divider = MeasuredCsyncDivider;
     return source;
 }
@@ -880,6 +881,26 @@ TEST_CASE("a settled source on the scaling path is read, not separated for")
     CHECK(SyncProcessor::SP_DLT_REG::read() == 0xC0);
     CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 0x6b);
     CHECK_FALSE(dynamicWrites<SyncProcessor::SP_PRE_COAST>(source));
+}
+
+// The fraction skips the equalising pulses an interlaced vertical interval
+// carries, and a progressive source has none to skip. Measured on the Wii at
+// 480p on ypbpr through a 1446-sample line: the fraction's 70 leaves the ADC
+// PLL locked 60% of the time with the emitted picture shearing in runs of
+// frames, and 14 holds it locked with every frame identical.
+// docs/investigations/the-pulse-ignore-fraction-breaks-a-progressive-source.md
+TEST_CASE("a present progressive composite source ignores only what no pulse can be")
+{
+    SyncProcessor::Dynamic source = settled();
+    source.csync = true;
+    source.divider = 1446;
+
+    source.progressive = true;
+    CHECK(dynamicValue<SyncProcessor::SP_H_PULSE_IGNOR>(source)
+          == SyncProcessor::ProgressiveCsyncPulseIgnore);
+
+    source.progressive = false;
+    CHECK(dynamicValue<SyncProcessor::SP_H_PULSE_IGNOR>(source) == 70);
 }
 
 TEST_CASE("a source neither searched for nor acquired keeps the search's threshold")
