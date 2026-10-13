@@ -431,7 +431,7 @@ static bool pollUntilSolved(VideoSourceAcquisition &acquisition)
 {
     for (uint8_t i = 0;
          i < 4 * (SourceMeasurement::SteadySamples
-                  + SourceMeasurement::LatchSettlePasses); ++i)
+                  + VideoSourceAcquisition::LatchSettlePasses); ++i)
         if (pollOnce(acquisition))
             return true;
     return false;
@@ -454,14 +454,16 @@ static bool pollUntilPresented(VideoSourceAcquisition &acquisition)
 
 // resolveFromSource() installs the reference sampling clock and then measures,
 // and nothing read through a clock that has just been latched is the source's
-// -- LatchSettlePasses have to be spent first.
+// -- the latch's settle has to be spent first.
 static bool resolveUntilSolved(VideoSourceAcquisition &acquisition)
 {
     for (uint8_t i = 0;
-         i < 2 * (SourceMeasurement::LatchSettlePasses
-                  + SourceMeasurement::SteadySamples); ++i)
-        if (acquisition.resolveFromSource())
+         i < 2 * (VideoSourceAcquisition::LatchSettlePasses
+                  + SourceMeasurement::SteadySamples); ++i) {
+        g_nowMs += VideoSourceAcquisition::DetectionIntervalMs;
+        if (acquisition.resolveFromSource(g_nowMs))
             return true;
+    }
     return false;
 }
 
@@ -877,7 +879,7 @@ TEST_CASE("a source still settling gets no geometry solved against it")
 
     for (uint8_t i = 0;
          i < 4 * (SourceMeasurement::SteadySamples
-                  + SourceMeasurement::LatchSettlePasses); ++i)
+                  + VideoSourceAcquisition::LatchSettlePasses); ++i)
         CHECK_FALSE(pollOnce(acquisition));
 
     CHECK_FALSE(Wire.touched[1][0x18]);   // IF_HB_ST2, the capture window
@@ -923,7 +925,7 @@ TEST_CASE("a line count outside what any source runs is never measured against")
 
     for (uint8_t i = 0;
          i < 4 * (SourceMeasurement::SteadySamples
-                  + SourceMeasurement::LatchSettlePasses); ++i)
+                  + VideoSourceAcquisition::LatchSettlePasses); ++i)
         CHECK_FALSE(pollOnce(acquisition));
 
     CHECK_FALSE(Wire.touched[3][0x16]);   // VDS_HSCALE
@@ -965,7 +967,7 @@ TEST_CASE("entering bypass leaves nothing to solve")
     engine.setOutputMode(&ModeBypass);
     for (uint8_t i = 0;
          i < 4 * (SourceMeasurement::SteadySamples
-                  + SourceMeasurement::LatchSettlePasses); ++i)
+                  + VideoSourceAcquisition::LatchSettlePasses); ++i)
         CHECK_FALSE(pollOnce(acquisition));
 
     // The output, and nothing else: bypass has no solve coming, so giving it
@@ -997,13 +999,13 @@ TEST_CASE("a mode with no timings is given up on, not asked about forever")
     engine.inputTimingsChanged(4);
     for (uint8_t i = 0;
          i < 4 * (SourceMeasurement::SteadySamples
-                  + SourceMeasurement::LatchSettlePasses); ++i)
+                  + VideoSourceAcquisition::LatchSettlePasses); ++i)
         CHECK_FALSE(pollOnce(acquisition));
 
     const unsigned settled = g_fieldRateCalls;
     for (uint8_t i = 0;
          i < 4 * (SourceMeasurement::SteadySamples
-                  + SourceMeasurement::LatchSettlePasses); ++i)
+                  + VideoSourceAcquisition::LatchSettlePasses); ++i)
         CHECK_FALSE(pollOnce(acquisition));
     CHECK(g_fieldRateCalls == settled);
 
@@ -1116,7 +1118,7 @@ TEST_CASE("a mode change nothing will ever solve does not leave capture frozen")
         engine.inputTimingsChanged(4);
         for (uint8_t i = 0;
          i < 4 * (SourceMeasurement::SteadySamples
-                  + SourceMeasurement::LatchSettlePasses); ++i)
+                  + VideoSourceAcquisition::LatchSettlePasses); ++i)
             CHECK_FALSE(pollOnce(acquisition));
         CHECK(FrameBuffer::CAPTURE_ENABLE::read() == 1);
     }
@@ -1694,7 +1696,7 @@ TEST_CASE("a divider the source cannot lock to is replaced before it is believed
     // needs a rate, so a count taken at face value here is what would have no
     // exit.
     for (uint8_t i = 0;
-         i < 2 * SourceMeasurement::LatchSettlePasses
+         i < 2 * VideoSourceAcquisition::LatchSettlePasses
                  + SourceMeasurement::SteadySamples + 1;
          ++i)
         CHECK_FALSE(pollOnce(acquisition));
@@ -1748,7 +1750,7 @@ TEST_CASE("the scan mode is corrected even when the source cannot be measured")
     engine.inputTimingsChanged(4);
     for (uint8_t i = 0;
          i < 4 * (SourceMeasurement::SteadySamples
-                  + SourceMeasurement::LatchSettlePasses); ++i)
+                  + VideoSourceAcquisition::LatchSettlePasses); ++i)
         pollOnce(acquisition);
 
     CHECK(InputFormatter::IF_HS_DEC_FACTOR::read() == 1);
@@ -2117,7 +2119,7 @@ TEST_CASE("a source is acquired from the state a chip reset leaves")
     engine.inputTimingsChanged(4);
 
     for (uint8_t i = 0;
-         i < 2 * SourceMeasurement::LatchSettlePasses
+         i < 2 * VideoSourceAcquisition::LatchSettlePasses
                  + SourceMeasurement::SteadySamples + 1;
          ++i)
         pollOnce(acquisition);
@@ -2197,7 +2199,7 @@ TEST_CASE("a divider from another mode does not stop the source being counted")
     engine.inputTimingsChanged(4);
 
     for (uint8_t i = 0;
-         i < 2 * SourceMeasurement::LatchSettlePasses
+         i < 2 * VideoSourceAcquisition::LatchSettlePasses
                  + SourceMeasurement::SteadySamples + 1;
          ++i)
         pollOnce(acquisition);
@@ -2728,9 +2730,11 @@ TEST_CASE("an undoubled source is sampled up to the measured ceiling")
 static bool measureUntilTaken(SourceMeasurement &sampling)
 {
     for (uint8_t i = 0; i < 4 * (SourceMeasurement::SteadySamples
-                                 + SourceMeasurement::LatchSettlePasses); ++i)
-        if (sampling.measureRate() == SourceMeasurement::Measured)
+                                 + VideoSourceAcquisition::LatchSettlePasses); ++i) {
+        g_nowMs += VideoSourceAcquisition::DetectionIntervalMs;
+        if (sampling.measureRate(g_nowMs) == SourceMeasurement::Measured)
             return true;
+    }
     return false;
 }
 

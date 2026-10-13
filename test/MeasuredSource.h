@@ -17,20 +17,31 @@
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SourceMeasurement.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/VideoSourceLine.h"
 
-// The FIRST reading past the gate, whether or not the rate has repeated. For a
-// case about the settling itself.
+// The clock a pass is taken at. Nothing here is about the engine's cadence, so
+// it moves a whole latch settle a pass and a helper loop spends one on the pass
+// after the latch.
+inline uint32_t &passClockMs()
+{
+    static uint32_t ms = 0;
+    return ms;
+}
+
 // One pass of both halves, the way the acquisition layer drives them: the rate,
 // then the duty through whatever clock is in force. A case wanting the clock
 // INSTALLED between the two is an engine case, not a measurement one.
 inline Tv5725::SourceMeasurement::MeasurementStatus
 measureOnce(Tv5725::SourceMeasurement &sampling)
 {
-    const Tv5725::SourceMeasurement::MeasurementStatus rate = sampling.measureRate();
+    passClockMs() += Tv5725::SourceMeasurement::LatchSettleMs;
+    const Tv5725::SourceMeasurement::MeasurementStatus rate
+        = sampling.measureRate(passClockMs());
     if (rate != Tv5725::SourceMeasurement::Measured)
         return rate;
-    return sampling.measureDuty();
+    return sampling.measureDuty(passClockMs());
 }
 
+// The FIRST reading past the gate, whether or not the rate has repeated. For a
+// case about the settling itself.
 inline Tv5725::SourceMeasurement::MeasurementStatus
 measureToFirstReading(Tv5725::SourceMeasurement &sampling)
 {
@@ -38,7 +49,7 @@ measureToFirstReading(Tv5725::SourceMeasurement &sampling)
         = Tv5725::SourceMeasurement::NotSteady;
     for (uint8_t pass = 0;
          pass < 2 * (Tv5725::SourceMeasurement::SteadySamples
-                     + Tv5725::SourceMeasurement::LatchSettlePasses); ++pass) {
+                     + Tv5725::SourceMeasurement::RateAgreementAttempts); ++pass) {
         reading = measureOnce(sampling);
         if (reading != Tv5725::SourceMeasurement::NotSteady
             && reading != Tv5725::SourceMeasurement::ClockSettling)
@@ -54,7 +65,7 @@ measurePastGate(Tv5725::SourceMeasurement &sampling)
         = Tv5725::SourceMeasurement::NotSteady;
     for (uint8_t pass = 0;
          pass < 2 * (Tv5725::SourceMeasurement::SteadySamples
-                     + Tv5725::SourceMeasurement::LatchSettlePasses); ++pass) {
+                     + Tv5725::SourceMeasurement::RateAgreementAttempts); ++pass) {
         reading = measureOnce(sampling);
         if (reading != Tv5725::SourceMeasurement::NotSteady
             && reading != Tv5725::SourceMeasurement::ClockSettling

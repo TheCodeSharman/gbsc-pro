@@ -2790,7 +2790,7 @@ static void applyCoastOverride(bool apply, bool clear, uint8_t pre, uint8_t post
         // source on the old coast. The branch comes from the sync type the
         // engine holds: SyncMeasurement's is not settled while detection probes.
         geometry.reapplySyncTypeInForce();
-        inputAcquisition.resolveFromSource();
+        inputAcquisition.resolveFromSource(millisNow());
     }
 
     debugPrintf("coast: %s %u/%u\n",
@@ -4112,7 +4112,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                 // Re-derive every register from the framing held and the source
                 // as it reads now, without moving the framing.
                 case 'U':
-                    inputAcquisition.resolveFromSource();
+                    inputAcquisition.resolveFromSource(millisNow());
                     break;
                 // Back to the default framing. The framing is the engine's own
                 // state and no register holds it, so without this a picture
@@ -4755,7 +4755,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
         if (pendingFullFramingChange) {
             pendingFullFramingChange = false;
             geometry.forceFullFraming(pendingFullFraming);
-            inputAcquisition.resolveFromSource();
+            inputAcquisition.resolveFromSource(millisNow());
             debugPrintf("framing: full %s\n", pendingFullFraming ? "on" : "off");
         }
         if (pendingRestart) {
@@ -5140,7 +5140,7 @@ void handleType2Command(char argument)
             // Applied to the source in force rather than at the next one. The
             // preference is the user's veto on the route, and a bypass
             // reference has to be reachable while a source stands still.
-            inputAcquisition.resolveFromSource();
+            inputAcquisition.resolveFromSource(millisNow());
             break;
         case 'X':; // SerialMprint(F("ExternalClockGenerator "));
             if (uopt->disableExternalClockGenerator == 0) {

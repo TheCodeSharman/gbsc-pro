@@ -149,14 +149,14 @@ const Tv5725::OutputMode *VideoSourceAcquisition::resolutionToMoveTo() const
     return carried == videoPath_.outputMode() ? 0 : carried;
 }
 
-bool VideoSourceAcquisition::resolveFromSource()
+bool VideoSourceAcquisition::resolveFromSource(uint32_t nowMs)
 {
     // The same preparation the poll pass makes, and for the same reason: a
     // window solved for a taller mode strands the block the rate is timed off.
     videoPath_.prepareToMeasure(sampling_.readSourceLines());
 
     bool settling = false;
-    if (!measureSource(settling))
+    if (!measureSource(nowMs, settling))
         return videoPath_.deferSolve();
 
     videoPath_.sourceMeasured(sampling_.hsync());
@@ -1008,7 +1008,7 @@ bool VideoSourceAcquisition::runPass(uint32_t nowMs, bool &detectionPass)
     // Nothing outstanding that needs the source read again, unless a solve was
     // refused against the reading it had.
     if (!videoPath_.changingMode())
-        return videoPath_.solveDeferred() && resolveFromSource();
+        return videoPath_.solveDeferred() && resolveFromSource(nowMs);
 
     // Sync type, then the count, then the scan mode. The order is the whole
     // point: the sync path decides what the sync processor counts, and the scan
@@ -1034,7 +1034,7 @@ bool VideoSourceAcquisition::runPass(uint32_t nowMs, bool &detectionPass)
     // without the absent verdict here the answer holds whatever that pass last
     // concluded -- present -- for as long as the source cannot be read.
     bool settling = false;
-    const Tv5725::SourceMeasurement::MeasurementStatus status = sampling_.measureRate();
+    const Tv5725::SourceMeasurement::MeasurementStatus status = sampling_.measureRate(nowMs);
     if (!reading(status, settling)) {
         if (!settling) {
             sourceState_ = SourceAbsent;
@@ -1077,7 +1077,7 @@ bool VideoSourceAcquisition::runPass(uint32_t nowMs, bool &detectionPass)
     if (!videoPath_.installSampling(Tv5725::VideoPath::SamplingFollowsMeasurement))
         return false;
 
-    if (!reading(sampling_.measureDuty(), settling)) {
+    if (!reading(sampling_.measureDuty(nowMs), settling)) {
         if (!settling)
             sourceState_ = SourceAbsent;
         gaveBackPassThrough();
@@ -1112,9 +1112,9 @@ bool VideoSourceAcquisition::runPass(uint32_t nowMs, bool &detectionPass)
     return true;
 }
 
-bool VideoSourceAcquisition::measureSource(bool &settling)
+bool VideoSourceAcquisition::measureSource(uint32_t nowMs, bool &settling)
 {
-    if (!reading(sampling_.measureRate(), settling))
+    if (!reading(sampling_.measureRate(nowMs), settling))
         return false;
 
     // The clock the rate just measured asks for, installed BEFORE the duty is
@@ -1126,7 +1126,7 @@ bool VideoSourceAcquisition::measureSource(bool &settling)
     if (!videoPath_.installSampling(Tv5725::VideoPath::SamplingFollowsMeasurement))
         return false;
 
-    return reading(sampling_.measureDuty(), settling);
+    return reading(sampling_.measureDuty(nowMs), settling);
 }
 
 bool VideoSourceAcquisition::reading(Tv5725::SourceMeasurement::MeasurementStatus status,

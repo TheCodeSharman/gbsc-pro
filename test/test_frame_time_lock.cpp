@@ -128,7 +128,7 @@ TEST_CASE("a source that has only just been acquired is not armed against")
     // A correction measured across a settling source steers the output towards
     // a rate the source is about to leave.
     SolvedEngine unit;
-    unit.acquisition.resolveFromSource();
+    unit.acquisition.resolveFromSource(g_nowMs);
 
     FrameSync lock(unit.clock);
     FrameTimeLock gate(lock, unit.acquisition, unit.engine, unit.sampling);

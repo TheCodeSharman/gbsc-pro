@@ -655,7 +655,7 @@ TEST_CASE("the hsync polarity is normalised before the rate is measured")
     Wire.bank[0][0x16] = 0x03;   // STATUS_SYNC_PROC_HSPOL | HSACT -- positive, found
 
     SourceMeasurement measurement(inputFormatter);
-    measurement.measureRate();
+    measurement.measureRate(passClockMs());
 
     CHECK(SyncProcessor::SP_HS_INV_REG::read() == 1);
 }
@@ -1734,8 +1734,33 @@ TEST_CASE("a reading through a clock that has just been latched is refused")
     CHECK(measureOnce(sampling) == SourceMeasurement::ClockSettling);
 }
 
-// And it is a bounded wait, not a gate something has to satisfy: the passes are
-// counted off and the pass after them reads normally.
+// AND THE WAIT IS A DURATION, SO PASSES TAKEN INSIDE IT DO NOT SPEND IT. The
+// passes it was first expressed in are the detection ladder's 20 ms, and an
+// install from a route that does not wait on that ladder -- setLineFilter() is
+// one -- drains five of them on a free-running loop() in 30 ms. Measured on the
+// bench, the key built from that read 521 lines against the source's 524 and a
+// duty of 11.0% against the standard's 7.2%.
+TEST_CASE("a latch's wait is not spent by passes taken inside it")
+{
+    SourceMeasurement sampling(inputFormatter);
+    Adc::applyDivider(BenchDivider);
+    seedSourceLines(311);
+    Wire.sourceHsync(181, BenchDivider, false);
+    g_fieldRate = 50.08f;
+    REQUIRE(measurePastGate(sampling) == SourceMeasurement::Measured);
+
+    sampling.samplingClockLatched();
+
+    uint32_t nowMs = passClockMs();
+    for (uint8_t pass = 0; pass < 12; ++pass) {
+        nowMs += 6;
+        REQUIRE(nowMs - passClockMs() < SourceMeasurement::LatchSettleMs);
+        CHECK(sampling.measureRate(nowMs) == SourceMeasurement::ClockSettling);
+    }
+}
+
+// And it is a bounded wait, not a gate something has to satisfy: the wait is
+// spent and the pass after it reads normally.
 TEST_CASE("the wait after a latch is spent and the source is measured")
 {
     SourceMeasurement sampling(inputFormatter);
@@ -1746,8 +1771,7 @@ TEST_CASE("the wait after a latch is spent and the source is measured")
     REQUIRE(measurePastGate(sampling) == SourceMeasurement::Measured);
 
     sampling.samplingClockLatched();
-    for (uint8_t pass = 0; pass < SourceMeasurement::LatchSettlePasses; ++pass)
-        REQUIRE(measureOnce(sampling) == SourceMeasurement::ClockSettling);
+    REQUIRE(measureOnce(sampling) == SourceMeasurement::ClockSettling);
 
     // The processor now counts the divider it was given, which is what it does
     // once the PLL has settled on it.
@@ -2231,7 +2255,7 @@ TEST_CASE("a rate already taken is not read again through the clock it chose")
 
     SourceMeasurement::MeasurementStatus rate = SourceMeasurement::NotSteady;
     for (uint8_t pass = 0; pass < 4 * SourceMeasurement::SteadySamples; ++pass) {
-        rate = sampling.measureRate();
+        rate = sampling.measureRate(passClockMs());
         if (rate == SourceMeasurement::Measured)
             break;
     }
@@ -2244,10 +2268,11 @@ TEST_CASE("a rate already taken is not read again through the clock it chose")
 
     // And what the re-read returns through a clock that has just moved.
     g_fieldRate = 30.88f;
-    for (uint8_t pass = 0; pass < SourceMeasurement::LatchSettlePasses; ++pass)
-        REQUIRE(sampling.measureRate() == SourceMeasurement::ClockSettling);
+    uint32_t nowMs = passClockMs();
+    REQUIRE(sampling.measureRate(nowMs) == SourceMeasurement::ClockSettling);
+    nowMs += SourceMeasurement::LatchSettleMs;
 
-    CHECK(sampling.measureRate() == SourceMeasurement::Measured);
+    CHECK(sampling.measureRate(nowMs) == SourceMeasurement::Measured);
 }
 
 TEST_CASE("the first reading of a source spans several pulses")

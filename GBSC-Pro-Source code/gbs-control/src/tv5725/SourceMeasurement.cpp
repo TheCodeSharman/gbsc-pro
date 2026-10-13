@@ -86,7 +86,7 @@ const uint16_t SourceMeasurement::RateAgreementPerThousand;
 const uint16_t SourceMeasurement::RateFollowsCountPerThousand;
 const uint16_t SourceMeasurement::LinePeriodMovedPerThousand;
 const uint8_t SourceMeasurement::RateAgreementAttempts;
-const uint8_t SourceMeasurement::LatchSettlePasses;
+const uint16_t SourceMeasurement::LatchSettleMs;
 const uint32_t SourceMeasurement::UnconfirmedRatePulses;
 
 SourceMeasurement::SourceMeasurement(InputFormatter &inputFormatter)
@@ -96,7 +96,8 @@ SourceMeasurement::SourceMeasurement(InputFormatter &inputFormatter)
       rateRejections_(0), hsyncPolarity_(SourceKey::Undetermined),
       vsyncPolarity_(SourceKey::Undetermined), verticalPeriod_(0),
       rateConfirmed_(false), probesAgreed_(false), rateTaken_(false),
-      dutyMeasured_(false), settlePasses_(0),
+      dutyMeasured_(false), settleArmed_(false), settleTiming_(false),
+      settleStartedMs_(0),
       steady_(SteadySamples), scanSteady_(SteadySamples), rateAttempts_(0),
       scanReported_(-1)
 {
@@ -182,10 +183,35 @@ void SourceMeasurement::modeChanged()
 
 void SourceMeasurement::samplingClockLatched()
 {
-    settlePasses_ = LatchSettlePasses;
+    settleArmed_ = true;
+    settleTiming_ = false;
 }
 
-bool SourceMeasurement::clockSettling() const { return settlePasses_ > 0; }
+bool SourceMeasurement::clockSettling(uint32_t nowMs)
+{
+    if (settleArmed_) {
+        settleArmed_ = false;
+        settleTiming_ = true;
+        settleStartedMs_ = nowMs;
+        return true;
+    }
+
+    if (!settleTiming_)
+        return false;
+
+    if (nowMs - settleStartedMs_ < LatchSettleMs)
+        return true;
+
+    settleTiming_ = false;
+
+    // The figure and not just the fact: it is what separates a gate that is
+    // too short from one that never ran.
+    char line[48];
+    snprintf(line, sizeof(line), "settle: spent after %lu ms",
+             (unsigned long)(nowMs - settleStartedMs_));
+    tv5725Log(line);
+    return false;
+}
 
 // **WHAT A LATER READING IS JUDGED AGAINST MUST NOT ITSELF BE A TRANSIENT.**
 // rateFollowsCount() accepts anything at a moved count, because a moved count
@@ -446,7 +472,7 @@ bool SourceMeasurement::normalisePolarity()
     return positive;
 }
 
-SourceMeasurement::MeasurementStatus SourceMeasurement::measureRate()
+SourceMeasurement::MeasurementStatus SourceMeasurement::measureRate(uint32_t nowMs)
 {
     // BEFORE EVERYTHING, INCLUDING THE SETTLE. A positive-going hsync reaches
     // the counter as the line minus the pulse, and the rate measurement is one
@@ -458,10 +484,8 @@ SourceMeasurement::MeasurementStatus SourceMeasurement::measureRate()
     // corrected against the divider in force, so a run gathering samples while
     // the processor still counts the previous line fills with readings the
     // correction cannot judge.
-    if (settlePasses_ > 0) {
-        --settlePasses_;
+    if (clockSettling(nowMs))
         return ClockSettling;
-    }
 
     // TAKEN, AND THE DUTY STILL OUTSTANDING, so what is left of this
     // measurement is the duty. The divider in force was derived from this rate,
@@ -495,12 +519,10 @@ SourceMeasurement::MeasurementStatus SourceMeasurement::measureRate()
     return Measured;
 }
 
-SourceMeasurement::MeasurementStatus SourceMeasurement::measureDuty()
+SourceMeasurement::MeasurementStatus SourceMeasurement::measureDuty(uint32_t nowMs)
 {
-    if (settlePasses_ > 0) {
-        --settlePasses_;
+    if (clockSettling(nowMs))
         return ClockSettling;
-    }
 
     // THE PAIR ENDS HERE, however the duty reads. What measureRate() holds back
     // is one re-read of a rate the divider in force was derived from, not the

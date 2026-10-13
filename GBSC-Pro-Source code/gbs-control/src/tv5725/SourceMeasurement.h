@@ -51,13 +51,6 @@ public:
     // counted a line at the new rate.
     void samplingClockLatched();
 
-    // Whether the clock was latched too recently for anything counted in ADC
-    // samples to be the source's. Asked by a caller that decides something from
-    // the count OUTSIDE the two halves below -- the scan mode is one -- because
-    // those two carry the same gate themselves and a decision taken before them
-    // would be taken through a clock that has just moved.
-    bool clockSettling() const;
-
     // Whether every probe of the arriving source agreed, which is what licenses
     // timing it over a SINGLE pulse from then on. A separator that invents and
     // drops edges makes each timing span a different number of fields, so the
@@ -104,10 +97,10 @@ public:
 
     // The count, the field rate and the line rate they give. Measured means the
     // rate has repeated and is worth sizing a clock from.
-    MeasurementStatus measureRate();
+    MeasurementStatus measureRate(uint32_t nowMs);
 
     // The hsync duty, counted against the clock the caller has just installed.
-    MeasurementStatus measureDuty();
+    MeasurementStatus measureDuty(uint32_t nowMs);
 
     enum ScanType {
         ScanProgressive,
@@ -331,19 +324,27 @@ public:
     static const uint8_t RateAgreementAttempts = 8;
     static const uint8_t HeldRateRejectionLimit = 60;
 
-    // How many passes after the sampling clock is latched before anything read
+    // How long after the sampling clock is latched before anything read
     // through it means a thing. applySampleRate() writes the PLL group and
     // latches it, and the PLL has to relock and the sync processor count a line
     // at the new rate before either the count or the duty is the source's.
     //
+    // **A DURATION, BECAUSE A PASS COUNT IS NOT A PROXY FOR ONE.** A count of
+    // passes only stands in for this at the detection ladder's cadence, and an
+    // install from a route that does not wait on that ladder --
+    // VideoPath::setLineFilter() is one -- drains five passes of a
+    // free-running loop() in 30 ms. Measured on the bench, the key built after
+    // one read a count of 521 against the source's 524 and a duty of 11.0%
+    // against the standard's 7.2%.
+    //
     // Measured with SamplingLog across a source mode change:
-    // STATUS_SYNC_PROC_HTOTAL took 82 ms to echo a newly latched divider,
-    // which is four passes at the detection cadence.
+    // STATUS_SYNC_PROC_HTOTAL took 82 ms to echo a newly latched divider, and
+    // this is that with a margin -- five passes of the detection ladder.
     // STATUS_MISC_PLLAD_LOCK is not what this waits on -- on a settled source
     // it dithers, 136 transitions in 1109 samples with the count exact
     // throughout, so it can corroborate a reading and can never refuse one.
     // docs/investigations/the-duty-is-counted-before-the-processor-relocks.md
-    static const uint8_t LatchSettlePasses = 5;
+    static const uint16_t LatchSettleMs = 100;
 
     // How many consecutive pulses ONE field-rate timing spans while the boot's
     // rate is unconfirmed.
@@ -368,6 +369,13 @@ private:
     float sampleFieldRateHz();
     static float medianOfThree(float a, float b, float c);
     bool rateSettled();
+
+    // Whether the clock was latched too recently for anything counted in ADC
+    // samples to be the source's. The wait is timed from the first reading
+    // after the latch rather than from the latch itself, which is the only
+    // clock a reader holds -- so it runs long by at most one pass, and never
+    // short.
+    bool clockSettling(uint32_t nowMs);
     void takeJudgedRate();
     bool normalisePolarity();
     bool readSource();
@@ -452,7 +460,12 @@ private:
     bool probesAgreed_;
     bool rateTaken_;
     bool dutyMeasured_;
-    uint8_t settlePasses_;
+
+    // A clock was latched and the wait it owes has not been timed yet, and
+    // the wait, once a reading has started it.
+    bool settleArmed_;
+    bool settleTiming_;
+    uint32_t settleStartedMs_;
     SteadyRun steady_;
 
     // The scan decision's own run. steady_ is the solve's, and it stops being

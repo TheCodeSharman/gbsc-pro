@@ -139,7 +139,7 @@ struct Acquiring {
     {
         for (uint16_t i = 0;
              i < runs * (SourceMeasurement::SteadySamples
-                         + SourceMeasurement::LatchSettlePasses); ++i)
+                         + VideoSourceAcquisition::LatchSettlePasses); ++i)
             if (poll())
                 return true;
         return false;
@@ -158,7 +158,7 @@ struct Acquiring {
     {
         for (uint16_t i = 0;
              i < runs * (SourceMeasurement::SteadySamples
-                         + SourceMeasurement::LatchSettlePasses); ++i)
+                         + VideoSourceAcquisition::LatchSettlePasses); ++i)
             poll();
     }
 };
@@ -272,7 +272,7 @@ TEST_CASE("detection runs on the layer's cadence, not on every call")
     uint32_t now = 0;
     for (uint8_t i = 0;
          i < 4 * (SourceMeasurement::SteadySamples
-                  + SourceMeasurement::LatchSettlePasses); ++i) {
+                  + VideoSourceAcquisition::LatchSettlePasses); ++i) {
         now += VideoSourceAcquisition::DetectionIntervalMs;
         if (unit.acquisition.poll(now))
             break;
@@ -446,7 +446,7 @@ TEST_CASE("an interrupt re-measures a source whose line count did not move")
         g_fieldRateCalls = 0;
         for (uint8_t i = 0;
          i < 4 * (SourceMeasurement::SteadySamples
-                  + SourceMeasurement::LatchSettlePasses); ++i)
+                  + VideoSourceAcquisition::LatchSettlePasses); ++i)
             CHECK_FALSE(unit.poll());
         CHECK(g_fieldRateCalls == 0);
     }
@@ -456,7 +456,7 @@ TEST_CASE("an interrupt re-measures a source whose line count did not move")
 
         for (uint8_t i = 0;
              i < 4 * (SourceMeasurement::SteadySamples
-                      + SourceMeasurement::LatchSettlePasses); ++i)
+                      + VideoSourceAcquisition::LatchSettlePasses); ++i)
             CHECK_FALSE(unit.poll());
     }
 
@@ -501,7 +501,7 @@ TEST_CASE("the separator interrupt reaches the rate only on the csync path")
         g_fieldRateCalls = 0;
         for (uint8_t i = 0;
              i < 4 * (SourceMeasurement::SteadySamples
-                      + SourceMeasurement::LatchSettlePasses); ++i) {
+                      + VideoSourceAcquisition::LatchSettlePasses); ++i) {
             seedField(0, 0x0F, 1, 1, 1);     // STATUS_INT_SOG_SW, latched again
             CHECK_FALSE(unit.poll());
         }
@@ -520,7 +520,7 @@ TEST_CASE("the separator interrupt reaches the rate only on the csync path")
         seedField(0, 0x0F, 1, 1, 1);         // STATUS_INT_SOG_SW, latched
         for (uint8_t i = 0;
              i < 4 * (SourceMeasurement::SteadySamples
-                      + SourceMeasurement::LatchSettlePasses); ++i)
+                      + VideoSourceAcquisition::LatchSettlePasses); ++i)
             unit.poll();
         CHECK(g_fieldRateCalls > 0);
     }
@@ -1472,7 +1472,7 @@ TEST_CASE("a count that never steadies through a solved divider gets another clo
     // The settle first, because the state stays acquired through it and the
     // retry's own passes only start counting once a reading has failed.
     for (uint16_t i = 0;
-         i < SourceMeasurement::LatchSettlePasses
+         i < VideoSourceAcquisition::LatchSettlePasses
              + VideoSourceAcquisition::ReferenceRetryPasses + 4; ++i) {
         seedSourceLines((uint16_t)(97 + (i % 60)));
         unit.poll();
@@ -1761,7 +1761,7 @@ TEST_CASE("a rate seen once does not re-solve the source")
     // One poll's worth of a railed reading, then the source's own rate back.
     for (uint8_t i = 0;
          i < 4 * (SourceMeasurement::SteadySamples
-                  + SourceMeasurement::LatchSettlePasses); ++i) {
+                  + VideoSourceAcquisition::LatchSettlePasses); ++i) {
         seedField(0, 0x06, 0, 9, i % 2 ? 255 : 431);
         unit.poll();
     }
@@ -1958,7 +1958,7 @@ TEST_CASE("a source that cannot be measured is not present while a change is pen
     seedSourceLines(283);
     for (uint8_t i = 0;
          i < 4 * (SourceMeasurement::SteadySamples
-                  + SourceMeasurement::LatchSettlePasses); ++i)
+                  + VideoSourceAcquisition::LatchSettlePasses); ++i)
         unit.poll();
 
     CHECK_FALSE(unit.acquisition.sourceIsPresent());
@@ -2768,7 +2768,7 @@ TEST_CASE("withdrawing the pass-through permission scales the same source")
     REQUIRE(unit.path.outputMode()->isBypass());
 
     unit.acquisition.allowPassThrough(false);
-    resolveUntilSolved(unit.acquisition);
+    resolveUntilSolved(unit.acquisition, unit.nowMs);
 
     REQUIRE(unit.pollUntilSolved(8));
     CHECK_FALSE(unit.path.outputMode()->isBypass());
@@ -2788,7 +2788,7 @@ TEST_CASE("granting the pass-through permission hands the same source over")
     REQUIRE_FALSE(unit.path.outputMode()->isBypass());
 
     unit.acquisition.allowPassThrough(true);
-    resolveUntilSolved(unit.acquisition);
+    resolveUntilSolved(unit.acquisition, unit.nowMs);
 
     CHECK(unit.path.outputMode()->isBypass());
     CHECK(g_passThroughSwitches == 1);

@@ -43,14 +43,6 @@ public:
     // that is otherwise permanent.
     static const uint16_t RateRecheckPasses = 500;
 
-    // How many failed passes a reading gets before the clock it was taken
-    // through is blamed. DERIVED FROM THE MEASUREMENT rather than tuned: it is
-    // what a reading takes to settle, so a correction that can complete has
-    // completed by then.
-    static const uint16_t ReferenceRetryPasses =
-        2 * Tv5725::SourceMeasurement::LatchSettlePasses
-        + Tv5725::SourceMeasurement::SteadySamples;
-
     // How far the boot's held rate and a fresh reading of it may sit apart and
     // still be the same measurement, in parts per thousand.
     //
@@ -198,7 +190,7 @@ public:
     // Re-derive every register from the framing held and the source as it reads
     // NOW: measure, hand the reading over, and have the engine solve from it.
     // Measures, so it must run from loop().
-    bool resolveFromSource();
+    bool resolveFromSource(uint32_t nowMs);
 
     // The output resolution the user asked for. Held HERE, because what the
     // output should do is decided here: pass-through suspends the resolution
@@ -212,6 +204,19 @@ public:
     // How often the source is counted. Every steadiness run below is counted in
     // these, so loop()'s own rate must not reach them.
     static const uint32_t DetectionIntervalMs = 20;
+
+    // How many passes of this ladder a latch's settle spans. The settle is a
+    // duration -- the PLL relocks in its own time whatever the pass rate is --
+    // so the pass count is derived from the cadence rather than fitted to it.
+    static const uint16_t LatchSettlePasses =
+        Tv5725::SourceMeasurement::LatchSettleMs / DetectionIntervalMs;
+
+    // How many failed passes a reading gets before the clock it was taken
+    // through is blamed. DERIVED FROM THE MEASUREMENT rather than tuned: it is
+    // what a reading takes to settle, so a correction that can complete has
+    // completed by then.
+    static const uint16_t ReferenceRetryPasses =
+        2 * LatchSettlePasses + Tv5725::SourceMeasurement::SteadySamples;
 
 
 
@@ -364,7 +369,7 @@ private:
     // installing the sampling clock the rate asks for between the two halves.
     // `settling` distinguishes a source that cannot be read YET from one that
     // cannot be read at all; only the second is absent.
-    bool measureSource(bool &settling);
+    bool measureSource(uint32_t nowMs, bool &settling);
 
     // What one half's answer means for the pass. Both halves are judged the
     // same way, and neither is a measurement on its own.

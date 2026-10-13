@@ -109,7 +109,7 @@ static bool pollUntilSolved(VideoSourceAcquisition &acquisition)
 {
     for (uint8_t i = 0;
          i < 4 * (Tv5725::SourceMeasurement::SteadySamples
-                  + Tv5725::SourceMeasurement::LatchSettlePasses); ++i)
+                  + VideoSourceAcquisition::LatchSettlePasses); ++i)
         if (pollOnce(acquisition))
             return true;
     return false;
@@ -133,15 +133,18 @@ static bool pollUntilPresented(VideoSourceAcquisition &acquisition)
 
 // resolveFromSource() installs the reference sampling clock and then measures,
 // and nothing read through a clock that has just been latched is the source's
-// -- LatchSettlePasses have to be spent first. The engine reaches the solve
+// -- the latch's settle has to be spent first. The engine reaches the solve
 // over several passes, so a case about the outcome does too.
-static bool resolveUntilSolved(VideoSourceAcquisition &acquisition)
+static bool resolveUntilSolved(VideoSourceAcquisition &acquisition,
+                               uint32_t &nowMs = g_nowMs)
 {
     for (uint8_t i = 0;
-         i < 2 * (Tv5725::SourceMeasurement::LatchSettlePasses
-                  + Tv5725::SourceMeasurement::SteadySamples); ++i)
-        if (acquisition.resolveFromSource())
+         i < 2 * (VideoSourceAcquisition::LatchSettlePasses
+                  + Tv5725::SourceMeasurement::SteadySamples); ++i) {
+        nowMs += VideoSourceAcquisition::DetectionIntervalMs;
+        if (acquisition.resolveFromSource(nowMs))
             return true;
+    }
     return false;
 }
 
