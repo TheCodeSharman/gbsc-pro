@@ -1069,6 +1069,17 @@ twelve tables while they existed, which is what `BringUp` was built from.
   keeps the origin it had.
   `docs/investigations/the-retime-stop-is-the-counters-origin.md`.
 
+  **AND THE ORIGIN CARRIES THE SOURCE'S VIDEO LAG IN THE SOURCE'S OWN PIXELS**,
+  which is why one constant framed some modes and not others. The lag is about
+  4.4 source pixels, so it costs 1 ADC sample on a mode sampling 1.36 samples a
+  pixel and 14 on the bench's 320x256@50 at 4.30 -- `SourceTiming::pixelSamples()`
+  is what makes it computable, the raster stating the line's pixel count, and a
+  source matching no raster gets the constant as measured. **Two bench modes at
+  ONE divider is what names the quantity**: 800x600@60 samples 1436 across 1056
+  source pixels and 320x480@60 samples 1444 across 400, and the two want 2
+  samples of origin and 9.
+  `docs/investigations/the-capture-origin-varies-by-mode-at-one-line-rate.md`.
+
   **`IF_HSYNC_RST` is `PLLAD_MD` HALVED ONLY WHERE THE LINE IS DOUBLED**, which is
   what `SourceMeasurement::ifLineFor()` does — an IF unit is two ADC samples on a
   doubled line and one on an undoubled one. All twelve shipped tables were
@@ -1663,6 +1674,14 @@ frequency wedge -- or record a clip and compare frames in the same phase.
 **`CARD` CARRIES A ONE-PIXEL GREEN BORDER FLUSH TO ALL FOUR EDGES**, so "is
 anything clipped" is a yes/no on one frame rather than a margin to compute.
 Green on all four sides means nothing was lost.
+
+**THAT IS THE ACCEPTANCE FOR A FRAMING: the border on all four edges with NO
+BLACK between it and the picture's edge.** Read at 16:9 -- a 4:3 declaration
+pillarboxes, the bars are OUR blanking, and a strip taken at the frame's own
+edge then measures the bars instead of the picture. **And a stored framing
+answers before the computed default**, so `/sc?B` forgets this source's entry
+first or what is judged is the last session's tuning. `four_edges.py` reports
+the border's green dominance and the black count at each edge together.
 
 **`PATTERN` WITH NO ARGUMENT REDRAWS THE DEFAULT rather than reporting what is
 up**, so asking what is on screen changes it -- and `MODE` repaints too. Re-issue
