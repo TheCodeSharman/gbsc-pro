@@ -491,20 +491,30 @@ as ADC samples   181 / 2553 =  7.09%     AKF50 320x256 hsync: 36 / 512 = 7.03%
 as IF units      181 / 1277 = 14.17%     twice the mode's sync width
 ```
 
-**`SP_CS_CLP_ST`/`SP` are the exception**, at 26 and 150 — small enough to be
-either, and misplaced under both readings:
+**`SP_CS_CLP_ST`/`SP` are the exception, and they count the chip's 27 MHz
+reference.** `SyncProcessor::clampFromReferenceClock()` selects that clock, and
+walking the register against the emitted frame confirms it — on the Wii at 480p
+into 1920x1080, divider 1212, `VDS_HSCALE` 746:
 
 ```
-as ADC samples ->  IF  13 ..  75    entirely inside the hsync pulse (IF 0..89.8)
-as IF units    ->  IF  26 .. 150    64 units of sync, then 60 of back porch
+per count        2.667 emitted columns
+per ADC sample   1.885 emitted columns
+per source pixel 2.665 emitted columns
 ```
 
-The back porch runs IF 89.8..164.6, so the ADC takes its black reference at least
-partly from the sync tip. `updateClampPosition()` computes those from
-`1 + 0.010 x HTOTAL` and `2 + 0.058 x HTOTAL` in its non-csync branch, constants
-that only make sense if the counter's zero is the sync's **trailing** edge — and
-`SP_RT_HS_ST` = 0 says it is the leading one. Untested as a cause of anything;
-the experiment is two writes and is reversible.
+The first two are distinguishable because 1212 ADC samples span a line of 858
+source pixels; the first and third are not, 858 x 31469 Hz being 27 MHz, so the
+walk rules out ADC samples and IF units and the clock selection names what is
+left. That is why the values are small: a 12-bit window counting the reference
+reaches a whole line, and the back porch is a few tens of counts into it.
+
+`SyncProcessor::placeClampFor()` and `acquireClampWindow()` write the pair from a
+fraction of a line length `clampLineFor()` derives — the divider on separate
+sync, where a line is counted in ADC samples, and `27e6 / (4 x lineRate) - 1` on
+the composite path, whose fractions were fitted against that quarter-count. The
+line is not the caller's to choose; two callers chose differently and the
+register held whichever wrote last.
+[`investigations/the-clamp-had-two-owners-and-two-units.md`](investigations/the-clamp-had-two-owners-and-two-units.md).
 
 ## Still open
 
@@ -523,6 +533,13 @@ the experiment is two writes and is reversible.
 - **Whether the capture should be centred on the active region rather than the
   IF line.** It would fix the resting sliver, but the active region's edges are
   the thing the chip cannot see.
+- **Where the clamp window's counter has its origin.** Count 0 sits about 12 ADC
+  samples after the sync pulse ends on the Wii at 480p, which is consistent with
+  the retimed pulse rather than with the incoming edge, and one source cannot
+  separate the two. It matters because the fractions are of a line whose start
+  the origin may not be: 0.089 against the quarter-count is 19 counts there and
+  would be 76 against the whole line, which is past the back porch. A composite
+  source at a different line rate is what separates them.
 - **The vertical `VDS_?B_SP` floor is unmeasured.** The horizontal is 8, and the
   code assumes 0 vertically.
 - **The vertical capture has no equivalent clip.** Only the hsync pulse is

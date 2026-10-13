@@ -40,14 +40,17 @@ The window did not move later inside the pulse. It moved into content.
 
 The most likely reading is that the count is taken from the pulse's TRAILING
 edge rather than its leading one, which makes 26..30 the back porch — the
-classic and correct placement — and 165..169 a window 165 samples into active
-video. Red and blue are then clamped to whatever the picture holds there, and
-green survives because the level it lands on happens to be near its own.
+classic and correct placement — and 165..169 a window well into active video.
+Red and blue are then clamped to whatever the picture holds there, and green
+survives because the level it lands on happens to be near its own.
 
-This was not settled by the values alone before: `docs/scaler-geometry-model.md`
-records `SP_CS_CLP_ST`/`SP` as small enough to be read in either of two unit
-systems and misplaced under both. The colour measurement settles the direction
-even though it does not settle the units.
+**Both halves of that reading are since confirmed, by walking the register
+against the emitted frame.** The count is the chip's 27 MHz reference, and count
+0 sits about 12 ADC samples after the pulse ends, so the window this page
+restored was in the back porch and the one it moved to was in content. The
+colour measurement reached the right answer without the units, and the register
+was never a fifth of the way into the pulse.
+[`the-clamp-had-two-owners-and-two-units.md`](the-clamp-had-two-owners-and-two-units.md).
 
 ## Do not reinstate
 
@@ -59,7 +62,10 @@ Two things follow, and the second is the one that costs a session:
   correct throughout, the source stayed locked, the geometry was unchanged, and
   the only instrument that noticed was a photograph of a grey patch.
 
-The concern the proposal came from is still live and is not addressed here: on a
-mode with no front porch, the border can reach a window placed too far from the
-sync edge. What would answer it is a measurement of where the window sits
-relative to the trailing edge, not a move to the other end of the pulse.
+The concern the proposal came from is still live: on a mode with no front porch,
+the border can reach a window placed too far from the sync edge. The measurement
+it asked for — where the window sits relative to the trailing edge — exists now
+for one source: on the Wii at 480p the usable range is 0..66 and the picture
+starts at 67, against a placed window of 19. What is still missing is the
+counter's origin on a second source, which is what would turn that into a bound
+rather than one reading.
