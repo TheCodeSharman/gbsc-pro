@@ -126,9 +126,19 @@ public:
     // leading samples off the emitted frame and leaves the same width black at
     // the far end.
     //
-    // A count of samples rather than a time, measured off the emitted frame on
-    // four output modes at +19.5, +20.3, +19.8 and +20.8, and again by walking
-    // the aperture across the window's edge at +19.
+    // **IT IS NOT ONE COUNT, AND 20 IS RIGHT ON NO RASTER MEASURED.** The
+    // opening is the sink's own window position, which moves with the output's
+    // FIELD RATE: ~6 to 7 samples on the 60 Hz rasters of 1080p and 720p and
+    // ~35 on the 50 Hz 1080p one, alike on both inputs. The four readings of
+    // ~20 that put it here were taken with picture hard against the aperture's
+    // edge, where the sink lands its window ON the aperture and the walk
+    // returns the value already in force.
+    // docs/investigations/the-window-delay-is-a-field-rate-band-not-a-constant.md
+    //
+    // A table per output and field-rate band is what can close it. **Moving it
+    // is safe for the odd-width parity bias**, which OutputWindow::solve()
+    // re-applies per solve inside the bounds this hands it; insetting one edge
+    // or changing the span is what would break that.
     //
     // **THE WINDOW DOES NOT FOLLOW OUR BLANKING**, which is what a value of 3
     // rested on. Walking VDS_DIS_HB_SP 143..200 leaves the window where it is
