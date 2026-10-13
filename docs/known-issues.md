@@ -441,6 +441,36 @@ frozen poke cannot answer it.
 rather than on a measurement that failed for any reason. The witness exists and
 no caller consults it yet.
 
+### The VDS line filter puts a black band near the START of the line, not only at its end
+
+Reported and measured 2026-10-13 on `ypbpr`, the Wii at 480p into 1920x1080 at
+16:9, `VDS_D_RAM_BYPS` 0 so the filter is IN circuit. The filter makes the
+picture visibly clearer, which is why it is wanted; what comes with it is
+
+| | frame columns | reading |
+|---|---|---|
+| a black band | **155..161** (8.3% from the left) | luma 10.4 against 124.2 local, so 114 levels below |
+| the shimmer | **164..173**, immediately right of it | frame-to-frame sd 1.81 against a 0.25 median |
+
+The band itself is steady -- sd 0.09 at its deepest column -- so the shimmer is
+the few columns beside it rather than the band moving.
+
+**THIS IS NOT THE TAIL BAND.** `the-tail-green-is-the-vds-line-filter.md` records
+the filter's one-line delay showing as a band at the END of the line whose edge
+moves with the divider, and that is what defaulted the filter off. A band 8% in
+from the HEAD is a second artefact and nothing explains it.
+
+State it was measured in: `PLLAD_MD` 1212 against `STATUS_SYNC_PROC_HTOTAL`
+1212, `IF_HB_SP2` 149, `IF_HB_ST2` 1169, `VDS_HSCALE` 746, `VDS_HSYNC_RST` 1601.
+At 1.37 output pixels to the capture unit the band sits around capture unit 264,
+but the anchor was not measured, so that is arithmetic rather than a reading --
+convert it properly before designing an experiment around it.
+
+**The obvious experiment is a pair at one acquisition**: `/uc?m` toggles
+`uopt->wantVdsLineFilter`, so take a frame with the filter in and one with it
+bypassed without re-acquiring, and difference them. That says whether the band
+is the filter's or merely revealed by it.
+
 ### The RISC PC's composite sync shears about two frames a second, and the engine is not writing it
 
 Measured 2026-10-13 at 320x256@50 on `vga`, `PATTERN CARD`, read off the USB
