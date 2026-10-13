@@ -927,9 +927,9 @@ TEST_CASE("the vertical capture window clears the picture by more than the path 
 // THE SYNC TYPE REACHES THE CAPTURE WINDOW. The sync separator's output arrives
 // at the input formatter's line counter late, so a source through it sits
 // earlier in the counter and a window placed as though it were not is a whole
-// separator delay off -- measured on the bench as 100 units of 1446 at
+// separator delay off -- measured on the bench as 103 units of 1444 at
 // 640x480@60, which cuts the left of the picture and leaves black at the right.
-// docs/investigations/the-separator-moves-the-counters-origin.md
+// docs/investigations/the-separator-lead-is-not-a-fraction-of-the-line.md
 TEST_CASE("a source on the sync separator is captured earlier in the line")
 {
     SolvedEngine solved(311, 50.08f, 181, &Mode1080p);
@@ -943,12 +943,15 @@ TEST_CASE("a source on the sync separator is captured earlier in the line")
     SyncMeasurement::set(false);
 
     // The framing is unmoved, so it names the same part of the source both
-    // times and the window opens earlier to take it, by the whole lead: 7% of
-    // this source's 1101-unit counter. The floor does not move with the lead,
-    // so a window the default placed nearer the head of the line would reach
-    // it and spend only part of one.
-    const long lead = lrintf((float)solved.engine.lineUnitsOn(AxisHorizontal)
-                             * VideoSourceLine::SeparatorOriginPerThousand / 1000.0f);
+    // times and the window opens earlier to take it, by the whole lead: this
+    // source's sync width less the samples the separator leads its end by, on
+    // a doubled counter where a unit is two samples. The floor does not move
+    // with the lead, so a window the default placed nearer the head of the
+    // line would reach it and spend only part of one.
+    const long syncSamples =
+        2 * (long)solved.engine.syncUnitsOn(AxisHorizontal);
+    const long lead =
+        (syncSamples - VideoSourceLine::SeparatorPulseEndLeadSamples) / 2;
     CHECK(ownHsync - separated == lead);
     CHECK(separated > solved.engine.firstUnitOn(AxisHorizontal));
 }

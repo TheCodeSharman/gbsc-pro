@@ -755,24 +755,26 @@ TEST_CASE("the default capture is where it is whatever polarity the source sends
 // separator carries composite sync and sync on green both -- SP_SOG_MODE 1 --
 // and a source with its own hsync line does not go near it.
 //
-// **IT IS A FRACTION OF THE LINE, NOT A COUNT OF UNITS.** Measured on the RISC
-// PC on `vga`, the sync type set from CMOS so one cable and one raster carry
-// both, reading the card's green frame off the emitted frame:
+// **IT IS THE SOURCE'S SYNC WIDTH LESS A COUNT OF ADC SAMPLES.** Measured on
+// the RISC PC on `vga` as the difference between the two sync types, the type
+// set from CMOS so one cable and one raster carry both, over six published
+// modes spanning 104..173 samples of sync and 15.6..48.4 kHz: a free fit
+// returns a slope of exactly 1.000 on the measured width and an intercept of
+// 65.7 samples, with residuals under 1.5. A fraction of the line, a constant
+// count of units, a constant time and every fraction of the pulse are each 50
+// units out somewhere.
 //
-//     mode            line   separate - composite   fraction
-//     320x256@50      1100          76.5             6.96%
-//     640x480@60      1446         103, 109          7.1, 7.5%
-//
-// A constant count fitted to 640x480@60 predicts 50 units at the bench mode
-// against 76.5 measured, so the two are 40% apart and the count is refuted. A
-// constant TIME is refuted by the handover's own 800x600@60 point.
+// A position read against a published raster carries that mode's own
+// systematic -- 1024x768@60 reads 75.3 units on separate sync where
+// 720x480@60 reads -7.5 -- so only the difference between the sync types is
+// the separator.
 //
 // **THE FLOOR DOES NOT MOVE WITH IT.** Only the video travels along the counter;
 // what the capture path writes at the head stays where the counter puts it.
 // Measured at 320x256@50 with the window forced to the same unit on both sync
 // types: at 88 the separator's path shows saturated green out to that unit and
 // separate sync shows none at any value down to 70.
-// docs/investigations/the-separator-moves-the-counters-origin.md
+// docs/investigations/the-separator-lead-is-not-a-fraction-of-the-line.md
 TEST_CASE("a source on the sync separator lands earlier in the counter")
 {
     // 640x480@60 at PLLAD_MD 1446: 1447 counter units, HLOW_LEN 170.
@@ -783,9 +785,11 @@ TEST_CASE("a source on the sync separator lands earlier in the counter")
                         ActiveStart) == 260);
     }
 
-    SUBCASE("one through the separator lands a fraction of the line earlier") {
+    SUBCASE("one through the separator lands a pulse less the lead earlier") {
+        // 171 samples of sync at this divider, less the 66 the separator's
+        // output leads the pulse's end by.
         CHECK(videoAtOf(separatedLine(1447, 170, 1446), AxisHorizontal,
-                        ActiveStart) == 159);
+                        ActiveStart) == 260 - (171 - 66));
     }
 
     SUBCASE("the floor stays where the counter puts it") {

@@ -5,7 +5,7 @@
 namespace Tv5725 {
 
 const uint16_t VideoSourceLine::DoubledHeadBlankingUnits;
-const uint16_t VideoSourceLine::SeparatorOriginPerThousand;
+const uint16_t VideoSourceLine::SeparatorPulseEndLeadSamples;
 const uint16_t VideoSourceLine::SeparatorFrameLeadLines;
 const uint16_t VideoSourceLine::FrameOriginUnits;
 const uint16_t VideoSourceLine::DoubledFrameOriginUnits;
@@ -41,10 +41,16 @@ VideoSourceLine VideoSourceLine::forDuty(uint16_t units, const HsyncPulse &pulse
     // Round UP, so a pulse that ends part way through a unit leaves that unit
     // outside the capture rather than half in it. HsyncPulse's ceiling keeps it
     // under a sixth of the line, so what is left is always the greater part.
-    const uint16_t lead = separated
-        ? (uint16_t)lrintf(units * (float)SeparatorOriginPerThousand / 1000.0f)
-        : 0;
-    return VideoSourceLine(units, (uint16_t)ceilf(units * pulse.syncDuty()),
+    const uint16_t syncUnits = (uint16_t)ceilf(units * pulse.syncDuty());
+
+    // The separator's lead on the pulse's end is in ADC samples and a unit is
+    // two of them on a doubled line, so the subtraction happens in samples.
+    const uint16_t samplesPerUnit = lineDoubled ? 2 : 1;
+    const uint16_t syncSamples = syncUnits * samplesPerUnit;
+    uint16_t lead = 0;
+    if (separated && syncSamples > SeparatorPulseEndLeadSamples)
+        lead = (syncSamples - SeparatorPulseEndLeadSamples) / samplesPerUnit;
+    return VideoSourceLine(units, syncUnits,
                            lineDoubled ? DoubledHeadBlankingUnits : 0, lead);
 }
 
