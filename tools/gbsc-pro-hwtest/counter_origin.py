@@ -413,7 +413,7 @@ def main():
             if not reply or not reply.startswith("OK"):
                 print(f"  source refused it: {reply!r}")
                 continue
-            if not card_edges.settled(args.host):
+            if not gbs_unit.acquired_and_settled(args.host, limit_s=120.0):
                 print("  never acquired")
                 continue
             gbs_unit.mode_serv(args.modeserv, "PATTERN CARD")
