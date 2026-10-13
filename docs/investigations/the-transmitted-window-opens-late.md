@@ -1,6 +1,17 @@
 # The transmitted window opens later than our back porch, by a fixed count of samples
 
-**THE START STANDS. Its supersession is itself refuted.** The delay was cut to 3
+**THE COUNT IS REFUTED AND THIS PAGE'S PROCEDURE IS WHY.** The four readings
+below put the picture hard against the aperture's edge, and on a raster whose
+own window position is after the aperture the sink lands its window ON the
+aperture -- so the walk extrapolates to the aperture the constant itself placed
+and returns the value already in force. Measured against the same quantity with
+the aperture far away, 1080p at T 1916 opens at 171.7 and 173.78 rather than
+159.5, and the opening moves 28 samples between that raster and the 60 Hz one.
+[the-window-delay-is-a-field-rate-band-not-a-constant.md](the-window-delay-is-a-field-rate-band-not-a-constant.md).
+**The WIDTH column is untouched** -- it is the mode's own fraction, confirmed
+again on four fresh states.
+
+**The start's earlier supersession is itself refuted, separately.** The delay was cut to 3
 on the reading that the window's start is latched from `VDS_DIS_HB_SP`, so the
 four readings of ~20 were four samples of where a latch landed. Re-measured with
 the black at the LEFT read as well, the window sits at our unit 161.6 whatever

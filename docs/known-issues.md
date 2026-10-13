@@ -495,29 +495,47 @@ per-magnification term and not the constant.
 Opening the window one unit later is NOT the fix: a window inset to hide stale
 memory hides a write that is in the wrong place.
 
-### The transmitted window opens about 6 samples after the back porch, not 20
+### The transmitted window's opening follows the field rate, and TransmittedWindowDelayPx cannot hold it
 
 `OutputMode::TransmittedWindowDelayPx` is 20 and places `VDS_DIS_HB_SP` at
-`sync + backPorch + 20`. Measured on the Wii at 480p into 1920x1080 -- 1602 x
-1125, display clock 107.8 MHz -- the transmitted window opens at raster unit
-145.2 where the back porch ends at 139, so the delay is **6.2 samples** and the
-picture is placed 13.8 too late.
+`sync + backPorch + 20`. There is no such constant. Four states, each a
+four-point fit with residuals under 0.3 columns, read off the USB capture with
+automation frozen:
 
-What that costs is both edges at once: 19 black columns at the left of the
-emitted frame and 18 columns of picture off the right, the display window
-running to raster unit 1937.5 of a frame that ends at 1919.
+| source | input | output | T | field Hz | window opens | sync + porch | delay |
+|---|---|---|---|---|---|---|---|
+| Wii 480p | `ypbpr` | 1080p | 1602 | 59.94 | 146.05 | 139 | **+7.1** |
+| Wii 480p | `ypbpr` | 720p | 2402 | 59.94 | 384.70 | 378 | **+6.7** |
+| RiscPC 640x480@60 | `vga` | 1080p | 1600 | 60.02 | 145.19 | 139 | **+6.2** |
+| RiscPC 320x256@50 | `vga` | 1080p | 1916 | 50.08 | 173.78 | 139 | **+34.8** |
 
-Read by differencing frames at two `VDS_DIS_HB_SP` and two `VDS_DIS_HB_ST`
-values, which gives 1.375 emitted columns per raster unit -- 2200/1600 -- and
-the anchor in the same pass. **It is not the lock's placement**: three
-`PAD_SYNC_OUT_ENZ` toggles leave the window opening at emitted column 19 every
-time, so the number is ours.
+**Both candidates a single off reading left open are ruled out.** Not the input
+or the component path -- `ypbpr` at T 1602 and `vga` at T 1600 agree to 0.86
+units. Not the output mode -- the same source gives +7.1 at 1080p and +6.7 at
+720p. Not the lock's placement -- three `PAD_SYNC_OUT_ENZ` toggles leave the
+first lit column at 262 every time. What moves it is the output's FIELD RATE, in
+the bands [investigations/the-sinks-own-window-position-is-per-raster.md](investigations/the-sinks-own-window-position-is-per-raster.md)
+already measured, so the quantity is the sink's own window position and not a
+delay in the chain.
 
-The constant was measured at +19.5, +20.3, +19.8 and +20.8 on four output modes,
-so either it is not one constant across rasters or those readings carry
-something this one does not. Settling it takes the same differencing measurement
-on a second output mode and on `vga`, which is what the earlier readings were
-taken against.
+**The four readings of ~20 measured our own aperture.** They were taken with the
+picture zoomed hard against the aperture's edge, and on a raster whose own
+position is after the aperture the sink lands its window ON the aperture -- so
+the walk extrapolates to the value already in force, whatever it is. A
+measurement of this has to put BLACK at the aperture's edge or leave the
+aperture well past the own position.
+
+**So do not move it to 6 either**: it is wrong at 20 on every raster here and
+wrong at 6 on the 50 Hz raster by 29 samples. A table per output and field-rate
+band can close it; a constant cannot, and two sources sit outside any table.
+A change of placement is safe for the odd-width parity bias, which
+`OutputWindow::solve()` re-applies per solve inside whatever bounds it is handed
+-- insetting one edge or changing the span is what would break it.
+
+What it costs meanwhile is both edges at once on the 60 Hz rasters: 19 black
+columns at the left of the emitted frame and 18 columns of picture off the
+right.
+[investigations/the-window-delay-is-a-field-rate-band-not-a-constant.md](investigations/the-window-delay-is-a-field-rate-band-not-a-constant.md)
 
 ### The RISC PC's composite sync shears about two frames a second, and the engine is not writing it
 

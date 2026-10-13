@@ -135,6 +135,22 @@ transitions against black-at-edge toggles.
 - The four short states are the measurement for any change to the aperture's
   placement: the same four, settled, through a pad toggle, before and after.
 
+## A second input reads the same bands
+
+The position is not a property of the `vga` path. The Wii on `ypbpr` at 480p --
+sync on green, the component colour path, a direct analog input -- opens at
+146.05 on the T 1602 1080p raster and 384.70 on the T 2402 720p one, against
+145.19 for a 640x480@60 `vga` source on the T 1600 1080p raster, 0.86 units
+away. So whatever the sink keys on reaches both inputs alike, and the model's
+twenty samples after the porch is ~13 units late on the 60 Hz rasters of both
+outputs rather than within three of them.
+
+Those three rows have the aperture 176 units after the own position, aspect
+shaping having narrowed it, and they open 13 units BEFORE the own position --
+neither on the aperture nor the 6.6 to 10 units before it this page measured
+where the aperture sits near the own position. That is the open end of the rule.
+[the-window-delay-is-a-field-rate-band-not-a-constant.md](the-window-delay-is-a-field-rate-band-not-a-constant.md).
+
 `investigations/the-encoder-places-its-window-when-the-sync-pad-returns.md`
 is the rule this rests on; `investigations/the-encoder-window-start-is-per-source.md`
 carries the earlier per-source readings, which are the transition placements
