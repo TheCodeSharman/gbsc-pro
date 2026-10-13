@@ -1269,3 +1269,37 @@ TEST_CASE("the stored shape comes back with the switch")
     CHECK(engine.engine.setApplyAspect(true));
     CHECK_NEAR(engine.engine.image().horizontal().produced(), narrowed, 0.51f);
 }
+
+
+// TURNING THE DELAY OFF AND BACK ON IS TWO COMMANDS, AND THE SECOND REACHES THE
+// DIVIDER. Off, the bound goes away and the divider rises to what the output
+// allows; on again, the bound returns and the divider comes back down, or the
+// capture stays too wide and applyLineFilter() drops the delay against the
+// window it was asked to fit.
+//
+// **WHAT THIS PINS IS THAT setLineFilter() IS NOT WHERE THE BENCH FAULT IS.**
+// On the bench the second press leaves the divider where the first put it, and
+// the cause is upstream of here: the install leaves a source key matching no
+// published raster, so dividerCeilingForLineFilter() has no activePixels() to
+// bound anything with and returns 0. Given a key that matches, the cycle works,
+// which is what this case holds still.
+// docs/known-issues.md "The line filter cannot be turned back on"
+TEST_CASE("the line filter goes back in circuit after being turned off")
+{
+    const uint16_t Divider = 1436;
+    const uint16_t HsyncLow = (uint16_t)(Divider * 128 / 1056);
+    SolvedEngine solved(627, 60.317f, HsyncLow, &Mode1080p, true, Divider);
+
+    REQUIRE(solved.engine.setLineFilter(true));
+    REQUIRE(Wire.field(3, 0x26, 6, 1) == 0);
+    const long held = Wire.field(5, 0x12, 0, 12);               // PLLAD_MD
+
+    REQUIRE(solved.engine.setLineFilter(false));
+    REQUIRE(Wire.field(3, 0x26, 6, 1) == 1);
+    REQUIRE(Wire.field(5, 0x12, 0, 12) > held);
+
+    REQUIRE(solved.engine.setLineFilter(true));
+
+    CHECK(Wire.field(5, 0x12, 0, 12) == held);
+    CHECK(Wire.field(3, 0x26, 6, 1) == 0);
+}
