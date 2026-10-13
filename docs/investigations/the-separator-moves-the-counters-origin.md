@@ -6,14 +6,16 @@ line counter late. Its video therefore lands **earlier in the counter** than its
 published raster states, and a capture window placed as though it had its own
 hsync line cuts the left of the picture and leaves black at the right.
 
-`VideoSourceLine::SeparatorOriginPerThousand` is 70.
+`VideoSourceLine::SeparatorOriginPerThousand` was 70, and is gone.
 
-**THE FRACTION IS REFUTED, AND THE DISPLACEMENT IS NOT.** The same displacement
-measured at 720x480@60 is 2.2% of the line against the 7.6% this page records at
-640x480@60, on one machine, one input, one sync type and one line rate — so no
-single fraction covers both, and 70 is a figure for one sync width rather than a
-law. The readings below stand as readings; what does not stand is reading them
-as a constant.
+**THE FRACTION IS REFUTED AND THE FORM IS SETTLED: the delay is the source's
+measured sync width less 66 ADC samples.** Six published modes, read as the
+difference between the two sync types, give that to within 1.5 samples where a
+fraction of the line leaves a 66-unit residual. The two readings below were
+taken against the published raster on one sync type, which carries each mode's
+own systematic, and while `SP_RT_HS_SP` was 61 samples wrong — so they do not
+stand as measurements of the delay. 320x256@50 re-measures at 87.7 samples and
+640x480@60 at 103.2.
 [the-separator-lead-is-not-a-fraction-of-the-line.md](the-separator-lead-is-not-a-fraction-of-the-line.md)
 
 ## A count and a time are both refuted

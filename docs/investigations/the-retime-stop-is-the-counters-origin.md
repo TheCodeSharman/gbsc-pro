@@ -97,10 +97,13 @@ It is the one number here with no account of itself. What is known:
 
 ## What this leaves contaminated
 
-`VideoSourceLine::SeparatorOriginPerThousand` is 70, fitted on composite sync with
-the retime wrong by 61 samples on the source it was fitted against. It has to be
-re-measured, and how much of its 70 per mille survives is the test of whether the
-offset was being counted twice.
+`VideoSourceLine::SeparatorOriginPerThousand` was 70, fitted on composite sync
+with the retime wrong by 61 samples on the source it was fitted against.
+**Re-measured, none of the 70 per mille survives**: the delay is the source's
+measured sync width less 66 ADC samples, and the retime's own `+63 − HLOW`
+cancels in the difference between the two sync types, so the 66 is the
+separator's and not this offset counted twice.
+[the-separator-lead-is-not-a-fraction-of-the-line.md](the-separator-lead-is-not-a-fraction-of-the-line.md)
 
 `OutputMode::HsyncStartPx` and `OutputMode::TransmittedWindowDelayPx` were tuned
 on 640x480@60, where the retime error is about 2.5 source pixels, so they can

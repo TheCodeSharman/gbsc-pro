@@ -441,14 +441,72 @@ frozen poke cannot answer it.
 rather than on a measurement that failed for any reason. The witness exists and
 no caller consults it yet.
 
-### The Wii's 480p is placed by a separator lead that is wrong for its raster
+### The RISC PC's composite sync shears about two frames a second, and the engine is not writing it
 
-Measured 2026-10-13 on `ypbpr` at 480p into 1920x1080, engine's own solve, read
-off the USB capture. **The cause is `VideoSourceLine::SeparatorOriginPerThousand`
-being 70 where this raster wants about 23**, which is not a property of sync on
-green: the same lead measures 2.2% of the line on the RISC PC's composite sync at
-the same CEA raster and 7.6% at 640x480@60, so no single fraction covers both.
+Measured 2026-10-13 at 320x256@50 on `vga`, `PATTERN CARD`, read off the USB
+capture with a per-ROW metric: a clean frame has the same edge column on every
+band, and the spread ACROSS bands inside one frame is the shear.
+
+| | composite, `SYNC 1` | separate, `SYNC 0` |
+|---|---|---|
+| frames sheared past 4 px | **20 of 1693** | **0 of 1655** |
+| of those, past 256 px | 18 | -- |
+| rate | **0.67 per second** | 0 |
+| edge position sd over 90 frames | 0.005 px | 0.002 px |
+| `STATUS_SYNC_PROC_VTOTAL` | **308** | 311 |
+
+The source sends 312 lines, so the separator undercounts by three on composite
+and by one on separate.
+
+**IT SURVIVES A FREEZE, so ongoing register writes are not necessary for it.**
+Frozen, with `IF_HB_SP2`, `PLLAD_MD`, `VDS_HSCALE` and `VTOTAL` read identical
+either side of a 30-second window, three frames of 1561 still shear past 256 px.
+That does not exonerate a static misconfiguration, which a freeze preserves --
+but it rules out the solve rewriting a register underneath the picture.
+
+**The deinterlacer is not the difference.** `MADPT_PD_RAM_BYPS`,
+`DIAG_BOB_PLDY_RAM_BYPS`, `MADPT_Y_WOUT_BYPS` and `MADPT_VIIR_BYPS` all read 1
+on both sync types, so it is out of circuit on both -- despite the console
+printing `scan: interlaced, count 311` and `deinterlacer: motion adapt engaged`
+on the composite path. What differs is the separator's own configuration, which
+is correct to differ: `SP_H_PULSE_IGNOR` 107 against 255, `SP_DLT_REG` 192
+against 0, coast 7/6 against 0/0.
+
+**The count dip is what the engine reacts to, not what it causes.** The console
+shows `source absent: 307 lines` / `source acquired: 311 lines` pairs several
+times a second, each dip resetting the acquired run, re-running the sampling
+phase search and resetting the frame time lock -- the amplification
+[investigations/the-pulse-ignore-fraction-breaks-a-progressive-source.md](investigations/the-pulse-ignore-fraction-breaks-a-progressive-source.md)
+describes.
+
+**This is not new.** A csync path reading `SP_VTOTAL` 308 and glitching, against
+separate sync reading 311 and clean, is recorded from 2026-08-14 and 2026-08-15.
+What is new is the rate and the freeze result.
+
+### A latched separate-sync path answers to `/restart`, not to `/sc?~`
+
+Reached by a mode the separator never reads -- 1280x720@60 on composite, a 2.42%
+sync duty. The engine lands on `SP_SOG_MODE` 0 with a composite source present,
+`SP_H_PULSE_IGNOR` 255, `SP_RT_HS_SP` 15 -- the bare origin, nothing measured --
+`STATUS_SYNC_PROC_VTOTAL` 0 and the previous mode's geometry still held.
+
+Three `/sc?~` cycles with a mode re-issue between each left it there. `/restart`
+cleared it in **28 s**, repeatedly, the source acquiring with `SP_SOG_MODE` 1 and
+the divider latched. So the TRIGGER decides the recovery and the registers do not
+say which trigger it was, which the `/sc?~` entry above already records for the
+input-change case.
+
+### ~~The Wii's 480p is placed by a separator lead that is wrong for its raster~~ -- FIXED
+
+**FIXED 2026-10-13.** The lead is the source's measured sync width less 66 ADC
+samples, not a fraction of the line, which gives this raster 40 units where 70
+per mille gave 101. Measured over six published modes as the difference between
+the two sync types; a free fit returns a slope of exactly 1.000 on the measured
+width with residuals under 1.5 samples.
 [investigations/the-separator-lead-is-not-a-fraction-of-the-line.md](investigations/the-separator-lead-is-not-a-fraction-of-the-line.md)
+
+On the emitted frame the black down the left falls from **134 px to 20** and the
+44 px that was cut off the right is no longer cut. What was measured before:
 
 **It costs picture at BOTH ends, and only one of them looks like a fault.** The
 capture window's picture region is 107..1321 against content at 191.5..1348.7:
@@ -2975,7 +3033,7 @@ sync on green both -- lands earlier in them than its published raster states.
 
 | axis | constant | value | shape |
 |---|---|---|---|
-| horizontal | `VideoSourceLine::SeparatorOriginPerThousand` | 70 | a fraction of the LINE |
+| horizontal | `VideoSourceLine::SeparatorPulseEndLeadSamples` | 66 | subtracted from the sync width, in ADC SAMPLES |
 | vertical | `VideoSourceLine::SeparatorFrameLeadLines` | 16 | a count of the source's LINES |
 
 Measured on one cable and one raster with the sync type the only variable:
@@ -2985,9 +3043,11 @@ Measured on one cable and one raster with the sync type the only variable:
 | 320x256@50, doubled | 1100 | 76.5 | **6.96%** | 61 | **16.6** |
 | 640x480@60, undoubled | 1446 | 103, 109 | **7.1%, 7.5%** | 34 | **15.2** |
 
-Horizontally a count fitted to either mode is 40% wrong on the other;
-vertically a fraction is 80% wrong. The two axes need not agree -- one is a
-delay through a PLL locked to the line, the other through whatever counts lines.
+Vertically a fraction is 80% wrong, so the vertical stays a count of lines. The
+horizontal readings above were taken against the published raster on one sync
+type and do not stand; the delay is the measured sync width less 66 ADC samples,
+over six modes.
+[investigations/the-separator-lead-is-not-a-fraction-of-the-line.md](investigations/the-separator-lead-is-not-a-fraction-of-the-line.md)
 
 Solved at 640x480@60 the emitted frame's black margins:
 
