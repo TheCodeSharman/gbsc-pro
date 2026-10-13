@@ -462,17 +462,61 @@ mean of 152.4 against 205.7 at a start of 19. Both writers convert inside
 
 ### The line filter cannot be turned back on once it has been turned off
 
-`VideoPath::setLineFilter()` re-installs the sampling and re-solves, and
-`installSampling()` skips when the rate has not moved -- so the divider stays
-where the previous setting left it. Turning the filter off takes the divider
-from 1212 to 1446; turning it back on leaves it at 1446, `applyLineFilter()`'s
-`fits` test fails against the 1020-sample line buffer, and `VDS_D_RAM_BYPS`
-stays 1. Measured twice on the Wii at 480p, the register unmoved either time,
-and `/restart` is what brings it back -- the unit boots with the stored
-preference, solves 1212 and puts the filter in circuit.
+The symptom: turning the filter off takes the divider from 1212 to 1446;
+turning it back on leaves it at 1446, `applyLineFilter()`'s `fits` test fails
+against the 1020-sample line buffer, and `VDS_D_RAM_BYPS` stays 1. Four presses
+in one run, the register unmoved after the first, and `/restart` is what brings
+it back.
 
-So the option reports itself on and is not, which is the same shape as the
-six-tap entry below, by a different mechanism.
+**`VideoPath::setLineFilter()` IS NOT WHERE IT IS, and an earlier reading of
+this entry said it was.** The route reaches `installSampling()` both ways -- the
+off press logs its install -- and given a key that matches a published raster
+the whole cycle works, which
+`test_video_path_windows.cpp` now holds still.
+
+**The cause is a source key latched from a transient and never revised.** Read
+off the console for the off press:
+
+```
+installing: divider from line rate 31288, doubled 0 -> 1446
+measure: rate held 59.93 Hz, measuring duty
+duty: 159 pulse / 1446 divider, htotal 1446, negative
+source key: 521@59.94/1100??, no framing stored, shape 13333
+source acquired: 524 lines, 1446 samples against divider 1446
+```
+
+The count was read at 530, 527, 521, 521 while the divider was moving and the
+key took 521; the duty was read 30 ms after the install at 11.0% where the
+standard is 7.2%. **480p is 525 lines**, `SourceTiming::lookUpIn()` matches the
+count exactly, so `521@59.94/1100??` matches nothing --
+`dividerCeilingForLineFilter()` has no `activePixels()`, returns 0, and no later
+press has a bound to bring the divider down with.
+
+Measured afterwards, the chip reads `STATUS_SYNC_PROC_VTOTAL` 524 and a duty of
+7.26% -- **both of which would match** -- while `/geometry` still reports the
+held `cv` 522 and `fh` 160. A count three lines out did not arm a re-solve, so
+the wrong key is held indefinitely.
+
+**The duty's settle is counted in PASSES and the pass rate is not a constant.**
+`SourceMeasurement::LatchSettlePasses` is 5, fitted as "four passes at the
+detection cadence" against a measured 82 ms for
+`STATUS_SYNC_PROC_HTOTAL` to echo a newly latched divider. This install comes
+from `setLineFilter()` rather than from the detection ladder, `loop()` runs
+fast, and five passes drain in 30 ms -- so the duty is read through a PLL that
+has not relocked. A settle stated in milliseconds is what the 82 ms figure
+supports.
+
+**The same stale key loses the declared shape**, which is the open question
+under the shape-0 entry below: `aspect_` is
+`SourceTiming::matching(arriving).aspect()`, so an unmatched key takes the 4:3
+default -- measured here as `aspect` going 17778 to 13333 and `shaped` to false
+with nothing else touched. So this and the aspect revert are one defect, and the
+auto-save can store the result.
+
+**Next**: the settle in time rather than passes, and a key that matches no
+published raster re-derived rather than held where the chip's current readings
+would match one. Both reach the aspect and the framing recall, not only the
+filter.
 
 ### The display window's first unit is not picture
 
@@ -5200,6 +5244,14 @@ can write 0 where the source matched no published raster, every untuned source
 ends up filling and the shape default never reaches the picture. Deleting
 `/framing.txt` restores the defaults and throws away the tuning with it, so that
 is the user's call rather than a repair.
+
+**A SOURCE MATCHING NO PUBLISHED RASTER IS REACHABLE WITHOUT A USER, AND IT IS
+MEASURED.** A sampling-clock install leaves a key taken from the count and duty
+read across it -- `521@59.94/1100??` on the Wii at 480p, where 480p is 525 lines
+-- and `aspect_` then takes the 4:3 default: `aspect` 17778 to 13333 and
+`shaped` true to false, with nothing else touched and the chip reading values
+that would match. So the shape is lost by the same mechanism that strands the
+line filter, and the line-filter entry above carries the readings.
 
 ### The Wii on ypbpr takes about seventy seconds to acquire 576i
 
