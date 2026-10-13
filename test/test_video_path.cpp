@@ -238,11 +238,13 @@ static void checkBenchGeometry()
     // and SP_RT_HS_SP is the divider less the sync width the source measured
     // through it, plus the origin the retiming module adds. The bench source is
     // high-active, so InvertedPulseWidthSamples comes off the pulse first: 177
-    // samples read, 172 after it, so 2200 - 172 + 63. One quantity, never read
-    // back.
+    // samples read, 172 after it, so 2200 - 172 + 63 + 14. The 14 is the
+    // source's video lag in the SOURCE's own pixels, which this raster being
+    // published is what makes computable: 2200 samples across its 512 pixels.
+    // One quantity, never read back.
     CHECK(Adc::PLLAD_MD::read() == 2200);
     CHECK(InputFormatter::IF_HSYNC_RST::read() == 1100);
-    CHECK(SyncProcessor::SP_RT_HS_SP::read() == 2091);
+    CHECK(SyncProcessor::SP_RT_HS_SP::read() == 2105);
 
     // PLLAD_LAT is the rising edge that loads MD into the PLL, so a divider
     // written after it leaves the ADC clocking at the old one. VCORST released,
@@ -497,8 +499,8 @@ TEST_CASE("a solve puts all three registers of the one quantity on the chip")
                                        ? Adc::dividerInForce() / 2
                                        : Adc::dividerInForce()));
     CHECK(retimeStopInForce()
-          == SyncProcessor::retimeStopFor(Adc::dividerInForce(), sampling.hsync(),
-                                          Adc::oversampleInForce()));
+          == retimeStopWanted(sampling, Adc::dividerInForce(),
+                              Adc::oversampleInForce()));
 }
 
 TEST_CASE("a measurement that solved nothing keeps the clock, and never writes a zero")

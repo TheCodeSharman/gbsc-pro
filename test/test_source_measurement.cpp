@@ -577,12 +577,12 @@ TEST_CASE("the retime window's stop follows the source's sync width")
     //   640x480@60         1444       169                       1338.5
     //
     // docs/investigations/the-retime-stop-is-the-counters-origin.md
-    CHECK(SyncProcessor::retimeStopFor(1440, HsyncPulse(141.0f / 1440.0f), 2) == 1362);
-    CHECK(SyncProcessor::retimeStopFor(1444, HsyncPulse(169.0f / 1444.0f), 2) == 1338);
+    CHECK(SyncProcessor::retimeStopFor(1440, HsyncPulse(141.0f / 1440.0f), 2, 0.0f) == 1362);
+    CHECK(SyncProcessor::retimeStopFor(1444, HsyncPulse(169.0f / 1444.0f), 2, 0.0f) == 1338);
 
     SUBCASE("and it follows the divider at one sync width") {
-        CHECK(SyncProcessor::retimeStopFor(1200, HsyncPulse(118.0f / 1200.0f), 2) == 1145);
-        CHECK(SyncProcessor::retimeStopFor(960, HsyncPulse(94.0f / 960.0f), 2) == 929);
+        CHECK(SyncProcessor::retimeStopFor(1200, HsyncPulse(118.0f / 1200.0f), 2, 0.0f) == 1145);
+        CHECK(SyncProcessor::retimeStopFor(960, HsyncPulse(94.0f / 960.0f), 2, 0.0f) == 929);
     }
 
     SUBCASE("oversampling ratio one puts the origin 16 samples earlier") {
@@ -594,14 +594,14 @@ TEST_CASE("the retime window's stop follows the source's sync width")
         // modes and 79..92 MHz mean 16.83 against 0.90 for four ratio-two ones.
         // docs/investigations/the-capture-origin-varies-by-mode-at-one-line-rate.md
         const HsyncPulse pulse(141.0f / 1440.0f);
-        CHECK(SyncProcessor::retimeStopFor(1440, pulse, 1)
-              == SyncProcessor::retimeStopFor(1440, pulse, 2) + 16);
+        CHECK(SyncProcessor::retimeStopFor(1440, pulse, 1, 0.0f)
+              == SyncProcessor::retimeStopFor(1440, pulse, 2, 0.0f) + 16);
 
         // Four times is not a second step of the same kind: 320x480@60 held at
         // PLLAD_MD 800 runs ratio four and sits 0.4 samples off the ratio-two
         // family's own line, not 8.
-        CHECK(SyncProcessor::retimeStopFor(1440, pulse, 4)
-              == SyncProcessor::retimeStopFor(1440, pulse, 2));
+        CHECK(SyncProcessor::retimeStopFor(1440, pulse, 4, 0.0f)
+              == SyncProcessor::retimeStopFor(1440, pulse, 2, 0.0f));
     }
 
     SUBCASE("a pulse narrower than the origin wraps into the line") {
@@ -615,9 +615,49 @@ TEST_CASE("the retime window's stop follows the source's sync width")
         // measured on the bench at 720p, PLLAD_MD 1446 and HLOW_LEN 37 want
         // 1472, and writing 26 took the source from a line wrapped across the
         // frame to a whole picture.
-        CHECK(SyncProcessor::retimeStopFor(1440, HsyncPulse(0.041f), 2) == 4);
-        CHECK(SyncProcessor::retimeStopFor(1446, HsyncPulse(37.0f / 1446.0f), 2)
+        CHECK(SyncProcessor::retimeStopFor(1440, HsyncPulse(0.041f), 2, 0.0f) == 4);
+        CHECK(SyncProcessor::retimeStopFor(1446, HsyncPulse(37.0f / 1446.0f), 2, 0.0f)
               == 26);
+    }
+
+    SUBCASE("the origin carries the source's own video lag in ITS pixels") {
+        // The source's video lags the sync it sends, by a count of the SOURCE's
+        // pixels rather than of ADC samples -- so what it costs the capture
+        // grows with sampling density, and the divider cannot tell two sources
+        // apart. The control is a pair of bench modes at ONE divider, measured
+        // by panning each until the card's green border reached all four edges
+        // with no black beside it:
+        //
+        //   mode        line px  PLLAD_MD  samples/px  default oh  golden oh
+        //   800x600@60     1056      1436       1.360         294        296
+        //   320x480@60      400      1444       3.610         246        255
+        //
+        // 1436 against 1444 is the same divider and the same field rate, and
+        // the two want 2 samples and 9. A term in the divider cannot do that; a
+        // term in the source's pixel clock is the only one of the two ends that
+        // differs. The slope is 4.4 samples per sample-per-pixel over ten
+        // anchor-free states spanning 0.68 to 4.30, and RetimeOriginSamples was
+        // measured on states averaging 1.12, so it already carries the lag
+        // there and what is added is the difference.
+        // docs/investigations/the-capture-origin-varies-by-mode-at-one-line-rate.md
+        const HsyncPulse wide(176.0f / 1436.0f);
+        const HsyncPulse narrow(148.0f / 1444.0f);
+        const HsyncPulse doubled(151.0f / 2200.0f);
+
+        CHECK(SyncProcessor::retimeStopFor(1436, wide, 2, 1436.0f / 1056.0f)
+              == SyncProcessor::retimeStopFor(1436, wide, 2, 0.0f) + 1);
+        CHECK(SyncProcessor::retimeStopFor(1444, narrow, 2, 1444.0f / 400.0f)
+              == SyncProcessor::retimeStopFor(1444, narrow, 2, 0.0f) + 11);
+        CHECK(SyncProcessor::retimeStopFor(2200, doubled, 2, 2200.0f / 512.0f)
+              == SyncProcessor::retimeStopFor(2200, doubled, 2, 0.0f) + 14);
+    }
+
+    SUBCASE("a source matching no raster keeps the measured origin") {
+        // The lag is in the source's pixels and nothing on the chip can see a
+        // pixel clock, so an unpublished source has no density to evaluate and
+        // the origin stays the count the four states above were walked to.
+        CHECK(SyncProcessor::retimeStopFor(1440, HsyncPulse(141.0f / 1440.0f), 2,
+                                           0.0f) == 1362);
     }
 
     SUBCASE("a reading that is not a pulse has no answer") {
@@ -625,7 +665,7 @@ TEST_CASE("the retime window's stop follows the source's sync width")
         // from the source's own sync places every window the solve makes
         // against an origin nothing observed, so nothing is written and the
         // stop in force stays where the last measurement put it.
-        CHECK(SyncProcessor::retimeStopFor(1200, HsyncPulse(0.0f), 2) == 0);
+        CHECK(SyncProcessor::retimeStopFor(1200, HsyncPulse(0.0f), 2, 0.0f) == 0);
     }
 }
 

@@ -16,17 +16,23 @@ const uint16_t SyncProcessor::DefaultCoastStop;
 const uint16_t SyncProcessor::RetimeOriginSamples;
 const uint16_t SyncProcessor::UndecimatedOriginSamples;
 const uint16_t SyncProcessor::InvertedPulseWidthSamples;
+const float SyncProcessor::SourceVideoDelayPixels = 4.4f;
+const float SyncProcessor::CalibratedPixelSamples = 1.12f;
 const uint8_t SyncProcessor::ProgressiveCsyncPulseIgnore;
 const bool SyncProcessor::ScanNotYetKnown;
 
 uint16_t SyncProcessor::retimeStopFor(uint16_t divider, const HsyncPulse &pulse,
-                                     uint8_t oversample)
+                                     uint8_t oversample, float pixelSamples)
 {
     if (!pulse.isPulse() || divider == 0)
         return 0;
 
-    const uint16_t origin =
-        RetimeOriginSamples + (oversample <= 1 ? UndecimatedOriginSamples : 0);
+    const long lag = pixelSamples > 0.0f
+        ? lrintf(SourceVideoDelayPixels * (pixelSamples - CalibratedPixelSamples))
+        : 0L;
+    const uint16_t origin = (uint16_t)(
+        (long)RetimeOriginSamples + lag
+        + (oversample <= 1 ? (long)UndecimatedOriginSamples : 0L));
     const uint32_t sync = (uint32_t)lrintf((float)divider * pulse.syncDuty());
 
     // A pulse narrower than the origin carries the subtraction past the end of

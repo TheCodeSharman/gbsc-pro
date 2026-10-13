@@ -53,6 +53,14 @@ public:
     // no standard mode has no pixel count at all.
     uint16_t activePixels() const;
 
+    // How wide one of the SOURCE's own pixels is, in the ADC samples this
+    // divider cuts the line into. The chip sees sync edges and never a pixel
+    // clock, so this is knowable only where a raster states the line's pixel
+    // count -- and it is zero where none matched, which is what says the
+    // quantity is unavailable rather than small.
+    // ../../../docs/investigations/the-capture-origin-varies-by-mode-at-one-line-rate.md
+    float pixelSamples(uint16_t divider) const;
+
     // How far the horizontal sync pulse runs, as a fraction of the whole line.
     // The one part of a published raster a source matching it cannot have spent
     // differently: the match is ON the sync width. Meaningless unless

@@ -1186,8 +1186,8 @@ void VideoPath::writeRetimeOrigin()
         return;
 
     const uint8_t oversample = Adc::oversampleInForce();
-    const uint16_t measured =
-        SyncProcessor::retimeStopFor(divider, reading_, oversample);
+    const uint16_t measured = SyncProcessor::retimeStopFor(
+        divider, reading_, oversample, timing_.pixelSamples(divider));
     SyncProcessor::writeRetimeStop(
         measured != 0 ? measured
                       : SyncProcessor::retimeOriginFor(divider, oversample));

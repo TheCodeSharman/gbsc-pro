@@ -304,3 +304,25 @@ TEST_CASE("a source matching no raster is shown as 4:3 rather than filled")
     REQUIRE_FALSE(unknown.published());
     CHECK(unknown.aspect() == Aspect(Aspect::FourThree));
 }
+
+TEST_CASE("a published raster says how wide one of the source's pixels is")
+{
+    // The chip sees sync edges and never a pixel clock, so a source pixel has
+    // a width in ADC samples only where a raster states the line's own pixel
+    // count. The bench 320x256@50 samples 2200 of them across 512 pixels.
+    SourceTiming akf = SourceTiming::matching(
+        SourceKey(311, 50.08f, 36.0f / 512.0f, SourceKey::Negative, SourceKey::Negative));
+
+    REQUIRE(akf.published());
+    CHECK_NEAR(akf.pixelSamples(2200), 2200.0f / 512.0f, 0.001f);
+
+    SUBCASE("and a source matching none states no width at all") {
+        SourceTiming unpublished(59.94f);
+
+        CHECK(unpublished.pixelSamples(1446) == 0.0f);
+    }
+
+    SUBCASE("nor does a divider nothing is sampling at") {
+        CHECK(akf.pixelSamples(0) == 0.0f);
+    }
+}

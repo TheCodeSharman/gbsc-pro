@@ -224,6 +224,13 @@ uint16_t SourceTiming::activePixels() const
     return published() ? raster_->activePixels : 0;
 }
 
+float SourceTiming::pixelSamples(uint16_t divider) const
+{
+    if (!published() || divider == 0 || raster_->totalPixels == 0)
+        return 0.0f;
+    return (float)divider / (float)raster_->totalPixels;
+}
+
 float SourceTiming::hsyncExtent() const
 {
     if (!published())

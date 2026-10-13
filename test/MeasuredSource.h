@@ -15,7 +15,25 @@
 // that does not is asking for the duty through the divider already in force.
 
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SourceMeasurement.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SourceTiming.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SyncProcessor.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/VideoSourceLine.h"
+
+// The retime stop the engine would write for what a measurement holds. The
+// counter's origin carries the source's video lag in the SOURCE's own pixels,
+// which only a published raster states, so a case asserting the register
+// follows the rule resolves the raster the way the engine does.
+inline uint16_t retimeStopWanted(const Tv5725::SourceMeasurement &sampling,
+                                 uint16_t divider, uint8_t oversample)
+{
+    const Tv5725::SourceKey key(sampling.sourceLines(), sampling.fieldRateHz(),
+                                sampling.hsync().syncDuty(),
+                                sampling.hsyncPolarity(),
+                                sampling.vsyncPolarity());
+    return Tv5725::SyncProcessor::retimeStopFor(
+        divider, sampling.hsync(), oversample,
+        Tv5725::SourceTiming::matching(key).pixelSamples(divider));
+}
 
 // The clock a pass is taken at. Nothing here is about the engine's cadence, so
 // it moves a whole latch settle a pass and a helper loop spends one on the pass

@@ -247,9 +247,9 @@ TEST_CASE("the retime stop follows a duty measured after the clock is installed"
     REQUIRE(resolveUntilSolved(solved.acquisition));
 
     CHECK(Wire.field(5, 0x4B, 0, 12)
-          == SyncProcessor::retimeStopFor((uint16_t)Wire.field(5, 0x12, 0, 12),
-                                          solved.sampling.hsync(),
-                                          Adc::oversampleInForce()));
+          == retimeStopWanted(solved.sampling,
+                              (uint16_t)Wire.field(5, 0x12, 0, 12),
+                              Adc::oversampleInForce()));
 }
 
 TEST_CASE("a preset load computes the divider it uses")
@@ -275,8 +275,8 @@ TEST_CASE("a preset load computes the divider it uses")
     CHECK(Wire.field(5, 0x12, 0, 12) == wanted);
     CHECK(Wire.field(1, 0x0E, 0, 11) == InputFormatter::lineCounterFor(wanted, true));
     CHECK(Wire.field(5, 0x4B, 0, 12)
-          == SyncProcessor::retimeStopFor(wanted, solved.sampling.hsync(),
-                                          Adc::oversampleInForce()));
+          == retimeStopWanted(solved.sampling, wanted,
+                              Adc::oversampleInForce()));
 
     SUBCASE("and the solve that follows uses it") {
         // The seeded IF_HSYNC_RST was 1276 for a 2553 divider. If the engine
@@ -837,8 +837,8 @@ TEST_CASE("a held divider is what the whole solve runs off")
     CHECK(Wire.field(5, 0x12, 0, 12) == held);
     CHECK(Wire.field(1, 0x0E, 0, 11) == InputFormatter::lineCounterFor(held, true));
     CHECK(Wire.field(5, 0x4B, 0, 12)
-          == SyncProcessor::retimeStopFor(held, solved.sampling.hsync(),
-                                          Adc::oversampleInForce()));
+          == retimeStopWanted(solved.sampling, held,
+                              Adc::oversampleInForce()));
 
     SUBCASE("and the capture window is solved inside the line it describes") {
         CHECK(Wire.field(1, 0x18, 0, 11)

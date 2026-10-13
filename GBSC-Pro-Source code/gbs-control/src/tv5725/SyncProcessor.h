@@ -205,11 +205,35 @@ public:
     // line counter taking its origin this far BEFORE the source's sync edge,
     // and every window the engine places is counted from that origin.
     //
-    // Measured, not derived, and it is the one number here that wants a
-    // derivation: 61.0, 62.6, 63.6 and 63.5 across four states, all of them at
-    // oversampling ratio two.
+    // Measured, not derived: 61.0, 62.6, 63.6 and 63.5 across four states, all
+    // of them at oversampling ratio two, and all sampling about
+    // CalibratedPixelSamples ADC samples for every pixel the source sent -- so
+    // this count carries SourceVideoDelayPixels at that density and the term
+    // below is the difference.
     // ../../../docs/investigations/the-retime-stop-is-the-counters-origin.md
     static const uint16_t RetimeOriginSamples = 63;
+
+    // HOW FAR THE SOURCE'S VIDEO LAGS THE SYNC IT SENDS, in the SOURCE's own
+    // pixels. The scaler times video from the sync edge, so a delay the source
+    // applies to both cancels and only a differential one survives -- and this
+    // one costs the capture a count of ADC samples that grows with sampling
+    // density, which is why one output's framing is right and another's is not.
+    //
+    // **NEITHER A COUNT OF SAMPLES NOR A TIME.** Two bench modes at ONE divider
+    // settle it: 800x600@60 samples 1436 across 1056 source pixels and
+    // 320x480@60 samples 1444 across 400, and the two want 2 samples of origin
+    // and 9. The divider cannot see the pixel clock that separates them.
+    //
+    // The slope is fitted over ten anchor-free states spanning 0.68 to 4.30
+    // samples per source pixel, and four golden framings confirm it on the
+    // picture. Available only where a raster is published, because nothing on
+    // this chip can measure a pixel clock.
+    // ../../../docs/investigations/the-capture-origin-varies-by-mode-at-one-line-rate.md
+    static const float SourceVideoDelayPixels;
+
+    // The sampling density RetimeOriginSamples was walked to, as the mean of
+    // the four states above.
+    static const float CalibratedPixelSamples;
 
     // What the origin gains at oversampling ratio ONE, where the decimators are
     // out of circuit and the captured video lands later in the line counter.
@@ -232,8 +256,12 @@ public:
     // this register is the capture counter's ORIGIN, so a value invented from
     // the divider alone places every window the solve makes against an origin
     // nothing observed.
+    // `pixelSamples` is how many ADC samples one of the source's own pixels
+    // takes, which SourceTiming states where a raster matched and answers 0
+    // where none did. Zero leaves the origin the count above, which is what it
+    // was measured as.
     static uint16_t retimeStopFor(uint16_t divider, const HsyncPulse &pulse,
-                                  uint8_t oversample);
+                                  uint8_t oversample, float pixelSamples);
 
     // The counter's origin with no sync-width compensation, for a block that has
     // measured no duty yet. THE COUNTER HAS TO RUN BEFORE A DUTY CAN BE

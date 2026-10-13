@@ -276,7 +276,10 @@ TEST_CASE("an unmeasurable line rate is retried, not settled for")
         // SP_RT_HS_SP: the divider less the source's sync width, plus the
         // origin the retiming module adds. 181/2553 through 2200 is 156, and
         // the source being high-active takes InvertedPulseWidthSamples off it.
-        CHECK(Wire.field(5, 0x4B, 0, 12) == 2112);
+        // The origin is 14 above RetimeOriginSamples because this raster is
+        // published: 2200 samples across its 512 pixels is 4.30 a pixel, and
+        // the source's video lags its sync by SourceVideoDelayPixels of them.
+        CHECK(Wire.field(5, 0x4B, 0, 12) == 2126);
     }
 }
 
