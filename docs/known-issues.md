@@ -506,17 +506,17 @@ fast, and five passes drain in 30 ms -- so the duty is read through a PLL that
 has not relocked. A settle stated in milliseconds is what the 82 ms figure
 supports.
 
-**The same stale key loses the declared shape**, which is the open question
-under the shape-0 entry below: `aspect_` is
-`SourceTiming::matching(arriving).aspect()`, so an unmatched key takes the 4:3
-default -- measured here as `aspect` going 17778 to 13333 and `shaped` to false
-with nothing else touched. So this and the aspect revert are one defect, and the
-auto-save can store the result.
+**Whether the stale key also reaches the aspect is NOT established**, and the
+obvious reading of it is a trap. `aspect` was seen going 17778 to 13333 across
+the same press, but **`SourceTiming`'s 720x480p row declares `F43`**, so a key
+that matches gives 13333 too -- the 16:9 in force was the user's own `/uc?G`,
+and losing it on a re-derivation is a different defect. The reading does not
+separate the two. See the aspect entry below for the trigger that does isolate
+it.
 
 **Next**: the settle in time rather than passes, and a key that matches no
 published raster re-derived rather than held where the chip's current readings
-would match one. Both reach the aspect and the framing recall, not only the
-filter.
+would match one. The second reaches the framing recall as well as the filter.
 
 ### The display window's first unit is not picture
 
@@ -524,20 +524,42 @@ One bright column at the window's opening on every line, emitted column 20 of a
 window opening at 19, reading 95/95/87 against the 4/4/0 of the blanking either
 side. Measured on the Wii at 480p into 1920x1080.
 
-**It does not ride the window's edge.** Walking `VDS_DIS_HB_SP` 159 -> 163 -> 167
-blanks it away and nothing bright appears at the new opening, so it is one unit
-of bad data at a fixed place in the output line rather than an artefact of
-opening the window.
+**It does not ride the window's edge.** Confirmed twice, on two framings:
+walking `VDS_DIS_HB_SP` 159 -> 163 -> 167, and 335 -> 338 -> 341 -> 344 -> 347
+at magnification 1.89, it is blanked away and nothing bright appears at the new
+opening -- the profile past each new opening is a flat 12.1..13.6, the source's
+own dark content. So it is one unit of bad data at a fixed place in the output
+line.
 
-The window opens on the first written pixel by construction --
-`VDS_HB_SP + 55 + 25 x magnification` is 158.3 against a `VDS_DIS_HB_SP` of 159
--- so a write origin one unit later than that arithmetic puts it would show one
-unit of whatever the memory held. That is the candidate and it is untested; the
-discriminator is whether the column tracks the magnification, which moves the
-per-magnification term and not the constant.
+**THE MAGNIFICATION CANNOT DISCRIMINATE, AND THAT IS THE FINDING.** The window
+is solved ONTO the write origin, so `VDS_HB_SP + 55 + 25 x magnification` and
+`VDS_DIS_HB_SP` are equal by construction at every framing -- across six
+engine-solved states at magnification 1.030 to 1.893 the origin reads 333.75,
+334.06, 333.86, 333.10, 331.90, 333.32 against windows of 334, 335, 335, 334,
+333, 335, because `VDS_HB_SP` falls 253 to 231 exactly as `25 x m` rises 25.8 to
+47.3. "Does the column track the magnification" is therefore the same question
+as "does it track the window", and only the hand-poke above separates them.
+
+What the span does settle is that **the unit stays within one raster unit of the
+origin while a per-magnification error of one unit would move it 30 emitted
+columns**, so the arithmetic is not mis-sized. The unit sits ON the write
+origin.
+
+**Its level varies with the framing and its neighbours do not**: 179.6, 41.3,
+32.2, 101.0, 36.6, 26.0 across those six states, against neighbours holding
+12.1..13.6 throughout, and near-neutral in RGB. So it is not an interpolation of
+the content either side, and not one fixed stale value.
+
+So the near edge is floored onto the write origin and the first shown unit is
+only partly written, showing memory in the part the write did not fill --
+which is what `Axis::captureMargin` exists to pay for at that end.
+**The margin is not being clipped**: measured `oh` 172 against `fh` 89, 83 units
+of headroom, so `CaptureWindow::blankingFor()`'s `if (near < first)` floor is
+not reached and a margin of one unit is in force and does not cover it.
 
 Opening the window one unit later is NOT the fix: a window inset to hide stale
-memory hides a write that is in the wrong place.
+memory hides a write that is in the wrong place. The fix belongs in the write
+calculation or the capture's margin at that end.
 
 ### The transmitted window's opening follows the field rate, and TransmittedWindowDelayPx cannot hold it
 
@@ -5246,12 +5268,20 @@ ends up filling and the shape default never reaches the picture. Deleting
 is the user's call rather than a repair.
 
 **A SOURCE MATCHING NO PUBLISHED RASTER IS REACHABLE WITHOUT A USER, AND IT IS
-MEASURED.** A sampling-clock install leaves a key taken from the count and duty
-read across it -- `521@59.94/1100??` on the Wii at 480p, where 480p is 525 lines
--- and `aspect_` then takes the 4:3 default: `aspect` 17778 to 13333 and
-`shaped` true to false, with nothing else touched and the chip reading values
-that would match. So the shape is lost by the same mechanism that strands the
-line filter, and the line-filter entry above carries the readings.
+MEASURED.** A sampling-clock install leaves a key taken from the count and the
+duty read across it -- `521@59.94/1100??` on the Wii at 480p, where 480p is 525
+lines -- so the auto-save has an unmatched key to store without anyone touching
+the shape. The line-filter entry above carries the console readings.
+
+**What that does NOT establish is the shape going with it**, because
+`SourceTiming`'s 720x480p row declares `F43`: a matched key and an unmatched one
+both give 13333 on that source, so `aspect` 17778 to 13333 is equally the user's
+own `/uc?G` being discarded. **A SECOND TRIGGER DOES SEPARATE THEM AND NEEDS NO
+RESTART**: `/uc?G` to 17778, then `/sc?B`, and the aspect is 13333 again at once
+-- `geometry.reset()` re-derives it from the key and the chosen shape is gone.
+Measured on the Wii at 480p, one command pair. So the user's shape does not
+survive a framing reset, which is separable from whatever the key is doing, and
+a source whose declared shape is not 4:3 is what would separate the two.
 
 ### The Wii on ypbpr takes about seventy seconds to acquire 576i
 
