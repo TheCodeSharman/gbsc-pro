@@ -497,14 +497,36 @@ Measured afterwards, the chip reads `STATUS_SYNC_PROC_VTOTAL` 524 and a duty of
 held `cv` 522 and `fh` 160. A count three lines out did not arm a re-solve, so
 the wrong key is held indefinitely.
 
-**The duty's settle is counted in PASSES and the pass rate is not a constant.**
-`SourceMeasurement::LatchSettlePasses` is 5, fitted as "four passes at the
-detection cadence" against a measured 82 ms for
-`STATUS_SYNC_PROC_HTOTAL` to echo a newly latched divider. This install comes
-from `setLineFilter()` rather than from the detection ladder, `loop()` runs
-fast, and five passes drain in 30 ms -- so the duty is read through a PLL that
-has not relocked. A settle stated in milliseconds is what the 82 ms figure
-supports.
+**THE DUTY HALF IS ADDRESSED: the settle is a duration.**
+`SourceMeasurement::LatchSettleMs` is 100 ms, timed from the first reading
+after the latch, and the console's `settle: spent after N ms` says how long
+each wait was. Four off presses from a restarted filter-IN state, one source
+and one output:
+
+| settle spent | duty at the install | key |
+|---|---|---|
+| 128 ms | 106 / 1446 = 7.33% | `524@59.94/733??`, framing recalled |
+| 128 ms | 106 / 1446 = 7.33% | `521@59.94/733??` |
+| 109 ms | 106 / 1446 = 7.33% | `521@59.94/733??` |
+| 115 ms | 159 / 1446 = 11.0% | `521@59.94/1100??` |
+
+106 is what `STATUS_SYNC_PROC_HLOW_LEN` holds settled, steady over six reads,
+and 7.33% against the mode's own 7.23% keys a bucket that matches. The same
+press read 68 twice before, keying `470??`, and `SP_RT_HS_SP` was left at
+`1446 - 68 + 63` = 1441 against the 1403 the real duty gives -- so the bad
+reading places the capture counter's origin 38 samples out and stays there.
+
+**So the wait is right in kind and not always long enough.** One run in four
+still reads the duty before the sync processor has re-counted it, and
+`STATUS_SYNC_PROC_HTOTAL` echoes the divider throughout every one of them, so
+`Adc::dividerLatched()` cannot tell the bad reading from the good.
+
+**WHAT IS LEFT IS THE COUNT, AND IT IS THE DOMINANT HALF.** 521 against the
+source's 524 in all four runs, held for about a second after the install while
+the steadiness run agrees with it happily -- the same trap `HPERIOD_IF` has,
+a reading that is wrong and stays wrong. 480p is 525 lines and
+`SourceTiming::lookUpIn()` matches the count exactly, so the key lands on no
+published raster however good the duty is.
 
 **Whether the stale key also reaches the aspect is NOT established**, and the
 obvious reading of it is a trap. `aspect` was seen going 17778 to 13333 across
@@ -514,9 +536,10 @@ and losing it on a re-derivation is a different defect. The reading does not
 separate the two. See the aspect entry below for the trigger that does isolate
 it.
 
-**Next**: the settle in time rather than passes, and a key that matches no
-published raster re-derived rather than held where the chip's current readings
-would match one. The second reaches the framing recall as well as the filter.
+**Next**: a key that matches no published raster re-derived rather than held,
+where the chip's current readings would match one. It reaches the framing
+recall as well as the filter's bound, and it covers the duty reading above too
+-- a duty that keys nothing is as suspect as a count that does.
 
 ### The display window's first unit is not picture
 
