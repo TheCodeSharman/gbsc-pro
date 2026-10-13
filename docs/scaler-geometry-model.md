@@ -11,7 +11,8 @@ and ported to `src/tv5725/`; this page is the evidence behind the constants.
 produced    = capture x 1024 / scale
 write start = VDS_?B_SP + START_CONST + START_PER_MAG x magnification
 
-VDS_DIS_?B_SP = corner
+VDS_DIS_?B_SP = ceil(corner)      horizontally
+              = floor(corner)     vertically
 VDS_DIS_?B_ST = corner + floor(produced) - margin
 VDS_?B_SP     = corner - (START_CONST + START_PER_MAG x magnification)
 VDS_?B_ST     = raster_total - 2
@@ -27,6 +28,20 @@ VDS_?B_ST     = raster_total - 2
 | `VDS_?B_SP` floor | **8** — below it the display corrupts | unmeasured, assumed 0 |
 
 `produced` is a simple multiply: no loss term at either end, on either axis.
+
+The corner is fractional and the register is a whole unit, and **which way it is
+rounded decides whether the first shown unit is picture**. The write fills the
+unit ABOVE the fraction and does not enter the one below it, so horizontally the
+aperture CEILS onto it: floored, the first shown unit holds what the last frame
+left in the part the write did not fill, and its level follows the fractional
+part alone -- 0.95 of a unit reads 191 against the 13 of the content either
+side, 0.85 reads 73, 0.09 reads 23. Vertically the floor stands, because reading
+above the first written line comes back as nothing rather than as memory and a
+line held back there is a black bar across the top of the screen.
+
+The far end floors for the same reason read the other way: `VDS_DIS_?B_ST` is
+where blanking STARTS, so flooring closes the aperture on the write. Both ends
+show only units the write filled.
 
 The corner is not a constant. It is
 `VDS_?B_SP + START_CONST + START_PER_MAG x magnification`, so the memory window

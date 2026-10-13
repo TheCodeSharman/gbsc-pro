@@ -535,49 +535,6 @@ coast in force equals the coast the count implies. One residue of the same
 measurement: the coast is left at 834, derived from the rate the bad count
 gave, where 830 is right, because nothing re-places it once measuring stops.
 
-### The display window's first unit is not picture
-
-One bright column at the window's opening on every line, emitted column 20 of a
-window opening at 19, reading 95/95/87 against the 4/4/0 of the blanking either
-side. Measured on the Wii at 480p into 1920x1080.
-
-**It does not ride the window's edge.** Confirmed twice, on two framings:
-walking `VDS_DIS_HB_SP` 159 -> 163 -> 167, and 335 -> 338 -> 341 -> 344 -> 347
-at magnification 1.89, it is blanked away and nothing bright appears at the new
-opening -- the profile past each new opening is a flat 12.1..13.6, the source's
-own dark content. So it is one unit of bad data at a fixed place in the output
-line.
-
-**THE MAGNIFICATION CANNOT DISCRIMINATE, AND THAT IS THE FINDING.** The window
-is solved ONTO the write origin, so `VDS_HB_SP + 55 + 25 x magnification` and
-`VDS_DIS_HB_SP` are equal by construction at every framing -- across six
-engine-solved states at magnification 1.030 to 1.893 the origin reads 333.75,
-334.06, 333.86, 333.10, 331.90, 333.32 against windows of 334, 335, 335, 334,
-333, 335, because `VDS_HB_SP` falls 253 to 231 exactly as `25 x m` rises 25.8 to
-47.3. "Does the column track the magnification" is therefore the same question
-as "does it track the window", and only the hand-poke above separates them.
-
-What the span does settle is that **the unit stays within one raster unit of the
-origin while a per-magnification error of one unit would move it 30 emitted
-columns**, so the arithmetic is not mis-sized. The unit sits ON the write
-origin.
-
-**Its level varies with the framing and its neighbours do not**: 179.6, 41.3,
-32.2, 101.0, 36.6, 26.0 across those six states, against neighbours holding
-12.1..13.6 throughout, and near-neutral in RGB. So it is not an interpolation of
-the content either side, and not one fixed stale value.
-
-So the near edge is floored onto the write origin and the first shown unit is
-only partly written, showing memory in the part the write did not fill --
-which is what `Axis::captureMargin` exists to pay for at that end.
-**The margin is not being clipped**: measured `oh` 172 against `fh` 89, 83 units
-of headroom, so `CaptureWindow::blankingFor()`'s `if (near < first)` floor is
-not reached and a margin of one unit is in force and does not cover it.
-
-Opening the window one unit later is NOT the fix: a window inset to hide stale
-memory hides a write that is in the wrong place. The fix belongs in the write
-calculation or the capture's margin at that end.
-
 ### The transmitted window's opening follows the field rate, and TransmittedWindowDelayPx cannot hold it
 
 `OutputMode::TransmittedWindowDelayPx` is 20 and places `VDS_DIS_HB_SP` at
