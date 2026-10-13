@@ -385,7 +385,7 @@ TEST_CASE("the clamp sits in the back porch of a separate-sync line")
     steadyLine(431);
 
     CHECK(SyncProcessor::acquireClampWindow(
-        false, false, SyncProcessor::clampLineFor(false, BenchLineRateHz, 2250), 0));
+        false, false, BenchLineRateHz, 2250, 0));
     CHECK(SyncProcessor::SP_CS_CLP_ST::read() == 23);
     CHECK(SyncProcessor::SP_CS_CLP_SP::read() == 27);
 }
@@ -397,7 +397,7 @@ TEST_CASE("a composite source is measured in its own units")
     steadyLine(431);
 
     CHECK(SyncProcessor::acquireClampWindow(
-        true, false, SyncProcessor::clampLineFor(true, BenchLineRateHz, 2250), 0));
+        true, false, BenchLineRateHz, 2250, 0));
     CHECK(SyncProcessor::SP_CS_CLP_ST::read() == 14);
     CHECK(SyncProcessor::SP_CS_CLP_SP::read() == 18);
 }
@@ -407,9 +407,29 @@ TEST_CASE("a component source clamps later, and holds for the same span")
     steadyLine(431);
 
     CHECK(SyncProcessor::acquireClampWindow(
-        false, true, SyncProcessor::clampLineFor(false, BenchLineRateHz, 2250), 0));
+        false, true, BenchLineRateHz, 2250, 0));
     CHECK(SyncProcessor::SP_CS_CLP_ST::read() == 73);
     CHECK(SyncProcessor::SP_CS_CLP_SP::read() == 77);
+}
+
+TEST_CASE("both clamp writers mean the same line on sync on green")
+{
+    // SP_CS_CLP_ST counts the 27 MHz reference -- clampFromReferenceClock()
+    // chooses it -- so a caller handing over a line measured in ADC samples
+    // puts the window a long way down the line. Measured on the Wii at 480p
+    // into 1920x1080, divider 1212: a start of 108 against the 19 the
+    // acquisition layer writes, 41 source pixels inside the picture, which is a
+    // black bar on every line and the whole frame clamped 35% dark.
+    steadyLine(431);
+    const uint32_t lineRateHz = 31468;
+    const uint16_t divider = 1212;
+
+    SyncProcessor::placeClampFor(true, true, lineRateHz, divider);
+    const uint16_t installed = SyncProcessor::SP_CS_CLP_ST::read();
+
+    SyncProcessor::acquireClampWindow(true, true, lineRateHz, divider, 0);
+
+    CHECK(SyncProcessor::SP_CS_CLP_ST::read() == installed);
 }
 
 TEST_CASE("an offset moves the whole window later")
@@ -418,7 +438,7 @@ TEST_CASE("an offset moves the whole window later")
     GBS::STATUS_SYNC_PROC_HTOTAL::write(2250);
 
     CHECK(SyncProcessor::acquireClampWindow(
-        false, true, SyncProcessor::clampLineFor(false, BenchLineRateHz, 2250), 0x60));
+        false, true, BenchLineRateHz, 2250, 0x60));
     CHECK(SyncProcessor::SP_CS_CLP_ST::read() == 73 + 0x60);
     CHECK(SyncProcessor::SP_CS_CLP_SP::read() == 77 + 0x60);
 }
@@ -433,7 +453,7 @@ TEST_CASE("a window already within a unit of where it belongs is not rewritten")
     SyncProcessor::SP_CS_CLP_SP::write(28);
 
     CHECK(SyncProcessor::acquireClampWindow(
-        false, false, SyncProcessor::clampLineFor(false, BenchLineRateHz, 2250), 0));
+        false, false, BenchLineRateHz, 2250, 0));
     CHECK(SyncProcessor::SP_CS_CLP_ST::read() == 24);
     CHECK(SyncProcessor::SP_CS_CLP_SP::read() == 28);
 }
@@ -444,7 +464,7 @@ TEST_CASE("a line length that will not hold still leaves the clamp alone")
     GBS::STATUS_SYNC_PROC_HTOTAL::write(2250);
     Wire.drift(0x00, 0x18);
 
-    CHECK_FALSE(SyncProcessor::acquireClampWindow(false, false, 0, 0));
+    CHECK_FALSE(SyncProcessor::acquireClampWindow(false, false, 0, 0, 0));
     CHECK_FALSE(Wire.touched[0x05][0x41]);
     CHECK_FALSE(Wire.touched[0x05][0x43]);
 }
@@ -1181,7 +1201,7 @@ TEST_CASE("the clamp is released only once it has been placed")
     SUBCASE("a placed clamp is let go") {
         SyncProcessor::forgetPositions();
         REQUIRE(SyncProcessor::acquireClampWindow(
-            false, false, SyncProcessor::clampLineFor(false, BenchLineRateHz, 2250), 0));
+            false, false, BenchLineRateHz, 2250, 0));
         SyncProcessor::holdClamp();
 
         SyncProcessor::releaseClampIfPlaced();

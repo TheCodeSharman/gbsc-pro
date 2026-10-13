@@ -554,13 +554,8 @@ public:
     static void normaliseHsyncPolarity(bool found, bool positive);
 
     // The source's line, from the rate the engine solved rather than from
-    // HPERIOD_IF. Two scalings, because the blocks count differently: the coast
-    // window is a fraction of the whole line in the chip's 27 MHz counts, and
-    // the clamp's composite path was fitted to the quarter-count the register
-    // holds. A separate-sync line is counted in ADC samples, so it is the
-    // divider itself.
+    // HPERIOD_IF. A fraction of the whole line in the chip's 27 MHz counts.
     static uint32_t coastLineFor(uint32_t lineRateHz);
-    static uint32_t clampLineFor(bool csync, uint32_t lineRateHz, uint16_t divider);
 
     // Place the coast window on the line the source is sending. `autoCoast`
     // brackets the sync tip instead of spanning the line, which is what a
@@ -624,11 +619,19 @@ public:
     // line rate; the decision is the caller's because it is not this block's
     // to know.
     //
+    // THE RATE AND THE DIVIDER RATHER THAN A LINE: which of them the fractions
+    // are of is this block's to know, and a caller allowed to choose chose the
+    // other one. Measured on the Wii at 480p into 1920x1080, divider 1212: a
+    // start of 108 against 19, 41 source pixels inside the picture, a black bar
+    // on every line and the whole frame clamped 35% dark.
+    // ../../../../docs/investigations/the-clamp-had-two-owners-and-two-units.md
+    //
     // A window already within a unit of where it belongs is left alone: this
     // runs on a schedule, and the write would cost the bus a pass for nothing.
     // False means nothing was written.
     static bool acquireClampWindow(bool csync, bool component,
-                                   uint32_t lineLength, uint16_t offset);
+                                   uint32_t lineRateHz, uint16_t divider,
+                                   uint16_t offset);
 
     // Where the clamp window sits on a line of `lineLength` ADC samples. The
     // window is a fraction of the line, so it moves with the divider: left
@@ -637,10 +640,11 @@ public:
     static uint16_t clampStartFor(uint32_t lineLength, bool csync, bool component);
     static uint16_t clampStopFor(uint32_t lineLength, bool csync, bool component);
 
-    // Place it from a line the caller already knows, with no measurement. The
-    // engine applies the divider and so knows the line exactly; the sync
-    // processor counts in the same samples.
-    static void placeClampFor(uint32_t lineLength, bool csync, bool component);
+    // Place it with no measurement, from the rate the engine solved and the
+    // divider it applied. The same window acquireClampWindow() settles on, so a
+    // schedule that follows an install finds it already where it belongs.
+    static void placeClampFor(bool csync, bool component,
+                              uint32_t lineRateHz, uint16_t divider);
 
     // Whether the clamp is driven from the window above or left to the block's
     // own detection. A component source clamps on its own sync tip, so it is

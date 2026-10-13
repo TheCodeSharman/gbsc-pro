@@ -1198,10 +1198,8 @@ void VideoSourceAcquisition::placeClampWindow()
 
     const bool csync = Tv5725::SyncMeasurement::isCsync();
     if (!Tv5725::SyncProcessor::acquireClampWindow(
-            csync, component,
-            Tv5725::SyncProcessor::clampLineFor(csync, sampling_.lineRateHz(),
-                                                Tv5725::Adc::dividerInForce()),
-            offset))
+            csync, component, sampling_.lineRateHz(),
+            Tv5725::Adc::dividerInForce(), offset))
         return;
 
     if (Tv5725::VideoRoute::isHdBypassChannel())

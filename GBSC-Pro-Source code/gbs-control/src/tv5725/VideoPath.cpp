@@ -1070,7 +1070,8 @@ void VideoPath::applySamplingClock(uint16_t divider, uint32_t lineRateHz)
     // black level is taken off picture -- measured, a stop 18 samples late
     // costs 20 grey levels. Placed from the divider just applied rather than
     // measured: STATUS_SYNC_PROC_HTOTAL only echoes it back.
-    SyncProcessor::placeClampFor(divider, syncTypeInForce_, Adc::inputIsComponent());
+    SyncProcessor::placeClampFor(syncTypeInForce_, Adc::inputIsComponent(),
+                                 lineRateHz, divider);
 
     // Every install re-latches the PLL, so nothing counted in ADC samples is
     // the source's for the next few passes -- whichever route wrote it.

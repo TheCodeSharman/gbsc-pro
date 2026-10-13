@@ -435,6 +435,19 @@ const uint16_t ClampWidthSamples = 4;
 // Above this the reading is not a line length the twelve-bit window can hold.
 const uint32_t ClampLineCeiling = 4095;
 
+// The line the clamp's fractions are of. A separate-sync line is counted in ADC
+// samples, so it is the divider itself; the composite path's fractions were
+// fitted to the quarter-count the register holds.
+//
+// NOT THE CALLER'S TO CHOOSE. Two callers chose differently, and the register
+// then held whichever ran last.
+uint32_t clampLineFor(bool csync, uint32_t lineRateHz, uint16_t divider)
+{
+    if (!csync)
+        return divider;
+    return lineRateHz == 0 ? 0 : 27000000u / (4u * lineRateHz) - 1u;
+}
+
 }  // namespace
 
 // THE SOURCE'S LINE, FROM THE RATE THE ENGINE SOLVED, never from HPERIOD_IF.
@@ -442,21 +455,10 @@ const uint32_t ClampLineCeiling = 4095;
 // agree exactly where it is healthy -- measured on the bench, 15625 Hz gives
 // 1728 against a reading of 431 whose (431+1) x 4 is also 1728.
 //
-// Two scalings because the blocks count differently: the coast window is a
-// fraction of the whole line in 27 MHz counts, and the clamp's composite path
-// was fitted to the quarter-count the register itself holds.
+// A fraction of the whole line in 27 MHz counts.
 uint32_t SyncProcessor::coastLineFor(uint32_t lineRateHz)
 {
     return lineRateHz == 0 ? 0 : 27000000u / lineRateHz;
-}
-
-// A separate-sync source is counted in ADC samples, so its line IS the divider
-// the solve applied. STATUS_SYNC_PROC_HTOTAL only echoes that back.
-uint32_t SyncProcessor::clampLineFor(bool csync, uint32_t lineRateHz, uint16_t divider)
-{
-    if (!csync)
-        return divider;
-    return lineRateHz == 0 ? 0 : 27000000u / (4u * lineRateHz) - 1u;
 }
 
 uint16_t SyncProcessor::clampStartFor(uint32_t lineLength, bool csync, bool component)
@@ -474,8 +476,10 @@ uint16_t SyncProcessor::clampStopFor(uint32_t lineLength, bool csync, bool compo
     return (uint16_t)(clampStartFor(lineLength, csync, component) + ClampWidthSamples);
 }
 
-void SyncProcessor::placeClampFor(uint32_t lineLength, bool csync, bool component)
+void SyncProcessor::placeClampFor(bool csync, bool component,
+                                 uint32_t lineRateHz, uint16_t divider)
 {
+    const uint32_t lineLength = clampLineFor(csync, lineRateHz, divider);
     if (lineLength == 0 || lineLength > ClampLineCeiling)
         return;
 
@@ -484,8 +488,10 @@ void SyncProcessor::placeClampFor(uint32_t lineLength, bool csync, bool componen
 }
 
 bool SyncProcessor::acquireClampWindow(bool csync, bool component,
-                                       uint32_t lineLength, uint16_t offset)
+                                       uint32_t lineRateHz, uint16_t divider,
+                                       uint16_t offset)
 {
+    const uint32_t lineLength = clampLineFor(csync, lineRateHz, divider);
     if (lineLength == 0 || lineLength > ClampLineCeiling)
         return false;
 
