@@ -1387,10 +1387,22 @@ twelve tables while they existed, which is what `BringUp` was built from.
   `SP_H_CST_SP` 1667, `STATUS_SYNC_PROC_HTOTAL` 2553 — and `HLOW_LEN` only
   matches the source's mode file in ADC: `181/2553` = 7.09% against AKF50's
   `36/512` = 7.03%, where reading it as IF units gives 14.17%, twice the mode's
-  sync width. The exception nobody can settle from the values alone is
-  `SP_CS_CLP_ST`/`SP` (26 and 150), small enough to be either — and misplaced
-  under both readings, landing inside the hsync pulse rather than the back
-  porch. `docs/scaler-geometry-model.md`.
+  sync width. **`SP_CS_CLP_ST`/`SP` ARE THE EXCEPTION AND THEY COUNT THE 27 MHz
+  REFERENCE**, which `SP_CLP_SRC_SEL` selects and every path here asks for.
+  Measured by walking the register against the emitted frame on the Wii at 480p
+  into 1080p, divider 1212: **2.667 emitted columns per count** against 1.885
+  per ADC sample, so reading the pair in ADC samples or IF units is out by a
+  factor of 1.4. A reference count and a source pixel coincide on that source --
+  858 x 31469 is 27 MHz -- so the walk rules the other two out and the clock
+  selection names the survivor.
+
+  **So the small values are the back porch, and the live bound is where the
+  picture starts** -- 0..66 usable on that source, picture from 67. Past it the
+  black level comes off picture and **the whole frame darkens with it**, a
+  picture mean of 152.4 at a start of 108 against 205.7 at 19. So a dark or
+  washed-out frame is as much a clamp symptom as the visible bar, and **neither
+  shows in a register dump** -- every register reads correct under both.
+  `docs/investigations/the-clamp-had-two-owners-and-two-units.md`.
 
   **`SP_H_CST_SP` IS A SECOND SUCH EXCEPTION, AND THE 1667 DOES NOT SETTLE
   IT.** Above the IF line rules out IF units and nothing more: the third
