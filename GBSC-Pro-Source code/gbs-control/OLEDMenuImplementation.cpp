@@ -42,7 +42,6 @@ extern void loadDefaultUserOptions();
 extern void ChangeAvModeOption(uint8_t num);
 extern void ChangeSvModeOption(uint8_t num);
 
-extern void doPostPresetLoadSteps();
 extern runTimeOptions *rto;
 extern userOptions *uopt;
 extern avOptions *avo;

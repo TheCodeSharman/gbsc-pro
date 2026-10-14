@@ -85,11 +85,6 @@ void InputFormatter::init()
     IF_Y_DELAY::write(0x3);                      // s1_01[6:5]
     IF_SEL24BIT::write(0x1);                     // s1_01[7:7]
 
-    // doPostPresetLoadSteps() leaves these to `if (rto->inputIsYpBpR)` and to
-    // the standard 3/4/8/9 branch, and 15 kHz RGB into a non-custom preset takes
-    // neither, so the table was the only writer. 0 and 3 are what all twelve
-    // ship, bar IF_HS_Y_PDELAY 2 in ntsc_1920x1080, which the YPbPr branch still
-    // asks for afterwards.
     IF_HS_INT_LPF_BYPS::write(0x0);              // s1_02[0:0]
     // The path every load starts from. applyScan() owns it from here
     // on, writing the scan mode's own value on every solve.

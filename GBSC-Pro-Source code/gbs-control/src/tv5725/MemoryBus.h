@@ -18,8 +18,8 @@ namespace Tv5725 {
 // was at 129.6 MHz, a 7.72 ns clock period against 6.17 ns at 162 -- re-take it
 // before relying on the margin at a higher clock.
 //
-// doPostPresetLoadSteps() re-initialises the part at whatever clock this
-// selected, so no re-init is needed here.
+// restart() re-initialises the part at whatever clock this selected, so no
+// re-init is needed here.
 class MemoryBus {
 public:
     typedef UReg<0x04, 0x00, 0, 8> MEM_INI_REG;                       // refresh cycle; otherwise refresh cycle will be before

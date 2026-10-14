@@ -393,8 +393,6 @@ bool VideoPath::solveRaster()
     // One quantity in three registers, so all three are written here.
     // VDS_VSYN_SIZE1 and _2 are the vertical totals the frame-rate selector
     // picks between, and VDS_FR_SELECT never alternates, so both are the frame.
-    // doPostPresetLoadSteps() wrote them once, in a function the deferred solve
-    // never re-enters, leaving them sized for the total the preset loaded with.
     GBS::VDS_VSYN_SIZE1::write(raster.verticalTotal + 1);
     GBS::VDS_VSYN_SIZE2::write(raster.verticalTotal + 1);
 

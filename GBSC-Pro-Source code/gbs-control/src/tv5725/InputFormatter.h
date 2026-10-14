@@ -21,9 +21,10 @@ namespace Tv5725 {
 // moves with the line doubler instead, and applyScan() says why.
 //
 // IF_LD_ST shares s1_0c with IF_LD_RAM_BYPS (bit 0) and IF_INI_ST (bits 7-5),
-// both written by doPostPresetLoadSteps(). Three owners in one byte is safe only
-// because every access is read-modify-write; test_input_formatter.cpp asserts
-// the neighbours survive rather than assuming it.
+// written by applyScan() and writeLineCounterStart(). Three owners in one byte
+// is safe only because every access is read-modify-write;
+// test_input_formatter.cpp asserts the neighbours survive rather than assuming
+// it.
 class InputFormatter {
 public:
     InputFormatter();

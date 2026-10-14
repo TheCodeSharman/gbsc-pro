@@ -22,8 +22,8 @@ namespace Tv5725 {
 //     either. Measured stale against the live windows with a perfect picture.
 //
 //   - VDS_TAP6_BYPS, VDS_D_RAM_BYPS, VDS_PK_Y_H_BYPS and VDS_UV_STEP_BYPS are
-//     the user's, written from uopt-> in doPostPresetLoadSteps(). Writing them
-//     here would reset those preferences on every mode change.
+//     the user's, written from the picture options. Writing them here would
+//     reset those preferences on every mode change.
 class VideoProcessor {
 public:
     typedef UReg<0x03, 0x00, 0, 1> VDS_SYNC_EN;                       // External sync enable, active high This bit enable sync
