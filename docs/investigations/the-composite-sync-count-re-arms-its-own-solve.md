@@ -126,6 +126,50 @@ The positive answer is its own reading: `linePeriodHolds()` rather than
 would not hold still, and refusing a count on the strength of a register that
 said nothing is refusing it for no reason.
 
+### Measured, and the residue is a different class
+
+Same script, same source, same mode, same build flags, the composite window
+120 s of light polling:
+
+| | before | after |
+|---|---|---|
+| `present` | 6 of 60 | **13 of 60** |
+| arms on a count near twice the solve | **5 and 3**, two runs | **0** |
+| count arms in total | 27 in 125 s | 28 in 141 s |
+| `unsettled count` arms | 4 and 7, two runs | 0 |
+
+**The doubled class is gone and the total did not move**, because the arms that
+remain are the OTHER class -- a vertical found somewhere inside a field rather
+than lost at its edge. As a fraction of the solved count they run 0.340, 0.432,
+0.506, 0.508, 0.526, 0.660, 0.698, 0.719, 0.806, 0.879, 0.961, 0.974, 0.992
+five times, 0.994, 1.083, 1.273, 1.303, 1.335, 1.560, 1.738, 1.889, 1.901.
+Nothing in that list is within 20 per thousand of a whole multiple, and the
+three nearest -- 1090, 1177 and 1192 against a solved 627 -- are 49 to 61 per
+thousand short of twice it. **Widening the tolerance to reach them would start
+refusing real mode changes**, 311 to 628 being only 10 per thousand inside it,
+and they are not lost pulses to begin with.
+
+So **the count is still what discards the solve**, and the open question is
+narrower than it was: why a vertical pulse is found inside the field, and what
+reads the frame when the count lands at 0.34 of it. `vs_act_det` carries nothing
+on this path -- `/testbus?ms=25&sp=4` reads 0 transitions at duty 100% against
+115 on separate sync -- and the levers not yet measured from inside `loop()` are
+the V-active detect group, `SP_VT_DLT_REG`, `SP_V_TIMER_VAL` and
+`SP_VSIN_INV_REG`, and `SP_DLT_REG`, which is one constant 0xC0 for every
+source.
+
+**The escape is measured on a scriptable source rather than reasoned about.**
+320x256@50 to 800x600@60 is 627 against a solved 311 -- 2.016 times it, which
+`countIsMultipleOf()` calls a multiple -- and the line period halves. Three
+rounds of three, the arm is `TIMINGS change (count), 627 lines, solved 311`
+every time and the engine is following the source again in 1.76 s. That is the
+same shape as the 480i to 480p transition the Wii would give, on a source a
+session can change without a bench trip.
+
+It costs the working sources nothing: the Wii at 480p on `ypbpr` reads present
+44 of 45 polls at mean luma 201.22 with green on three edges, and the RiscPC on
+separate sync 33 of 35 at 82.03 with green on all four.
+
 ## Refuted: the field-rate measurement reads a line-derived signal
 
 `known-issues.md` recorded the field rate reading 3937.58 Hz against a line rate

@@ -62,6 +62,22 @@ half is fixed -- is the same defect at another mode, and its reading that 4 and
 above steadies the count does **not** transfer: at 800x600 level 4 is among the
 worst.
 
+**WHAT DISCARDS THE SOLVE IS THE IDLE PASS'S COUNT, AND TWO CLASSES OF IT ARE
+NOW REFUSED.** The source is measured right and solved right -- 15 complete
+solves in 42 s -- and each is thrown away by a reading the solve never saw. A
+count the input formatter's own frame contradicts is dropped, and a count that
+is a whole multiple of the solved one while the line period has not moved no
+longer arms. `present` has gone 1 and 2 polls of 60, to 6, to **13 of 60**.
+
+**The residue is a third class and the tolerance must not be widened to reach
+it.** The 28 count arms left in 141 s run from 0.340 to 1.901 times the solved
+count -- a vertical found somewhere INSIDE a field rather than lost at its edge
+-- and none is within 20 per thousand of a multiple. The open question is why
+the separator finds one there. `vs_act_det` carries nothing on this path, 0
+transitions at duty 100% against 115 on separate sync, and the unmeasured levers
+are the V-active detect group and `SP_DLT_REG`.
+`investigations/the-composite-sync-count-re-arms-its-own-solve.md`.
+
 ### No walk reaches a separator level above the starting guess
 
 `acquireSeparatorLevel()` runs `SyncOnGreen::acquire()`, which only **descends**
