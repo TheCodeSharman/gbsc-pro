@@ -929,17 +929,26 @@ reachable only through a window of one detection interval.
 `VideoSourceAcquisition::runAdvanced()` says which pass advanced the run, and
 that is the gate.
 
-**THE SEARCH CONFIGURATION PICKS ONE OF THE THREE SYNC ARRANGEMENTS AND DOES
-NOT ASK.** `SP_H_PULSE_IGNOR` follows what the source's sync carries -- 0xFF
-where there is a V sync line of its own, 0x02 for composite sync without
-serrations, 0x6B for serrated composite -- and `applyForSearch()` writes 0x02
-whatever the sync type says. The hunt therefore looks for every source as though
-it were unserrated composite.
+**THE SEARCH ASKS THE SYNC TYPE AND NOTHING ELSE, BECAUSE NOTHING ELSE IS
+MEASURED YET.** `applyForSearch(csync)` writes `SP_H_PULSE_IGNOR` 0xFF for a
+source with a V sync line of its own and 16 for composite sync -- 16 being
+under the narrowest pulse the block can be counting while nothing is locked,
+31 samples at half the 27 MHz reference. A threshold sized for the divider
+cannot be written before the clock is latched, which is why the search has a
+value of its own rather than the solved one.
 
-**What that costs is measured only where the two values are
-indistinguishable.** 0x02 written onto the locked 15 kHz separate-sync bench
-source leaves `STATUS_SYNC_PROC_VTOTAL` at a steady 311 in 10 of 10 samples over
-9 s, with `HSACT` 1 throughout and 0xFF restoring identically -- which
+**Once the source is present the threshold follows the measured scan as well.**
+`pulseIgnoreFor()` returns 0xFF on separate sync, `ProgressiveCsyncPulseIgnore`
+for progressive composite, and `divider x 49 / 1000` for interlaced composite
+-- a fraction of the line rather than a byte, because a byte that reads one
+divider ignores the source at another.
+`investigations/the-pulse-ignore-is-a-fraction-of-the-line.md`.
+
+**WHAT A SEARCH VALUE COSTS IS MEASURED ONLY WHERE TWO VALUES ARE
+INDISTINGUISHABLE**, and the measurements below were taken by writing the byte
+by hand onto a settled source rather than through the search. 0x02 onto the
+locked 15 kHz separate-sync bench source leaves `STATUS_SYNC_PROC_VTOTAL` at a
+steady 311 in 10 of 10 samples over 9 s, with `HSACT` 1 throughout and 0xFF restoring identically -- which
 RD-5725-1.1's wording explains, the counter starting "when sync large different"
 and so applying where the separator tells pulse widths apart inside one
 composite stream. The serrated case is where the table says it bites: 0x02 on
@@ -955,10 +964,12 @@ is two answers rather than three.
 **The resolution is the derivation, not a fourth constant.** The value was once
 computed from two measurements -- `HPERIOD_IF` for the line and
 `STATUS_SYNC_PROC_HLOW_LEN` against `HTOTAL` for the sync duty -- and that
-computation is what produced the 0x6B the Wii needs; the per-standard fixed
-bytes that replaced it are guesses. So the search wants the same three-way
-answer a settled source gets: the sync type from `SyncMeasurement::probe()`,
-which is 2-3 ms, and the serration from the duty rather than from
+computation is what produced the 0x6B the Wii needs. `pulseIgnoreFor()` has
+since taken the derivation back for a source that is PRESENT, as a fraction of
+the latched line; the search is what still has a single answer per sync type,
+because the divider it would be a fraction of is not latched yet. So the search
+wants the same three-way answer a settled source gets: the sync type from
+`SyncMeasurement::probe()`, which is 2-3 ms, and the serration from the duty rather than from
 `sourceLowLineRate()`, which infers it from the line being slow.
 `docs/investigations/the-pulse-ignore-value-is-measured-not-chosen.md`.
 

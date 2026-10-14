@@ -5691,6 +5691,31 @@ entries resolve the raster match in time is open.
 
 ## Costs time rather than correctness
 
+### `read_settings()` cannot tell a refused read from a refused file
+
+`/fs/download` needs 10000 bytes of free heap and a console client costs enough
+to take the unit below it, so the route answers **503** while a capture is
+attached -- intermittently, as the heap moves either side of the gate.
+`gbs_unit.fs_read()` maps every non-200 to `None` and `read_settings()` passes
+that on, which is the same answer it gives for a file that does not reach its
+`end` line. Those are opposite diagnoses: one is a console on the socket, the
+other is a boot that refused the file and will refuse every save after it.
+`docs/preferences-file.md`.
+
+Measured 2026-10-14 on `ypbpr`: with a websocket capture running, one
+`curl /fs/download?f=/preferences.txt` returned 503 and a `read_settings()`
+call seconds later returned the whole dict.
+
+What it costs is a hardware run. `test_slot_framing.py` asserts
+`read_settings(host) == settings_before`, so a blip reads as a slot write having
+changed the settings; `test_firmware.py` keeps `original = read_settings(host)`
+and then calls `original.get(...)`, which raises `AttributeError` on the same
+blip. Neither is reachable by `ruff`, and the suite is where it surfaces --
+minutes in, against a live unit.
+
+The fix is to separate the two answers rather than retry blindly: a read the
+unit refused is not a reading at all.
+
 ### A sync-type excursion leaves two registers behind, and a re-acquisition does not clear them
 
 A `SYNC 1` round trip on the bench RISC PC leaves `ADC_SOGCTRL` at **11**
