@@ -1910,6 +1910,17 @@ source; 14 columns at the right under both, so **all fourteen were ours**.
 Without it the two edges read alike and a deficit gets attributed to the wrong
 end of the line.
 
+**IN PASS-THROUGH THE LIFT REACHES NOTHING AND `HD_MATRIX_BYPS` 1 IS THE
+ANSWER.** Video routes around the VDS there, so `VDS_Y_OFST` is out of circuit.
+Bypassing the colour matrix leaves the picture green and the source's border
+dark magenta at G exactly 0, which separates the same two blacks in one
+register. Measured on the Wii at 480p into 1080p: border at the right ~50
+emitted columns, bottom ~40 rows, top ~3, and **none at all at the left** --
+so the bars a pass-through frame shows are the source's, and the left one is
+not arriving. **It also refutes the black-hunt model**, because the border is
+not black in that state and the window still does not reach it.
+`docs/investigations/the-encoder-tunes-the-left-edge-in-pass-through.md`.
+
 ### Move the picture without disturbing the parity bias
 
 The memory window's WIDTH parity is the zoom shear, so a probe that moves one
