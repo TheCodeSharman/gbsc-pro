@@ -63,6 +63,7 @@ static unsigned long Tim_Resolution = 0, Tim_Resolution_Start = 0;
 #include "slot.h"
 #include "src/net/RegisterQueue.h"
 #include "src/prefs/Settings.h"
+#include "src/prefs/FramingFile.h"
 #include "src/prefs/SettingsFile.h"
 #include "gbs_types.h"   // typedef Tv5725::Tv5725 GBS, in one place
 #include "src/tv5725/WriteTrace.h"
@@ -764,10 +765,7 @@ static const uint32_t FramingSaveQuietMs = 15000;
 // hands out, so a quiet loop costs a comparison rather than a flash read.
 static Tv5725::FramingSaveTimer framingSaves;
 
-// Whether this boot managed to read the file. The same guard preferences carry,
-// and for the same reason: a silent bad read followed by an ordinary save is
-// how a table gets replaced by an empty one.
-static bool framingIsSuspect = true;
+Prefs::FramingFile sourceFramingFile(sourceFramings, FramingFilePath);
 
 // The framing a numbered slot holds, in its own file again. A slot is what the
 // user chose to keep and named, where the table above is what the engine
@@ -3475,7 +3473,8 @@ void setup()
         // own read failure is distinguishable in the boot log from theirs.
         loadFramingTable();
         bootLogPrintf("FRAMING: %u stored, suspect=%d t=%lums\n",
-            (unsigned)sourceFramings.count(), framingIsSuspect ? 1 : 0,
+            (unsigned)sourceFramings.count(),
+            sourceFramingFile.readable() ? 0 : 1,
             (unsigned long)millis());
     }
 
@@ -6782,64 +6781,18 @@ void initUpdateOTA()
 }
 
 
-// = (uint8_t)(f.read() - '0');
 void loadFramingTable()
 {
-    framingIsSuspect = true;
-
-    if (!LittleFS.exists(FramingFilePath)) {
-        // Nothing stored yet is not a failed read. Every source takes its
-        // computed default and the first tuning is saveable.
-        framingIsSuspect = false;
+    if (sourceFramingFile.read())
         framingSaves.markSaved(sourceFramings.revision());
-        return;
-    }
-
-    File f = LittleFS.open(FramingFilePath, "r");
-    if (!f)
-        return;
-
-    Tv5725::FramingTable read;
-    Tv5725::FramingText text(read);
-    char line[80];
-    while (f.available()) {
-        const String next = f.readStringUntil('\n');
-        strncpy(line, next.c_str(), sizeof(line) - 1);
-        line[sizeof(line) - 1] = '\0';
-        text.readLine(line);
-    }
-    f.close();
-
-    sourceFramings.adopt(read);
-
-    framingIsSuspect = false;
-    framingSaves.markSaved(sourceFramings.revision());
 }
 
 void saveFramingTable()
 {
-    if (framingIsSuspect) {
-        printf("not saving framings: this boot could not read them\n");
+    if (!sourceFramingFile.write()) {
+        debugPrintf("not saving framings: this boot could not read them\n");
         return;
     }
-
-    File f = LittleFS.open(FramingFilePath, "w");
-    if (!f)
-        return;
-
-    f.print(F("# framing, one source a line: "
-              "<lines>@<fieldRateHz>/<syncWidth><hPol><vPol> = "
-              "originH extentH originV extentV shape\n"
-              "# in ten-thousandths of the capturable region; shape 0 fills\n"));
-
-    Tv5725::FramingText text(sourceFramings);
-    char line[80];
-    for (uint16_t i = 0; i < sourceFramings.count(); ++i)
-        if (text.writeLine(i, line, sizeof(line))) {
-            f.print(line);
-            f.print('\n');
-        }
-    f.close();
 
     framingSaves.markSaved(sourceFramings.revision());
 }
