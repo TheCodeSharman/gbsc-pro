@@ -224,12 +224,16 @@ void SyncProcessor::applyDynamic(const Dynamic &source)
         return;
     }
 
-    if (source.pathSource) {
+    if (source.pathSource)
         applySeparationThresholds(source.csync);
-    } else if (source.present) {
+    else if (source.present)
         applyPulseWidthDifference();
+
+    // THE THRESHOLD FOLLOWS THE MEASURED SCAN ON EVERY ROUTE, and waits for the
+    // source to be present because the fraction is of the LATCHED line.
+    // ../../../../docs/investigations/the-pulse-ignore-outlived-the-channels-entry.md
+    if (source.present)
         applyPulseIgnore(source.csync, source.divider, source.progressive);
-    }
 }
 
 void SyncProcessor::applyForOffsetCalibration()
@@ -532,11 +536,9 @@ bool SyncProcessor::acquireCoastWindow(bool autoCoast, uint32_t lineRateHz)
     return true;
 }
 
-// THE PULSE IGNORE IS NOT HERE, AND THAT IS THE POINT. It is the arrangement's,
-// written by applyForSyncType() on both routes. This pass runs on a source the
-// engine may not have measured, so any serration it derived was the OUTGOING
-// source's -- and writing the field from it undid the selection's own choice
-// intermittently, which read as a flaky ADC PLL.
+// THE PULSE IGNORE IS NOT HERE. It follows the measured scan rather than the
+// sync type, so it is written once per pass from applyDynamic() for every route
+// and a second write from here would be a second owner.
 void SyncProcessor::applySeparationThresholds(bool csync)
 {
     if (csync) {

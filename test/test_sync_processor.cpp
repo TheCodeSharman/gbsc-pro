@@ -27,6 +27,9 @@ static const uint8_t Poisons[2] = {0xA5, 0x5A};
 // The divider the pulse ignore was measured through, on PAL 576i.
 static const uint16_t MeasuredCsyncDivider = 2200;
 
+// And the one the pass-through channel runs the Wii's 480p line at.
+static const uint16_t ChannelDivider = 2038;
+
 template <typename Field>
 static uint32_t applied(bool csync)
 {
@@ -923,6 +926,31 @@ TEST_CASE("a present progressive composite source ignores only what no pulse can
     CHECK(dynamicValue<SyncProcessor::SP_H_PULSE_IGNOR>(source) == 70);
 }
 
+// AND IT FOLLOWS IT ON A PATH SOURCE TOO, which is the route with nothing else
+// to re-place it: the channel solves nothing, so what the arrangement wrote for
+// an unmeasured scan stands for the life of the route -- the interlaced fraction
+// of whatever divider was in force when the sync type was established.
+//
+// Measured on the Wii at 480p on ypbpr, one register written inside one
+// acquisition through the channel's 2038-sample line: that fraction is 99 and
+// emits mean luma 0.00 beside a steady count of 524, where the measured scan's
+// 14 emits a 1670x1028 picture.
+// docs/investigations/the-pulse-ignore-outlived-the-channels-entry.md
+TEST_CASE("a path source's threshold follows the scan as a scaled source's does")
+{
+    SyncProcessor::Dynamic source = settled();
+    source.pathSource = true;
+    source.csync = true;
+    source.divider = ChannelDivider;
+
+    source.progressive = true;
+    CHECK(dynamicValue<SyncProcessor::SP_H_PULSE_IGNOR>(source)
+          == SyncProcessor::ProgressiveCsyncPulseIgnore);
+
+    source.progressive = false;
+    CHECK(dynamicValue<SyncProcessor::SP_H_PULSE_IGNOR>(source) == 99);
+}
+
 TEST_CASE("a source neither searched for nor acquired keeps the search's threshold")
 {
     // Between the two: a live count in range with the run not earned back. On a
@@ -1240,12 +1268,12 @@ TEST_CASE("the clamp is released only once it has been placed")
     }
 }
 
-TEST_CASE("the dynamic pass leaves the pulse ignore the arrangement chose")
+TEST_CASE("the separation thresholds leave the pulse ignore alone")
 {
-    // ONE OWNER, AND IT IS THE ARRANGEMENT. The dynamic pass runs on a source
-    // the engine may not have measured yet, so the serration it derives is the
-    // OUTGOING source's -- and writing the pulse ignore from it overwrote the
-    // value the selection had just chosen.
+    // ONE OWNER PER FIELD, and the pulse ignore's is applyDynamic(): it keys on
+    // the measured scan where these key on the sync type, so this pass is handed
+    // neither the scan nor the divider it would take to derive one. A second
+    // write from here overwrote the value the selection had just chosen.
     //
     // Measured on the bench over three ypbpr selections from the RISC PC at
     // 320x256@50: the arrangement wrote 0x6b at 1.6 s on all three, and on one

@@ -619,18 +619,18 @@ public:
 
     // How the separator decides a pulse is vertical, for a source whose sync
     // carries no broadcast vertical interval: the coast lengths either side of
-    // it, the pulse-width difference that reads as vertical, and the width
-    // below which a pulse is ignored.
+    // it and the pulse-width difference that reads as vertical.
     //
     // The coast lengths are the same pair applyForSyncType() writes, and that
     // is deliberate rather than a duplicate to fold away: this refreshes on a
     // schedule, so a register something else moved comes back, and there is a
     // test pinning that applyForSyncType() does NOT write the other two.
-    // The coast lengths, the pulse width difference and the pulse ignore are
-    // ONE separation configuration and have one writer. Writing the coast
-    // alone leaves a composite source carrying the previous separate-sync
-    // pulse width, which the sync processor cannot separate -- it counts 97
-    // lines and the ADC PLL never locks.
+    // Writing the coast alone leaves a composite source carrying the previous
+    // separate-sync pulse width, which the sync processor cannot separate -- it
+    // counts 97 lines and the ADC PLL never locks.
+    //
+    // THE PULSE IGNORE IS NOT ONE OF THESE: it keys on the measured scan rather
+    // than on the sync type, and applyDynamic() writes it for every route.
     // ../../../../docs/known-issues.md
     static void applySeparationThresholds(bool csync);
 

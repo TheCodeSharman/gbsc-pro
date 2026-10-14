@@ -1333,12 +1333,20 @@ void VideoSourceAcquisition::maintainSource()
     if (due.acknowledgeSogBad)
         Tv5725::Interrupts::acknowledgeSogBad();
 
-    if (!due.steerDeinterlacer || Tv5725::VideoRoute::isHdBypassChannel())
+    if (!due.steerDeinterlacer)
         return;
 
     // Measured here rather than held: the deinterlacer steers on the
     // maintenance cadence, and a settled source runs no measure() pass at all.
+    //
+    // ON EVERY ROUTE, ahead of the channel's own return: the separation
+    // threshold follows the scan whether or not the deinterlacer runs.
+    // ../../../../docs/investigations/the-pulse-ignore-outlived-the-channels-entry.md
     const Tv5725::SourceMeasurement::ScanType scan = sampling_.measureScanType();
+
+    if (Tv5725::VideoRoute::isHdBypassChannel())
+        return;
+
     const Tv5725::Deinterlacer::Steering steering = Tv5725::Deinterlacer::steer(
         sampling_.verticalPeriod(), scan, Tv5725::FrameBuffer::releaseCapture);
 

@@ -3169,6 +3169,44 @@ TEST_CASE("a composite source's threshold follows the scan once the scan settles
     VideoSourceSelection::forgetSelection();
 }
 
+// THE SCAN IS MEASURED ON EVERY ROUTE, because the threshold follows it on
+// every route. The channel solves nothing, so nothing on it re-places the
+// threshold the arrangement wrote -- and that one is the interlaced fraction of
+// whatever divider was in force when the sync type was established, which on a
+// boot straight into pass-through is the channel's own.
+//
+// Measured on the Wii at 480p on ypbpr through the channel's 2038-sample line,
+// one register written inside one acquisition with nothing else moved: 99 emits
+// mean luma 0.00 beside STATUS_SYNC_PROC_VTOTAL steady at 524 and a silent
+// console, and 14 emits a 1670x1028 picture.
+// docs/investigations/the-pulse-ignore-outlived-the-channels-entry.md
+TEST_CASE("a composite source passed through takes the threshold its scan asks for")
+{
+    seedPassThroughSource();
+    g_passThroughSwitches = 0;
+
+    Acquiring unit;
+    unit.acquisition.usePassThroughSwitch(enterPassThrough);
+    unit.acquisition.allowPassThrough(true);
+    unit.acquisition.allowMaintenance(true);
+    unit.path.useSyncTypeProbe(probeOwnVsync);
+
+    VideoSourceSelection::select(VideoSourceSelection::Ypbpr);
+    g_hasOwnVsync = false;
+    unit.start();
+    REQUIRE(unit.pollUntilSolved(8));
+    REQUIRE(unit.path.outputMode()->isBypass());
+    REQUIRE(SyncProcessor::SP_SOG_MODE::read() == 1);
+
+    for (uint8_t pass = 0; pass < 4 * SourceMeasurement::SteadySamples; ++pass)
+        unit.poll();
+
+    CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read()
+          == SyncProcessor::ProgressiveCsyncPulseIgnore);
+
+    VideoSourceSelection::forgetSelection();
+}
+
 TEST_CASE("a boot rate the corroboration agrees with is not re-solved")
 {
     // A re-solve blanks the output for the encoder relook, so one taken on a
