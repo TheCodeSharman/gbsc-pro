@@ -809,6 +809,23 @@ static void configureLoad(Acquiring &unit, bool scalingRgbhv = false)
     unit.acquisition.configureAfterLoad(forgetNothing, load);
 }
 
+// The scaling RGBHV load had the same second owner the channel's entry had: a
+// constant separator level, written over whatever was held for the source. What
+// the load leaves is the level the input is due, which the search then refines.
+// docs/investigations/the-separator-level-steadies-the-count-but-does-not-present.md
+TEST_CASE("the scaling load hands the separator no level of its own")
+{
+    seedBenchSource();
+    Acquiring unit;
+    SyncMeasurement::set(true);
+    SyncOnGreen::chooseForInput();
+    const uint8_t due = SyncOnGreen::level();
+
+    configureLoad(unit, true);
+
+    CHECK(SyncOnGreen::level() == due);
+}
+
 // THE CLAMP IS WHAT RESTORES THE BLACK LEVEL, and holding it is a configuration
 // the load takes on the way through rather than a state to be left behind. The
 // channel's early return jumped the release, and the sketch's own recovery is

@@ -125,6 +125,11 @@ public:
     // owner of it, and two owners of one measured fact is the defect
     // docs/investigations/the-frame-time-lock-saturates.md records.
     //
+    // Each level is APPLIED and settled rather than put in force, and only the
+    // level the search settles on is latched: putting one in force relatches
+    // the ADC PLL, which is the clock the acceptance test's own measurement is
+    // timed through.
+    //
     // Returns whether any level passed. The level the input needs is left in
     // force when none did.
     static bool sweep(bool (*measurable)(), void (*putInForce)());

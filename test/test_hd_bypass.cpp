@@ -38,6 +38,7 @@ FakeTwoWire Wire;
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SyncProcessor.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SourceMeasurement.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SyncMeasurement.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SyncOnGreen.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/InputFormatter.h"
 
 static Tv5725::InputFormatter inputFormatter;
@@ -1057,4 +1058,22 @@ TEST_CASE("the channel's entry leaves the separation threshold alone")
     HdBypass::enterFor(true, true, 31469, Unpublished, 525, BenchPulse);
 
     CHECK(Tv5725::SyncProcessor::SP_H_PULSE_IGNOR::read() == tuned);
+}
+
+// AND IT DOES NOT REPLACE THE SEPARATOR LEVEL EITHER, for the same reason: the
+// level is a measurement of the source that nothing on the board can
+// calculate, so a constant handed in on entry overwrites what the search
+// found. Measured on `vga` at 800x600@60 composite in pass-through: the search
+// accepted 18 on a count holding 624/624 where 13 to 17 swung 0 to 1870, and
+// the entry put 24 back -- the level the count swings furthest at.
+// ../docs/investigations/the-separator-level-steadies-the-count-but-does-not-present.md
+TEST_CASE("the channel's entry leaves the separator level alone")
+{
+    Wire.reset();
+    Tv5725::SyncMeasurement::set(true);
+    Tv5725::SyncOnGreen::choose(18);
+
+    HdBypass::enterFor(false, true, 37879, Unpublished, 628, BenchPulse);
+
+    CHECK(Tv5725::SyncOnGreen::level() == 18);
 }

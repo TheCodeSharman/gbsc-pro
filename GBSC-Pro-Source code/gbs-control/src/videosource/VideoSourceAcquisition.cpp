@@ -328,12 +328,11 @@ void VideoSourceAcquisition::configureAfterLoad(void (*forgetFrameLock)(),
 {
     videoPath_.configureSyncPath();
 
-    if (state.scalingRgbhv) {
-        if (Tv5725::SyncMeasurement::isCsync()) {
-            Tv5725::SyncOnGreen::choose(Tv5725::HdBypass::CsyncSogLevel);
-        }
+    // THE SEPARATOR LEVEL IS NOT HANDED IN HERE. It is a measurement of the
+    // source, established by searching for it, and a constant written over that
+    // undoes the search -- the same second owner the channel's entry had.
+    if (state.scalingRgbhv)
         Tv5725::Adc::choosePhaseAdc(Tv5725::Adc::MidField);
-    }
 
     if (!Tv5725::VideoRoute::isHdBypassChannel()
         && !videoPath_.scalingRgbhvInForce()) {

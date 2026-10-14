@@ -231,35 +231,39 @@ public:
     static const uint8_t RecurringRateAgreements = 3;
     static const uint16_t RecurringRatePerThousand = 5;
 
-    // Whether the source can be measured where the separator level now sits:
-    // three field-rate readings that agree with each other and make video
-    // against the sync processor's count.
+    // Whether the source can be measured where the separator level now sits: a
+    // run of sync-processor counts that are a source's and hold still.
     //
-    // **A SPREAD IS THE SIGNAL, NOT A WRONG VALUE.** A sync separator slicing
-    // badly puts extra edges in and misses real ones, so the readings scatter
-    // either side of the true rate and one of them landing on it is luck rather
-    // than evidence -- measured on a component source at 480p, two readings of
-    // seven read 59.93 Hz among 62 to 89 Hz with the count a correct 524. So no
-    // single reading can answer this and agreement is what does.
+    // **THE COUNT, NOT THE FIELD RATE**, because of WHEN this is asked. The
+    // level is searched before anything about the source is established, so the
+    // ADC clock is on a reference divider -- and the field rate is timed off
+    // the input formatter's vertical, which the IF derives through the line
+    // that clock implies. Measured on `vga` at 800x600@60 composite, three
+    // field-rate readings a level across the whole field: 18, 32, 60, 681 and
+    // 2367 Hz at levels that read a steady 60.31 Hz once the source's own
+    // divider was latched, and one level of 32 accepted -- level 0, which is
+    // the separator fully open. The count answers there because the sync
+    // processor counts vertical in its own domain.
+    //
+    // **AND THE COUNT IS WHAT THE LEVEL MOVES.** A separator slicing at the
+    // wrong threshold misses vertical pulses, so the count runs on into the
+    // next field: the same source swings 622 to 1791 at the level the input is
+    // due and holds to 0.4 lines four steps above it. Every later reading taken
+    // through such a level is refused, so a search that accepts one has found
+    // nothing.
+    // ../../../docs/investigations/the-separator-level-steadies-the-count-but-does-not-present.md
     static bool sourceIsMeasurable();
 
-    // How far apart the three readings of that test may be. Wider than the
-    // agreement a settled source is held to: this one has to pass a level that
-    // merely slices cleanly enough to measure, before any divider is sized for
-    // the source.
-    static const uint16_t MeasurableAgreementPerThousand = 20;
-
-    // How many readings that test takes, and how many pulses each spans. Three
-    // is the fewest that can show a spread rather than a pair that happens to
-    // agree.
+    // How many counts that test reads and how long apart. The register holds
+    // one count a FIELD, so the gap is what makes a second read a second
+    // measurement -- and the bad fields are a fraction of all of them, so the
+    // run has to span enough of them to meet one.
     //
-    // **ONE PULSE, BECAUSE THE SWEEP IS INSIDE loop().** The whole field is 32
-    // levels, so spanning this the way a measurement does would block the loop
-    // for thirteen seconds -- measured, and long enough that the heap gate
-    // refuses routes and OTA cannot be armed. A level that works is found on
-    // the first probe, so the long case is the one that finds nothing.
-    static const uint8_t MeasurableReads = 3;
-    static const uint32_t MeasurablePulses = 1;
+    // **THE WHOLE FIELD IS 29 LEVELS, SO THIS IS PAID 29 TIMES INSIDE loop()**
+    // where nothing passes. A level that works is found on the first probe, so
+    // the long case is the one that finds nothing.
+    static const uint8_t MeasurableCountReads = 24;
+    static const uint8_t MeasurableCountGapMs = 8;
 
 
     // The count the steadiness gate settled on, which is not the last sample.

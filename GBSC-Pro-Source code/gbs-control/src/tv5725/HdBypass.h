@@ -240,9 +240,7 @@ public:
                          const SourceTiming &timing, uint16_t frameLines,
                          const HsyncPulse &pulse);
 
-    // The sync-on-green slice a composite-sync source is handed on entry, and
-    // the two phase adjusters pass-through starts from.
-    static const uint8_t CsyncSogLevel = 24;
+    // The two phase adjusters pass-through starts from.
     static const uint8_t EntryPhaseAdc = 16;
     static const uint8_t EntryPhaseSyncProcessor = 8;
 

@@ -295,32 +295,32 @@ float SourceMeasurement::sampleFieldRateHz()
 
 bool SourceMeasurement::sourceIsMeasurable()
 {
-    const uint16_t lines = SyncProcessor::lineCount();
-
-    uint32_t readings[MeasurableReads];
-    bool video = true;
-    for (uint8_t i = 0; i < MeasurableReads; ++i) {
-        const float hz =
-            TestBusRateMeasurement::sourceFieldRateHz(false, MeasurablePulses);
-        readings[i] = (uint32_t)(hz * 1000.0f + 0.5f);
-        if (!VideoSignal::isVideo(lines, hz))
-            video = false;
+    uint16_t low = 0;
+    uint16_t high = 0;
+    bool source = true;
+    for (uint8_t read = 0; read < MeasurableCountReads; ++read) {
+        const uint16_t lines = SyncProcessor::lineCount();
+        if (read == 0 || lines < low)
+            low = lines;
+        if (read == 0 || lines > high)
+            high = lines;
+        if (!VideoSignal::countIsSource(lines))
+            source = false;
+        delay(MeasurableCountGapMs);
     }
 
-    bool agree = true;
-    for (uint8_t i = 1; i < MeasurableReads; ++i)
-        if (!VideoSignal::ratesAgree(readings[0], readings[i],
-                                     MeasurableAgreementPerThousand))
-            agree = false;
+    // The SPREAD rather than every pair, because a miscounting source
+    // alternates: the Wii reads 521 against a 525-line raster four fifths of
+    // the time and 524 the rest, which is one source standing still.
+    const bool held = source && (uint16_t)(high - low) <= CountPairSpread;
 
-    char line[80];
-    snprintf(line, sizeof(line), "sog,%u,%u,%lu,%lu,%lu,%u",
-             (unsigned)SyncOnGreen::level(), (unsigned)lines,
-             (unsigned long)readings[0], (unsigned long)readings[1],
-             (unsigned long)readings[2], (unsigned)(video && agree));
+    char line[72];
+    snprintf(line, sizeof(line), "sog,%u,%u,%u,%u",
+             (unsigned)SyncOnGreen::level(), (unsigned)low, (unsigned)high,
+             (unsigned)held);
     tv5725Log(line);
 
-    return video && agree;
+    return held;
 }
 
 float SourceMeasurement::recurringFieldRateHz(bool *everyProbeAgreed)

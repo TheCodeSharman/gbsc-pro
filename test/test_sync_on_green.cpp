@@ -201,6 +201,29 @@ TEST_CASE("the sweep stops at the first level the source can be measured at")
     CHECK(SyncOnGreen::level() == 20);
 }
 
+TEST_CASE("the search latches the ADC PLL once, on the level it settles on")
+{
+    // EVERY LEVEL RELATCHED WAS WHAT MADE THE SEARCH UNREADABLE. Putting a
+    // level in force latches the sampling phases and the ADC PLL, and the field
+    // rate the acceptance test reads is timed through that clock -- so judging
+    // a level inside the relock window measures the relatch rather than the
+    // level. Measured on `vga` at 800x600@60 composite: three readings a level
+    // across the whole field, scattering 18 Hz to 2367 Hz at levels that read a
+    // steady 60.31 Hz once settled, and one level of 32 accepted.
+    // docs/investigations/the-separator-level-steadies-the-count-but-does-not-present.md
+    seedSlicer(1, 0x05);
+    Adc::selectInput(0);
+    SyncMeasurement::set(true);
+    g_passesAt = 20;
+    g_tested = 0;
+    g_inForce = 0;
+
+    CHECK(SyncOnGreen::sweep(measurableAtChosenLevel, putInForce));
+
+    CHECK(g_inForce == 1);
+    CHECK(g_lastInForce == 20);
+}
+
 TEST_CASE("the sweep reaches a level above the one the input needs")
 {
     // The whole point of it: every other walk descends from ComponentLevel, so
@@ -230,7 +253,7 @@ TEST_CASE("a source measurable at the level the input needs is not moved")
     CHECK(g_tested == 1);
 }
 
-TEST_CASE("the sweep covers every level in the field")
+TEST_CASE("the sweep covers every level in the field but the starved ones")
 {
     seedSlicer(1, 0x05);
     Adc::selectInput(0);
@@ -239,7 +262,26 @@ TEST_CASE("the sweep covers every level in the field")
 
     CHECK_FALSE(SyncOnGreen::sweep(neverMeasurable, putInForce));
 
-    CHECK(g_tested == SyncOnGreen::LevelMax + 1);
+    CHECK(g_tested == SyncOnGreen::LevelMax - SyncOnGreen::StarvedLevel);
+}
+
+TEST_CASE("the search does not park the sync separator fully open")
+{
+    // A level at or below StarvedLevel slices too little for anything measured
+    // through it to mean something, and 0 is the one value no ratchet can climb
+    // back out of -- which is why the maintenance ladder stops above it. A
+    // search that offered the starved end landed there on the bench: of 32
+    // levels on a composite-sync source, the only one its acceptance test
+    // accepted was 0.
+    seedSlicer(1, 0x05);
+    Adc::selectInput(0);
+    SyncMeasurement::set(true);
+    g_passesAt = 0;
+    g_tested = 0;
+
+    CHECK_FALSE(SyncOnGreen::sweep(measurableAtChosenLevel, putInForce));
+
+    CHECK(SyncOnGreen::level() == SyncOnGreen::ComponentLevel);
 }
 
 TEST_CASE("a sweep that finds nothing leaves the level the input needs")

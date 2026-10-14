@@ -151,9 +151,10 @@ void HdBypass::enterFor(bool component, bool csync, uint32_t lineRateHz,
     // changes exactly that one field, and changes it to the interlaced fraction
     // on a source whose scan the load had already measured.
     // ../../../../docs/investigations/the-pulse-ignore-outlived-the-channels-entry.md
+    // NOR THE SEPARATOR LEVEL, which is the same kind of fact: a measurement of
+    // the source that nothing on the board can calculate, so a constant handed
+    // in here overwrites what the search established for it.
     const uint16_t divider = dividerFor(lineRateHz);
-    if (csync)
-        SyncOnGreen::choose(CsyncSogLevel);
     SyncProcessor::applyForPassThrough(component && csync);
 
     Adc::choosePhaseAdc(EntryPhaseAdc);
