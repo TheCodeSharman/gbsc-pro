@@ -34,11 +34,56 @@ re-probe: `/sc?~` is what makes the engine follow the sync type, and the
 recovery is `SYNC 0` followed by another `/sc?~`. Script the restore in a
 `finally` so a failed run cannot leave the bench dark.
 
-Where to look first: whether the channel is being handed a divider sized for
-a line the csync path measures differently, and whether
-`PAD_SYNC_OUT_ENZ` is ever dropped and re-driven on this entry -- a black frame
-with every register correct is the encoder holding a stale timing, and that
-recovery was not tried here.
+**THE ENCODER AND THE COAST ARE BOTH REFUTED, AND THE SEPARATOR LEVEL IS THE
+LEVER FOR THE COUNT.** Measured at 800x600@60 into 1920x1080:
+
+- `PAD_SYNC_OUT_ENZ` is not stuck and toggling it does not recover the picture.
+  The pad is driven and withdrawn **six times in 80 s**, paired, because the
+  engine re-solves continuously and each solve takes the output away -- so a
+  hand-written 1 reads back 0 within 2.5 s, and every black capture lands in a
+  withdrawal window. `present` is therefore not a stable property of this
+  state, which is why an earlier reading of it as `true` and this one as `false`
+  are both right.
+- **Eleven coast pairs, every one emitting nothing.** The pair does tighten the
+  count -- 0/4 gives sd 28.1 against the default 7/6's 415.1 -- so it is not
+  inert and it is not why nothing is emitted.
+- **`ADC_SOGCTRL` 20 takes the count to sd 0.4**, a steady 623/624, where the
+  24 the engine free-runs at scatters by 384 and 4, 8 and 13 by about 300. The
+  level is the lever and it is **not monotonic**, so a walk without an
+  acceptance test cannot find it.
+
+**A steady count is still not a picture**: at level 20 the engine stays
+`absent`, the count is four lines short of 627/628, and nothing is emitted. So
+the level is necessary and something downstream of the count still refuses.
+
+`investigations/the-separator-level-steadies-the-count-but-does-not-present.md`
+carries the tables. The related row below -- the 640x480 one whose horizontal
+half is fixed -- is the same defect at another mode, and its reading that 4 and
+above steadies the count does **not** transfer: at 800x600 level 4 is among the
+worst.
+
+### The separator sweep that climbs has no call site
+
+`SyncOnGreen::sweep()` walks `ADC_SOGCTRL` across the whole field, up before
+down, and stops at the first level `SourceMeasurement::sourceIsMeasurable`
+accepts. Its only caller is `VideoSourceAcquisition::establishSeparatorLevel()`,
+which has a declaration in the header and a definition in the `.cpp` and
+**nothing calls it**.
+
+What runs instead is `acquireSeparatorLevel()`, from three live sites, which
+is `SyncOnGreen::acquire()` -- the walk the header states only descends. So a
+level above the starting guess is unreachable, and `SyncOnGreen.h` says so in
+terms: a component source needing 24 cannot be found by a walk that steps down
+from 14.
+
+Measured consequence on composite-sync pass-through: the level that steadies
+the vertical count is 20, from a start of 13, and the engine free-runs at 24
+where the count scatters.
+`investigations/the-separator-level-steadies-the-count-but-does-not-present.md`.
+
+Supporting but weak on its own: `separator level:` appears zero times in 80 s
+of console across six solve cycles. The console drops bursts, so the absent
+call site is what carries this rather than the absent line.
 
 ### A full-screen framing on the Wii shakes vertically, blanks, and re-acquires
 
@@ -4641,10 +4686,14 @@ Three findings from the same window:
   disagree. Moving it off 255 takes `VTOTAL` from 498 to 521 at once, and 107,
   51, 16 and 2 are indistinguishable from each other.
 - The separator level matters more than the coast window. `ADC_SOGCTRL` 1 gives
-  a `VTOTAL` wandering 534..543; 4 and above give a steady 522. The recovery
-  ladder walks that level down, so it manufactures the instability it is
-  climbing to fix. Coast pairs of 7/3, 9/9, 3/3, 1/1 and 0/0 move it by at most
-  one line; 16/16 destabilises it.
+  a `VTOTAL` wandering 534..543; 4 and above give a steady 522. Coast pairs of
+  7/3, 9/9, 3/3, 1/1 and 0/0 move it by at most one line; 16/16 destabilises it.
+  **The level that works is per source and 4 is not a floor to generalise** --
+  at 800x600@60 it takes 20, and 4 is among the worst there. **And the ladder
+  walking it down is not what happens at that mode**: the engine free-runs at
+  24. What holds across both is that the level sets the count's stability and
+  that nothing with an acceptance test is walking it.
+  `investigations/the-separator-level-steadies-the-count-but-does-not-present.md`.
 
 **`STATUS_MISC_PLLAD_LOCK` is not a discriminator in the failing direction**: it
 is 0 in the working pass-through separate state as well. It reading 1 does mean
