@@ -1946,6 +1946,32 @@ Two baselines, and they answer different questions:
   a fault that might predate the rewrite can be scored against what the board
   shipped doing -- often by reading those sources rather than by flashing them.
 
+  **DO NOT FLASH A STOCK TAG TO TAKE A REGISTER COMPARISON. IT CANNOT ANSWER
+  ONE.** Upstream `1.3` registers no register route at all and its
+  `dumpRegisters()` has every print commented out, and `be58a24f4` has
+  `/getreg` but no `/getregs`, no `/input`, no `/samplinglog`, and a console
+  heap gate of 20000 that this fork never reaches -- so the websocket takes a
+  client and delivers nothing. Flashing one and then discovering there is
+  nothing to read costs the flash, the comparison and the trip back.
+
+  **`tools/reference-build/` is the answer and it is already built.**
+  `be58a24f4-bench-instruments.patch` adds `/input`, `/samplinglog` and a
+  usable console gate to the reference commit and nothing else; its `README.md`
+  has the build line. Both sides are kept as images in
+  `~/Projects/gbsc-pro-backups` -- `esp_ref-be58a24f4-instrumented_*.bin` and
+  `esp_current-<rev>-samplinglog_*.bin` -- so a switch is one `flash-bin.sh`
+  rather than a rebuild.
+
+  Three things that bite on the way:
+  **a full snapshot is 1536 single reads there**, about 90 s, `/getregs` being
+  absent; **the switch reformats the filesystem each way**, SPIFFS against
+  LittleFS, so `/framing.txt`, `/slots.bin` and the preferences go unless they
+  are pulled over `/fs/download` first, and `SeleInputSource` comes back 0 with
+  a `default:` case that transmits nothing, so the input needs reselecting;
+  and **its detection sweeps for a live signal**, so the source with sync on
+  another ADC input wins whatever is asked for -- with both bench sources
+  powered, that build cannot be held on the one under test.
+
 ### Keep the shape and the pan still between readings
 
 `reset_framing()` resets the declared ASPECT as well as the framing, so a run
