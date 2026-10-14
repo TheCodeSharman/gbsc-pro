@@ -73,9 +73,21 @@ went on reading 1255.
 That is what `SourceMeasurement::countContradicted()` asks, through the
 reconciliation the engine already had: `reconciledFrame()` returns 0 for a pair
 that cannot be one frame, and a count the formatter contradicts is dropped
-rather than judged. Measured either side of it on the same source and mode,
-`present` over a 120 s window: **1 and 2 polls of 60 before, 11 of 60 after**,
-with the count arms still firing where the formatter offers no frame. It costs
+rather than judged.
+
+Measured either side of it on the same source and mode, `present` over a 120 s
+window: **1 and 2 polls of 60 before, 6 of 60 after** on the default build, and
+11 of 60 on a `GBS_SAMPLING_LOG=1` build, which is not the same build and so not
+the figure to quote. **The count arms still fire** -- 27 of them in 125 s --
+where both halves missed the SAME vertical pulse, which they do because both
+derive from the same separated vertical, so they agree on a doubled frame and
+the corroboration passes it.
+
+**One run of five caught a non-flat frame**, at mean luma 175 with 35 black
+columns at the left and 27 rows at the bottom, where every run before the change
+was flat at luma 0.00. A later run of 150 s with 12 present polls caught none.
+So this is one observation and the picture is not reliable; a clip rather than a
+still is what would settle it. It costs
 the working sources nothing -- the Wii at 480p on `ypbpr`, which runs sync on
 green and so has a live formatter frame, reads present 44 of 45 polls at mean
 luma 201, the RiscPC on separate sync 33 of 35 at 82, and four source mode
