@@ -106,11 +106,16 @@ analog RGB with HSOUT/VSOUT and nothing else. `HD_HB_SP` therefore cannot state
 where active video is. It can only paint black over video the channel sends.
 
 **Keeping a border visible was the reason for consulting the published raster,
-and it is void.** The encoder takes its origin from the image content on this
-path, so it skips a black border whether one sits inside the window or not --
-blanking to a standard's sync extent cannot make a border visible, and blanking
-to its display area cannot make one invisible. Nothing the window does reaches
-the question.
+and it is void.** Whichever edge the window states, the border at the left of
+the frame does not arrive and the border at the right does -- blanking to a
+standard's sync extent cannot make the left one visible, and blanking to its
+display area cannot make the right one invisible. Nothing the window does
+reaches the question.
+
+**The reason given here used to be that the encoder skips a BLACK border, and
+that is refuted below**: bypassing the colour matrix leaves the left border
+magenta on the wire and it still does not arrive. The conclusion stands, the
+mechanism behind it is open.
 
 What the edge does decide is how much blanking sits inside the emitted active
 area, which the encoder shows as a bar. Measured on the Wii at 480p through the
@@ -132,10 +137,14 @@ may never reach where a source puts video -- 0.117 of the line against the Wii
 480p's 122/858 and the AKF50 800x600's 176/1056 -- because bypass has no framing
 control to give cropped picture back with.
 
-## What is left is the source's own border, doubled onto two edges
+## What is left is the source's own border, moved to one edge per axis
 
 With the envelope in force the Wii at 480p emits 56 columns of black at the
-right and 51 rows at the bottom, against 0 and 1 at the left and top. The
+right and 51 rows at the bottom, against 0 and 1 at the left and top. Measured
+with the matrix bypassed, the right bar is about one border width rather than
+two -- 50 emitted columns is roughly 19 source pixels against the 15 the
+source's own border spends -- so the picture is DISPLACED by a border width,
+not stripped of both. The
 asymmetry is not the channel's: removing the vertical window entirely, through a
 re-lock, leaves the bottom bar where it was, and the registers are live --
 blanking 120 lines puts 188 rows of black at the top.
@@ -166,18 +175,86 @@ levels and the right end of the picture is cut. With it off and the encoder
 re-locked, the card fills the panel with its castellation complete at both ends
 and the sink reports 800x600/60Hz.
 
+## The border is readable: bypass the colour matrix
+
+`HD_MATRIX_BYPS` 1 leaves the picture green and renders the source's border
+dark magenta at **G exactly 0**, so the two blacks this page could not separate
+-- our blanking and the source's border -- are separable in one register. It is
+the pass-through counterpart of lifting the picture with `VDS_Y_OFST`, which
+reaches nothing on this path.
+
+This retires the instrument problem the previous Open section described. The
+border-off half needed the RISC PC's card and a phase-locked camera clip; the
+board renders the border itself, on any source, read off the USB capture.
+
+## The border reaches three edges and not the left
+
+Measured on the Wii at 480p into 1080p, `HD_HB_SP` 238, the frame completely
+filled at 1920x1078:
+
+| edge | border, in emitted pixels |
+|---|---|
+| left | **none** -- column 0 is picture, G 239 |
+| right | ~50 |
+| top | ~3 |
+| bottom | ~40 |
+
+So the transmitted window sits about one border-width right of where it would
+have to be to carry the whole source: the left border falls outside it and the
+right border is wholly inside it.
+
+**AND THE BORDER IS NOT BLACK IN THAT STATE, SO "THE ENCODER SKIPS BLACK" DOES
+NOT EXPLAIN IT.** With the matrix bypassed the left border is magenta on the
+wire and the window still does not reach it. Whatever places the window, it is
+not a hunt for the end of black.
+
+**The same deficit is measured a second way.** Correlating the pass-through
+frame against a scaled one of the same source -- band anchored to each frame's
+own picture, since the two sit at different vertical offsets -- fits
+`pass = 1.0495 x scaled - 100` at r 0.994, which is 56 columns absent at the
+left and none at the right. The method returns 1.0010 on the vertical axis
+where both pictures measure 1028 rows, which is what says the horizontal 1.0495
+is the picture and not the fit.
+
+## No channel register moves the left edge
+
+Every one of these was walked with `PAD_SYNC_OUT_ENZ` forced to re-lock, and
+the left edge did not move off column 0 on any of them:
+
+| register | walked | right bar | left |
+|---|---|---|---|
+| `HD_HB_SP` | 90, 140, 190, 238, 290, 360 | 251, 251, 250, **55**, 116, 199 | unmoved |
+| `HD_HS_ST`/`SP` | 128/4, 164/40, 264/140, 364/240 | 57, **56**, 369, 486 | unmoved |
+| `HD_INI_ST` | 0, 60, 120, 2000 | 56, 54, 56, 56 | unmoved |
+| `HD_BLK_GY_DATA` | 5, 128 | 55, 56 | unmoved |
+
+Three things fall out of that table.
+
+**238 is a sharp local optimum and both directions are worse**, which is the
+non-monotonic response this page already refused to fit a constant to. Below it
+the response saturates at 251, the same figure 147 gave.
+
+**`HD_INI_ST` is inert.** A near-full-line shift of the channel counter's own
+origin moves nothing, so the register stores and reads back while the counter
+ignores it -- the same shape as `HD_HSYNC_RST`'s bit 3.
+
+**`HD_BLK_GY_DATA` is the encoder's black reference, not a bar.** Raising it to
+128 tinted the whole picture magenta, mean luma 183.7 to 110.2, and reverting
+restored it exactly. It cannot move the window because whatever it is set to
+becomes the level the encoder restores from. `ComponentBlankLuma` is therefore
+load-bearing for colour.
+
+## The capture dongle is not doing it
+
+The television was plugged directly into the board, with the USB capture out of
+the path entirely, and the picture is the same: no border at the left. Two
+sinks that share no hardware agree, so the dongle's own window latch is
+excluded and what remains is the MS9288A or the channel.
+
 ## Open
 
-Whether the encoder keys on where active content starts. Turning the source's
-border off moves the first non-black pixel by 40 source pixels, so the border
-on/off pairing across two landings would answer it. **The instrument cannot take
-the border-off half as it stands**: the border flash is the only signal strong
-enough to lock the phase to, and with it off the corner blocks alone read at
-about one grey level through this camera and the phase locks onto noise. A
-longer clip, or a source-side animation with more contrast, is what that needs. What selects between landings is also unanswered — a forced re-lock is
-repeatable, a natural acquisition lands elsewhere.
-
-`tools/gbsc-pro-hwtest/snapshots/golden-800x600-bypass-2026-09-21.json` is a
-landing with both corners complete and the frequency wedge at the camera's noise
-floor. `docs/photos/2026-09-21-golden-800x600-bypass/README.md` carries the
-photographs and the register values.
+What places the transmitted window. It is not the end of black, not any channel
+register, and not the capture dongle. The MS9288A is on no I2C bus and has no
+published register map, so the remaining board-side candidate is whether the
+channel plays the left border out at all -- which the input retiming and the
+divider reach and this sweep did not.
