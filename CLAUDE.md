@@ -243,6 +243,12 @@ a blocked handshake sits at `Uploading` and never advances, where this one
 advances and stops. Retry two or three times before diagnosing; a stale
 `FIN-WAIT-1` on port 8266 from the previous attempt also makes `ota_probe.py`
 fail to bind, which reads as something holding the port.
+**BUT RESTART THE UNIT AFTER TWO FAILURES RATHER THAN RETRYING A THIRD TIME.**
+Seven consecutive attempts died at 0 to 4% with `ota_probe.py` reporting
+`CONNECTED`, and a `/restart` immediately before the eighth carried the whole
+image. The unit's live free heap is the candidate and `/bootlog` does not show
+it -- 9840 bytes at both boots, against a live 8776 in the failing state.
+`docs/ota-flashing.md`.
 
 **What blocks OTA is the HOST firewall, not the unit.** espota opens a TCP
 listener on this machine and the unit **connects back** to it, so the image
