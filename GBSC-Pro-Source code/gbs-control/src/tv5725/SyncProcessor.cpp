@@ -72,6 +72,7 @@ const unsigned int ResetHoldUs = 10;
 const uint16_t PulseWidthDifference = 0xC0;
 bool coastPlaced_ = false;
 bool clampPlaced_ = false;
+bool sogInverted_ = false;
 bool coastOverridden_ = false;
 uint8_t preCoastOverride_ = 0;
 uint8_t postCoastOverride_ = 0;
@@ -291,8 +292,9 @@ void SyncProcessor::prepareForDetection()
     SP_HCST_AUTO_EN::write(0);
 }
 
-void SyncProcessor::applyForPassThrough()
+void SyncProcessor::applyForPassThrough(bool syncOnGreen)
 {
+    invertSogReference(syncOnGreen);
     // The chip's own polarity auto-correct stays OFF, as it is on the scaling
     // path. normaliseHsyncPolarity() already makes the polarity one shape, so
     // this is a second owner of it -- and it displaces where the sync processor
@@ -319,6 +321,8 @@ void SyncProcessor::applyForSyncType(bool csync, uint16_t divider)
 
     // No ordering constraint between these fields is established, so the two
     // branches keep their own write order.
+    invertSogReference(false);
+
     if (csync) {
         SP_SOG_SRC_SEL::write(0);
         SP_EXT_SYNC_SEL::write(1);
@@ -493,6 +497,20 @@ void SyncProcessor::placeClampFor(bool csync, bool component,
 
     SP_CS_CLP_ST::write(clampStartFor(lineLength, csync, component));
     SP_CS_CLP_SP::write(clampStopFor(lineLength, csync, component));
+}
+
+void SyncProcessor::invertSogReference(bool inverted)
+{
+    sogInverted_ = inverted;
+    SP_SOG_P_INV::write(inverted ? 1 : 0);
+}
+
+bool SyncProcessor::sogReferenceInverted() { return sogInverted_; }
+
+uint16_t SyncProcessor::clampOffsetForInvertedSog(const HsyncPulse &pulse,
+                                                 uint32_t lineRateHz)
+{
+    return (uint16_t)lrintf(pulse.syncDuty() * (float)coastLineFor(lineRateHz));
 }
 
 bool SyncProcessor::acquireClampWindow(bool csync, bool component,

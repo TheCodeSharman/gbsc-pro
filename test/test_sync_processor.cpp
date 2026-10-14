@@ -1072,9 +1072,85 @@ TEST_CASE("entering pass-through leaves the SOG polarity auto-correct off")
     Wire.reset();
     SyncProcessor::SP_SOG_P_ATO::write(1);
 
-    SyncProcessor::applyForPassThrough();
+    SyncProcessor::applyForPassThrough(false);
 
     CHECK(SyncProcessor::SP_SOG_P_ATO::read() == 0u);
+}
+
+// SYNC ON GREEN WANTS THE SOG REFERENCE INVERTED IN PASS-THROUGH, AND THE SYNC
+// TYPE CANNOT BE THE CONDITION. SP_SOG_MODE is raised by applyForSyncType()'s
+// csync branch, so composite sync on a dedicated pin and sync on green are the
+// same bit -- keying on it inverts the VGA input on SYNC 1 as well, where
+// pass-through is already measured correct. A component source carries its
+// sync on the SOG/Y pin by construction, which is what separates the two.
+//
+// Measured on the Wii at 480p into 1920x1080 in pass-through: un-inverted, the
+// source's left border never reaches the frame and 56 of 1920 columns are
+// absent; inverted, the frame carries the whole line at left 0 and right 0.
+// It is a compensating correction and not a correct polarity -- un-inverted the
+// counter reads the true pulse, 152 of 2038 against the mode's 62 of 858, and
+// inverted it reads the complement.
+// ../docs/investigations/the-sog-reference-is-inverted-for-pass-through.md
+TEST_CASE("sync on green inverts the SOG reference in pass-through")
+{
+    Wire.reset();
+    SyncProcessor::SP_SOG_P_INV::write(0);
+
+    SyncProcessor::applyForPassThrough(true);
+
+    CHECK(SyncProcessor::SP_SOG_P_INV::read() == 1u);
+}
+
+TEST_CASE("a source whose sync is not on green keeps the SOG reference")
+{
+    Wire.reset();
+    SyncProcessor::SP_SOG_P_INV::write(1);
+
+    SyncProcessor::applyForPassThrough(false);
+
+    CHECK(SyncProcessor::SP_SOG_P_INV::read() == 0u);
+}
+
+// The inversion moves where the processor starts counting by a whole pulse, so
+// the clamp has to follow by the same distance. SP_CS_CLP_ST counts the 27 MHz
+// reference, which is the line coastLineFor() already states, so the offset is
+// the pulse expressed in those counts rather than a fraction refitted for the
+// inverted path.
+//
+// Measured on the Wii at 480p: a 152 sample pulse of a 2038 sample line is 64
+// of the line's 858 counts, and the clamp frames the picture anywhere between
+// 60 and 120 where the un-inverted reference wants 19. Below that the window
+// lands on picture -- at 40 the first 120 columns come through as a grey band
+// at level 100 and the black level lifts the frame to mean luma 220 -- and
+// above it the window clamps on sync and crushes the frame to mean 131.
+// So 19 + 64 sits near the middle of the band, where the bare 64 sits one step
+// inside its lower edge.
+TEST_CASE("the clamp follows an inverted SOG reference by one pulse")
+{
+    const HsyncPulse pulse(152.0f / 2038.0f);
+
+    CHECK(SyncProcessor::clampOffsetForInvertedSog(pulse, 31468) == 64u);
+}
+
+// AND THE SCALING PATH HAS TO WRITE IT TOO, because nothing on the way out of
+// pass-through calls applyForPassThrough(). Left behind, the inversion reaches
+// a route whose capture origin consumes it: SP_RT_HS_SP is derived from the
+// pulse hsyncPulseSamples() folds, so it lands in the same place inverted or
+// not while the retimed edge has moved by a whole pulse.
+//
+// Measured on the Wii at 480p scaling into 1920x1080, divider 1212: inverted,
+// the picture moves from a left margin of 38 to 209 of 1920 and clips at the
+// right. It is the same round-trip hazard SP_SOG_P_ATO had, which cost 310
+// columns.
+// docs/investigations/the-sog-polarity-auto-correct-displaced-pass-through.md
+TEST_CASE("the scaling path never leaves the SOG reference inverted")
+{
+    Wire.reset();
+    SyncProcessor::SP_SOG_P_INV::write(1);
+
+    SyncProcessor::applyForSyncType(true, MeasuredCsyncDivider);
+
+    CHECK(SyncProcessor::SP_SOG_P_INV::read() == 0u);
 }
 
 // The sub coast is applyForSyncType()'s, and entering pass-through wrote it a
@@ -1093,7 +1169,7 @@ TEST_CASE("entering pass-through leaves the sub coast the sync type chose")
     Wire.poison(Poisons[0]);
     SyncProcessor::applyForSyncType(true, MeasuredCsyncDivider);
 
-    SyncProcessor::applyForPassThrough();
+    SyncProcessor::applyForPassThrough(true);
 
     CHECK(SyncProcessor::SP_DIS_SUB_COAST::read() == 0u);
 }

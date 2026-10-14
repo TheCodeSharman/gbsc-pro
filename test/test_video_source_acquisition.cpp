@@ -834,6 +834,45 @@ TEST_CASE("a source passed through clamps like a scaled one")
     CHECK_FALSE(SyncProcessor::clampHeld());
 }
 
+// AND IT CLAMPS A PULSE LATER THERE, because the channel's entry inverts the SOG
+// reference for a component source and the clamp counts from that reference. Left
+// where the scaling path puts it, the window lands on picture: measured on the Wii
+// at 480p, a start of 19 against the 83 the inverted reference wants brings ~120
+// columns of back porch through as a grey band at level 100 and lifts the frame's
+// mean luma from 189 to 220.
+//
+// The offset is asked of SyncProcessor rather than recomputed, so this drives the
+// real entry rather than setting the condition by hand.
+TEST_CASE("the clamp follows the SOG reference the entry chose")
+{
+    seedBenchSource();
+    seedPassThroughSource();
+
+    Acquiring unit;
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+
+    GBS::HPERIOD_IF::write(431);
+    seedField(0, 0x16, 1, 1, 1);          // STATUS_SYNC_PROC_HSACT
+
+    SyncProcessor::applyForPassThrough(false);
+    SyncProcessor::forgetPositions();
+    unit.acquisition.placeClampWindow();
+    const uint32_t upright = SyncProcessor::SP_CS_CLP_ST::read();
+
+    SyncProcessor::applyForPassThrough(true);
+    SyncProcessor::forgetPositions();
+    unit.acquisition.placeClampWindow();
+    const uint32_t inverted = SyncProcessor::SP_CS_CLP_ST::read();
+
+    SyncProcessor::applyForPassThrough(false);
+
+    CHECK(inverted - upright
+          == SyncProcessor::clampOffsetForInvertedSog(unit.sampling.hsync(),
+                                                      unit.sampling.lineRateHz()));
+    CHECK(inverted > upright);
+}
+
 // DETECTION TAKES THE ROUTE AWAY WITHOUT TELLING THE ENGINE. Low power
 // detection routes the DACs back to the scaler, and the held output mode still
 // says bypass -- so the switch that claims the route never runs again and the

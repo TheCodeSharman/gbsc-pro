@@ -154,7 +154,7 @@ void HdBypass::enterFor(bool component, bool csync, uint32_t lineRateHz,
     const uint16_t divider = dividerFor(lineRateHz);
     if (csync)
         SyncOnGreen::choose(CsyncSogLevel);
-    SyncProcessor::applyForPassThrough();
+    SyncProcessor::applyForPassThrough(component && csync);
 
     Adc::choosePhaseAdc(EntryPhaseAdc);
     Adc::choosePhaseSyncProcessor(EntryPhaseSyncProcessor);

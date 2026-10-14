@@ -340,7 +340,25 @@ public:
     // runs first on this path, and turning it off from a second place left a
     // serrated source counting the serrations -- invisible on separate sync,
     // where both writers agree, and no signal on sync on green.
-    static void applyForPassThrough();
+    // `syncOnGreen` decides SP_SOG_P_INV. See the pass-through cases in
+    // test/test_sync_processor.cpp for why the sync type cannot be the
+    // condition.
+    static void applyForPassThrough(bool syncOnGreen);
+
+    // How much later the clamp sits once the SOG reference is inverted: the
+    // source's pulse, in the 27 MHz counts SP_CS_CLP_ST holds.
+    static uint16_t clampOffsetForInvertedSog(const HsyncPulse &pulse,
+                                              uint32_t lineRateHz);
+
+    // Whether SP_SOG_P_INV is in force. Held rather than read back, and the one
+    // owner of the fact: the clamp counts from the same reference, so a second
+    // site deciding it again is a condition that can drift from the write.
+    static bool sogReferenceInverted();
+
+private:
+    static void invertSogReference(bool inverted);
+
+public:
 
     // How long the sync processor counts nothing usable after its path moves.
     // Measured: STATUS_SYNC_PROC_VTOTAL reads 305 / 330 / 425 the instant

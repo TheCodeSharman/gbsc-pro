@@ -1196,13 +1196,26 @@ void VideoSourceAcquisition::placeClampWindow()
     const bool component = Tv5725::Adc::inputIsComponent();
     Tv5725::SyncProcessor::clampManually(!component);
 
+    const bool csync = Tv5725::SyncMeasurement::isCsync();
+    const bool onChannel = Tv5725::VideoRoute::isHdBypassChannel();
+
     // A component source on the channel at a 15 kHz line clamps later still:
     // the sync tip it has to clear is longer against that line.
-    const uint16_t offset =
-        component && Tv5725::VideoRoute::isHdBypassChannel() && sampling_.lowLineRate()
+    uint16_t offset =
+        component && onChannel && sampling_.lowLineRate()
             ? Tv5725::SyncProcessor::ChannelComponentClampOffset : 0;
 
-    const bool csync = Tv5725::SyncMeasurement::isCsync();
+    // And an inverted SOG reference moves where the processor counts from by a
+    // whole pulse. The clamp counts from that same reference, so it follows by
+    // the same distance or it lands on picture. Asked of the block that wrote
+    // the inversion rather than decided again here, so the two cannot drift.
+    // The offsets describe different things -- a sync tip and a displaced
+    // reference -- so they add; no source here carries both.
+    if (Tv5725::SyncProcessor::sogReferenceInverted())
+        offset = (uint16_t)(offset
+                            + Tv5725::SyncProcessor::clampOffsetForInvertedSog(
+                                  sampling_.hsync(), sampling_.lineRateHz()));
+
     if (!Tv5725::SyncProcessor::acquireClampWindow(
             csync, component, sampling_.lineRateHz(),
             Tv5725::Adc::dividerInForce(), offset))
