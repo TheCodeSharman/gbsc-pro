@@ -972,17 +972,22 @@ TEST_CASE("entering bypass leaves nothing to solve")
                   + VideoSourceAcquisition::LatchSettlePasses); ++i)
         CHECK_FALSE(pollOnce(acquisition));
 
-    // The output, and nothing else: bypass has no solve coming, so giving it
-    // back is the whole of ending the change, and a pass-through left without
-    // it shows nothing at all. Three registers, because the output is three
-    // bits -- the pad the encoder locks to, OUT_SYNC_CNTRL and the DAC power.
-    CHECK(registersWritten() == 3);
-    CHECK(Wire.touched[0][0x49]);   // PAD_SYNC_OUT_ENZ
-
-    // Named rather than counted: this is the only writer of the two on the
-    // pass-through route, so a count of three is satisfied by any three bits.
-    CHECK(Chip::OUT_SYNC_CNTRL::read() == 1);
-    CHECK(Chip::DAC_RGBS_PWDNZ::read() == 1);
+    // THE OUTPUT IS LEFT AWAY FOR presentWhenSettled(), not driven here. The
+    // sink latches its transmitted window when the pad returns, and the entry
+    // moves the timing it latches against -- the channel's divider, the sync
+    // path, and the SOG reference on a component source. Driving it here hands
+    // the sink a window before the channel's divider has latched, and on a pad
+    // already driven it is not even a transition, so nothing re-latches.
+    //
+    // This used to assert the opposite, from when pass-through did not
+    // configure the sync processor and so had nothing else to end the change
+    // with. That path is shared now, so the entry has no reason to present
+    // ahead of the gate that checks the divider.
+    //
+    // That the output does come back is a HARDWARE check rather than this one:
+    // `/geometry` reporting present, with a 1920-wide frame on the Wii at 480p.
+    CHECK(engine.syncOutAway());
+    CHECK_FALSE(engine.outputShown());
 }
 
 TEST_CASE("a mode with no timings is given up on, not asked about forever")

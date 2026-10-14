@@ -737,10 +737,18 @@ void VideoPath::configurePassThrough()
     // with nothing to return to.
     mode_ = &ModeBypass;
 
+    // AWAY, NOT SHOWN, AND presentWhenSettled() IS WHAT GIVES IT BACK. The sink
+    // latches its transmitted window when the pad returns, and the entry moves
+    // the timing it latches against -- the channel's divider, the sync path, and
+    // the SOG reference on a component source. Presenting here drives the pad
+    // while the scaling setup's timing is still what the sink last saw, and on a
+    // pad already driven it is not even a transition, so nothing re-latches at
+    // all.
+    //
     // AFTER the mode, which is what says there is no display aperture in the
     // path: video routes around the VDS here, so the blank can only be the sync
     // pad and closing an aperture would blank nothing.
-    showOutput(true);
+    takeOutputAway();
 
     raster_ = OutputTiming();
 
