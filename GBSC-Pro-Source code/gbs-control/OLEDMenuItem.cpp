@@ -1,5 +1,45 @@
 #include "OLEDMenuItem.h"
 #include <string.h>
+
+bool OLEDMenuItem::addSubItem(OLEDMenuItem *item, OLEDMenuChildBlocks &blocks)
+{
+    if (!item)
+    {
+        return true;
+    }
+    if (!this->subItems)
+    {
+        this->subItems = blocks.acquire();
+        if (!this->subItems)
+        {
+            return false;
+        }
+    }
+    if (this->numSubItem >= OLED_MENU_MAX_SUBITEMS_NUM)
+    {
+        return false;
+    }
+    item->parent = this;
+    this->subItems[this->numSubItem++] = item;
+    item->calculate();
+    return true;
+}
+
+void OLEDMenuItem::clearSubItems(OLEDMenuChildBlocks &blocks)
+{
+    for (int i = 0; i < this->numSubItem; ++i)
+    {
+        this->subItems[i]->used = false;
+        this->subItems[i] = NULL;
+    }
+    this->numSubItem = 0;
+    this->maxPageIndex = 0;
+    if (this->subItems)
+    {
+        blocks.release(this->subItems);
+        this->subItems = NULL;
+    }
+}
 void OLEDMenuItem::calculate()
 {
     if (!this->parent)

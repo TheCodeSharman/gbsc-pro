@@ -33,6 +33,7 @@ class OLEDMenuManager
 private:
     OLEDDisplay *const display;
     OLEDMenuItem allItems[OLED_MENU_MAX_ITEMS_NUM];
+    OLEDMenuChildBlocks childBlocks;
     OLEDMenuItem *itemStack[OLED_MENU_MAX_DEPTH];
     uint8_t itemSP;
     OLEDMenuItem *itemUnderCursor; // 空表示当前选择了状态栏
@@ -114,7 +115,7 @@ public:
     {
         if (item)
         {
-            item->clearSubItems();
+            item->clearSubItems(this->childBlocks);
         }
     }
 

@@ -16,7 +16,7 @@ CXXFLAGS ?= -std=c++11 -O1 -Wall -Wextra
 # embarrassingly parallel: measured 3m26s serial against 34s here.
 MAKEFLAGS += -j$(shell nproc)
 
-.PHONY: all test ir-receiver menu aspect video-signal test-bus test-bus-rate-measurement steady-run sync-on-green sampling-log axis source-key source-timing framing-table framing-text framing-file scale video-source-line capture-window output-window video-path source-measurement memory-window display-clock frame-sync frame-time-lock output-mode clock-ramp rate-agreement hold-ramp sync-search video-source-selection video-source-selector segment-select register-queue sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc video-route rgbhv-output write-trace settings settings-file line-volume clean help
+.PHONY: all test ir-receiver menu aspect video-signal test-bus test-bus-rate-measurement steady-run sync-on-green sampling-log axis source-key source-timing framing-table framing-text framing-file scale video-source-line capture-window output-window video-path source-measurement memory-window display-clock frame-sync frame-time-lock output-mode clock-ramp rate-agreement hold-ramp sync-search video-source-selection video-source-selector segment-select register-queue sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc video-route rgbhv-output write-trace settings settings-file line-volume oled-menu clean help
 .DEFAULT_GOAL := test
 
 ## help: list the targets
@@ -942,10 +942,22 @@ write-trace:
 	@"$(OUT)/test_write_trace"
 
 ## test: every host unit test
-test: input-scale ir-receiver osd-row osd-screens menu aspect video-signal test-bus test-bus-rate-measurement steady-run source-absence detection-entry sync-measurement colour-space colour-balance framing-save-timer sync-on-green axis source-key source-timing framing-table framing-text framing-file scale sync-processor video-processor video-source-line capture-window output-window video-path source-measurement memory-window display-clock frame-sync frame-time-lock output-mode clock-ramp rate-agreement hold-ramp sync-search video-source-selection video-source-selector segment-select register-queue sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc sampling-log video-route rgbhv-output write-trace settings settings-file line-volume
+test: input-scale ir-receiver osd-row osd-screens menu aspect video-signal test-bus test-bus-rate-measurement steady-run source-absence detection-entry sync-measurement colour-space colour-balance framing-save-timer sync-on-green axis source-key source-timing framing-table framing-text framing-file scale sync-processor video-processor video-source-line capture-window output-window video-path source-measurement memory-window display-clock frame-sync frame-time-lock output-mode clock-ramp rate-agreement hold-ramp sync-search video-source-selection video-source-selector segment-select register-queue sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc sampling-log video-route rgbhv-output write-trace settings settings-file line-volume oled-menu
 all: test
 
 ## clean: remove the compiled test binaries
 clean:
 	rm -rf "$(OUT)"
 
+
+## oled-menu: host unit tests for the OLED icon menu's storage
+#
+# The item pool is the largest static allocation in the firmware. A child array
+# per parent rather than per item is what keeps it off the leaves, and a block
+# returned on clear is what stops a re-registering page exhausting the pool.
+oled-menu:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
+	  -o "$(OUT)/test_oled_menu" \
+	  "$(HERE)/test_oled_menu.cpp" OLEDMenuItem.cpp OLEDMenuChildBlocks.cpp
+	@"$(OUT)/test_oled_menu"

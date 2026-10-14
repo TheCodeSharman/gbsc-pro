@@ -22,6 +22,11 @@
 
 typedef bool boolean;
 
+// Storage qualifier and its reader, not a dependency to move out: the OLED
+// menu's images and strings are declared PROGMEM at file scope.
+#define PROGMEM
+#define pgm_read_byte(addr) (*(const uint8_t *)(addr))
+
 inline void delayMicroseconds(unsigned int) {}
 
 // Admitted on the same terms: Clock::ClockGen waits out the Si5351's preload

@@ -56,7 +56,10 @@ OLEDMenuItem *OLEDMenuManager::registerItem(OLEDMenuItem *parent,
     newItem->alignment = alignment;
     if (parent)
     {
-        parent->addSubItem(newItem);
+        if (!parent->addSubItem(newItem, this->childBlocks))
+        {
+            panicAndDisable("no room for a sub item: OLED_MENU_MAX_PARENTS_NUM/_SUBITEMS_NUM");
+        }
         if (parent == rootItem)
         {
             cursor = 0;
@@ -86,13 +89,10 @@ OLEDMenuItem *OLEDMenuManager::registerItem(
     newItem->alignment = alignment;
     if (parent)
     {
-        if (parent->numSubItem == OLED_MENU_MAX_SUBITEMS_NUM)
+        if (!parent->addSubItem(newItem, this->childBlocks))
         {
-            char msg[50];
-            sprintf(msg, "Maximum number of sub items reached: %d", OLED_MENU_MAX_SUBITEMS_NUM);
-            panicAndDisable(msg);
+            panicAndDisable("no room for a sub item: OLED_MENU_MAX_PARENTS_NUM/_SUBITEMS_NUM");
         }
-        parent->addSubItem(newItem);
         if (parent == rootItem)
         {
             cursor = 0;

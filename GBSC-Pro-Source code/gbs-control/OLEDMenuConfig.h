@@ -10,6 +10,9 @@
 #define OLED_MENU_HEIGHT 64
 #define OLED_MENU_MAX_SUBITEMS_NUM 16 // should be less than 256
 #define OLED_MENU_MAX_ITEMS_NUM 64    // should be less than 1024
+// Items that hold children at once: root, the four submenu icons, TV mode,
+// and the preset and WiFi pages that re-register theirs on entry.
+#define OLED_MENU_MAX_PARENTS_NUM 10
 #define OLED_MENU_MAX_DEPTH 5 // 子菜单的最高级别
 #define OLED_MENU_REFRESH_INTERVAL_IN_MS 50 // not precise
 #define OLED_MENU_SCREEN_SAVER_REFRESH_INTERVAL_IN_MS 5000 // not precise
