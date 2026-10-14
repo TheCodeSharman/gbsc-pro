@@ -75,6 +75,15 @@ static void seedSourceLines(uint16_t lines)
     seedField(0, 0x1B, 0, 11, lines);     // STATUS_SYNC_PROC_VTOTAL
 }
 
+// The input formatter's own measurement of the frame, in half-lines, and the
+// bit that says it completed. Live only where the separator is in the path,
+// which is every composite or sync-on-green source.
+static void seedFrame(uint16_t halfLines)
+{
+    seedField(0, 0x07, 1, 11, halfLines);   // VPERIOD_IF
+    seedField(0, 0x00, 0, 1, 1);            // STATUS_IF_VT_OK
+}
+
 
 // Whether V is arriving on the source's own pin. Read in the separate-sync
 // configuration -- the separator out -- so it reports the SOURCE rather than
@@ -2168,6 +2177,60 @@ TEST_CASE("a count alternating by three is the same source, not a mode change")
 
     CHECK(g_probeCalls == 1);
     CHECK(unit.acquisition.sourceIsPresent());
+}
+
+TEST_CASE("a count the input formatter's frame contradicts is not the source moving")
+{
+    // TWO MEASUREMENTS OF ONE FRAME, and on a composite source the sync
+    // processor's is the unreliable one. Measured on `vga` at 800x600@60
+    // composite in pass-through, sampled from inside loop(): the count takes 76
+    // distinct values from 0 to 1937 and is wrong in 54% of samples, while
+    // VPERIOD_IF reads 1255 half-lines -- the source's own 627.5-line frame --
+    // in 52%. A wrong count repeats for up to eight consecutive samples, so no
+    // steadiness run can reject it, and during the longest such run the
+    // formatter went on reading 1255. The pair cannot be reconciled, which is
+    // what says the counter lost a vertical pulse.
+    // ../docs/investigations/the-composite-sync-count-re-arms-its-own-solve.md
+    seedBenchSource();
+    Acquiring unit;
+    unit.path.useSyncTypeProbe(probeOwnVsync);
+
+    g_hasOwnVsync = false;
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+    REQUIRE(unit.acquisition.sourceIsPresent());
+
+    g_logLines.clear();
+    for (uint8_t i = 0; i < 8 * SourceMeasurement::SteadySamples; ++i) {
+        seedSourceLines(451);
+        seedFrame(623);
+        unit.poll();
+    }
+
+    CHECK_FALSE(loggedContaining("TIMINGS change (count)"));
+}
+
+TEST_CASE("a mode change the formatter's frame agrees with still arms one")
+{
+    // The corroboration refuses a count the formatter contradicts, not a count
+    // it has not seen yet. A source that really moved moves BOTH readings, so
+    // they reconcile at the new frame and the arm fires as it always did.
+    seedBenchSource();
+    Acquiring unit;
+    unit.path.useSyncTypeProbe(probeOwnVsync);
+
+    g_hasOwnVsync = false;
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+
+    g_logLines.clear();
+    for (uint8_t i = 0; i < 8 * SourceMeasurement::SteadySamples; ++i) {
+        seedSourceLines(524);
+        seedFrame(1049);
+        unit.poll();
+    }
+
+    CHECK(loggedContaining("TIMINGS change (count)"));
 }
 
 TEST_CASE("a count that moves by more than one is still a mode change")

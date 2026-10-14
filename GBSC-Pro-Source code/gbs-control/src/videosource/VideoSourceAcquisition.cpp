@@ -530,6 +530,17 @@ bool VideoSourceAcquisition::sourceMoved()
         return armMove("input", lines, true);
     }
 
+    // A COUNT THE INPUT FORMATTER'S OWN FRAME CONTRADICTS IS NOT A READING OF
+    // THIS SOURCE, so the pass is DROPPED rather than judged: it must not
+    // advance the steadiness run, move the presence verdict or arm anything.
+    // The sync processor has lost or gained a vertical pulse, and on a
+    // composite source it does that in runs longer than any steadiness run
+    // reaches -- 15 correct solves in 42 s were each discarded by the next
+    // such reading.
+    // ../../../docs/investigations/the-composite-sync-count-re-arms-its-own-solve.md
+    if (sampling_.countContradicted(lines))
+        return false;
+
     // ONE ADVANCE OF THE RUN PER POLL. countHeld() mutates it, so a second
     // caller double-advances it and the steadiness both readers depend on is
     // no longer over consecutive polls.

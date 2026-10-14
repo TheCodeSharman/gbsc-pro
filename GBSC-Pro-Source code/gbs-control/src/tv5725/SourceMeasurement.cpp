@@ -148,6 +148,12 @@ uint16_t SourceMeasurement::countFrom(uint16_t correctedLines) const
     return (uint16_t)(correctedLines + verticalSyncLines_);
 }
 
+bool SourceMeasurement::countContradicted(uint16_t lines)
+{
+    const uint16_t period = inputFormatter_.verticalPeriod();
+    return period != 0 && reconciledFrame(period, lines) == 0;
+}
+
 uint16_t SourceMeasurement::countNow() const
 {
     return countFrom(measureSourceLinesCorrected(Adc::dividerInForce()));

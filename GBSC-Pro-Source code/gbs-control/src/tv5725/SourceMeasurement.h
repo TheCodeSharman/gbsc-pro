@@ -292,6 +292,26 @@ public:
     // source called unusable, which discards the held sync type.
     uint16_t countNow() const;
 
+    // Whether the INPUT FORMATTER'S own frame contradicts this count, which
+    // says the sync processor's counter has lost or gained a vertical pulse and
+    // is not reading the source.
+    //
+    // **TWO MEASUREMENTS OF ONE FRAME, and which of them is reliable follows
+    // the sync route.** The formatter measures the frame from the separator's
+    // output, so it has one exactly where a separator is in the path -- and
+    // there the sync processor's count is the unreliable half. Measured on `vga`
+    // at 800x600@60 composite in pass-through, sampled from inside `loop()`: the
+    // count takes 76 distinct values from 0 to 1937 and is wrong in 54% of
+    // samples while VPERIOD_IF reads the source's own 627.5-line frame in 52%,
+    // and a wrong count repeats for up to eight consecutive samples -- further
+    // than any steadiness run reaches.
+    //
+    // False where the formatter offers no frame at all, which is every
+    // separate-sync source: the separator has nothing to extract there, so a
+    // reading that cannot corroborate must not refuse.
+    // ../../../docs/investigations/the-composite-sync-count-re-arms-its-own-solve.md
+    bool countContradicted(uint16_t lines);
+
     // Whether the source runs the 15.7 kHz broadcast line.
     bool lowLineRate() const;
 
