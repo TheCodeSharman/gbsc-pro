@@ -1019,3 +1019,25 @@ TEST_CASE("pass-through leaves the retime window alone with nothing measured")
 
     CHECK(Tv5725::SyncProcessor::SP_RT_HS_SP::read() == 1234);
 }
+
+// THE CHANNEL'S ENTRY DOES NOT RE-DERIVE THE SEPARATION THRESHOLD. The sync
+// processor is configured for the SOURCE and the load has already done it; the
+// threshold is the one field in that configuration taken from the divider, so
+// re-deriving it here puts the interlaced fraction of the CHANNEL's divider on
+// a progressive source. Measured on the Wii at 480p on `ypbpr` in pass-through:
+// divider 2038 gives a threshold of 99, under which STATUS_SYNC_PROC_HLOW_LEN
+// alternated 152 and 172, so the source key alternated 524@59.94/746 and
+// 524@59.96/844 and recalled two framings -- one 16:9 and one defaulted 4:3.
+// Each recall re-armed a solve, dropping the sync pad 13 times in 75 s, and the
+// capture dongle read mean luma 0.00. Left at the threshold the load chose, the
+// same source is full screen at mean luma 134.93.
+TEST_CASE("the channel's entry leaves the separation threshold alone")
+{
+    Wire.reset();
+    Tv5725::SyncProcessor::applyPulseIgnore(true, 1212, true);
+    const uint32_t tuned = Tv5725::SyncProcessor::SP_H_PULSE_IGNOR::read();
+
+    HdBypass::enterFor(true, true, 31469, Unpublished, 525, BenchPulse);
+
+    CHECK(Tv5725::SyncProcessor::SP_H_PULSE_IGNOR::read() == tuned);
+}

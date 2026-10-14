@@ -160,10 +160,14 @@ void HdBypass::enterFor(bool component, bool csync, uint32_t lineRateHz,
     enable();
     applyColourPath(component);
 
-    // The sync processor is configured here or nowhere: no preset load runs on
-    // this route.
+    // THE SYNC PROCESSOR IS NOT RE-CONFIGURED HERE. It is configured for the
+    // SOURCE, which configureSyncPath() has already done for this one on the
+    // load, and the only field of that configuration derived from a divider is
+    // the separation threshold -- so re-applying it with the CHANNEL's divider
+    // changes exactly that one field, and changes it to the interlaced fraction
+    // on a source whose scan the load had already measured.
+    // ../../../../docs/investigations/the-pulse-ignore-outlived-the-channels-entry.md
     const uint16_t divider = dividerFor(lineRateHz);
-    SyncProcessor::applyForSyncType(csync, divider);
     if (csync)
         SyncOnGreen::choose(CsyncSogLevel);
     SyncProcessor::applyForPassThrough();
