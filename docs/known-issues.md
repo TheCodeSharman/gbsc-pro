@@ -1246,14 +1246,25 @@ does `delay()` for it, but it returns early unless the sync type actually
 changes, so it is not spending the loop here. **What the OLED path does that
 `/input` does not is unestablished.**
 
-**THE OLED STOPS ON THE CONFIRMATION, WHICH IS THE PART TO DIAGNOSE FIRST.**
-Observed at the bench on an input with nothing plugged into it: selecting RGBs
-leaves the panel showing `Input RGBs` and it never returns to the input menu,
-nor does it answer any button press afterwards. So the panel is not refusing
-the selection -- it is not getting back to a page that can take one, which
-makes the input unreachable from the only display a sourceless unit has. The
-remote and `/input` are then the only ways out, and the remote draws on the
-television, which is dark.
+**THE PANEL STOPPING ON `Input RGBs` WAS A DIFFERENT FAULT AND IS FIXED.** It
+was not a confirmation page and nothing was frozen: what the panel shows there
+is the DESCRIBED tree's Input page, which `Osd::Panel` renders as the level and
+the selected label alone and so is indistinguishable from the icon tree's
+confirmation. An open described menu shuts the `NEW_OLED_MENU` gate, and that
+gate is what `oledNav`'s only consumer sits behind -- so the encoder reached
+nothing while the tree went on painting the panel, and the sketch's 16 s timer
+excluded exactly that menu. `Osd::Menu::IdleCloseMs` closes it now.
+`investigations/the-panel-cannot-drive-the-tree-that-draws-on-it.md`.
+
+**So this entry is the OLED tree's own refusal, and that is still open.** The
+part measured on 2026-10-12 -- the icon tree declining to select another input
+while the reference retry cycles -- is untouched by the fix above, which
+addresses neither tree's handling of a selection.
+
+**What the panel still cannot do is DRIVE the described tree.** The encoder has
+three gestures and the tree needs Up, Down, Ok and Exit, so routing `oledNav`
+to whichever tree owns the gate wants a Back row on every page or a long-press.
+That is a design decision rather than a defect.
 
 Free heap reads 9720 in this state, below the 10000 `/fs/*` requires -- so
 `/fs/download?f=/preferences.txt` refuses and the input cannot be read back --
@@ -1264,8 +1275,9 @@ and above the 8000 the console broadcast needs.
 Selecting an input that carries no source leaves the unit with no picture
 indefinitely: nothing times out, nothing sweeps, and the engine runs its
 recovery ladder on an input where no recovery can succeed. Reached at the bench
-by picking RGBs with nothing on the connector, and the OLED entry above is what
-makes it unrecoverable from the panel.
+by picking RGBs with nothing on the connector. The OLED entry above used to
+make it unrecoverable from the panel; the described menu closes itself now, so
+the panel comes back to the icon tree on its own.
 
 **An explicit selection is a command and stays one** -- it is honoured whether
 or not a signal arrives, because a user choosing an input with the source not

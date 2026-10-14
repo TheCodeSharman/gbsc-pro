@@ -20,6 +20,24 @@ so the icon tree's `tick()` cannot paint over the page. Nothing on the board
 reports the panel, so `/menu`'s `panel` field reads that gate -- `described` or
 `icons` -- and is the only witness there is.
 
+**THE GATE DISCONNECTS THE UNIT'S OWN INPUT, WHICH IS WHY THE MENU CLOSES
+ITSELF.** The panel's only control is a rotary encoder, and both its ISRs write
+`oledNav`, whose single consumer is the `oledMenu.tick()` the gate shuts. So
+while the described menu is open the encoder's turn and push reach nothing, and
+the page on the panel answers only the remote and `/menu?key=`.
+`Osd::Menu::IdleCloseMs` is what bounds that: 16 s since the last press and the
+menu closes, the gate re-opens and the encoder works again. Nothing else did --
+the sketch's `OSD_CLOSE_TIME` timer is gated on `oled_menuItem != 0` and every
+site that opens this menu sets that to 0 first.
+
+**AND THE PANEL CANNOT BE USED TO TELL THE TWO TREES APART.** `Osd::Panel`
+draws only the selected row -- the level on one line and the label under it --
+so the described tree's Input page reads `Input` / `RGBs`, which is
+indistinguishable from the icon tree's own confirmation page for the same
+selection. A panel showing that says nothing about which tree is up; ask
+`/menu`'s `panel` field.
+`investigations/the-panel-cannot-drive-the-tree-that-draws-on-it.md`.
+
 The TV5725 has an icon-and-bar OSD of its own at `s0_90`..`s0_98`. **Nothing
 drives it** and the menu on the television comes from the STV9426, so the block
 has no owner. It is not quite unwritten: `Tv5725::Chip`'s bring-up parks the
