@@ -900,8 +900,8 @@ sync duty of **11.0%** where `STATUS_SYNC_PROC_HLOW_LEN` read 105..106 of
 `PLLAD_MD` 1446 steadily over six samples -- 7.33%, which is CEA's to a tenth of
 a point. `SP_RT_HS_SP` 1350 is `1446 - 159 + 63` and `/geometry` reported `sh`
 160 against the 106 the other landings show, so the capture floor rose 54 units
-and the counter's origin sat 54 samples early. `SourceMeasurement::takeDuty()`
-takes whatever a latched pass offers and its own comment names that hazard.
+and the counter's origin sat 54 samples early. A single reading of 159 against a
+counter giving 105..106 steadily is the same mechanism as the entry below.
 
 **THE DUTY'S SPREAD IS WHAT DECIDES WHETHER THE STORED FRAMING IS RECALLED, and
 when it misses the shape falls back to 4:3.** Three `/input?src=ypbpr`
@@ -919,6 +919,27 @@ between landings follows from the shape rather than causing it**: 4:3 narrows
 the room on one axis, a narrower room moves the line filter's ceiling, and the
 ceiling picks 1272 where 16:9 picks 1212. So a landing that reads as a different
 sampling decision is the recall having missed, one step earlier.
+
+**THE SINGLE READING IS CLOSED: THE DUTY NOW NEEDS TWO THAT AGREE.**
+`SourceMeasurement::takeDuty()` takes a reading only once a second agrees with
+it at `SyncWidthIdentity`, which is the tolerance the key compares at and so
+the tolerance that decides what a disagreement costs. A reading in question
+does not let a held one through either, because on a mode change what is held
+is the outgoing source's duty.
+
+**WHAT IS NOT ESTABLISHED IS THAT THE GATE CATCHES THIS PARTICULAR READING**,
+because the reading would not come back: 16 `/input?src=ypbpr` selections in
+one session gave 89 of 1212 on all 15 that re-measured, every one recalling the
+framing. So the gate is proven at the host layer and the bench shows it
+running -- two `duty:` lines a selection where there was one, and one landing
+that caught the dither it exists to admit, 88 then 89 -- rather than shown to
+reject the excursion. The next 8.25% reading is what confirms it.
+
+**AND A WANDERING PULSE IS STILL NOT SEPARATED.** `DutyAgreementAttempts` takes
+the latest reading as it stands after eight disagreements, which is the escape
+the field rate already has and the same trade: a frozen capture is worse than a
+framing chosen from one reading. A source whose pulse genuinely moves past
+identity on every pass therefore still reaches a second identity.
 
 **WHAT THIS DOES NOT MEAN IS THAT THE BLACK BORDER IS THE ENGINE'S.** On the
 landings that DO match CEA the capture is exactly the standard's active region --

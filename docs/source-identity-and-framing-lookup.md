@@ -84,6 +84,28 @@ So the reading repeats to the same one-count dither it shows while standing
 still, about 0.0006 either way, and the separation it has to achieve on the
 colliding pair above is 0.048 -- a margin of roughly 77 times.
 
+**THAT MARGIN IS THE RISC PC'S, AND THE COMPONENT PATH DOES NOT HOLD IT.**
+Measured on the Wii at 480p over three `/input?src=ypbpr` selections, the pulse
+read 93 of 1272, 100 of 1212 and 89 of 1212 -- a spread of 0.0094, four times
+`SyncWidthIdentity` rather than a sixteenth of it, and one of the three was a
+second identity for one source. The readings either side of it were correct, so
+what the reading does is miscount occasionally rather than drift.
+
+**SO ONE READING IS NOT TAKEN.** `SourceMeasurement::takeDuty()` takes a
+reading only once a second agrees with it, `HsyncPulse::agrees()` being the one
+definition and `SyncWidthIdentity` the tolerance -- the same tolerance the key
+compares at, because that is what a disagreeing pair costs. A one-count dither
+agrees and the excursion does not. Two consequences:
+
+- **A reading in question does not let a HELD one through either.** On a mode
+  change what is held is the outgoing source's duty, so standing on it solves
+  the window from a line of the wrong length.
+- **`DutyAgreementAttempts` takes the latest as it stands** after eight
+  disagreements, the escape the field rate already has. A frozen capture is
+  worse than a framing chosen from one reading, so a source whose pulse
+  genuinely wanders past identity can still reach a second identity -- what the
+  gate removes is the single miscount, not a wandering source.
+
 **Sync polarity comes with it and is free.** `STATUS_SYNC_PROC_HSPOL` is
 measured beside the width and was stable across the same six acquisitions,
 negative on the bench 640x480 and positive on its 800x600. It is a second
