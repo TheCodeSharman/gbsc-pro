@@ -45,6 +45,20 @@ python3 tools/gbsc-pro-hwtest/ota_probe.py --host 192.168.88.108
 running or not, so `nc -z` and a TCP port scan are both silent about the thing
 they appear to be testing.
 
+## A transfer that keeps dying with the path good
+
+`CONNECTED` and an upload that still stops at a few per cent is the third case,
+and **retrying is not always what clears it**: measured 2026-10-14, seven
+consecutive attempts died at 0, 1, 4 and 0 per cent on a unit that had been up
+about fifteen minutes with a `regpanel.py` polling it, and a `/restart`
+immediately before the eighth carried the whole image first time.
+
+The unit's free heap is the candidate and the boot figure does not show it --
+`/bootlog` read 9840 bytes at both boots, while a live read in the comparable
+state before the restart gave 8776 and refused `/fs/download`, which needs
+10000. So **restart the unit before an upload that has failed twice**, rather
+than retrying a third time; it costs twelve seconds against a minute an attempt.
+
 ## Arming
 
 `rto->allowUpdatesOTA` defaults to false and `ArduinoOTA.handle()` runs only
