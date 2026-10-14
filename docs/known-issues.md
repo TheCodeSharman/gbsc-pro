@@ -10,6 +10,119 @@ regardless of which step is in flight.
 
 ## Reaches the picture
 
+### A full-screen framing on the Wii shakes vertically, blanks, and re-acquires
+
+Observed 2026-10-14 on `ypbpr`, Wii at 480p into 1920x1080, with the line filter
+switched on. The framing was widened by hand to fill the screen; the picture
+shook vertically, went black, re-acquired on its own and came back stable and
+full screen. It has not been reproduced deliberately, and the two entries below
+are the defects the investigation did find, each reproducible on its own.
+
+**The reported event itself carries no instrument**, so what follows is measured
+on the same source and output across a line-filter toggle rather than across the
+event. The frame time lock is healthy there: `in 59939 mHz, out 59939 mHz` on
+every correction, the display clock inside 8 Hz of 108021588, and a phase error
+of 5236 against a 2669378 tick period, which is 0.2% and well inside the clamp.
+That is the settling shape in
+`investigations/the-frame-time-lock-saturates.md`, not the saturating one -- so
+saturation is not what a line-filter change provokes, and whether it is what the
+event was remains open.
+
+**And `PAD_SYNC_OUT_ENZ` is never dropped across a line-filter change**, so
+nothing re-presents the output. A black interval and a re-acquisition therefore
+came from the sink re-locking to a timing that moved under it, not from the
+engine taking the pad away and giving it back.
+
+What is NOT established is what moved vertically. The vertical registers are
+untouched by both reproducible defects below -- `VDS_VSCALE` 431,
+`VDS_VB_SP`/`ST` 34/1121 and `VDS_VSYNC_RST` 1124 are identical either side of a
+line-filter toggle -- so a horizontal-only mechanism does not reach it.
+
+Where to look: whether widening the framing re-keys the source mid-change and
+recalls a different stored framing, which is the entry below; and whether the
+raster is re-solved from a key whose rate reads 60.00 against the source's
+59.94, where the 0.1% error is past the lock's own +-0.06% clamp and no
+correction can absorb it. `/framing.txt` carries entries at both rates for this
+one source.
+
+### A framing wider than the line buffer drops the line filter and keeps its divider
+
+`VideoPath::applyLineFilter()` writes the bypass from
+`picture_.lineFilter() && fits`, where `fits` is the capture width against
+`VideoProcessor::LineBufferSamples`, 1020. `VideoPath::dividerCeilingForLineFilter()`
+reads only `picture_.lineFilter()`. **Past 1020 captured samples the two
+disagree**: the one-line delay leaves circuit and the divider ceiling it imposed
+stays.
+
+Measured 2026-10-14, Wii 480p into 1920x1080, `line-filter = 1` on flash:
+
+| line filter | `PLLAD_MD` | capture width | `VDS_D_RAM_BYPS` | `VDS_HSCALE` |
+|---|---|---|---|---|
+| on | 1212 | 966 | 0 | 708 |
+| off | 1446 | 1153 | 1 | 845 |
+
+At the solved framing the capture is 966 and fits. A framing widened past 1020
+leaves `VDS_D_RAM_BYPS` 1 with the preference still 1 and the menu still reading
+On, because `MenuTree` reads the preference rather than the register. **That is
+the filter's cost without the filter**: 1212 kept samples a line where the
+output alone would allow 1446, a sixth of the horizontal sampling density
+surrendered for a delay that is out of circuit.
+
+The setting itself persists correctly -- `line-filter = 1` is in
+`/preferences.txt` and survives a boot. What moves is the register.
+
+Where to look: the ceiling is computed from the published raster's active
+fraction before the capture window is solved, so it cannot simply ask `fits`.
+Either it follows the framing actually in force, or the capture is held to the
+buffer while the delay is wanted, or a framing that cannot carry the delay says
+so rather than silently dropping it.
+
+### The Wii's 480p is six sources to the framing store
+
+`/framing.txt` read 2026-10-14 holds six entries for one Wii at 480p on `ypbpr`:
+
+```
+521@59.94/1065?? = 1361 8639  613 9330 17778
+524@59.94/685??  = 1418 8392  686 9143 17778
+524@59.94/733??  = 1604 7967 1010 8667 17778
+524@60.00/1157-- = 1799 8000  667 9143 13333
+521@59.94/1100?? = 1361 8639  613 9330 13333
+524@60.00/1032-- = 1702 8000  648 9143 13333
+```
+
+`SourceKey` is the line count, the field rate, the sync width and the two
+polarities. This source moves on all four:
+
+| term | readings | what makes two keys |
+|---|---|---|
+| lines | 521, 524 | any difference |
+| rate | 59.94, 60.00 | `SourceIdentityPerThousand` 3 |
+| sync width | 685, 733, 1032, 1065, 1100, 1157 | `SyncWidthIdentity` 0.002, so 20 |
+| vsync polarity | `?`, `-` | any difference |
+
+The standard's sync width is 7.2%: 685 and 733 straddle it more than two
+tolerances apart, and 1032..1157 are a different quantity entirely -- a duty
+counted while the sync processor is not counting the source's line. **So a
+framing tuned at one acquisition is recalled at the next only if all four terms
+land in the same bucket**, and on this source they do not. Three of the six
+entries also disagree on declared shape, 13333 against 17778, so a recall lands
+a 4:3 framing on a source last tuned at 16:9.
+
+The count and the duty are the pair `SourceMeasurement.h` already names at
+`LatchSettleMs`: an install from a route that does not wait on the detection
+ladder drains five passes of a free-running `loop()` in 30 ms, and the key built
+from one such read 521 against 524 and 11.0% against 7.2%. **1100 is in the
+file**, so that path has reached the store rather than only the bench.
+
+`VideoPath::setLineFilter()` is one of those routes and it is reachable from the
+menu: toggling the line filter installs a divider of 1212 or 1446 and solves
+immediately, with no wait for the ADC PLL to relock.
+
+What would settle it: a key built only from a measurement taken after
+`LatchSettleMs`, and a polarity that is Undetermined on sync on green rather
+than sometimes Negative. Until then the store accumulates an entry per
+acquisition and `FRAMING: n stored` climbs on a bench that has seen one source.
+
 ### The Wii's 480p does not acquire at 1920x1080 -- the field rate is FIXED
 
 **The title named the field rate for two sessions and the field rate was the
