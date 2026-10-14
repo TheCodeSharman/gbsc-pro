@@ -322,6 +322,13 @@ public:
     // wanders would otherwise hold the mode change open for ever, and the
     // capture stays frozen for as long as it is open.
     static const uint8_t RateAgreementAttempts = 8;
+
+    // How many duty readings may disagree before the latest is taken as it
+    // stands. The same escape the rate has and for the same reason: a source
+    // whose pulse genuinely wanders past SyncWidthIdentity has no stable
+    // identity to find a framing by, and holding the mode change open leaves
+    // the capture frozen rather than mis-framed.
+    static const uint8_t DutyAgreementAttempts = 8;
     static const uint8_t HeldRateRejectionLimit = 60;
 
     // How long after the sampling clock is latched before anything read
@@ -380,6 +387,10 @@ private:
     bool normalisePolarity();
     bool readSource();
     bool takeDuty(bool latched, const HsyncPulse &reading);
+
+    // Whether a readable pulse is waiting for a second reading to agree with
+    // it, which is what measureDuty() holds the rate back across.
+    bool awaitingDutyAgreement() const;
     static SourceKey::Polarity polarityOf(bool positive);
 
     // --- what the pass reads and judges --------------------------------------
@@ -460,6 +471,13 @@ private:
     bool probesAgreed_;
     bool rateTaken_;
     bool dutyMeasured_;
+
+    // The last reading offered, which the next one has to agree with. Separate
+    // from hsync_ because a reading nothing has agreed with is not a
+    // measurement and nothing may read it. A default HsyncPulse is not a
+    // pulse, so it carries "nothing offered" as well.
+    HsyncPulse offeredHsync_;
+    uint8_t dutyAttempts_;
 
     // A clock was latched and the wait it owes has not been timed yet, and
     // the wait, once a reading has started it.

@@ -58,6 +58,21 @@ measureOnce(Tv5725::SourceMeasurement &sampling)
     return sampling.measureDuty(passClockMs());
 }
 
+// THE RATE'S OWN ANSWER for this pass, for a case about the rate rather than
+// about the whole measurement. The duty still runs underneath, because
+// measureDuty() is what releases the rate to be read again -- a run of
+// measureRate() calls alone reports the held rate back and re-reads nothing.
+inline Tv5725::SourceMeasurement::MeasurementStatus
+rateOnce(Tv5725::SourceMeasurement &sampling)
+{
+    passClockMs() += Tv5725::SourceMeasurement::LatchSettleMs;
+    const Tv5725::SourceMeasurement::MeasurementStatus rate
+        = sampling.measureRate(passClockMs());
+    if (rate == Tv5725::SourceMeasurement::Measured)
+        sampling.measureDuty(passClockMs());
+    return rate;
+}
+
 // The FIRST reading past the gate, whether or not the rate has repeated. For a
 // case about the settling itself.
 inline Tv5725::SourceMeasurement::MeasurementStatus

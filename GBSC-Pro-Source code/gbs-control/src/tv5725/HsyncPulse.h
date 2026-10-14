@@ -17,6 +17,8 @@
 
 #include <stdint.h>
 
+#include "SourceKey.h"   // SyncWidthIdentity, the tolerance this has to survive
+
 namespace Tv5725 {
 
 class HsyncPulse {
@@ -44,6 +46,18 @@ public:
     // source never leaves Settling. So the floor has to clear the narrowest
     // raster a source may publish, not the narrowest the bench happens to send.
     bool isPulse() const;
+
+    // Whether two readings are the same measurement.
+    //
+    // **AT THE KEY'S OWN TOLERANCE**, because what a disagreeing pair costs is
+    // an identity: a pair allowed to straddle SyncWidthIdentity settles on a
+    // duty that finds a different source's framing, or none.
+    //
+    // It admits the dither a healthy counter shows -- one ADC sample, 0.00083
+    // of the line at the narrowest divider the engine runs -- and refuses the
+    // excursion measured on the Wii at 480p, 100 samples of 1212 against a
+    // true 89. docs/source-identity-and-framing-lookup.md
+    bool agrees(const HsyncPulse &other) const;
 
     // CVT reduced blanking fixes hsync at 32 pixels inside 160 of blanking, so
     // its duty is 32 / (active + 160) -- 1.5% at 1920 active and 1.2% at 2560.

@@ -96,7 +96,8 @@ SourceMeasurement::SourceMeasurement(InputFormatter &inputFormatter)
       rateRejections_(0), hsyncPolarity_(SourceKey::Undetermined),
       vsyncPolarity_(SourceKey::Undetermined), verticalPeriod_(0),
       rateConfirmed_(false), probesAgreed_(false), rateTaken_(false),
-      dutyMeasured_(false), settleArmed_(false), settleTiming_(false),
+      dutyMeasured_(false), dutyAttempts_(0), settleArmed_(false),
+      settleTiming_(false),
       settleStartedMs_(0),
       steady_(SteadySamples), scanSteady_(SteadySamples), rateAttempts_(0),
       scanReported_(-1)
@@ -177,6 +178,8 @@ void SourceMeasurement::modeChanged()
     agreedRateHz_ = 0.0f;
     rateAttempts_ = 0;
     dutyMeasured_ = false;
+    offeredHsync_ = HsyncPulse();
+    dutyAttempts_ = 0;
     verticalSyncLines_ = 0;
     offeredVerticalSyncLines_ = 0;
 }
@@ -524,6 +527,8 @@ SourceMeasurement::MeasurementStatus SourceMeasurement::measureDuty(uint32_t now
     if (clockSettling(nowMs))
         return ClockSettling;
 
+    const bool measured = readSource();
+
     // THE PAIR ENDS HERE, however the duty reads. What measureRate() holds back
     // is one re-read of a rate the divider in force was derived from, not the
     // rate for the rest of the mode change -- a source may change rate at an
@@ -531,9 +536,16 @@ SourceMeasurement::MeasurementStatus SourceMeasurement::measureDuty(uint32_t now
     // Released on the pass RUNNING, not on the duty succeeding: a source whose
     // duty cannot be read at all would otherwise never let the rate be read
     // again.
-    rateTaken_ = false;
+    //
+    // **EXCEPT WHILE THE DUTY IS ONE AGREEING SAMPLE AWAY**, where the pulse is
+    // readable and only a second reading of it is owed. Releasing there spends
+    // a vsync sample on re-reading the rate the divider in force was derived
+    // from, and stakes the acquisition on the new reading -- the deadlock the
+    // release guards needs a duty that cannot be read, which is the other exit.
+    if (!awaitingDutyAgreement())
+        rateTaken_ = false;
 
-    return readSource() ? Measured : Settling;
+    return measured ? Measured : Settling;
 }
 
 HsyncPulse SourceMeasurement::hsync() const { return hsync_; }
@@ -650,13 +662,37 @@ bool SourceMeasurement::readSource()
 // docs/investigations/the-duty-is-counted-before-the-processor-relocks.md
 bool SourceMeasurement::takeDuty(bool latched, const HsyncPulse &reading)
 {
-    if (latched && reading.isPulse()) {
-        hsync_ = reading;
-        dutyMeasured_ = true;
-        return true;
+    if (!latched || !reading.isPulse()) {
+        dutyAttempts_ = 0;
+        return dutyMeasured_;
     }
-    return dutyMeasured_;
+
+    // ONE READING IS NOT A MEASUREMENT. The acquisition identifies the source
+    // from the duty in the pass this answers for, so a reading that stands
+    // alone is what the framing is looked up by and a later pass correcting it
+    // arrives after the lookup. A second reading agreeing is what separates
+    // the source's own duty from a single miscount -- the wrong one does not
+    // repeat. docs/known-issues.md
+    const bool agreed = offeredHsync_.isPulse() && reading.agrees(offeredHsync_);
+    offeredHsync_ = reading;
+
+    // A READING IN QUESTION DOES NOT LET A HELD ONE THROUGH EITHER. The pulse
+    // has moved past identity, so whichever of the two is the source's, what
+    // is held describes neither -- and on a mode change what is held is the
+    // duty of the source that just left, which the window would be solved
+    // from.
+    if (!agreed && dutyAttempts_ < DutyAgreementAttempts) {
+        ++dutyAttempts_;
+        return false;
+    }
+
+    dutyAttempts_ = 0;
+    hsync_ = reading;
+    dutyMeasured_ = true;
+    return true;
 }
+
+bool SourceMeasurement::awaitingDutyAgreement() const { return dutyAttempts_ > 0; }
 
 uint16_t SourceMeasurement::sourceLines() const { return sourceLines_; }
 

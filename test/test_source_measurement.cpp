@@ -910,7 +910,7 @@ TEST_CASE("the field rate has to REPEAT before anything is sized from it")
 
     SUBCASE("a rate that lands somewhere else has not repeated either") {
         g_fieldRate = 49.92f;
-        CHECK(measureOnce(measurement) == SourceMeasurement::Settling);
+        CHECK(rateOnce(measurement) == SourceMeasurement::Settling);
     }
 
     SUBCASE("but a rate that never repeats is taken as it stands rather than "
@@ -925,14 +925,14 @@ TEST_CASE("the field rate has to REPEAT before anything is sized from it")
         for (uint8_t i = 2; i < SourceMeasurement::RateAgreementAttempts; ++i) {
             CAPTURE(i);
             g_fieldRate = 50.0f + (float)i * 0.1f;
-            CHECK(measureOnce(measurement) == SourceMeasurement::Settling);
+            CHECK(rateOnce(measurement) == SourceMeasurement::Settling);
         }
         g_fieldRate = 49.5f;
-        CHECK(measureOnce(measurement) == SourceMeasurement::Measured);
+        CHECK(rateOnce(measurement) == SourceMeasurement::Measured);
     }
 
     SUBCASE("the same rate twice is the source holding still") {
-        CHECK(measureOnce(measurement) == SourceMeasurement::Measured);
+        CHECK(rateOnce(measurement) == SourceMeasurement::Measured);
     }
 
     SUBCASE("and the reading noise of a settled source is not a change") {
@@ -940,7 +940,7 @@ TEST_CASE("the field rate has to REPEAT before anything is sized from it")
         // in the last place. The band is a tenth of a percent: ten times that
         // noise, and a third of the smallest settling error seen.
         g_fieldRate = 50.26f * 1.0005f;
-        CHECK(measureOnce(measurement) == SourceMeasurement::Measured);
+        CHECK(rateOnce(measurement) == SourceMeasurement::Measured);
     }
 }
 
@@ -972,12 +972,12 @@ TEST_CASE("no reading the key is cut from is one sample")
         for (uint8_t i = 2; i < SourceMeasurement::RateAgreementAttempts; ++i) {
             CAPTURE(i);
             g_fieldRate = 50.0f + (float)i * 0.1f;
-            REQUIRE(measureOnce(measurement) == SourceMeasurement::Settling);
+            REQUIRE(rateOnce(measurement) == SourceMeasurement::Settling);
         }
 
         g_fieldRate = 50.08f;
         g_fieldRates = {51.14f, 50.08f, 50.08f};
-        REQUIRE(measureOnce(measurement) == SourceMeasurement::Measured);
+        REQUIRE(rateOnce(measurement) == SourceMeasurement::Measured);
     }
 
     CHECK(measurement.fieldRateHz() == doctest::Approx(50.08f).epsilon(0.001f));
@@ -2400,4 +2400,92 @@ TEST_CASE("the rate read is the same whatever the span")
     REQUIRE(measurePastGate(single) == SourceMeasurement::Measured);
 
     CHECK(spanned.fieldRateHz() == doctest::Approx(single.fieldRateHz()));
+}
+
+// ONE READING IS NOT A MEASUREMENT OF THE DUTY, AND THE KEY IS BUILT FROM IT.
+// The acquisition uses the duty in the pass it is taken --
+// VideoSourceAcquisition calls sourceMeasured(hsync()) on the line after
+// measureDuty() answers Measured -- so the first reading past the lock gate is
+// what the source is identified by, and a later pass correcting hsync_ arrives
+// after the framing lookup has already missed.
+//
+// Measured on the Wii at 480p into 1920x1080, three /input?src=ypbpr
+// selections, nothing else touched: the pulse read 93 of 1272, then 100 of
+// 1212, then 89 of 1212. 0.0731 and 0.0734 are inside SyncWidthIdentity of the
+// stored 0.0733 and 0.0825 is four times outside it, so the middle landing
+// identified a second source, found no framing and fell back to 4:3.
+// docs/known-issues.md
+
+// The rate settled without reading the duty, so the next measureDuty() call is
+// the duty's FIRST reading and the pulse in force is what it takes.
+static Tv5725::SourceMeasurement::MeasurementStatus
+settleRateOnly(SourceMeasurement &sampling)
+{
+    Tv5725::SourceMeasurement::MeasurementStatus rate
+        = Tv5725::SourceMeasurement::NotSteady;
+    for (uint16_t pass = 0;
+         pass < 200 && rate != Tv5725::SourceMeasurement::Measured; ++pass) {
+        passClockMs() += Tv5725::SourceMeasurement::LatchSettleMs;
+        rate = sampling.measureRate(passClockMs());
+    }
+    return rate;
+}
+
+TEST_CASE("one duty reading never completes a measurement")
+{
+    SourceMeasurement sampling(inputFormatter);
+    Adc::applyDivider(1212);
+    seedSourceLines(524);
+    Wire.sourceHsync(100, 1212, false);
+    g_fieldRate = 59.94f;
+    REQUIRE(settleRateOnly(sampling) == SourceMeasurement::Measured);
+
+    CHECK(sampling.measureDuty(passClockMs()) == SourceMeasurement::Settling);
+}
+
+// AND THE AGREED READING IS THE ONE TAKEN, not the first. What separates the
+// two is that the wrong reading does not repeat: 89 came back on both of the
+// landings that recalled the framing and on twelve further selections measured
+// in one run, where 100 appeared once.
+TEST_CASE("a duty is taken once two readings agree on it")
+{
+    SourceMeasurement sampling(inputFormatter);
+    Adc::applyDivider(1212);
+    seedSourceLines(524);
+    Wire.sourceHsync(100, 1212, false);
+    g_fieldRate = 59.94f;
+    REQUIRE(settleRateOnly(sampling) == SourceMeasurement::Measured);
+    REQUIRE(sampling.measureDuty(passClockMs()) == SourceMeasurement::Settling);
+
+    Wire.sourceHsync(89, 1212, false);
+
+    CHECK(measurePastGate(sampling) == SourceMeasurement::Measured);
+    CHECK(sampling.hsync().syncDuty() == doctest::Approx(89.0f / 1212.0f));
+}
+
+// AND A DUTY THAT NEVER REPEATS IS TAKEN AS IT STANDS, which is the escape the
+// rate already has and the same trade. The capture is frozen while a mode
+// change is outstanding, so a source whose pulse wanders past identity on
+// every pass would sit on a frozen picture rather than on a framing chosen
+// from one of its readings.
+TEST_CASE("a duty that never repeats is taken as it stands")
+{
+    SourceMeasurement sampling(inputFormatter);
+    Adc::applyDivider(1212);
+    seedSourceLines(524);
+    Wire.sourceHsync(100, 1212, false);
+    g_fieldRate = 59.94f;
+    REQUIRE(settleRateOnly(sampling) == SourceMeasurement::Measured);
+
+    // Five samples apart at this divider is 0.0041, twice SyncWidthIdentity, so
+    // no pair agrees -- and every reading stays inside the pulse band, so each
+    // one is refused for disagreeing rather than for not being a pulse.
+    SourceMeasurement::MeasurementStatus reading = SourceMeasurement::Settling;
+    for (uint8_t i = 0; i <= SourceMeasurement::DutyAgreementAttempts; ++i) {
+        CAPTURE(i);
+        Wire.sourceHsync((uint16_t)(100 + 5 * i), 1212, false);
+        reading = measureOnce(sampling);
+    }
+
+    CHECK(reading == SourceMeasurement::Measured);
 }
