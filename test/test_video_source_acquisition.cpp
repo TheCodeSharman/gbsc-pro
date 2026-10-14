@@ -1372,6 +1372,33 @@ TEST_CASE("a source is not present while a mode change is still working through"
     CHECK_FALSE(unit.acquisition.sourceIsPresent());
 }
 
+// A REFUSED SOLVE OUTLIVES THE SOURCE IT WAS REFUSED FOR. solveFromMeasurement()
+// clears the mode change whether the windows solved or not, so a source that
+// lands in pass-through next arrives with the deferred solve still outstanding
+// -- and pass-through solves nothing, so nothing discharges it. The pass then
+// reports a solve on every tick, which costs the presentation as well as the
+// verdict: poll() leaves presenting to the passes that did not solve.
+// docs/known-issues.md
+TEST_CASE("a source passed through with a solve outstanding is present")
+{
+    seedPassThroughSource();
+    g_passThroughSwitches = 0;
+
+    Acquiring unit;
+    unit.acquisition.usePassThroughSwitch(enterPassThrough);
+    unit.acquisition.allowPassThrough(true);
+    unit.start();
+    REQUIRE(unit.pollUntilSolved(8));
+    REQUIRE(unit.path.outputMode()->isBypass());
+
+    // What a solve refused against the departing source leaves behind.
+    unit.path.deferSolve();
+    for (uint16_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i)
+        unit.poll();
+
+    CHECK(unit.acquisition.sourceIsPresent());
+}
+
 TEST_CASE("a count no source runs is absent whatever the sampling says")
 {
     seedBenchSource();

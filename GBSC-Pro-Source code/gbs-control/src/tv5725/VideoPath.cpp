@@ -724,7 +724,12 @@ void VideoPath::configurePassThrough()
     // the encoder is already running on.
     displayClock_.adopt();
 
+    // Both, because both are what changing() is. Pass-through writes no window,
+    // so a solve refused against the departing source has nothing to discharge
+    // it: the source reads absent with its picture on the panel, and every pass
+    // reports a solve it never made.
     modePending_ = false;
+    solvePending_ = false;
 
     // The resolution the user asked for is NOT touched here, because it is not
     // held here: pass-through is a different fact about the same output, and
