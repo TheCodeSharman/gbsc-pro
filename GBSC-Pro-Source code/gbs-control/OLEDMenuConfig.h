@@ -20,7 +20,6 @@
 #define OLED_MENU_WRAPPING_SPACE (OLED_MENU_WIDTH / 3)
 #define REVERSE_ROTARY_ENCODER_FOR_OLED_MENU 1 // 如果设置为 1，旋转编码器将反向用于菜单导航
 #define REVERSE_ROTARY_ENCODER_FOR_OSD 0 // 如果设置为 1，旋转编码器将反向用于 OSD 导航
-#define OSD_TIMEOUT 6000 // OSD_TIMEOUT 毫秒后，OSD 将在无输入的情况下消失
 
 // 请勿编辑这些内容
 #define OLED_MENU_STATUS_BAR_HEIGHT (OLED_MENU_HEIGHT / 4) // status bar uses 1/4 of the screen

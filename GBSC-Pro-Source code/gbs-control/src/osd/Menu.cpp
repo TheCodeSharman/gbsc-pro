@@ -6,7 +6,7 @@ Menu::Menu(const MenuItem *root, uint8_t count, const MenuRenderer &renderer,
            const MenuContext &context)
     : root_(root), count_(count), deviceCount_(1), context_(context),
       cursor_(root, count), open_(false), adjusting_(false),
-      redraw_(false), valuesDrawn_(0)
+      redraw_(false), pressed_(false), idleSinceMs_(0), valuesDrawn_(0)
 {
     devices_[0] = &renderer;
     for (uint8_t i = 1; i < Devices; ++i)
@@ -29,6 +29,22 @@ void Menu::open()
     open_ = true;
     adjusting_ = false;
     redraw_ = true;
+    pressed_ = true;
+}
+
+// The run is dated here rather than in press(), which is reached from a network
+// callback and from the IR handler and has no clock in either. A press says only
+// that one happened; the next tick is what times it.
+void Menu::poll(uint32_t nowMs)
+{
+    if (pressed_) {
+        pressed_ = false;
+        idleSinceMs_ = nowMs;
+        return;
+    }
+
+    if (open_ && (uint32_t)(nowMs - idleSinceMs_) >= IdleCloseMs)
+        close();
 }
 
 void Menu::close()
@@ -111,6 +127,8 @@ MenuCommand Menu::adjust(Key key)
 
 MenuCommand Menu::press(Key key)
 {
+    pressed_ = true;
+
     if (!open_) {
         if (key == KeyMenu)
             open();

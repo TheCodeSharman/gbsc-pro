@@ -26,6 +26,14 @@ public:
     // unit. One page, drawn by each the way its device wants it.
     static const uint8_t Devices = 2;
 
+    // AN OPEN MENU STRANDS THE UNIT, so it closes itself. The panel's only
+    // input is a rotary encoder that reaches the icon tree alone, and this menu
+    // being open is what gates that tree off -- so while it is up the panel
+    // shows a page answering nothing but the remote, whose television may be
+    // dark. Matched to what the legacy screens already wait.
+    // ../../../../docs/osd-menu.md
+    static const uint32_t IdleCloseMs = 16000;
+
     Menu(const MenuItem *root, uint8_t count, const MenuRenderer &renderer,
          const MenuContext &context);
 
@@ -46,6 +54,11 @@ public:
     MenuCommand press(Key key);
 
     bool needsRedraw() const;
+
+    // The clock, from the caller that owns the tick. Holds no time of its own
+    // and press() takes none: a press says only that one happened, and this is
+    // what dates it.
+    void poll(uint32_t nowMs);
 
     // From loop(), which is the one place the bus is reached. Closing draws an
     // empty page rather than nothing: a device that keeps what it was given
@@ -78,6 +91,8 @@ private:
     bool open_;
     bool adjusting_;
     bool redraw_;
+    bool pressed_;
+    uint32_t idleSinceMs_;
     uint16_t valuesDrawn_;
 };
 

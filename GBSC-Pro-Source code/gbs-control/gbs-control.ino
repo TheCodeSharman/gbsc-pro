@@ -3773,6 +3773,10 @@ void loop()
     // twice: a redraw flushes the panel's whole framebuffer, and a second one
     // per press slows loop() enough to make presses coalesce. Only while the
     // chain's menu is closed, or the two paint over each other.
+    // Ahead of the draw, so a menu that closed itself paints its empty page on
+    // the pass that closed it rather than the one after.
+    describedMenu.poll(millis());
+
     if (oled_menuItem == 0 && !menuCommandPending())
         describedMenu.drawIfNeeded();
 

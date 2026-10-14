@@ -1,4 +1,3 @@
-#define OSD_TIMEOUT 8000
 #include <ESP8266WiFi.h>
 #include <LittleFS.h>
 #include "OLEDMenuImplementation.h"

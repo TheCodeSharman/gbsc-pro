@@ -380,6 +380,80 @@ TEST_CASE("the Menu key opens from closed and leaves by the level it entered")
     CHECK_FALSE(menu.isOpen());
 }
 
+// AN OPEN MENU IS THE ONLY THING ON THE PANEL AND THE PANEL CANNOT DRIVE IT.
+// The unit's own input is a rotary encoder whose every gesture reaches the icon
+// tree, which this menu's being open gates off -- so a menu left open strands
+// the unit with a page that answers nothing but the remote, on a board whose
+// television may be dark. Closing itself is what makes that recoverable.
+// docs/osd-menu.md
+TEST_CASE("a menu nobody is pressing closes itself")
+{
+    Unit unit;
+    Menu menu(Root, RootCount, Recorder, unit.context);
+    menu.press(Menu::KeyMenu);
+    REQUIRE(menu.isOpen());
+
+    uint32_t now = 1000;
+    menu.poll(now);
+    now += Menu::IdleCloseMs - 1;
+    menu.poll(now);
+    CHECK(menu.isOpen());
+
+    menu.poll(++now);
+    CHECK_FALSE(menu.isOpen());
+}
+
+TEST_CASE("a press is what the idle run is counted from")
+{
+    // Otherwise the menu closes under someone reading it: the run is the time
+    // since the last press, not the time since it opened.
+    Unit unit;
+    Menu menu(Root, RootCount, Recorder, unit.context);
+    menu.press(Menu::KeyMenu);
+
+    uint32_t now = 1000;
+    for (uint8_t i = 0; i < 4; ++i) {
+        menu.poll(now);
+        now += Menu::IdleCloseMs - 1;
+        menu.poll(now);
+        REQUIRE(menu.isOpen());
+        menu.press(Menu::KeyDown);
+    }
+
+    menu.poll(now);
+    menu.poll(now + Menu::IdleCloseMs);
+    CHECK_FALSE(menu.isOpen());
+}
+
+TEST_CASE("a closed menu is not reopened by the clock")
+{
+    Unit unit;
+    Menu menu(Root, RootCount, Recorder, unit.context);
+    REQUIRE_FALSE(menu.isOpen());
+
+    menu.poll(1000);
+    menu.poll(1000 + 10 * Menu::IdleCloseMs);
+    CHECK_FALSE(menu.isOpen());
+}
+
+TEST_CASE("an idle close erases what was drawn")
+{
+    // The same obligation KeyExit has: a device that keeps what it was given
+    // holds the last page over the picture for ever.
+    Unit unit;
+    Menu menu(Root, RootCount, Recorder, unit.context);
+    menu.open();
+    menu.drawIfNeeded();
+    REQUIRE(Drawn.size() == MenuPage::Rows);
+
+    menu.poll(1000);
+    menu.poll(1000 + Menu::IdleCloseMs);
+    REQUIRE_FALSE(menu.isOpen());
+
+    menu.drawIfNeeded();
+    CHECK(Drawn.empty());
+}
+
 TEST_CASE("closing erases what was drawn")
 {
     // The overlay keeps what was written to it, so a menu that stops drawing
