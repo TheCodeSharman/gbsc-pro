@@ -176,6 +176,40 @@ A class that genuinely needs the time takes it as an argument -- `SamplingLog`
 is the worked example. A class that needs a subsystem the list already excludes
 has to be excluded with it, which is why `SamplingLog` sits beside `Adc`.
 
+### The fake filesystem seam
+
+`test/fake/LittleFS.h` is the same idea applied to flash: an in-memory map of
+path to contents, so a firmware file that opens a file compiles for the host
+unchanged and with no `#ifdef` in it. `Prefs::SettingsFile` is the first class
+through it.
+
+**It stores bytes and answers reads rather than recording calls**, so what a
+file ended up HOLDING is observable. A save that writes a partial file is the
+fault it exists to pin, and no assertion about call sequences can see it --
+the settings format's own integrity check is its last line, so a test has to be
+able to read back what was actually written.
+
+**It models the write the DEVICE was measured doing, not the ideal one.**
+Opening `"w"` does not truncate: it overwrites in place and leaves whatever a
+longer previous file put beyond the new end. That is the measured behaviour
+(`known-issues.md`), and modelling it is what makes a `truncate(0)` in the
+firmware load-bearing — remove it and the tail case fails. A fake whose `"w"`
+cleared the file would pass either way.
+
+Two more behaviours worth having:
+
+- `serveEmptyForFirst(n)` releases the content only after `n` opens, which is
+  what a flash awake enough to serve metadata and not yet awake enough to serve
+  content does. It is what lets the retry loop be tested at all.
+- `opens()` counts them, so *how many attempts were spent* is assertable rather
+  than inferred.
+
+`F()` and `PSTR()` are in `test/fake/Arduino.h` as **placement directives rather
+than dependencies**: on the ESP they keep a literal in flash, where `.rodata`
+costs RAM this fork has little of. A firmware file that drops them to stay
+host-compilable pays that cost silently -- one file header was 248 bytes of
+globals -- so the seam supplies them instead.
+
 ### The free-function seam, for what the fake bus cannot reach
 
 Some of the engine needs the ESP itself rather than the chip. The pattern is a
