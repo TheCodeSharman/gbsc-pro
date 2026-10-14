@@ -789,6 +789,51 @@ TEST_CASE("a source passed through still reports the raster it measured")
     CHECK(unit.path.reportedKey().rateHz() == doctest::Approx(60.0f).epsilon(0.01));
 }
 
+static unsigned g_frameLockForgotten = 0;
+static void forgetNothing() { ++g_frameLockForgotten; }
+
+// The load the sketch runs once a route has been claimed, with the sync watcher
+// on as it is in service.
+static void configureLoad(Acquiring &unit, bool scalingRgbhv = false)
+{
+    static bool disconnected;
+    static uint8_t stage;
+    disconnected = true;
+    stage = 0;
+
+    VideoSourceAcquisition::LoadState load;
+    load.sourceDisconnected = &disconnected;
+    load.applyPresetDoneStage = &stage;
+    load.syncWatcherEnabled = true;
+    load.scalingRgbhv = scalingRgbhv;
+    unit.acquisition.configureAfterLoad(forgetNothing, load);
+}
+
+// THE CLAMP IS WHAT RESTORES THE BLACK LEVEL, and holding it is a configuration
+// the load takes on the way through rather than a state to be left behind. The
+// channel's early return jumped the release, and the sketch's own recovery is
+// gated on the window not yet being placed -- which the same sequence has
+// already placed, so nothing downstream reaches it either. Measured on the Wii
+// at 480p on `ypbpr` in pass-through: SP_NO_CLAMP_REG 1 against 0 on the
+// scaling path and 0 on the stock build, with the capture dongle reading mean
+// luma 0.00 and every configuration register correct.
+TEST_CASE("a source passed through clamps like a scaled one")
+{
+    seedBenchSource();
+    seedPassThroughSource();
+
+    Acquiring unit;
+    unit.acquisition.usePassThroughSwitch(enterPassThrough);
+    unit.acquisition.allowPassThrough(true);
+    unit.start();
+    REQUIRE(unit.pollUntilSolved(8));
+    REQUIRE(unit.path.outputMode()->isBypass());
+
+    configureLoad(unit);
+
+    CHECK_FALSE(SyncProcessor::clampHeld());
+}
+
 // DETECTION TAKES THE ROUTE AWAY WITHOUT TELLING THE ENGINE. Low power
 // detection routes the DACs back to the scaler, and the held output mode still
 // says bypass -- so the switch that claims the route never runs again and the

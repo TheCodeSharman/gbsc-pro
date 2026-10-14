@@ -365,6 +365,17 @@ void VideoSourceAcquisition::configureAfterLoad(void (*forgetFrameLock)(),
 
     videoPath_.restartAndLatch();
 
+    // THE CLAMP IS THE SOURCE'S BLACK LEVEL, so the route the video takes after
+    // it is no reason to leave it held. prepareForDetection() holds it for the
+    // count and this is where it is let go, above the channel's return: the
+    // return is there for the VDS solve that is not coming, and the sketch's own
+    // recovery is gated on the window not yet being placed, which the sequence
+    // above has already placed.
+    placeClampWindow();
+    Tv5725::SyncProcessor::releaseClampIfPlaced();
+
+    applySyncProcessorDynamic();
+
     if (Tv5725::VideoRoute::isHdBypassChannel()) {
         Tv5725::Interrupts::acknowledgeAll();
 
@@ -373,11 +384,6 @@ void VideoSourceAcquisition::configureAfterLoad(void (*forgetFrameLock)(),
         videoPath_.setOutputMode(&Tv5725::ModeBypass);
         return;
     }
-
-    placeClampWindow();
-    Tv5725::SyncProcessor::releaseClampIfPlaced();
-
-    applySyncProcessorDynamic();
 
     if (!state.syncWatcherEnabled) {
         Tv5725::SyncProcessor::releaseClamp();
