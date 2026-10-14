@@ -10,31 +10,6 @@ regardless of which step is in flight.
 
 ## Reaches the picture
 
-### An input excursion can leave the pass-through channel re-solving for ever
-
-Selecting `ypbpr`, then `vga`, then `ypbpr` again, with the sources in
-pass-through, left the engine cycling three lines at about 7 Hz indefinitely --
-312 cycles over a 45 s console capture, and nothing else printed:
-
-```
-rate match: the HD bypass channel carries the video
-measured: 524 lines x 59.93 Hz -> line rate 31468, clock 2038@31468 htotal 2038
-duty: 152 pulse / 2038 divider, htotal 2038, negative
-```
-
-`/geometry` reads `state: acquired` with **`present: false`**, and the capture
-fields still hold the *previous* source's numbers -- 1445x750 for the VGA 720p
-that had just been deselected, beside the Wii's 31468 line rate. So the
-measurement is of the arriving source and the window is the departing one's.
-
-**The measurement itself is healthy throughout**: 524 lines at 59.93 Hz on every
-pass, and the duty reads 152/2038 on all 312 with no disagreement, so neither
-the count, the rate nor the sync width is what it is stuck on.
-
-`/restart` clears it in about ten seconds. It does not reproduce on every
-excursion -- a later `vga` to `ypbpr` change on the same build came back
-presented without one -- so what distinguishes the landings is unknown.
-
 ### A full-screen framing on the Wii shakes vertically, blanks, and re-acquires
 
 Observed 2026-10-14 on `ypbpr`, Wii at 480p into 1920x1080, with the line filter
