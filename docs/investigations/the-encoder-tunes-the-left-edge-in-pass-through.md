@@ -98,6 +98,53 @@ only has to keep sync and back porch off the screen, so it biases wide and a
 border sliver at one end is the expected result rather than a fault.
 
 **So a source's departures from the standard it matched do not matter here.**
+
+## The window is not read by the encoder at all, and that retires the branch
+
+`PAD_BLK_OUT_ENZ` is 1, so HBOUT and VBOUT are off: the encoder takes the
+analog RGB with HSOUT/VSOUT and nothing else. `HD_HB_SP` therefore cannot state
+where active video is. It can only paint black over video the channel sends.
+
+**Keeping a border visible was the reason for consulting the published raster,
+and it is void.** The encoder takes its origin from the image content on this
+path, so it skips a black border whether one sits inside the window or not --
+blanking to a standard's sync extent cannot make a border visible, and blanking
+to its display area cannot make one invisible. Nothing the window does reaches
+the question.
+
+What the edge does decide is how much blanking sits inside the emitted active
+area, which the encoder shows as a bar. Measured on the Wii at 480p through the
+channel's 2038, each value forced to re-lock with `PAD_SYNC_OUT_ENZ` and read
+off the USB capture:
+
+| `HD_HB_SP` | 147 (the raster's sync extent) | 238 (the envelope) | 290 |
+|---|---|---|---|
+| black at the right | 251 columns | **56** | 117 |
+
+238 read 56 on three consecutive forced re-locks, so the response belongs to the
+register rather than to which landing the lock arrived at. It is **not
+monotonic**, which is the same shape as the three models above and the reason no
+offset constant is fitted here either.
+
+So the envelope is the one answer on both branches, and `HdBypass` no longer
+reads `SourceTiming` horizontally. The bound that remains is that the envelope
+may never reach where a source puts video -- 0.117 of the line against the Wii
+480p's 122/858 and the AKF50 800x600's 176/1056 -- because bypass has no framing
+control to give cropped picture back with.
+
+## What is left is the source's own border, doubled onto two edges
+
+With the envelope in force the Wii at 480p emits 56 columns of black at the
+right and 51 rows at the bottom, against 0 and 1 at the left and top. The
+asymmetry is not the channel's: removing the vertical window entirely, through a
+re-lock, leaves the bottom bar where it was, and the registers are live --
+blanking 120 lines puts 188 rows of black at the top.
+
+It is the source's safe-area border, which `known-issues.md` measures at about
+15 px left, 17 px right, 15 lines top and 9 lines bottom, with the encoder's
+content origin moving all of it to one edge of each axis. The vertical fits
+closely: 24 border lines of a 480-line window is 54 rows of 1080 against the 51
+measured, with 1 at the top. Nothing on the board can reach it.
 Whether this source spends 88 pixels on back porch like DMT or 48 plus a 40
 pixel border, the encoder places the picture either way and a window biased wide
 covers both. `SourceTiming`'s precision is earned on the SCALING path, where the
