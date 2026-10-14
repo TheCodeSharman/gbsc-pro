@@ -10,6 +10,36 @@ regardless of which step is in flight.
 
 ## Reaches the picture
 
+### Composite-sync VGA in pass-through acquires and emits nothing
+
+Measured 2026-10-14 on `vga`, RISC PC at 800x600@60 with `SYNC 1`, output
+1920x1080, `scale-rgbhv = 0` so pass-through is permitted. The engine acquires
+and claims the output -- `state: acquired`, `present: true`, line rate 37638
+against the source's 37919, `DAC_RGBS_BYPS2DAC` 1 and `OUT_SYNC_SEL` 1 -- and
+the capture dongle reads **mean luma 0.00 with no picture at all**. The same
+source on `SYNC 0` through the same route is a full 1920x1079 frame at mean
+luma 82.2.
+
+**It is the only one of the three sync arrangements never tested on this
+route.** Separate-sync VGA and the Wii's sync on green both pass through; this
+combination had no reading until it was asked for.
+
+`SP_SOG_MODE` reads 1, so the engine is on the csync path, which is correct for
+the source. `SP_CS_CLP_ST`/`SP` read 6..10 against 21..25 on separate sync, and
+`SP_SOG_P_INV` reads 0 -- so the sync-on-green inversion is not implicated and
+the clamp is the one window that moved.
+
+**Reaching it costs a dark screen for a minute**, because `SYNC` arms no
+re-probe: `/sc?~` is what makes the engine follow the sync type, and the
+recovery is `SYNC 0` followed by another `/sc?~`. Script the restore in a
+`finally` so a failed run cannot leave the bench dark.
+
+Where to look first: whether the channel is being handed a divider sized for
+a line the csync path measures differently, and whether
+`PAD_SYNC_OUT_ENZ` is ever dropped and re-driven on this entry -- a black frame
+with every register correct is the encoder holding a stale timing, and that
+recovery was not tried here.
+
 ### A full-screen framing on the Wii shakes vertically, blanks, and re-acquires
 
 Observed 2026-10-14 on `ypbpr`, Wii at 480p into 1920x1080, with the line filter
@@ -5702,6 +5732,44 @@ entries resolve the raster match in time is open.
 `video-source-acquisition.md`.
 
 ## Costs time rather than correctness
+
+### OTA has run out of heap margin, and a static menu pool is most of why
+
+Measured 2026-10-14: `/bootlog` reports **10456 bytes free immediately after a
+restart**, against the ~18 KB this page's console-gate entry recorded. espota
+then dies between 0% and 7% on attempt after attempt, and `/sc?c` itself starts
+answering 503. Pausing a long-running `regpanel.py` recovers 2416 bytes and is
+not enough. USB carries the image first time, so the route is the heap and not
+the network.
+
+**It is not a leak and not the diagnostics.** The failing build has
+`BOOTLOG_BYTES=0`, `GBS_SAMPLING_LOG=0` and `GBS_TRACE_WRITES=0`. Globals are
+54028 bytes against the 47584 recorded when the 18 KB figure was taken, and the
+largest RAM symbols name the cause:
+
+| symbol | bytes |
+|---|---|
+| `oledMenu` | 6999 |
+| `g_ic` | 1704 |
+| `gbsicon_bits` | 1024 |
+| `sourceFramings` | 740 |
+| `webSocket` | 516 |
+
+`OLEDMenuManager` holds `OLEDMenuItem allItems[OLED_MENU_MAX_ITEMS_NUM]` at 64,
+and every one of those holds `OLEDMenuItem *subItems[OLED_MENU_MAX_SUBITEMS_NUM]`
+at 16 -- 4096 bytes of pointers before any of the scalars, allocated whether the
+slots are used or not. The pool is sized in `OLEDMenuConfig.h` and nothing
+counts what the tree actually registers.
+
+Where to look: how many items and sub-items the icon tree really uses, and
+whether the pool can be sized to that. The described menu already draws on the
+panel through `Osd::Menu`, so the icon tree's own pool may be retirable rather
+than merely shrinkable -- `osd-menu.md`.
+
+**Until then, a flash that stalls under 10% is the heap**, and the cheap moves
+are a `/restart` first and USB second. A bare `make -C build flash-ota` retried
+into a loop costs minutes and does not land.
+
 
 ### `read_settings()` cannot tell a refused read from a refused file
 
