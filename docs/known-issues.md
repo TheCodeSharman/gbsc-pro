@@ -34,16 +34,22 @@ came from the sink re-locking to a timing that moved under it, not from the
 engine taking the pad away and giving it back.
 
 What is NOT established is what moved vertically. The vertical registers are
-untouched by both reproducible defects below -- `VDS_VSCALE` 431,
-`VDS_VB_SP`/`ST` 34/1121 and `VDS_VSYNC_RST` 1124 are identical either side of a
-line-filter toggle -- so a horizontal-only mechanism does not reach it.
+untouched by the defect below -- `VDS_VSCALE` 431, `VDS_VB_SP`/`ST` 34/1121 and
+`VDS_VSYNC_RST` 1124 are identical either side of a line-filter toggle -- so a
+horizontal-only mechanism does not reach it.
 
-Where to look: whether widening the framing re-keys the source mid-change and
-recalls a different stored framing, which is the entry below; and whether the
-raster is re-solved from a key whose rate reads 60.00 against the source's
-59.94, where the 0.1% error is past the lock's own +-0.06% clamp and no
-correction can absorb it. `/framing.txt` carries entries at both rates for this
-one source.
+**The source identity is NOT what moved**, and that is measured rather than
+assumed: ten acquisitions of this source give one key, and the raster is
+generated from the key.
+`investigations/the-wii-480p-source-key-is-stable.md`. So a stored framing
+recalled against a key that drifted mid-change is refuted as the explanation,
+and what is left is the vertical path itself.
+
+Where to look: whether widening the framing past the line buffer re-solves the
+capture mid-change, and what the playback fetch does while it does. A capture
+re-solved under a picture the memory is still being read for is the one
+mechanism left that reaches the vertical axis without touching a vertical
+register.
 
 ### A framing wider than the line buffer drops the line filter and keeps its divider
 
@@ -76,52 +82,6 @@ fraction before the capture window is solved, so it cannot simply ask `fits`.
 Either it follows the framing actually in force, or the capture is held to the
 buffer while the delay is wanted, or a framing that cannot carry the delay says
 so rather than silently dropping it.
-
-### The Wii's 480p is six sources to the framing store
-
-`/framing.txt` read 2026-10-14 holds six entries for one Wii at 480p on `ypbpr`:
-
-```
-521@59.94/1065?? = 1361 8639  613 9330 17778
-524@59.94/685??  = 1418 8392  686 9143 17778
-524@59.94/733??  = 1604 7967 1010 8667 17778
-524@60.00/1157-- = 1799 8000  667 9143 13333
-521@59.94/1100?? = 1361 8639  613 9330 13333
-524@60.00/1032-- = 1702 8000  648 9143 13333
-```
-
-`SourceKey` is the line count, the field rate, the sync width and the two
-polarities. This source moves on all four:
-
-| term | readings | what makes two keys |
-|---|---|---|
-| lines | 521, 524 | any difference |
-| rate | 59.94, 60.00 | `SourceIdentityPerThousand` 3 |
-| sync width | 685, 733, 1032, 1065, 1100, 1157 | `SyncWidthIdentity` 0.002, so 20 |
-| vsync polarity | `?`, `-` | any difference |
-
-The standard's sync width is 7.2%: 685 and 733 straddle it more than two
-tolerances apart, and 1032..1157 are a different quantity entirely -- a duty
-counted while the sync processor is not counting the source's line. **So a
-framing tuned at one acquisition is recalled at the next only if all four terms
-land in the same bucket**, and on this source they do not. Three of the six
-entries also disagree on declared shape, 13333 against 17778, so a recall lands
-a 4:3 framing on a source last tuned at 16:9.
-
-The count and the duty are the pair `SourceMeasurement.h` already names at
-`LatchSettleMs`: an install from a route that does not wait on the detection
-ladder drains five passes of a free-running `loop()` in 30 ms, and the key built
-from one such read 521 against 524 and 11.0% against 7.2%. **1100 is in the
-file**, so that path has reached the store rather than only the bench.
-
-`VideoPath::setLineFilter()` is one of those routes and it is reachable from the
-menu: toggling the line filter installs a divider of 1212 or 1446 and solves
-immediately, with no wait for the ADC PLL to relock.
-
-What would settle it: a key built only from a measurement taken after
-`LatchSettleMs`, and a polarity that is Undetermined on sync on green rather
-than sometimes Negative. Until then the store accumulates an entry per
-acquisition and `FRAMING: n stored` climbs on a bench that has seen one source.
 
 ### The Wii's 480p does not acquire at 1920x1080 -- the field rate is FIXED
 
