@@ -72,11 +72,26 @@ longer arms. `present` has gone 1 and 2 polls of 60, to 6, to **13 of 60**.
 **The residue is a third class and the tolerance must not be widened to reach
 it.** The 28 count arms left in 141 s run from 0.340 to 1.901 times the solved
 count -- a vertical found somewhere INSIDE a field rather than lost at its edge
--- and none is within 20 per thousand of a multiple. The open question is why
-the separator finds one there. `vs_act_det` carries nothing on this path, 0
-transitions at duty 100% against 115 on separate sync, and the unmeasured levers
-are the V-active detect group and `SP_DLT_REG`.
+-- and none is within 20 per thousand of a multiple.
 `investigations/the-composite-sync-count-re-arms-its-own-solve.md`.
+
+**AND WHAT MAKES THE SOURCE UNREADABLE IS `SP_H_PULSE_IGNOR`.** Frozen at a
+solved state with the divider latched and nothing else written, 99 reads the
+source's field rate in 25 of 25 and its count in 25 of 25, where 50, 16 and 14
+read 36.99 Hz and a count in the hundreds or thousands -- both halves turning
+together on one register, reversibly. `pulseIgnoreFor()` writes
+`ProgressiveCsyncPulseIgnore`, a constant 14 measured on the Wii at 480p through
+a 1446-sample line, to every progressive composite source, including this one
+through a 2038-sample line.
+
+**A single rule is not yet derivable and must not be guessed.** 70 is measured
+BAD on the Wii, so the two sources bracket from opposite sides and neither a
+fraction of the line nor of the pulse fits both. In absolute time the windows
+overlap at roughly 0.7 to 1.4 us -- a fixed duration, which is neither
+normalisation tried -- but that lands in the untested gap on both sources,
+50..99 on the RISC PC and 14..70 on the Wii. Those two sweeps are the
+outstanding measurement.
+`investigations/the-engine-makes-the-composite-count-unmeasurable.md`.
 
 ### No walk reaches a separator level above the starting guess
 
