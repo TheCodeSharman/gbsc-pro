@@ -789,14 +789,20 @@ mistake that has been made and cost a wrong diagnosis — bypass produces a work
 - **A connected-but-silent console means the heap gate is shut, not that the
   firmware is quiet.** `SerialMirror` only calls `broadcastTXT` when free heap
   clears `CONSOLE_BROADCAST_MIN_HEAP`. That was **20000**, which this fork can
-  never reach: globals take 47584 bytes of 81920, and once WiFi, the async server
-  and the websocket server have taken theirs, `/bootlog` measures ~18 KB free
-  **at boot**. The socket then accepts clients and delivers nothing for the whole
+  never reach: globals take 50868 bytes of 81920, and once WiFi, the async server
+  and the websocket server have taken theirs, free heap is in the teens of KB.
+  The socket then accepts clients and delivers nothing for the whole
   session — the web UI loads its shell and sits on the splash with the red
-  disconnected indicator. Lowered to 8000 on 2026-08-05; measured 18120 free at
-  boot afterwards, console delivering. **Read `/bootlog`'s `free heap:` line
-  before believing a silent console.** Guarded by
+  disconnected indicator. Lowered to 8000 on 2026-08-05. **Read `/bootlog`'s
+  `free heap:` line before believing a silent console.** Guarded by
   `test_the_console_delivers_anything_at_all`.
+- **FREE HEAP IS NOT A CONSTANT OF THE BUILD, SO ONE READING PROVES NOTHING
+  ABOUT A CHANGE.** Measured on an unchanged unit, 13200..17192 purely by what
+  is attached — about 1.4 KB per websocket client against a cap of 5 — so a
+  reading taken with a console open and one taken idle differ by more than most
+  changes cost. Compare the build's `Global variables use` line, which is
+  exact, and keep the clients constant if a live figure is the one being
+  compared. `docs/known-issues.md`.
 - **It is not a one-client limit, and the console does not hang up any more.**
   `WEBSOCKETS_SERVER_CLIENT_MAX` is **5**
   (`3rdparty/WebSockets/src/WebSocketsServer.h:31`), nothing crashes, and six
@@ -833,7 +839,7 @@ mistake that has been made and cost a wrong diagnosis — bypass produces a work
   `debugPrintf`, which `tv5725Log()` expands to, so it silences `no INPUT vsync`,
   `no OUTPUT vsync` and every `runFrequency()` reason — precisely the messages
   the "no HDMI with every register perfect" section tells you to read. It buys
-  1068 bytes of globals (46516 vs 47584) and costs the diagnosis. Use
+  about a kilobyte of globals and costs the diagnosis. Use
   `GBS_DEBUG=1 GBS_TRACE_WRITES=0`: full diagnostics, none of the
   per-write trace flood.
 - **The filesystem is LittleFS, and the routes are `/fs/*`.** Migrated from
