@@ -83,6 +83,34 @@ Either it follows the framing actually in force, or the capture is held to the
 buffer while the delay is wanted, or a framing that cannot carry the delay says
 so rather than silently dropping it.
 
+### The separation threshold on the pass-through channel is chosen by nothing
+
+`SP_H_PULSE_IGNOR` on the channel is the interlaced fraction of whatever divider
+the last LOAD ran, which has no relation to the channel's own line and no
+relation to the source's scan. Measured on the Wii at 480p on `ypbpr`: 59, from
+the scaling divider of 1212, against the 14 the measured scan asks for and the
+99 the channel's divider of 2038 would give.
+
+**It is harmless at 59 and fatal at 99**, and nothing picked either.
+`investigations/the-pulse-ignore-outlived-the-channels-entry.md` has what 99
+does -- the block's own low-length reading goes bimodal, the source key
+alternates, two framings are recalled in turn and the engine re-solves every
+five seconds while the output stays black. So a source whose scaling divider
+puts that fraction near its own sync pulse fails the same way, and nothing in a
+register dump says so.
+
+**The obvious collapse is refuted and must not be reinstated.** Letting
+`applyDynamic()` own the threshold on this route reproduces the fault outright:
+the channel never measures the scan, so the dynamic pass derives the same
+interlaced fraction for itself. `applySeparationThresholds()` not writing it is
+load-bearing.
+
+What would settle it: the scan is known at the moment the engine decides to
+hand a source over, so the question is which owner can still see it on a route
+that solves nothing. A threshold measured against the source's own pulse rather
+than derived from a divider would answer it for every route at once --
+`STATUS_SYNC_PROC_HLOW_LEN` is that pulse, and it reads correctly here.
+
 ### The Wii's 480p does not acquire at 1920x1080 -- the field rate is FIXED
 
 **The title named the field rate for two sessions and the field rate was the
