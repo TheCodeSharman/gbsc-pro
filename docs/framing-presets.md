@@ -6,11 +6,12 @@ control. It survives a reboot, and it survives changing the output resolution.
 
 **Built, except the VESA defaults.** What is here describes the code:
 `Tv5725::SourceKey` is the key, `Tv5725::FramingTable` the table,
-`Tv5725::FramingLine` the record's grammar, `Tv5725::FramingText` the file,
-`Tv5725::SlotTable` and `Tv5725::SlotText` the numbered slots,
-`Tv5725::VideoPath` the behaviour, and `gbs-control.ino` the two files
-themselves -- and the tables, which it owns and hands down. Seeding the table with VESA defaults for a recognised timing is the
-part still to come.
+`Tv5725::FramingLine` the record's grammar, `Tv5725::FramingText` one line of
+the file, `Prefs::FramingFile` the file itself, and `Tv5725::VideoPath` the
+behaviour. `gbs-control.ino` owns the tables and hands them down, and still
+holds the numbered slots -- those are raw-file sites, and the classes an earlier
+draft of this page named for them do not exist. Seeding the table with VESA
+defaults for a recognised timing is the part still to come.
 
 ## What it unblocks
 

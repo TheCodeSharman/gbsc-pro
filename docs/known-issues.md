@@ -903,6 +903,23 @@ a point. `SP_RT_HS_SP` 1350 is `1446 - 159 + 63` and `/geometry` reported `sh`
 and the counter's origin sat 54 samples early. `SourceMeasurement::takeDuty()`
 takes whatever a latched pass offers and its own comment names that hazard.
 
+**THE DUTY'S SPREAD IS WHAT DECIDES WHETHER THE STORED FRAMING IS RECALLED, and
+when it misses the shape falls back to 4:3.** Three `/input?src=ypbpr`
+selections in a row, same source, nothing else touched:
+
+| measured pulse | key | framing | shape | divider settled on |
+|---|---|---|---|---|
+| 93 of 1272 | `524@59.94/731??` | recalled | 17778 | 1212 |
+| 100 of 1212 | `524@59.94/825??` | **none stored** | 13333 | **1272** |
+| 89 of 1212 | `524@59.94/734??` | recalled | 17778 | 1212 |
+
+731 and 734 are inside the key's tolerance of the stored 733 and 825 is not, so
+the 8.25% reading is a second identity for one source. **The divider difference
+between landings follows from the shape rather than causing it**: 4:3 narrows
+the room on one axis, a narrower room moves the line filter's ceiling, and the
+ceiling picks 1272 where 16:9 picks 1212. So a landing that reads as a different
+sampling decision is the recall having missed, one step earlier.
+
 **WHAT THIS DOES NOT MEAN IS THAT THE BLACK BORDER IS THE ENGINE'S.** On the
 landings that DO match CEA the capture is exactly the standard's active region --
 `IF_HB_SP2` 164 against the 164.8 the row puts video at, `IF_HB_ST2` 1380
