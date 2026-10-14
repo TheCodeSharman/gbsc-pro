@@ -62,28 +62,19 @@ half is fixed -- is the same defect at another mode, and its reading that 4 and
 above steadies the count does **not** transfer: at 800x600 level 4 is among the
 worst.
 
-### The separator sweep that climbs has no call site
+### No walk reaches a separator level above the starting guess
 
-`SyncOnGreen::sweep()` walks `ADC_SOGCTRL` across the whole field, up before
-down, and stops at the first level `SourceMeasurement::sourceIsMeasurable`
-accepts. Its only caller is `VideoSourceAcquisition::establishSeparatorLevel()`,
-which has a declaration in the header and a definition in the `.cpp` and
-**nothing calls it**.
+`acquireSeparatorLevel()` runs `SyncOnGreen::acquire()`, which only **descends**
+from the level the input is due -- so a source needing a level above
+`ComponentLevel` cannot be found. A full-field walk that climbed existed with no
+call site and is deleted rather than wired in, because the level is not a
+reproducible lever: two consecutive acquisitions of one source in one mode read
+624/624 and 1691/1691 at level 18, so no run's evidence supports a choice.
 
-What runs instead is `acquireSeparatorLevel()`, from three live sites, which
-is `SyncOnGreen::acquire()` -- the walk the header states only descends. So a
-level above the starting guess is unreachable, and `SyncOnGreen.h` says so in
-terms: a component source needing 24 cannot be found by a walk that steps down
-from 14.
-
-Measured consequence on composite-sync pass-through: the level that steadies
-the vertical count is 20, from a start of 13, and the engine free-runs at 24
-where the count scatters.
+What is still open is a source that needs one. Nothing on the bench does, and
+the measurement that would reopen this is a source acquiring above
+`ComponentLevel` and reproducibly failing below it.
 `investigations/the-separator-level-steadies-the-count-but-does-not-present.md`.
-
-Supporting but weak on its own: `separator level:` appears zero times in 80 s
-of console across six solve cycles. The console drops bursts, so the absent
-call site is what carries this rather than the absent line.
 
 ### A full-screen framing on the Wii shakes vertically, blanks, and re-acquires
 

@@ -93,6 +93,39 @@ green and so has a live formatter frame, reads present 44 of 45 polls at mean
 luma 201, the RiscPC on separate sync 33 of 35 at 82, and four source mode
 changes are followed in 1.83 to 2.03 s.
 
+## A count that is a multiple of the solve is refused by arithmetic
+
+The 27 arms the corroboration passes are the ones where **both halves lost the
+same vertical pulse**. They derive from the same separated vertical, so the
+formatter's frame doubles with the count and the pair reconciles -- 1245 half
+lines against a count of 622 is one frame, and there is nothing in the pair that
+says it is two.
+
+What separates them is the line period. **Doubling the count at an unchanged
+field rate doubles the LINE rate**, so a source that really moved there moves
+the period with it: 480i to 480p does, and so does the bench's 320x256@50 to
+800x600@60 -- 311 lines at 15.6 kHz to 628 at 37.9. A count that is a whole
+multiple of the solved one while `HPERIOD_IF` has not moved cannot be a source
+that moved. `HPERIOD_IF` as a change detector is the one role it is trusted in,
+and this is that role.
+
+The tolerance is 20 per thousand, because the multiple is of the count the pulse
+was lost from rather than of the restored one: 1246 and 1870 sit 8 and 11 short
+of exact multiples of a solved 627, 6.4 and 5.8 per thousand. The nearest
+reading it has to refuse is 1333, 63 per thousand out, and one multiple is a
+whole frame from the next.
+
+**It narrows the count arm rather than dropping the pass.** The arithmetic has
+no second instrument behind it, so it must not be the last word: `rateMoved()`
+still runs, and its recheck measures the field rate a different way and arms on
+that. A source whose count really doubled at an unchanged line period -- 60 Hz
+to 30 at one line rate -- is therefore followed late rather than never.
+
+The positive answer is its own reading: `linePeriodHolds()` rather than
+`!hasLineRateMoved()`, because the second is also false for a register that
+would not hold still, and refusing a count on the strength of a register that
+said nothing is refusing it for no reason.
+
 ## Refuted: the field-rate measurement reads a line-derived signal
 
 `known-issues.md` recorded the field rate reading 3937.58 Hz against a line rate

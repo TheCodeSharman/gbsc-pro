@@ -78,30 +78,29 @@ That was measured at 640x480@60, where 4 sufficed; at 800x600@60 level 4 is
 among the worst. The level is per source, which is the argument for finding it
 by probing rather than by constant.
 
-## The full-field sweep exists and nothing calls it
+## The full-field sweep is deleted
 
-`SyncOnGreen::sweep()` walks the level across the whole field, up before down,
-and stops at the first level `SourceMeasurement::sourceIsMeasurable` accepts.
-Its only caller is `VideoSourceAcquisition::establishSeparatorLevel()`, which
-**has a declaration and a definition and no call site**. The three live sites
-call `acquireSeparatorLevel()` instead, which runs `SyncOnGreen::acquire()` --
-the walk the header states only descends.
+A walk across the whole field, up before down, stopping at the first level a
+count-steadiness test accepted, existed with **no call site**: the three live
+sites call `acquireSeparatorLevel()`, which is `SyncOnGreen::acquire()` -- the
+walk the header states only descends. So the machinery that could find level 20
+from a start of 13 was present and unreachable.
 
-So the machinery that could find level 20 from a start of 13 is present and
-unreachable, and the walk that does run cannot climb. Consistent with the
-console, where `separator level:` appears **zero times** in 80 s across six
-solve cycles while `sync arrangement: composite or SOG` does appear.
+**Wiring it in was tried and withdrawn on measurement.** There it runs before
+detection: on `ypbpr` the count reads 0 at every level and the walk costs 6.5 s
+for nothing, and on `vga` composite it accepted 18 in one acquisition and 22 in
+the next, on a steady 1246 -- the count doubled. Two defects of its own were
+real and were fixed first: it put every level IN FORCE, which latches the ADC
+PLL, and then timed a field rate inside the relock window, and its walk could
+reach the starved end and park the separator fully open.
 
-The console drops bursts, so an absent line is weak evidence on its own; the
-absent call site is what carries this.
-
-**It was wired to the arrangement change and the measurement took it back out.**
-There it runs before detection: on `ypbpr` the count reads 0 at every level and
-the walk costs 6.5 s for nothing, and on `vga` composite it accepted 18 in one
-acquisition and 22 in the next, on a steady 1246 -- the count doubled. Two
-defects of its own were real and are fixed: it put every level IN FORCE, which
-latches the ADC PLL, and then timed a field rate inside the relock window, and
-its walk could reach the starved end and park the separator fully open.
+**What closes it is the level not being a lever**, below. The gap it existed to
+fill is real -- a descending walk cannot reach a level above its starting guess
+-- and no source on the bench has needed one, where every attempt to choose a
+level from one run's evidence is refuted by the next run. The code to bring it
+back is in git history; the measurement that would justify it is a source that
+acquires at a level above `ComponentLevel` and reproducibly does not acquire
+below it.
 
 ## What is left, and the table above does not repeat
 
