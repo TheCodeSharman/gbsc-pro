@@ -4669,9 +4669,25 @@ The floor is 30.0 now. Measured after the change, in the same state: `PLLAD_KS`
 carries the refutations of the divider, the route and the charge pump, each
 measured.
 
-**What is left is vertical.** With the clock right the field-rate measurement
-reads 3937.58 Hz against a line rate of 31500, which is the line rate over eight
--- a line-derived signal reaching a measurement that wants vertical sync.
+**WHAT IS LEFT IS THE IDLE PASS, AND THE MEASUREMENT IS NOT IMPLICATED AT ALL.**
+The source is read right and solved right: measured at 800x600@60 composite with
+the arrangement re-probed, **15 complete solves in 42 s** -- one every 2.8 s --
+with 50 of 89 `measured:` lines reading the correct 627/628 and the duty taken
+through a latched clock. Every one is discarded by the next idle pass, which
+reads a count the solve never saw: **34 distinct values from 253 to 1880**, 13
+of the 15 arms firing on the count. 623, 1246 and 1870 are the source's count
+and twice and three times it, so vertical pulses are being missed, and
+`countIsSource()` cannot reject 1246 -- any count from 200 to 1300 is a source.
+`investigations/the-composite-sync-count-re-arms-its-own-solve.md`.
+
+**The field-rate reading of 3937.58 Hz is REFUTED as evidence about this path.**
+It was taken with the sync type stale, the separate-sync configuration in force
+on a composite source. With the arrangement right the input formatter's vertical
+-- which is what the field rate is timed off -- is a clean field-rate pulse, and
+the two sync types are indistinguishable there: `/testbus?ms=25&if=3` reads **4
+transitions at duty 0.2% on both**. `vs_act_det` is the one stage that stops
+carrying anything, toggling 115 times on separate sync and sitting high for the
+whole window on composite.
 
 **The sync-type probe is NOT why**, and an earlier reading of this row saying so
 is withdrawn. Forced to re-probe, it answers correctly on both sync types of the
@@ -4689,11 +4705,18 @@ Three findings from the same window:
   a `VTOTAL` wandering 534..543; 4 and above give a steady 522. Coast pairs of
   7/3, 9/9, 3/3, 1/1 and 0/0 move it by at most one line; 16/16 destabilises it.
   **The level that works is per source and 4 is not a floor to generalise** --
-  at 800x600@60 it takes 20, and 4 is among the worst there. **And the ladder
-  walking it down is not what happens at that mode**: the engine free-runs at
-  24. What holds across both is that the level sets the count's stability and
-  that nothing with an acceptance test is walking it.
-  `investigations/the-separator-level-steadies-the-count-but-does-not-present.md`.
+  at 800x600@60 it takes 20, and 4 is among the worst there.
+  **BUT THE LEVEL IS NOT A REPRODUCIBLE LEVER, so none of those figures may be
+  used to choose one.** Two consecutive acquisitions of the same source in the
+  same mode, the level walked from inside `loop()` with 24 counts read a level,
+  give 624/624 and 1691/1691 at level 18 -- the surface the coast pair has
+  rather than the one `SP_H_PULSE_IGNOR` has. Every table of it taken so far
+  was also held from outside against the 500 ms ladder, and the polling that
+  takes starves the loop: 30 console lines in 338 s against 1070 in 80 s, the
+  engine solving nothing across three 75 s windows. Walk it from inside
+  `loop()`, or the reading describes a starved engine.
+  `investigations/the-separator-level-steadies-the-count-but-does-not-present.md`,
+  `investigations/the-composite-sync-count-re-arms-its-own-solve.md`.
 
 **`STATUS_MISC_PLLAD_LOCK` is not a discriminator in the failing direction**: it
 is 0 in the working pass-through separate state as well. It reading 1 does mean

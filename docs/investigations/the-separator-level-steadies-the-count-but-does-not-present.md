@@ -95,9 +95,27 @@ solve cycles while `sync arrangement: composite or SOG` does appear.
 The console drops bursts, so an absent line is weak evidence on its own; the
 absent call site is what carries this.
 
-## What is left
+**It was wired to the arrangement change and the measurement took it back out.**
+There it runs before detection: on `ypbpr` the count reads 0 at every level and
+the walk costs 6.5 s for nothing, and on `vga` composite it accepted 18 in one
+acquisition and 22 in the next, on a steady 1246 -- the count doubled. Two
+defects of its own were real and are fixed: it put every level IN FORCE, which
+latches the ADC PLL, and then timed a field rate inside the relock window, and
+its walk could reach the starved end and park the separator fully open.
 
-The count is steadiable and the engine still does not acquire, so the remaining
-question is what rejects a steady 623/624 -- the four-line deficit against
-627/628, or the held rate, or the field-rate measurement that
-`known-issues.md` records reading a line-derived signal on this path.
+## What is left, and the table above does not repeat
+
+**The level is not a reproducible lever.** Two consecutive acquisitions of this
+source, the search reading the count from inside `loop()`, give 624/624 and
+1691/1691 at level 18 -- so one run cannot support a choice of level, and this
+surface is the one `two-owners-of-the-coast-lengths-double-the-count.md` records
+for the coast pair rather than the one `SP_H_PULSE_IGNOR` has.
+
+The table above was also taken with the level held from outside against the
+500 ms ladder, and the polling that takes is measured to starve `loop()`: 30
+console lines in 338 s against 1070 in 80 s, with the engine solving nothing
+across three 75 s windows.
+
+**And the question it ends on is answered.** The field-rate candidate is
+refuted, and what discards a correct solve is the idle pass's count:
+`the-composite-sync-count-re-arms-its-own-solve.md`.
