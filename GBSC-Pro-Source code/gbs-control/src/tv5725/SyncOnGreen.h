@@ -109,31 +109,6 @@ public:
     // PLL, which are Adc's.
     static void acquire(uint32_t (*nowMs)(), void (*putInForce)());
 
-    // Walk the level across the WHOLE field and stop at the first one the
-    // source can be measured at, starting from the level the input needs and
-    // going up before going down.
-    //
-    // **THE OTHER WALKS ONLY DESCEND, SO A LEVEL ABOVE THE STARTING GUESS IS
-    // UNREACHABLE BY THEM.** Nothing on the board measures the sync amplitude,
-    // so there is no guess worth trusting that far: a component source needing
-    // 24 cannot be found by a walk that steps down from 14, and the levels
-    // below 14 are what those walks already cover -- which is why this one goes
-    // up first.
-    //
-    // `measurable` is the caller's because the measurement is not this class's.
-    // Taking a reading of the source's field rate here would make this a second
-    // owner of it, and two owners of one measured fact is the defect
-    // docs/investigations/the-frame-time-lock-saturates.md records.
-    //
-    // Each level is APPLIED and settled rather than put in force, and only the
-    // level the search settles on is latched: putting one in force relatches
-    // the ADC PLL, which is the clock the acceptance test's own measurement is
-    // timed through.
-    //
-    // Returns whether any level passed. The level the input needs is left in
-    // force when none did.
-    static bool sweep(bool (*measurable)(), void (*putInForce)());
-
     // The same walk, two levels at a time and without the settling runs, for a
     // source whose sync has only just gone: the windows acquire() waits out
     // cost more than the attempt is worth there. Judges the sync separator's output

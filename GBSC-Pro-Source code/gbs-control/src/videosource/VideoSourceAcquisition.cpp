@@ -1292,31 +1292,6 @@ void VideoSourceAcquisition::applySyncProcessorDynamic()
     Tv5725::SyncProcessor::applyDynamic(source);
 }
 
-// The sync separator's level, swept until the source can be timed. It sits with
-// establishSyncType() because it is the same kind of fact: nothing on the board
-// measures the sync amplitude, so the level cannot be calculated and is found by
-// probing -- and it has to be right before anything tries to measure the rate,
-// which is what a separator slicing badly makes unmeasurable.
-//
-// The acceptance test is Tv5725::SourceMeasurement's because the measurement is.
-void VideoSourceAcquisition::establishSeparatorLevel()
-{
-    if (!Tv5725::Chip::hasPower())
-        return;
-
-    const bool found = Tv5725::SyncOnGreen::sweep(
-        Tv5725::SourceMeasurement::sourceIsMeasurable,
-        Tv5725::SyncOnGreen::putInForce);
-    if (!Tv5725::SyncOnGreen::inSyncPath())
-        return;
-
-    char line[64];
-    snprintf(line, sizeof(line), "separator level: %u%s",
-             (unsigned)Tv5725::SyncOnGreen::level(),
-             found ? "" : ", nothing measured");
-    tv5725Log(line);
-}
-
 void VideoSourceAcquisition::acquireSeparatorLevel()
 {
     if (!Tv5725::Chip::hasPower()) {

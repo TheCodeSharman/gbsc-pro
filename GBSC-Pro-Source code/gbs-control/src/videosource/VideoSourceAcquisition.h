@@ -161,18 +161,14 @@ public:
     // configured for until a run of counts settles.
     bool sourceIsProgressive() const;
 
-    // The sync separator's level for the source arriving, swept across the
-    // whole field until the source can be timed. One of the measurements a
-    // source change takes, beside the sync type: both are facts nothing on the
-    // board can calculate, and both have to be settled before the rate is read.
-    static void establishSeparatorLevel();
-
     // Walk the level for the source in force, starting from what the input is
     // due: a component source runs sync on green, which is weaker than a
     // dedicated sync line, so it starts one step wider. The walk only DESCENDS,
-    // so it is the maintenance ladder's half of the question and cannot reach a
-    // level above the guess -- establishSeparatorLevel() is what can. Nothing
-    // is walked on a board that may not be there.
+    // so a level above the starting guess is out of reach -- nothing on the
+    // bench has yet needed one, and what a level moves is not reproducible
+    // across two acquisitions of the same source.
+    // ../../../docs/investigations/the-composite-sync-count-re-arms-its-own-solve.md
+    // Nothing is walked on a board that may not be there.
     static void acquireSeparatorLevel();
 
     // How long each block reset is given before the next write.

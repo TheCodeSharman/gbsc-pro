@@ -212,41 +212,6 @@ void SyncOnGreen::acquire(uint32_t (*nowMs)(), void (*putInForce)())
     }
 }
 
-bool SyncOnGreen::sweep(bool (*measurable)(), void (*putInForce)())
-{
-    if (!inSyncPath())
-        return false;
-
-    chooseForInput();
-    const uint8_t from = level_;
-
-    // The input's level first, then up, then down: a source already measurable
-    // where it sits must not be moved, and the levels BELOW the guess are what
-    // every other walk here already covers. The starved end is not offered at
-    // all: nothing measured through it means anything, and the maintenance
-    // ladder stops above it for the same reason.
-    for (uint8_t step = 0; step <= LevelMax - StarvedLevel - 1; ++step) {
-        const uint8_t at = step <= LevelMax - from
-                               ? (uint8_t)(from + step)
-                               : (uint8_t)(LevelMax - step);
-
-        // APPLIED RATHER THAN PUT IN FORCE. Putting one in force relatches the
-        // ADC PLL, and the acceptance test's field rate is timed through that
-        // clock -- so a level judged inside the relock window reports the
-        // relatch. The settle is the separator's own, which is all that moved.
-        apply(at);
-        delay(StepSettleMs);
-        if (measurable()) {
-            putInForce();
-            return true;
-        }
-    }
-
-    chooseForInput();
-    putInForce();
-    return false;
-}
-
 void SyncOnGreen::reacquire(void (*walk)(), void (*putInForce)())
 {
     if (!inSyncPath())

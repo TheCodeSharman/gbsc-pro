@@ -8,7 +8,6 @@
 #include "InputFormatter.h"   // the line and frame periods, counted at 27 MHz
 #include "ModeDetect.h"   // whether the source is interlaced, which it measures
 #include "SyncMeasurement.h"   // whether the arrangement can state a polarity
-#include "SyncOnGreen.h"
 #include "SyncProcessor.h"   // SP_EXT_SYNC_SEL, the path this switches
 
 
@@ -310,36 +309,6 @@ float SourceMeasurement::sampleFieldRateHz()
     const float second = TestBusRateMeasurement::sourceFieldRateHz(false, 1);
     const float third = TestBusRateMeasurement::sourceFieldRateHz(false, 1);
     return medianOfThree(first, second, third);
-}
-
-bool SourceMeasurement::sourceIsMeasurable()
-{
-    uint16_t low = 0;
-    uint16_t high = 0;
-    bool source = true;
-    for (uint8_t read = 0; read < MeasurableCountReads; ++read) {
-        const uint16_t lines = SyncProcessor::lineCount();
-        if (read == 0 || lines < low)
-            low = lines;
-        if (read == 0 || lines > high)
-            high = lines;
-        if (!VideoSignal::countIsSource(lines))
-            source = false;
-        delay(MeasurableCountGapMs);
-    }
-
-    // The SPREAD rather than every pair, because a miscounting source
-    // alternates: the Wii reads 521 against a 525-line raster four fifths of
-    // the time and 524 the rest, which is one source standing still.
-    const bool held = source && (uint16_t)(high - low) <= CountPairSpread;
-
-    char line[72];
-    snprintf(line, sizeof(line), "sog,%u,%u,%u,%u",
-             (unsigned)SyncOnGreen::level(), (unsigned)low, (unsigned)high,
-             (unsigned)held);
-    tv5725Log(line);
-
-    return held;
 }
 
 float SourceMeasurement::recurringFieldRateHz(bool *everyProbeAgreed)

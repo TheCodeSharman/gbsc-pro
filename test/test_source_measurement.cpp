@@ -2453,33 +2453,6 @@ settleRateOnly(SourceMeasurement &sampling)
     return rate;
 }
 
-// The separator level's acceptance test. The level is searched across the whole
-// field before anything about the source is established, so what the test may
-// read is bounded by what answers with the ADC clock on a reference divider.
-TEST_CASE("a source counting steadily can be measured where the level sits")
-{
-    seedSource(311, BenchDivider, BenchDivider);
-    g_fieldRate = 50.08f;
-
-    CHECK(SourceMeasurement::sourceIsMeasurable());
-}
-
-TEST_CASE("a count that will not hold still is not a level to measure through")
-{
-    // THE COUNT IS WHAT THE LEVEL MOVES. A separator slicing at the wrong
-    // threshold misses vertical pulses, so the sync processor counts on into
-    // the next field and the count swings between the source's own and a
-    // multiple of it -- measured on `vga` at 800x600@60 composite, 622 to 1791
-    // at the level the input is due against 623/624 four steps above it. Every
-    // reading taken through such a level is refused later, so a level search
-    // that accepts one has found nothing.
-    seedSource(311, BenchDivider, BenchDivider);
-    g_fieldRate = 50.08f;
-    Wire.drift(0, 0x1B);
-
-    CHECK_FALSE(SourceMeasurement::sourceIsMeasurable());
-}
-
 TEST_CASE("one duty reading never completes a measurement")
 {
     SourceMeasurement sampling(inputFormatter);
