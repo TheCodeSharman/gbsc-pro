@@ -5733,43 +5733,64 @@ entries resolve the raster match in time is open.
 
 ## Costs time rather than correctness
 
-### OTA has run out of heap margin, and a static menu pool is most of why
+### FIXED: OTA ran out of heap margin, and a child array on every menu item was most of why
 
-Measured 2026-10-14: `/bootlog` reports **10456 bytes free immediately after a
-restart**, against the ~18 KB this page's console-gate entry recorded. espota
-then dies between 0% and 7% on attempt after attempt, and `/sc?c` itself starts
-answering 503. Pausing a long-running `regpanel.py` recovers 2416 bytes and is
-not enough. USB carries the image first time, so the route is the heap and not
-the network.
+`OLEDMenuManager` holds `OLEDMenuItem allItems[OLED_MENU_MAX_ITEMS_NUM]`, and
+every one of those items held `OLEDMenuItem *subItems[OLED_MENU_MAX_SUBITEMS_NUM]`
+-- a parent's child array, carried by the leaves as well, which is most of the
+pool. `OLEDMenuChildBlocks` holds those arrays instead and an item holds a
+pointer that is NULL until its first child, so the storage follows the items
+that have children.
 
-**It is not a leak and not the diagnostics.** The failing build has
-`BOOTLOG_BYTES=0`, `GBS_SAMPLING_LOG=0` and `GBS_TRACE_WRITES=0`. Globals are
-54028 bytes against the 47584 recorded when the 18 KB figure was taken, and the
-largest RAM symbols name the cause:
+**The pool's COUNT is not the waste and must not be cut.** The icon tree
+registers 38 items at setup and the preset and WiFi pages re-register theirs on
+entry, up to 16 and 6, so the peak is 60 of the 64 the pool holds. Sizing the
+count down has four items of room, not thirty.
 
-| symbol | bytes |
-|---|---|
-| `oledMenu` | 6999 |
-| `g_ic` | 1704 |
-| `gbsicon_bits` | 1024 |
-| `sourceFramings` | 740 |
-| `webSocket` | 516 |
+Measured either side on the bench unit, `GBS_DEBUG=1 BOOTLOG_BYTES=0`:
 
-`OLEDMenuManager` holds `OLEDMenuItem allItems[OLED_MENU_MAX_ITEMS_NUM]` at 64,
-and every one of those holds `OLEDMenuItem *subItems[OLED_MENU_MAX_SUBITEMS_NUM]`
-at 16 -- 4096 bytes of pointers before any of the scalars, allocated whether the
-slots are used or not. The pool is sized in `OLEDMenuConfig.h` and nothing
-counts what the tree actually registers.
+| | before | after |
+|---|---|---|
+| globals | 54028 | 50868 |
+| `oledMenu` in `.bss` | 6999 | 3812 |
+| free heap, regpanel polling | 11664 | 17192 |
 
-Where to look: how many items and sub-items the icon tree really uses, and
-whether the pool can be sized to that. The described menu already draws on the
-panel through `Osd::Menu`, so the icon tree's own pool may be retirable rather
-than merely shrinkable -- `osd-menu.md`.
+espota then carried the image **first time with `regpanel.py` left polling**,
+against the run of failures between 0% and 7% that the heap produced before.
 
-**Until then, a flash that stalls under 10% is the heap**, and the cheap moves
-are a `/restart` first and USB second. A bare `make -C build flash-ota` retried
-into a loop costs minutes and does not land.
+**A FREE-HEAP FLOOR IS NOT A TEST FOR THIS, AND IT WAS MEASURED BEFORE BEING
+REJECTED.** Free heap moves 13200..17192 on an unchanged unit with nothing but
+clients attaching -- about 1.4 KB per websocket, and `WEBSOCKETS_SERVER_CLIENT_MAX`
+is 5 -- so the load swamps the 3160 bytes the pool costs and a floor cannot tell
+the regression from two open consoles. What pins it is the host suite's
+`sizeof(OLEDMenuItem)` against a child array, plus the boot itself:
+`panicAndDisable()` spins in `while (1)`, so a pool too small to register the
+tree never reaches WiFi.
 
+**The icon tree may still be retirable rather than merely shrunk.** `Osd::Menu`
+draws the described page on the same 128x64 panel and already carries Input,
+Smooth, Compatibility, Format, Pass Through and Reset. What only the icon tree
+has is resolution selection, the preset slots, the WiFi page and seven of the
+twelve ADV7391 TV modes, so retiring it is a feature question rather than a
+storage one. `osd-menu.md`.
+
+
+### The OLED preset page walks the slot array from an uninitialised index
+
+`presetSelectionMenuHandler()` in `OLEDMenuImplementation.cpp` reads the slots
+file into `slotsObject` and then loops `for (int i; i < SLOTS_TOTAL; ++i)`,
+indexing `slotsObject.slot[i]` from a value nothing assigned. Whatever the
+compiler leaves in that register decides where the list starts, so the page can
+show no presets, a tail of them, or names read past the end of the array --
+and the same build is consistent, which is what makes it look like a slots-file
+problem rather than the loop.
+
+`SLOTS_TOTAL` is 72 and the page caps what it registers at
+`OLED_MENU_MAX_SUBITEMS_NUM`, so a start in range still truncates the list
+silently.
+
+Not reached from HTTP: the page draws on the unit's own panel, so the slot
+list is only observable there or by giving the described menu the preset rows.
 
 ### `read_settings()` cannot tell a refused read from a refused file
 

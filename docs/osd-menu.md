@@ -13,6 +13,17 @@ on the television.
 | **STV9426** | character OSD chip on the ESP's I²C bus at `0x5D`. Draws the menu, the volume bar and the Info screen | `OSD_TV/OSD_stv9426.h`, `Osd::OSD` for the menu and `drawOverlayScreens()` for the other two | **yes** |
 | **OLED menu** | the 128x64 SSD1306 on the unit itself | `OLEDMenuManager`, `OLEDMenuImplementation.cpp` | yes, but it is a separate tree and holds no Move/Scale |
 
+**THE ICON TREE'S STORAGE IS THE LARGEST STATIC ALLOCATION IN THE FIRMWARE, AND
+ITS COUNT IS NEAR ITS NEED.** `OLEDMenuManager` holds a fixed pool of
+`OLEDMenuItem`, and the tree registers 38 at setup while the preset and WiFi
+pages re-register theirs on entry, up to 16 and 6 -- a peak of 60 against
+`OLED_MENU_MAX_ITEMS_NUM`. So the pool is not oversized in items, and the
+storage to be careful with is the child arrays: `OLEDMenuChildBlocks` holds one
+per parent and an item's `subItems` is NULL until its first child, which is
+what keeps a leaf from carrying an array of 16 pointers.
+`OLED_MENU_MAX_PARENTS_NUM` has to cover every item holding children at once,
+and `panicAndDisable()` spins rather than returning if it does not.
+
 **TWO TREES DRAW THE PANEL AND THE OPEN ONE OWNS IT.** `Osd::Panel` draws the
 described page there as `Osd::OSD` draws it on the television, and
 `NEW_OLED_MENU` is the gate: `loop()` clears it while the described menu is open,
