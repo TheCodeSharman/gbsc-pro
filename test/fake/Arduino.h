@@ -28,4 +28,11 @@ inline void delayMicroseconds(unsigned int) {}
 // step, which is the part's settling time rather than a dependency to move out.
 inline void delay(unsigned long) {}
 
+// F() and PSTR() are placement directives rather than dependencies: on the ESP
+// they keep a literal in flash, where .rodata would otherwise cost RAM this
+// fork has little of. A firmware file that drops them to stay host-compilable
+// pays that cost silently, so the seam supplies them instead.
+#define F(string) (string)
+#define PSTR(string) (string)
+
 #endif  // FAKE_ARDUINO_H_

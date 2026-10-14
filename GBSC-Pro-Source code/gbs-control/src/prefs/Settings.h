@@ -17,9 +17,9 @@
 // read that failed. That is the whole of the integrity check the positional file
 // needed a byte count for, and it works at any length.
 //
-// Reading and writing the file belongs to the caller. This turns one line into a
-// setting and one setting into a line, which is what makes the format testable
-// on the host. docs/preferences-file.md
+// This turns one line into a setting and one setting into a line. SettingsFile
+// owns the file those lines live in -- the attempts a read spends, what it
+// starts each one from, and what a save puts down. docs/preferences-file.md
 
 #include <stdint.h>
 

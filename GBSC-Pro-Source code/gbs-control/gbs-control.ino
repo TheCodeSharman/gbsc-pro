@@ -63,6 +63,7 @@ static unsigned long Tim_Resolution = 0, Tim_Resolution_Start = 0;
 #include "slot.h"
 #include "src/net/RegisterQueue.h"
 #include "src/prefs/Settings.h"
+#include "src/prefs/SettingsFile.h"
 #include "gbs_types.h"   // typedef Tv5725::Tv5725 GBS, in one place
 #include "src/tv5725/WriteTrace.h"
 #include "src/tv5725/FramingText.h"
@@ -746,6 +747,8 @@ static const char LegacySettingsPath[] = "/preferencesv2.txt";
 Prefs::Settings settings(uopts, avopts, geometry.colour(),
                          geometry.pictureOptions(), Volume,
                          SeleInputSource, BriorCon);
+
+Prefs::SettingsFile settingsFile(settings, SettingsFilePath);
 
 // The framing table, in its own file. Separate from the settings because it is
 // variable length and keyed, and mixing the two recreates the fragility the
@@ -3254,6 +3257,25 @@ static bool engineMayRun()
     return !AUTOMATION_FROZEN();
 }
 
+// The boot log's PREFS lines, which SettingsFile reports the facts for rather
+// than printing itself: it has no clock and wants none.
+static void reportSettingsAttempt(const Prefs::SettingsFile::Attempt &attempt)
+{
+    if (!attempt.opened) {
+        bootLogPrintf("PREFS: attempt %u t=%lums open=0\n",
+            (unsigned)attempt.index + 1, (unsigned long)millis());
+        return;
+    }
+
+    // One call, not three. Split across separate printfs the tail of this line
+    // reached the serial cable but not the buffer, which dropped the evidence
+    // that distinguishes a file holding defaults from a read that failed.
+    bootLogPrintf("PREFS: attempt %u t=%lums size=%u applied=%u end=%d\n",
+        (unsigned)attempt.index + 1, (unsigned long)millis(),
+        (unsigned)attempt.size, (unsigned)attempt.applied,
+        attempt.reachedEnd ? 1 : 0);
+}
+
 void setup()
 {
     system_update_cpu_freq(160);
@@ -3411,56 +3433,12 @@ void setup()
         //
         // Ten attempts at 100 ms is a second of patience before giving up, and
         // costs nothing on a healthy boot where the first attempt succeeds.
-        bool settingsReadable = false;
-
         bootLogPrintf("PREFS: exists=%d t=%lums\n",
             LittleFS.exists(SettingsFilePath) ? 1 : 0, (unsigned long)millis());
 
-        for (uint8_t attempt = 0; attempt < 10 && !settingsReadable; attempt++) {
-            const uint32_t attemptStart = millis();
-            File f = LittleFS.open(SettingsFilePath, "r");
-            if (!f) {
-                bootLogPrintf("PREFS: attempt %u t=%lums open=0\n",
-                    (unsigned)attempt + 1, (unsigned long)attemptStart);
-                delay(100);
-                continue;
-            }
-
-            // Every attempt starts from the defaults, so a part-applied read is
-            // never what the next one builds on.
-            settings.defaults();
-
-            uint16_t applied = 0;
-            char line[80];
-            while (f.available() && !settingsReadable) {
-                const String next = f.readStringUntil('\n');
-                strncpy(line, next.c_str(), sizeof(line) - 1);
-                line[sizeof(line) - 1] = '\0';
-                switch (settings.readLine(line)) {
-                    case Prefs::Settings::Applied:
-                        ++applied;
-                        break;
-                    case Prefs::Settings::End:
-                        settingsReadable = true;
-                        break;
-                    default:
-                        break;
-                }
-            }
-
-            // One call, not three. Split across separate printfs the tail of
-            // this line reached the serial cable but not the buffer, which
-            // dropped the evidence that distinguishes a file holding defaults
-            // from a read that failed.
-            bootLogPrintf("PREFS: attempt %u t=%lums size=%u applied=%u end=%d\n",
-                (unsigned)attempt + 1, (unsigned long)attemptStart,
-                (unsigned)f.size(), (unsigned)applied,
-                settingsReadable ? 1 : 0);
-            f.close();
-
-            if (!settingsReadable)
-                delay(100);
-        }
+        const bool settingsReadable =
+            settingsFile.read(Prefs::SettingsFile::BootAttempts,
+                              reportSettingsAttempt);
 
         if (!settingsReadable && LittleFS.exists(SettingsFilePath)) {
             // The file is there but will not come back whole. Defaults would be
@@ -6995,29 +6973,8 @@ void saveUserPrefs()
         return;
     }
 
-    File f = LittleFS.open(SettingsFilePath, "w");
-    if (!f) {
+    if (!settingsFile.write())
         return;
-    }
-
-    // "w" alone has been measured leaving a tail from whatever wrote the file
-    // longer. The terminator makes one inert, but a settings file is read by
-    // people as well as by this firmware. docs/known-issues.md
-    f.truncate(0);
-
-    f.print(F("# GBSC-Pro settings, one key = value a line. A missing key takes\n"
-              "# its default and an unknown one is ignored, so adding or removing\n"
-              "# a setting cannot shift another. The last line is what says the\n"
-              "# file was written whole. docs/preferences-file.md\n"));
-
-    char line[80];
-    for (uint16_t i = 0; settings.writeLine(i, line, sizeof(line)); ++i) {
-        f.print(line);
-        f.print('\n');
-    }
-    f.print(Prefs::Settings::terminator());
-    f.print('\n');
-    f.close();
 
     if (LittleFS.exists(LegacySettingsPath)) {
         LittleFS.remove(LegacySettingsPath);
