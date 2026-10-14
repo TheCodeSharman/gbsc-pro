@@ -332,10 +332,14 @@ public:
     // docs/investigations/the-detection-defaults-are-not-the-preset-paths.md
     static void prepareForDetection();
 
-    // The sync processor's half of entering pass-through: the coast pair off,
-    // and the four polarity and swap bits put back rather than inherited,
-    // because a route that never brings the chip up keeps whatever the last
-    // entry left.
+    // The sync processor's half of entering pass-through: the four polarity and
+    // swap bits put back rather than inherited, because a route that never
+    // brings the chip up keeps whatever the last entry left.
+    //
+    // SP_DIS_SUB_COAST is NOT written here. It is applyForSyncType()'s, which
+    // runs first on this path, and turning it off from a second place left a
+    // serrated source counting the serrations -- invisible on separate sync,
+    // where both writers agree, and no signal on sync on green.
     static void applyForPassThrough();
 
     // How long the sync processor counts nothing usable after its path moves.

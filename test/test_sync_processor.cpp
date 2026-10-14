@@ -1049,6 +1049,27 @@ TEST_CASE("entering pass-through leaves the SOG polarity auto-correct off")
     CHECK(SyncProcessor::SP_SOG_P_ATO::read() == 0u);
 }
 
+// The sub coast is applyForSyncType()'s, and entering pass-through wrote it a
+// second time -- unconditionally off, which is right for separate sync and
+// wrong for every source carrying serrations. A separate-sync source wants it
+// off either way, so the second write agreed with the first and the defect was
+// invisible on `vga`; on the Wii's sync on green it is the whole of why
+// pass-through showed no signal.
+//
+// Measured on the bench, Wii 480p on `ypbpr` in pass-through: SP_PRE_COAST 7,
+// SP_POST_COAST 6, SP_NO_COAST_REG 0, SP_SOG_MODE 1 and SP_H_PROTECT 1 all
+// carry the csync branch's values, and SP_DIS_SUB_COAST alone reads 1.
+TEST_CASE("entering pass-through leaves the sub coast the sync type chose")
+{
+    Wire.reset();
+    Wire.poison(Poisons[0]);
+    SyncProcessor::applyForSyncType(true, MeasuredCsyncDivider);
+
+    SyncProcessor::applyForPassThrough();
+
+    CHECK(SyncProcessor::SP_DIS_SUB_COAST::read() == 0u);
+}
+
 TEST_CASE("the per-load setup leaves the sync mode the sync type chose")
 {
     Wire.reset();

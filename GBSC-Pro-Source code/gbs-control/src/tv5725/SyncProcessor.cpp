@@ -289,8 +289,6 @@ void SyncProcessor::prepareForDetection()
 
 void SyncProcessor::applyForPassThrough()
 {
-    setSubCoast(false);
-
     // The chip's own polarity auto-correct stays OFF, as it is on the scaling
     // path. normaliseHsyncPolarity() already makes the polarity one shape, so
     // this is a second owner of it -- and it displaces where the sync processor
