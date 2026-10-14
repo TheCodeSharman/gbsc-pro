@@ -696,6 +696,9 @@ TEST_CASE("an hsync the sync processor cannot see leaves the pulse alone")
 {
     Wire.reset();
     HdBypass::applyPassThroughSampling(2039, 37879, BenchPulse);
+    // The direction is held across calls, so the case states the one it is
+    // asserting about rather than inheriting whatever ran last.
+    HdBypass::applyChannelSyncEdges(edges(true, true, false, false));
     Tv5725::SyncProcessor::SP_HS2PLL_INV_REG::write(1);
 
     HdBypass::applyChannelSyncEdges(edges(false, false, false, false));
@@ -703,6 +706,30 @@ TEST_CASE("an hsync the sync processor cannot see leaves the pulse alone")
     CHECK(HdBypass::HD_HS_ST::read() == 40);
     CHECK(HdBypass::HD_HS_SP::read() == 164);
     CHECK(Tv5725::SyncProcessor::SP_HS2PLL_INV_REG::read() == 1);
+}
+
+// Re-sizing the channel happens on every pass-through mode change and on the
+// service tick's heels, so it runs AFTER the polarity is known as often as
+// before it. Writing the pair ascending there is a second owner of the order:
+// against applyChannelSyncEdges() it wins and loses alternately, and the
+// emitted hsync inverts every few seconds.
+//
+// A positive source wants the ascending pair anyway, so the two writers agree
+// and the fight is invisible -- which is why pass-through carries the RiscPC
+// and not the Wii. Measured on the bench, Wii 480p on `ypbpr` in pass-through,
+// STATUS_SYNC_PROC_HSPOL 0 throughout: HD_HS_ST/SP sampled every 3 s read
+// 40/164, 164/40, 40/164, 40/164, 164/40 with SP_HS2PLL_INV_REG flipping in
+// step, and nothing reached the capture dongle.
+TEST_CASE("re-sizing the channel keeps the pulse order the polarity chose")
+{
+    Wire.reset();
+    HdBypass::applyPassThroughSampling(2039, 37879, BenchPulse);
+    HdBypass::applyChannelSyncEdges(edges(true, false, false, false));
+
+    HdBypass::applyPassThroughSampling(2039, 37879, BenchPulse);
+
+    CHECK(HdBypass::HD_HS_ST::read() == 164);
+    CHECK(HdBypass::HD_HS_SP::read() == 40);
 }
 
 TEST_CASE("a positive source vsync puts the channel's vertical start first")

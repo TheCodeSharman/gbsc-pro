@@ -89,6 +89,8 @@ uint16_t HdBypass::hsyncLow_ = 0;
 uint16_t HdBypass::hsyncHigh_ = SyncPulseWidth;
 uint16_t HdBypass::vsyncLow_ = ChannelVsyncStart;
 uint16_t HdBypass::vsyncHigh_ = ChannelVsyncStop;
+bool HdBypass::hsyncPositive_ = true;
+bool HdBypass::vsyncPositive_ = true;
 
 void HdBypass::init()
 {
@@ -258,16 +260,16 @@ void HdBypass::holdHsyncPulse(uint16_t a, uint16_t b)
 {
     hsyncLow_ = a < b ? a : b;
     hsyncHigh_ = a < b ? b : a;
-    HD_HS_ST::write(a);
-    HD_HS_SP::write(b);
+    HD_HS_ST::write(hsyncPositive_ ? hsyncLow_ : hsyncHigh_);
+    HD_HS_SP::write(hsyncPositive_ ? hsyncHigh_ : hsyncLow_);
 }
 
 void HdBypass::holdVsyncPulse(uint16_t a, uint16_t b)
 {
     vsyncLow_ = a < b ? a : b;
     vsyncHigh_ = a < b ? b : a;
-    HD_VS_ST::write(a);
-    HD_VS_SP::write(b);
+    HD_VS_ST::write(vsyncPositive_ ? vsyncLow_ : vsyncHigh_);
+    HD_VS_SP::write(vsyncPositive_ ? vsyncHigh_ : vsyncLow_);
 }
 
 HdBypass::SourceSyncEdges HdBypass::readSourceSyncEdges()
@@ -283,14 +285,15 @@ HdBypass::SourceSyncEdges HdBypass::readSourceSyncEdges()
 void HdBypass::applyChannelSyncEdges(const SourceSyncEdges &edges)
 {
     if (edges.hsyncFound) {
-        holdHsyncPulse(edges.hsyncPositive ? hsyncLow_ : hsyncHigh_,
-                       edges.hsyncPositive ? hsyncHigh_ : hsyncLow_);
+        hsyncPositive_ = edges.hsyncPositive;
+        holdHsyncPulse(hsyncLow_, hsyncHigh_);
         SyncProcessor::SP_HS2PLL_INV_REG::write(edges.hsyncPositive ? 0 : 1);
     }
 
-    if (edges.vsyncFound)
-        holdVsyncPulse(edges.vsyncPositive ? vsyncLow_ : vsyncHigh_,
-                       edges.vsyncPositive ? vsyncHigh_ : vsyncLow_);
+    if (edges.vsyncFound) {
+        vsyncPositive_ = edges.vsyncPositive;
+        holdVsyncPulse(vsyncLow_, vsyncHigh_);
+    }
 }
 
 void HdBypass::applyBlankLevel(bool component)

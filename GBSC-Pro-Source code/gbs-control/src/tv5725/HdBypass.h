@@ -339,6 +339,14 @@ private:
     static uint16_t vsyncLow_;
     static uint16_t vsyncHigh_;
 
+    // Which way round the held pair is emitted. The extents say WHERE the pulse
+    // is and this says which edge starts it, so a caller that moves the pulse
+    // does not also decide its direction.
+    static bool hsyncPositive_;
+    static bool vsyncPositive_;
+
+    // Take the pair, and emit it in the held direction. Every write of
+    // HD_HS_ST/HD_HS_SP and HD_VS_ST/HD_VS_SP goes through these.
     static void holdHsyncPulse(uint16_t a, uint16_t b);
     static void holdVsyncPulse(uint16_t a, uint16_t b);
 };
