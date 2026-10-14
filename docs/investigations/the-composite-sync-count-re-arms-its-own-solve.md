@@ -41,6 +41,46 @@ field rather than at its edge.
 source, so 1246 is plausible, and the idle run finds it steady: the arm fires on
 evidence it is right to act on.
 
+## The formatter measures the frame where the sync processor cannot
+
+`Tv5725::SamplingLog` at 25 ms, the count sampled from inside `loop()` on each
+sync type, same source and mode:
+
+| | separate | composite |
+|---|---|---|
+| `STATUS_SYNC_PROC_VTOTAL` | **627 in 443 of 443** | 76 distinct values, 0 to 1937 |
+| within 3 lines of the mode | 443 of 443 | **115 of 250, 46%** |
+| `VPERIOD_IF` | debris; `STATUS_IF_VT_OK` 0, so `verticalPeriod()` reads 0 | **1255 half-lines in 116 of 250** |
+| `STATUS_MISC_PLLAD_LOCK` | 443 of 443 | 119 of 250 |
+| `STATUS_SYNC_PROC_HSACT` | 1 throughout | 1 throughout |
+
+1255 half-lines is 627.5 lines, which is the source's own frame. **So on the
+composite path the formatter is the half that reads the source and the sync
+processor is the half that does not**, and on separate sync it is the other way
+round -- the separator has nothing to extract there, so the formatter completes
+no vertical measurement at all.
+
+**The two are good at different moments**, which is what makes the pair worth
+more than either: both good in 44 of 250, only the count in 71, only the frame
+in 86, neither in 49. So four fifths of samples carry a usable reading of the
+frame where the count alone carries under half.
+
+**And no steadiness run can reject the wrong count.** A wrong value repeats for
+up to **eight consecutive samples** -- 451, 688 and 1230 each held eight -- and
+the idle run settles after four. Through the longest of those runs the formatter
+went on reading 1255.
+
+That is what `SourceMeasurement::countContradicted()` asks, through the
+reconciliation the engine already had: `reconciledFrame()` returns 0 for a pair
+that cannot be one frame, and a count the formatter contradicts is dropped
+rather than judged. Measured either side of it on the same source and mode,
+`present` over a 120 s window: **1 and 2 polls of 60 before, 11 of 60 after**,
+with the count arms still firing where the formatter offers no frame. It costs
+the working sources nothing -- the Wii at 480p on `ypbpr`, which runs sync on
+green and so has a live formatter frame, reads present 44 of 45 polls at mean
+luma 201, the RiscPC on separate sync 33 of 35 at 82, and four source mode
+changes are followed in 1.83 to 2.03 s.
+
 ## Refuted: the field-rate measurement reads a line-derived signal
 
 `known-issues.md` recorded the field rate reading 3937.58 Hz against a line rate
