@@ -673,7 +673,25 @@ bool VideoSourceAcquisition::sourceMoved()
     // answer the same question: a count the chip miscounts by three alternates
     // without the source moving, and comparing a raw sample against the solve's
     // raw sample armed a re-solve on every crossing.
-    const bool countMoved = !idle_.agrees(lines, solvedLines_);
+    // A COUNT THAT IS A WHOLE MULTIPLE OF THE SOLVED ONE AT AN UNCHANGED LINE
+    // PERIOD IS A LOST VERTICAL PULSE, NOT A SOURCE THAT MOVED. Doubling the
+    // count at an unchanged field rate doubles the line RATE, so a source that
+    // really moved there moves the period with it -- 480i to 480p, and the
+    // bench's 320x256@50 to 800x600@60, both do.
+    //
+    // The corroboration above cannot refuse these: both halves derive from the
+    // same separated vertical, so a pulse the separator loses is lost by both
+    // and they agree on the doubled frame.
+    //
+    // IT NARROWS THE COUNT ARM RATHER THAN DROPPING THE PASS, because the
+    // arithmetic has no second instrument behind it and must not be the last
+    // word. rateMoved()'s recheck still reaches a source that did move, and
+    // arms on a field rate measured a different way.
+    // ../../../docs/investigations/the-composite-sync-count-re-arms-its-own-solve.md
+    const bool pulseLost = Tv5725::VideoSignal::countIsMultipleOf(lines, solvedLines_)
+                           && sampling_.linePeriodHolds(solvedLinePeriod_);
+
+    const bool countMoved = !idle_.agrees(lines, solvedLines_) && !pulseLost;
     if (!countMoved && !rateMoved())
         return false;
 

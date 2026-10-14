@@ -93,3 +93,47 @@ TEST_CASE("the tolerance is the caller's, and the same pair answers both ways")
     CHECK(VideoSignal::ratesAgree(1876u, 1952u, 50));
     CHECK_FALSE(VideoSignal::ratesAgree(1876u, 1952u, 2));
 }
+
+TEST_CASE("a count that is a whole multiple of another is a lost vertical pulse")
+{
+    // A separator missing a vertical pulse leaves the counter running into the
+    // next field, so the reading lands on twice the frame or three times it.
+    // Measured on `vga` at 800x600@60 composite in pass-through: a solve of 627
+    // read 1246 and 1870 among its idle samples.
+    CHECK(VideoSignal::countIsMultipleOf(1246, 627));
+    CHECK(VideoSignal::countIsMultipleOf(1870, 627));
+
+    SUBCASE("the multiple is of the count the pulse was lost from") {
+        // The exact multiples of a solved 627 are 1254 and 1881, and the
+        // readings sit 8 and 11 short of them -- the count the separator lost
+        // the pulse from is the raw one rather than the restored one. So the
+        // tolerance is wider than a count's own spread and still nowhere near
+        // the 627 that separates one multiple from the next.
+        CHECK_FALSE(VideoSignal::countIsMultipleOf(1333, 627));
+        CHECK_FALSE(VideoSignal::countIsMultipleOf(1691, 627));
+    }
+
+    SUBCASE("one is not a multiple") {
+        // Whether the source moved at an unchanged frame is the steadiness
+        // run's question, and answering it here would refuse every count.
+        CHECK_FALSE(VideoSignal::countIsMultipleOf(627, 627));
+        CHECK_FALSE(VideoSignal::countIsMultipleOf(630, 627));
+    }
+
+    SUBCASE("a real mode change to a count near twice is still a multiple") {
+        // 311 lines at 50 Hz to 628 at 60: 2.02 times the count, which this
+        // cannot tell from a lost pulse. What separates them is the line
+        // period, which doubles here and does not move on a lost pulse.
+        CHECK(VideoSignal::countIsMultipleOf(628, 311));
+    }
+
+    SUBCASE("a count that is not near a multiple is a move") {
+        CHECK_FALSE(VideoSignal::countIsMultipleOf(524, 311));
+        CHECK_FALSE(VideoSignal::countIsMultipleOf(451, 627));
+    }
+
+    SUBCASE("nothing to compare against says nothing") {
+        CHECK_FALSE(VideoSignal::countIsMultipleOf(1246, 0));
+        CHECK_FALSE(VideoSignal::countIsMultipleOf(0, 627));
+    }
+}

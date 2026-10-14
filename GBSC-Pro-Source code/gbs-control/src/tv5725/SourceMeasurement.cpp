@@ -67,16 +67,29 @@ uint16_t SourceMeasurement::settledLinePeriod()
 // which is a source change this can never see rather than a false one it
 // avoids. A reading that survives here is corroborated before anything acts on
 // it, so a false positive costs a measurement and never a wrong solve.
-bool SourceMeasurement::hasLineRateMoved(uint16_t reference)
+SourceMeasurement::PeriodVerdict
+SourceMeasurement::judgeLinePeriod(uint16_t reference)
 {
     if (reference == 0)
-        return false;
+        return PeriodUnreadable;
 
     const uint16_t now = settledLinePeriod();
     if (now == 0)
-        return false;
+        return PeriodUnreadable;
 
-    return !VideoSignal::ratesAgree(now, reference, LinePeriodMovedPerThousand);
+    return VideoSignal::ratesAgree(now, reference, LinePeriodMovedPerThousand)
+               ? PeriodHeld
+               : PeriodMoved;
+}
+
+bool SourceMeasurement::hasLineRateMoved(uint16_t reference)
+{
+    return judgeLinePeriod(reference) == PeriodMoved;
+}
+
+bool SourceMeasurement::linePeriodHolds(uint16_t reference)
+{
+    return judgeLinePeriod(reference) == PeriodHeld;
 }
 
 // --- the chosen divider, held ----------------------------------------------

@@ -2233,6 +2233,62 @@ TEST_CASE("a mode change the formatter's frame agrees with still arms one")
     CHECK(loggedContaining("TIMINGS change (count)"));
 }
 
+TEST_CASE("a count twice the solved one at an unchanged line period is not a move")
+{
+    // THE CORROBORATION CANNOT REFUSE THESE. Both halves derive from the same
+    // separated vertical, so when the separator loses a pulse they lose it
+    // together and agree on a doubled frame -- 27 count arms in 125 s survived
+    // the corroboration that way, each one discarding a complete solve.
+    //
+    // Doubling the count at an unchanged field rate doubles the LINE rate, so a
+    // source that really moved there moves the line period with it. A period
+    // that held still is what says the frame did not.
+    // ../docs/investigations/the-composite-sync-count-re-arms-its-own-solve.md
+    seedBenchSource();
+    seedField(0, 0x06, 0, 9, 431);   // HPERIOD_IF, steady, as the bench reads it
+    Acquiring unit;
+    unit.path.useSyncTypeProbe(probeOwnVsync);
+
+    g_hasOwnVsync = false;
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+    REQUIRE(unit.acquisition.sourceIsPresent());
+
+    g_logLines.clear();
+    for (uint8_t i = 0; i < 8 * SourceMeasurement::SteadySamples; ++i) {
+        seedSourceLines(622);
+        seedFrame(1245);
+        unit.poll();
+    }
+
+    CHECK_FALSE(loggedContaining("TIMINGS change (count)"));
+}
+
+TEST_CASE("a count that doubled because the line rate did is a mode change")
+{
+    // The escape the arithmetic needs. 320x256@50 to 800x600@60 is 2.02 times
+    // the count, which the multiple test cannot tell from a lost pulse -- and
+    // the line period halves across it, which is what leaves the arm standing.
+    seedBenchSource();
+    seedField(0, 0x06, 0, 9, 431);
+    Acquiring unit;
+    unit.path.useSyncTypeProbe(probeOwnVsync);
+
+    g_hasOwnVsync = false;
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+
+    g_logLines.clear();
+    seedField(0, 0x06, 0, 9, 214);   // 37.9 kHz against the 15.6 it solved at
+    for (uint8_t i = 0; i < 8 * SourceMeasurement::SteadySamples; ++i) {
+        seedSourceLines(622);
+        seedFrame(1245);
+        unit.poll();
+    }
+
+    CHECK(loggedContaining("TIMINGS change (count)"));
+}
+
 TEST_CASE("a count that moves by more than one is still a mode change")
 {
     // The tolerance is one count, not a licence to ignore the count. 311 to 524

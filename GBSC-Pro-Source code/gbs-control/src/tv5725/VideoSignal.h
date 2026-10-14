@@ -37,6 +37,22 @@ public:
 
     static bool fieldRateIsSource(float fieldRateHz);
 
+    // Whether a count is a WHOLE MULTIPLE of another, two or more. A separator
+    // missing a vertical pulse leaves the counter running into the next field,
+    // so the reading lands on twice the frame or three times it -- measured on
+    // `vga` at 800x600@60 composite, a solve of 627 reading 1246 and 1870.
+    //
+    // One is not a multiple: whether the source moved at an unchanged frame is
+    // a steadiness run's question, and answering it here refuses every count.
+    static bool countIsMultipleOf(uint16_t lines, uint16_t reference);
+
+    // How far a reading may sit from an exact multiple. The multiple is of the
+    // count the pulse was lost from rather than of the restored one, so 1246
+    // and 1870 sit 8 and 11 short of 1254 and 1881 -- 6.4 and 5.8 per thousand.
+    // The nearest reading this has to refuse is 1333, 63 out, and one multiple
+    // is a whole frame from the next.
+    static const uint16_t CountMultiplePerThousand = 20;
+
     // Whether the pair describes a signal at all. The gate, kept apart from the
     // arithmetic below because three of its callers want only this.
     static bool isVideo(uint16_t sourceLines, float fieldRateHz);

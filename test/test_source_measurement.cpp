@@ -1957,6 +1957,28 @@ TEST_CASE("the line period says whether the source moved, not what its rate is")
     SUBCASE("nothing to compare against says nothing") {
         CHECK_FALSE(measurement.hasLineRateMoved(0));
     }
+
+    // A CALLER REFUSING A READING ON THE STRENGTH OF "THE PERIOD DID NOT MOVE"
+    // NEEDS THE POSITIVE ANSWER. hasLineRateMoved() says false both for a
+    // period that held and for one that could not be read at all, and acting
+    // on the second is acting on a register that said nothing.
+    SUBCASE("a period that held still says so in its own right") {
+        CHECK(measurement.linePeriodHolds(reference));
+    }
+
+    SUBCASE("a period that moved does not hold") {
+        seedHPeriod(214);
+        CHECK_FALSE(measurement.linePeriodHolds(reference));
+    }
+
+    SUBCASE("a reading that will not hold still does not hold either") {
+        Wire.drift(0, 0x06);
+        CHECK_FALSE(measurement.linePeriodHolds(reference));
+    }
+
+    SUBCASE("nothing to compare against does not hold") {
+        CHECK_FALSE(measurement.linePeriodHolds(0));
+    }
 }
 
 // The cheap gate is INSIDE the one call, so a caller that asks every pass does

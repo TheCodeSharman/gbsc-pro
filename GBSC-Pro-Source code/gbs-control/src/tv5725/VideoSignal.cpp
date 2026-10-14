@@ -4,6 +4,7 @@ namespace Tv5725 {
 
 const uint16_t VideoSignal::SourceVerticalTotalMin;
 const uint16_t VideoSignal::SourceVerticalTotalMax;
+const uint16_t VideoSignal::CountMultiplePerThousand;
 
 bool VideoSignal::countIsSource(uint16_t lines)
 {
@@ -13,6 +14,19 @@ bool VideoSignal::countIsSource(uint16_t lines)
 bool VideoSignal::fieldRateIsSource(float fieldRateHz)
 {
     return fieldRateHz >= FieldRateMinHz && fieldRateHz <= FieldRateMaxHz;
+}
+
+bool VideoSignal::countIsMultipleOf(uint16_t lines, uint16_t reference)
+{
+    if (reference == 0)
+        return false;
+
+    const uint16_t multiple = (uint16_t)((lines + reference / 2) / reference);
+    if (multiple < 2)
+        return false;
+
+    return ratesAgree(lines, (uint32_t)multiple * reference,
+                      CountMultiplePerThousand);
 }
 
 bool VideoSignal::isVideo(uint16_t sourceLines, float fieldRateHz)

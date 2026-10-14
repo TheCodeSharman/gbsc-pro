@@ -158,6 +158,14 @@ public:
     // way, and only where this says something moved.
     bool hasLineRateMoved(uint16_t reference);
 
+    // Whether the line period is READABLE and sits where `reference` left it.
+    // The positive half of the same question, and separate because the two are
+    // not complements: hasLineRateMoved() answers false for a period that held
+    // and for one that could not be read, and a caller refusing a reading
+    // because the period did not move must not be told that by a register that
+    // said nothing.
+    bool linePeriodHolds(uint16_t reference);
+
     // --- what the last measure() found ---------------------------------------
 
     // A duty read while the sync processor was counting another line length is
@@ -389,6 +397,13 @@ public:
     static const uint32_t UnconfirmedRatePulses = 8;
 
 private:
+    // The three answers the line period can give. Two of them are NOT
+    // complements -- a register that will not hold still has said nothing --
+    // and naming all three is what stops either public answer standing in for
+    // the other.
+    enum PeriodVerdict { PeriodUnreadable, PeriodHeld, PeriodMoved };
+    PeriodVerdict judgeLinePeriod(uint16_t reference);
+
     // --- the one pass, in the order it takes them ----------------------------
 
     // The count both readers report, taken from one reading so the hold and the
