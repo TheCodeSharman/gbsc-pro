@@ -333,7 +333,6 @@ private:
     // The channel's two sync pulses as the last writer left them, smaller value
     // first. Order is what applyChannelSyncEdges() decides, so what has to
     // survive between the two calls is the pair rather than its arrangement.
-    static SourceTiming timing_;
     static uint16_t hsyncLow_;
     static uint16_t hsyncHigh_;
     static uint16_t vsyncLow_;

@@ -49,21 +49,6 @@ const uint16_t RasterGuardSamples = 8;
 // ../../../docs/investigations/the-encoder-tunes-the-left-edge-in-pass-through.md
 const uint16_t ChannelSyncStart = 40;
 
-// Where the channel starts showing the line, as a fraction of it.
-//
-// The sync pulse and nothing else. A border is active video the source chose to
-// emit, and a mode file spends it where the standard of the same total and sync
-// spends porch, so blanking to the standard's display area crops it. Leaving
-// the porch through costs nothing -- it is already at blanking level -- and on
-// this path the window does not frame the picture: the encoder places it.
-// Where no raster matched, the envelope the scaling path captures across.
-// ../../../docs/investigations/the-encoder-tunes-the-left-edge-in-pass-through.md
-float showFrom(const SourceTiming &timing)
-{
-    return timing.published() ? timing.hsyncExtent()
-                              : AxisHorizontal.activeStart();
-}
-
 uint16_t onChannelLine(float fraction, uint16_t channelLine)
 {
     return (uint16_t)lrintf(fraction * (float)channelLine);
@@ -84,7 +69,6 @@ const uint8_t ComponentBlankLuma = 5;
 
 }  // namespace
 
-SourceTiming HdBypass::timing_(0.0f);
 uint16_t HdBypass::hsyncLow_ = 0;
 uint16_t HdBypass::hsyncHigh_ = SyncPulseWidth;
 uint16_t HdBypass::vsyncLow_ = ChannelVsyncStart;
@@ -188,7 +172,6 @@ void HdBypass::applyForSource(uint16_t divider, uint32_t lineRateHz,
                               const SourceTiming &timing, uint16_t frameLines,
                               const HsyncPulse &pulse)
 {
-    timing_ = timing;
     applyPassThroughSampling(divider, lineRateHz, pulse);
     SyncProcessor::applySdVsyncPosition();
     applyVerticalBlanking(timing.activeStartLine(frameLines),
@@ -205,12 +188,29 @@ void HdBypass::applyVerticalBlanking(uint16_t activeStartLine,
     HD_VB_SP::write(activeStartLine);
 }
 
+// Where the channel starts showing the line: the envelope the scaling path
+// captures across, whatever raster the source matched.
+//
+// **A PUBLISHED RASTER HAS NO JOB HERE.** PAD_BLK_OUT_ENZ is 1, so HBOUT and
+// VBOUT are off and the encoder takes the analog RGB with HSOUT/VSOUT alone --
+// this edge cannot tell it where active video is, it can only paint black over
+// video the channel sends. The encoder takes its origin from the image content
+// on this path, so it skips a black border whether one is inside the window or
+// not: blanking to a standard's sync extent cannot make a border visible, and
+// blanking to its display area cannot make one invisible.
+//
+// What the edge does decide is how much blanking sits inside the emitted
+// active area, which the encoder shows as a bar. Measured on the Wii at 480p
+// through the channel's 2038, each value forced to re-lock: the sync extent's
+// 147 leaves 251 columns of black at the right of the emitted frame and the
+// envelope's 238 leaves 56.
+// ../../../docs/investigations/the-encoder-tunes-the-left-edge-in-pass-through.md
 void HdBypass::applyHorizontalFromChannelLine(uint16_t channelLine)
 {
     HD_HSYNC_RST::write(channelLine + RasterGuardSamples);
 
     HD_HB_ST::write(channelLine);
-    HD_HB_SP::write(onChannelLine(showFrom(timing_), channelLine));
+    HD_HB_SP::write(onChannelLine(AxisHorizontal.activeStart(), channelLine));
 }
 
 uint16_t HdBypass::dividerFor(uint32_t lineRateHz)

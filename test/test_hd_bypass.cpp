@@ -391,41 +391,51 @@ TEST_CASE("the pass-through blank ends on the envelope, not on a constant")
     }
 }
 
-// The envelope is the answer for a source whose raster is unknown. Where one
-// IS known the standard states where active video starts, and pass-through
-// plays that raster out untouched -- so the only thing it can blank correctly
-// is what the raster says is not picture, which is the rule the vertical axis
-// already follows.
+// ONE ANSWER WHETHER A RASTER MATCHED OR NOT, because the published raster has
+// no job on this path. Our blanking never reaches the encoder --
+// PAD_BLK_OUT_ENZ is 1, so HBOUT and VBOUT are off and the encoder takes
+// analog RGB plus HSOUT/VSOUT alone -- so the only thing HD_HB_SP can do is
+// paint black over video we send. The encoder chooses the window itself, and
+// in bypass it chooses it from the image content.
 //
-
-// BLANK THE SYNC AND NOTHING ELSE. A border is active video the source chose to
-// emit, and a mode file spends it at both ends of the line where the standard
-// of the same total and sync spends porch -- AKF50's 800x600 is
-// 128,48,40,800,40,0 against VESA's 128 sync, 88 back porch, 800 active, 40
-// front porch. Blanking to the standard's DISPLAY AREA therefore crops 40
-// pixels of picture at each end of a source that matched only on total, sync
-// and rate.
+// Blanking to the end of sync therefore leaves every porch the match admits
+// inside the emitted active area, where the encoder shows it as a bar.
+// Measured on the Wii at 480p through the channel's 2038, each value forced to
+// re-lock with PAD_SYNC_OUT_ENZ: the sync extent's 147 leaves 251 columns of
+// black at the right of the emitted frame, the envelope's 238 leaves 56, three
+// re-locks apiece and the 238 reading identical on all three.
 //
-// Nothing is lost by leaving the porch unblanked: a back porch is already at
-// blanking level, and on this path the window does not frame the picture --
-// the encoder places it, and a window biased wide covers every source the
-// match admits.
+// **AND KEEPING A BORDER VISIBLE IS NOT A REASON TO CONSULT THE RASTER**, which
+// is what the published branch was for. In bypass the encoder takes its origin
+// from the image content, so it skips a black border whether the window
+// contains one or not -- the window cannot make a border visible, and blanking
+// one away cannot make it invisible.
+//
+// The envelope is earlier than where either bench source puts video -- 0.117
+// of the line against the Wii 480p's 122/858 and the AKF50 800x600's 176/1056
+// -- so it crops no picture, which is what the case below holds.
 // ../docs/investigations/the-encoder-tunes-the-left-edge-in-pass-through.md
-TEST_CASE("a published raster blanks the channel to the end of its sync")
+TEST_CASE("the pass-through blank ends on the envelope whether a raster matched or not")
 {
     const Tv5725::SourceTiming vesa800x600 =
         Tv5725::SourceTiming::matching(Tv5725::SourceKey(627, 60.0f, 128.0f / 1056.0f, Tv5725::SourceKey::Positive, Tv5725::SourceKey::Positive));
     REQUIRE(vesa800x600.published());
+    const uint16_t envelope =
+        (uint16_t)lrintf(Tv5725::AxisHorizontal.activeStart() * 2039.0f);
 
     applyForSource(2039, 37879, vesa800x600, 628);
+    CHECK(HdBypass::HD_HB_SP::read() == envelope);
 
-    CHECK(HdBypass::HD_HB_SP::read()
-          == (uint16_t)lrintf(128.0f / 1056.0f * 2039.0f));
+    applyForSource(2039, 37879, Unpublished, 628);
+    CHECK(HdBypass::HD_HB_SP::read() == envelope);
 }
 
-// The source's own border sits between the sync and the standard's display
-// area, so the near edge has to stay below it.
-TEST_CASE("a published raster leaves the source's border unblanked")
+// THE ONE BOUND ON THE ENVELOPE: it may never reach where a source puts video.
+// Bypass has no framing control to give cropped picture back with, so the
+// envelope is deliberately early and must stay below the earliest active start
+// the bench can state. This is a bound on PICTURE -- nothing here decides what
+// happens to a border.
+TEST_CASE("the pass-through blank reaches no source's picture")
 {
     const Tv5725::SourceTiming vesa800x600 =
         Tv5725::SourceTiming::matching(Tv5725::SourceKey(627, 60.0f, 128.0f / 1056.0f, Tv5725::SourceKey::Positive, Tv5725::SourceKey::Positive));
@@ -433,10 +443,17 @@ TEST_CASE("a published raster leaves the source's border unblanked")
 
     applyForSource(2039, 37879, vesa800x600, 628);
 
-    const uint16_t borderStarts = (uint16_t)lrintf(176.0f / 1056.0f * 2039.0f);
-    const uint16_t borderEnds = (uint16_t)lrintf(1016.0f / 1056.0f * 2039.0f);
-    CHECK(HdBypass::HD_HB_SP::read() < borderStarts);
-    CHECK(HdBypass::HD_HB_ST::read() > borderEnds);
+    const uint16_t pictureStarts = (uint16_t)lrintf(176.0f / 1056.0f * 2039.0f);
+    const uint16_t pictureEnds = (uint16_t)lrintf(1016.0f / 1056.0f * 2039.0f);
+    CHECK(HdBypass::HD_HB_SP::read() < pictureStarts);
+    CHECK(HdBypass::HD_HB_ST::read() > pictureEnds);
+
+    // The component source puts video earlier than the RISC PC does, so it is
+    // the tighter of the two bounds the bench can state: CEA 720x480p's active
+    // starts at 122 of 858.
+    applyForSource(2038, 31469, Unpublished, 525);
+    CHECK(HdBypass::HD_HB_SP::read()
+          < (uint16_t)lrintf(122.0f / 858.0f * 2038.0f));
 }
 
 // The far edge is the same answer whether a raster matched or not, so there is
