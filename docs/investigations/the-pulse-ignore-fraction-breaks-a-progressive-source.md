@@ -96,11 +96,14 @@ than waiting for the maintenance cadence 31 passes away.
 
 ## What this does not settle
 
-- **An RGBHV composite source keeps the fraction**, being `pathSource`, where the
-  physics says it wants the noise floor too. Measured indifferent across the
-  range on the RISC PC at 800x600 with `SYNC 1` -- 107 and 2 both counting 623 --
-  so nothing argues for moving it, and its sync is a logic-level pin rather than
-  a level sliced off a picture-bearing channel.
+- **A path source took the fraction and now takes the measured-scan value too.**
+  The channel and the RGBHV connector were both skipped by the dynamic pass, and
+  on the channel that left a threshold nothing chose --
+  `the-pulse-ignore-outlived-the-channels-entry.md`. The RGBHV connector is
+  measured indifferent across the whole range on the RISC PC at 800x600 with
+  `SYNC 1` -- 107 and 2 both counting 623 -- so the change is unopposed there
+  rather than confirmed, and its sync is a logic-level pin rather than a level
+  sliced off a picture-bearing channel.
 - **The progressive value is a constant, not a fraction.** Nothing has measured
   a progressive composite source at a second divider, so there is no evidence to
   size a fraction from. The vendor's own fixed bytes fall as the line rate

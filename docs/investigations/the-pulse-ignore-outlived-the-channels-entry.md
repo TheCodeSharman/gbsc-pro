@@ -42,10 +42,11 @@ The failure is self-sustaining rather than transient, and it is invisible to a
 register dump -- every register reads correct in both halves of the cycle, and
 the two halves are five seconds apart.
 
-## The fix
+## The first fix, which was half of it
 
 The entry leaves the sync processor alone. It is configured for the SOURCE, and
-the load has already done that for this one.
+the load has already done that for this one. That answers the channel entered
+FROM the scaling path and nothing else -- see below.
 
 ## What this is NOT
 
@@ -60,29 +61,61 @@ holding the value the working state holds:
   emits a full-screen picture with it held. It is a separate single-ownership
   defect and not this fault.
 
-## The refuted model: let the dynamic pass own the threshold
+## The entry was half of it: a boot into pass-through still landed on 99
 
-`SyncProcessor::applyDynamic()` writes the threshold for a source on the
-scaling path and skips it for a path source -- the channel, or the RGBHV
-connector. Writing it there too looks like the collapse this wants, because it
-is one owner deriving one value from the measurement.
+Entering the channel from the scaling path leaves the SCALING divider's
+fraction, 59, which is harmless. Booting straight into pass-through leaves the
+CHANNEL's: `applyForSyncType()` derives the threshold from
+`Adc::dividerInForce()`, and on that route the divider in force is already
+2038, so 99 is what the arrangement writes and nothing on the channel revises
+it.
 
-**It reproduces the fault.** On the channel the scan is never measured, so
-`sourceIsProgressive()` is false and the dynamic pass derives the same
-interlaced fraction of the same 2038 for itself: threshold 99, mean luma 0.00.
-Measured with that build, having first confirmed over three input selections
-each way that it broke nothing else -- `vga` held 255 and acquired in 3.2 /
-4.5 / 3.2 s, `ypbpr` converged 99 -> 59 -> 14 and acquired in 3.1 / 2.8 /
-2.8 s.
+**The failure is quieter than the one above and worse to read.** Measured on the
+Wii at 480p on `ypbpr` after a `/restart` with `scale-rgbhv = 0`: mean luma
+0.00, `state: acquired`, `present: true`, the console silent for 75 s, and
+`PLLAD_MD` 2038 against `STATUS_SYNC_PROC_HTOTAL` 2038, `VTOTAL` steady at 524
+and `HLOW_LEN` steady at 152. There is no re-solve cycle to notice and no
+register out of place. 14 written by hand into the same acquisition, nothing
+else moved, emitted a 1670x1028 picture at once.
 
-So the threshold cannot be derived on a route that does not measure the scan,
-and `applySeparationThresholds()` not writing it is load-bearing.
+## The scan was never measured on the channel, and that is what made the collapse wrong
 
-## What is still open
+`SyncProcessor::applyDynamic()` wrote the threshold for a source on the scaling
+path and skipped it for a path source -- the channel, or the RGBHV connector.
+Writing it there too is the obvious collapse, and tried on its own **it
+reproduces the fault**: `sourceIsProgressive()` is false on the channel, so the
+dynamic pass derives the same interlaced fraction of the same 2038 for itself,
+threshold 99, mean luma 0.00. Measured with that build, having first confirmed
+over three input selections each way that it broke nothing else -- `vga` held
+255 and acquired in 3.2 / 4.5 / 3.2 s, `ypbpr` converged 99 -> 59 -> 14 and
+acquired in 3.1 / 2.8 / 2.8 s.
 
-The threshold in force on the channel is the fraction of whatever divider the
-last load ran, not the measured-scan value: 59 here, from the scaling divider
-of 1212. It is harmless at 59 and fatal at 99, and nothing chose either. A
-source whose scaling divider makes that fraction land near the source's own
-pulse would fail the same way, and the engine would again have no register to
-show for it.
+**The reason was a gate one layer up.** `VideoSourceAcquisition::maintainSource()`
+returned for the channel BEFORE calling `SourceMeasurement::measureScanType()`,
+because the deinterlacer is what the scan was measured for. So the channel had
+no scan to configure from, and a measurement the engine could take in one line
+read as a fact the route could not know.
+
+The scan is measured ahead of that return now and the deinterlacer steering
+stays off the channel, which makes the one owner correct. The console prints
+`scan: progressive, count 524` on the channel where it printed no scan line at
+all, and a boot into pass-through lands on 14 by itself: five reads at 14, mean
+luma 163.45 across four identical frames, with the divider, both counts and the
+low length unchanged from the failing state.
+
+`vga` on separate sync holds 255 through the channel and acquires in 6.5 s with
+a 1920x1079 picture, and the `ypbpr` scaling path converges to 14 at divider
+1212 as it did.
+
+## What this does not settle
+
+**A composite source on the RGBHV connector now takes the measured-scan value
+where it kept the fraction.** That route is measured indifferent across the
+whole range -- 107 and 2 both counting 623 on the RISC PC at 800x600 with
+`SYNC 1`, `the-risc-pc-composite-sync-is-not-serrated.md` -- so nothing argues
+against it, and it is untested on this build.
+
+**An interlaced source on the channel takes the fraction of the channel's own
+line**, which is arithmetically right where the block counts at that divider
+and has not been measured there. The host suite pins the branch; the bench
+cannot reach it without changing the Wii's output mode.
