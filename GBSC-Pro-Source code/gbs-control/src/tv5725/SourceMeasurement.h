@@ -134,16 +134,19 @@ public:
     bool scanKnown() const;
 
     // Measure the source's line count, corrected for a divider the ADC PLL
-    // could not lock to. The ONE way the count is read, here and inside every
-    // half of the measurement: a divider far from the source's line puts the
-    // PLL outside its lock range and it locks to every kth hsync instead --
-    // measured, a 311-line source reads 155 with the divider left at another
-    // mode's 1124. The divider is sized from the rate and the rate from the
-    // count, so a count taken at face value anywhere leaves that state with no
-    // exit.
+    // could not lock to and with the vertical sync an unserrated composite
+    // source costs the counter restored. **THE ONE READER**, for the
+    // measurement, for the scan mode and for the presence poll alike: the width
+    // is established by whichever of them runs, so a second reader that only
+    // applied what was already held left it unestablished for the life of an
+    // acquisition whose measurement window had passed without it.
     //
-    // Also taken by the caller before measuring, because the scan mode is
-    // judged from it and the divider asked for follows the scan mode.
+    // The correction is as load bearing as the restoration: a divider far from
+    // the source's line puts the PLL outside its lock range and it locks to
+    // every kth hsync instead -- measured, a 311-line source reads 155 with the
+    // divider left at another mode's 1124. The divider is sized from the rate
+    // and the rate from the count, so a count taken at face value anywhere
+    // leaves that state with no exit.
     uint16_t readSourceLines();
 
     // The input formatter's line period, settled, or 0 where the samples will
@@ -251,19 +254,6 @@ public:
     // The vertical period the last reading came from, or 0 where it did not
     // complete. verticalTapFor() and the relock want the period itself.
     uint16_t verticalPeriod() const;
-
-    // The sync processor's count, corrected for a PLL counting several source
-    // lines per count and with the vertical sync the reading loses restored,
-    // for a caller reading the count for itself. **ONE OWNER OF WHAT THE COUNT
-    // IS**: the presence poll and the measurement have to agree, and a reader
-    // taking the register raw sees the source move on every pass against a
-    // solve made from the restored one.
-    //
-    // The correction is as load bearing as the restoration: at a divider left
-    // behind by another mode the PLL locks to every kth hsync, and a reader
-    // without it judges 155 where the measurement judges 310 -- a healthy
-    // source called unusable, which discards the held sync type.
-    uint16_t countNow() const;
 
     // Whether the INPUT FORMATTER'S own frame contradicts this count, which
     // says the sync processor's counter has lost or gained a vertical pulse and

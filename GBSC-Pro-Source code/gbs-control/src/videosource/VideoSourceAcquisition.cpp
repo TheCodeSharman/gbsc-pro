@@ -558,7 +558,7 @@ bool VideoSourceAcquisition::sourceMoved()
         return false;
     }
 
-    const uint16_t lines = sampling_.countNow();
+    const uint16_t lines = sampling_.readSourceLines();
 
     // **A DIFFERENT INPUT IS A DIFFERENT SOURCE, AND NO MEASUREMENT CAN SEE
     // IT.** The sync processor may be watching pins the selection did not move,

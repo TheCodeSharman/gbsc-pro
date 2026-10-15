@@ -126,7 +126,7 @@ SourceMeasurement::ScanType SourceMeasurement::measureScanType()
 {
     verticalPeriod_ = inputFormatter_.verticalPeriod();
 
-    const uint16_t lines = countNow();
+    const uint16_t lines = readSourceLines();
     if (VideoSignal::countIsSource(lines))
         scanSteady_.sample(lines);
     else
@@ -164,11 +164,6 @@ bool SourceMeasurement::countContradicted(uint16_t lines)
 {
     const uint16_t period = inputFormatter_.verticalPeriod();
     return period != 0 && reconciledFrame(period, lines) == 0;
-}
-
-uint16_t SourceMeasurement::countNow() const
-{
-    return countFrom(measureSourceLinesCorrected(Adc::dividerInForce()));
 }
 
 bool SourceMeasurement::sampleSteady()

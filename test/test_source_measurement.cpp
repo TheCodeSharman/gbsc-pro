@@ -1110,22 +1110,19 @@ TEST_CASE("the multiple tolerates the jitter of every line it counts")
     }
 }
 
-TEST_CASE("the presence poll and the measurement read one count")
+TEST_CASE("the count the presence poll reads carries the correction")
 {
-    // The count is one fact with two readers: the arm path asks countNow() and
-    // the measurement asks readSourceLines(). Where the PLL locked to every
-    // other hsync the correction recovers 310 from a reported 155, and a reader
-    // without it calls a healthy source unusable -- which discards the held
-    // sync type and spends the one arm that state is given.
+    // One reader answers the arm, the scan mode and the measurement, so what
+    // the arm compares against a solve is the corrected count rather than the
+    // register. Where the PLL locked to every other hsync the correction
+    // recovers 310 from a reported 155, and a reading without it calls a
+    // healthy source unusable -- which discards the held sync type and spends
+    // the one arm that state is given.
     SourceMeasurement sampling(inputFormatter);
 
     seedSource(155, 2249, 1124);
 
-    const uint16_t presence = sampling.countNow();
-    const uint16_t measured = sampling.readSourceLines();
-
-    CHECK(presence == measured);
-    CHECK(presence == 310);
+    CHECK(sampling.readSourceLines() == 310);
 }
 
 // What an output frame of this many lines can display, which is the question
@@ -1443,6 +1440,24 @@ TEST_CASE("the composite count is restored to the frame the source sends")
     REQUIRE(measurePastGate(measurement) != SourceMeasurement::NotSteady);
 
     CHECK(measurement.sourceLines() == 311);
+}
+
+TEST_CASE("the width is established by whichever reader runs")
+{
+    // The measurement window can pass without establishing it, and from then on
+    // the presence poll is the only reader there is -- so a poll that takes the
+    // offer leaves the width unestablished for the life of the acquisition.
+    // Measured on `vga` at 800x600@60 composite: reached by a mode change the
+    // engine solves 627 and reached by /sc?~ it solves 623, with the formatter
+    // offering the frame throughout either way.
+    seedSource(623, 1436, 1436);
+    SourceMeasurement measurement(inputFormatter);
+    REQUIRE(measurement.readSourceLines() == 623);
+
+    seedSourceHalfLines(1255);
+    measurement.readSourceLines();
+
+    CHECK(measurement.readSourceLines() == 627);
 }
 
 // --- an interlaced count never holds still, and that IS the measurement ------
