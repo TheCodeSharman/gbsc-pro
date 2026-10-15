@@ -182,13 +182,28 @@ judging any of them, which reads as five broken modes and was one state nothing
 cleared: `/sc?~` does not clear it where an input bounce does. The suite
 recovers per case now, which also cut the run from 14:25 to 6:48.
 
-### 320x256 on composite sync flickers about every four seconds
+### 320x256 on composite sync flickers, and entering it can fail to acquire at all
 
-Seen on the bench, `vga` at 320x256@50 with `SYNC 1` into 1080p. Not
-characterised further: what flickers, whether the count moves with it, and
-whether it is the same event as the top-band shake below are all open. It is a
-second mode showing composite-sync instability, which is what makes it worth
-recording rather than one more observation of the 800x600 case.
+Seen on the bench, `vga` at 320x256@50 with `SYNC 1` into 1080p. What flickers,
+and whether it is the same event as the top-band shake below, are open.
+
+**ARRIVING AT THAT MODE ON COMPOSITE CAN MISS ENTIRELY, AND A MODE CHANGE DOES
+NOT RECOVER IT.** Measured from a fresh boot, separate sync first: 320x256@50,
+800x600@60 and back each solved in 3 to 5 seconds, counts 311, 627, 311 and
+dividers 2200, 1342, 2200. Switching the source to `SYNC 1` at the same mode
+then held `state: absent` for the whole 60-second budget with
+`STATUS_SYNC_PROC_VTOTAL` **1323** -- outside the 200..1300 a count can be a
+source at all -- and `PLLAD_MD` 1446, which is the ceiling for a 60 Hz source
+rather than anything a 15.6 kHz line wants. Two further mode changes did not
+clear it, the second landing on 1667 and the reference divider.
+
+**`/sc?~` clears it at once**, and the mode is then correct on composite: count
+308, the frame restored to 312, `cv` 624 for the doubled line and `PLLAD_MD`
+2200 -- the same picture the separate leg solves. So this is the stuck-divider
+family and not the count.
+
+It is a second mode showing composite-sync instability, which is what makes it
+worth recording rather than one more observation of the 800x600 case.
 
 ### One source on one cable emits two different pictures, one per sync type
 
