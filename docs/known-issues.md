@@ -5825,6 +5825,32 @@ switch was zero on an entry taken by changing input from a scaled `vga`. Which
 entries resolve the raster match in time is open.
 `video-source-acquisition.md`.
 
+### What normalises the composite pulse-ignore floor is not known
+
+`SP_H_PULSE_IGNOR` is one fraction of the line, 49 per thousand, for every
+composite source. Where the floor below which a source cannot be counted sits is
+measured on one source at two dividers and the two do not fit one rule:
+
+| source | divider | sync pulse | floor |
+|---|---|---|---|
+| RISC PC 800x600@60 composite | 2038 | 246 | **86** |
+| RISC PC 800x600@60 composite | 1438 | ~174 | **none; 2 counts it** |
+
+A floor absent at one divider and 35% of the pulse at another is neither a fixed
+duration, nor a fixed fraction of the line, nor a fixed fraction of the pulse.
+The fraction clears the measured floor at both -- 99 and 70 -- so nothing on the
+bench is broken by it, and the risk it leaves is a divider low enough that the
+fraction approaches the source's own pulse, which is what the threshold must
+stay under.
+
+**The measurement that would close it is the serrated source's own floor**,
+which lies between 51 and 107 at divider 2200 and needs the Wii set to 576i --
+a bench trip. With that the three bounds could be fitted together, or a clamp
+below the measured pulse sized without risking the one source whose floor is
+high. `STATUS_SYNC_PROC_HLOW_LEN` already measures the pulse, so a clamp needs
+no new instrument.
+`investigations/the-engine-makes-the-composite-count-unmeasurable.md`.
+
 ## Costs time rather than correctness
 
 ### FIXED: OTA ran out of heap margin, and a child array on every menu item was most of why
