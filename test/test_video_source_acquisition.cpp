@@ -860,6 +860,46 @@ TEST_CASE("a source passed through clamps like a scaled one")
     CHECK_FALSE(SyncProcessor::clampHeld());
 }
 
+// THE CHANNEL'S CLOCK IS INSTALLED BEFORE THE DUTY IS READ, which is the rule
+// measureSource() already states for the scaling path. takeDuty() refuses a
+// reading through a clock the PLL is not running, and reaching the channel's
+// resize is gated on the duty -- so a clock the channel did not choose is one
+// nothing downstream can replace.
+//
+// Measured on `vga`, the RISC PC at 800x600@60 with `SYNC 1` passed through to
+// 1920x1080: one failed rate reading installs a reference, and from there 636
+// identical `measured:` and `duty:` pairs across 75 s with PLLAD_MD 2040
+// against STATUS_SYNC_PROC_HTOTAL 988, STATUS_MISC_PLLAD_LOCK 0 and the count
+// read correctly throughout. Writing the channel's 2038 by hand through
+// /sampleclock brought it back to acquired at 2038 latched.
+TEST_CASE("a clock the channel did not choose is replaced before the duty is read")
+{
+    seedBenchSource();
+    seedPassThroughSource();
+
+    Acquiring unit;
+    unit.acquisition.usePassThroughSwitch(enterPassThrough);
+    unit.acquisition.allowPassThrough(true);
+    unit.start();
+    REQUIRE(unit.pollUntilSolved(8));
+    REQUIRE(unit.path.outputMode()->isBypass());
+
+    const uint16_t channel =
+        HdBypass::dividerFor(unit.sampling.lineRateHz());
+    REQUIRE(channel != 0);
+
+    // What the rate-failure retry leaves behind, with the processor counting the
+    // line the PLL is actually running rather than the one written.
+    unit.path.installReferenceClock();
+    REQUIRE(Adc::PLLAD_MD::read() != channel);
+    seedLineSamplesUnlocked(988);
+
+    unit.path.inputTimingsChanged(4);
+    unit.pollFor(8);
+
+    CHECK(Adc::PLLAD_MD::read() == channel);
+}
+
 // AND IT CLAMPS A PULSE LATER THERE, because the channel's entry inverts the SOG
 // reference for a component source and the clamp counts from that reference. Left
 // where the scaling path puts it, the window lands on picture: measured on the Wii

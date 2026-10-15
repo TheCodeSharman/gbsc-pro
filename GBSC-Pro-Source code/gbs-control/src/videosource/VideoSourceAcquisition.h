@@ -332,6 +332,8 @@ private:
     bool armMove(const char *why, uint16_t lines, bool mux);
 
     // Re-apply the pass-through sampling for the source as last measured.
+    bool installSamplingForMeasurement();
+    void installPassThroughClock();
     void resizePassThrough();
 
     // Whether the source just measured arrives intact only by being handed

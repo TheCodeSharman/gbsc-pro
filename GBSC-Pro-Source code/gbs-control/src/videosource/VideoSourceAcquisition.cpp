@@ -275,32 +275,75 @@ bool VideoSourceAcquisition::passThroughSourceMoved() const
         Tv5725::SourceIdentityPerThousand);
 }
 
-// A DIVIDER ALREADY IN FORCE IS LEFT ALONE, the same rule the scaling path's
+// The clock the rate just measured asks for, installed BEFORE the duty is read:
+// the duty is a ratio of the pulse to the LINE and the line is the divider, so
+// one counted through another mode's is out by the ratio between them.
+//
+// ONE STEP FOR BOTH ROUTES. The channel's clock is HdBypass's rather than a
+// solve's, so installSampling() returns without writing it -- and left to the
+// pass that follows the duty, the rule above is not kept on that route at all.
+bool VideoSourceAcquisition::installSamplingForMeasurement()
+{
+    if (outputIsPassedThrough()) {
+        installPassThroughClock();
+        return true;
+    }
+
+    return videoPath_.installSampling(
+        Tv5725::VideoPath::SamplingFollowsMeasurement);
+}
+
+// A CLOCK ALREADY IN FORCE AND LATCHED IS LEFT ALONE, the same rule
 // installSampling() holds, and for the same reason: applying it re-latches the
 // ADC PLL. Here that closes a loop, because the field rate this route judges a
-// source by is timed off a pin the sync processor drives -- so a resize taken
+// source by is timed off a pin the sync processor drives -- so an install taken
 // on a source standing still moves the next reading, which reads as a source
-// that moved, which takes another resize.
+// that moved, which takes another install.
 //
 // Measured on the bench at 720p: the engine solved some ten times a second and
 // reported the rate as 60.01, 60.34 and 60.99 Hz against an identity tolerance
 // of 3 per thousand, while the same rate timed with automation FROZEN read
 // 60.019 Hz in 120 of 120 samples at sd 0.000.
 //
-// The guard is the divider rather than the field rate, because a source can
-// change raster without changing it: 524 lines to 627 at 60 Hz is one line rate
-// to another at one field rate, and that one must still re-size.
-void VideoSourceAcquisition::resizePassThrough()
+// **AND A CLOCK THE PLL IS NOT RUNNING IS NOT IN FORCE.** The register answers
+// for what was written and the sync processor's line total for what the ADC is
+// clocking, so on the register alone a reference clock installed by the
+// rate-failure retry is never replaced: takeDuty() refuses a reading through an
+// unlatched clock, and every pass after it is gated on the duty.
+// docs/known-issues.md
+void VideoSourceAcquisition::installPassThroughClock()
 {
     const uint32_t lineRateHz = sampling_.lineRateHz();
     const uint16_t divider = Tv5725::HdBypass::dividerFor(lineRateHz);
-    if (divider == Tv5725::Adc::dividerInForce())
+    if (divider == 0)
+        return;
+    if (divider == Tv5725::Adc::dividerInForce()
+        && videoPath_.samplingClockLatched())
         return;
 
-    Tv5725::HdBypass::applyForSource(divider, lineRateHz,
-                                     videoPath_.sourceTiming(),
-                                     sampling_.sourceLines() + 1,
-                                     sampling_.hsync());
+    Tv5725::HdBypass::applyPassThroughSampling(divider, lineRateHz,
+                                               sampling_.hsync());
+
+    // The measurement has chosen, so no reference is in force any longer -- the
+    // same note installSampling() makes for the scaling path, and what stops the
+    // retry installing the next reference over the clock just chosen.
+    Tv5725::Adc::forgetReferenceClock();
+    sampling_.samplingClockLatched();
+}
+
+// The channel's raster, from the measurement just taken, and the one place a
+// source that moved inside pass-through is re-sized: the switch sizes the
+// channel on entry and cannot run again while the route is already where it
+// belongs.
+//
+// Unguarded, because it writes no part of the ADC PLL group -- so nothing is
+// re-latched by applying it, and a raster that must follow a changed count
+// cannot be suppressed by a divider that happens not to have moved. 524 lines
+// to 627 at 60 Hz is one count to another at one divider.
+void VideoSourceAcquisition::resizePassThrough()
+{
+    Tv5725::HdBypass::applyChannelRaster(videoPath_.sourceTiming(),
+                                         sampling_.sourceLines() + 1);
 }
 
 float VideoSourceAcquisition::sourceFieldRateHz() const { return sampling_.fieldRateHz(); }
@@ -1108,7 +1151,7 @@ bool VideoSourceAcquisition::runPass(uint32_t nowMs, bool &detectionPass)
 
     moveOutputForMeasuredRate();
 
-    if (!videoPath_.installSampling(Tv5725::VideoPath::SamplingFollowsMeasurement))
+    if (!installSamplingForMeasurement())
         return false;
 
     if (!reading(sampling_.measureDuty(nowMs), settling)) {
@@ -1151,13 +1194,7 @@ bool VideoSourceAcquisition::measureSource(uint32_t nowMs, bool &settling)
     if (!reading(sampling_.measureRate(nowMs), settling))
         return false;
 
-    // The clock the rate just measured asks for, installed BEFORE the duty is
-    // read: the duty is a ratio of the pulse to the LINE and the line is the
-    // divider, so one counted through another mode's is out by the ratio
-    // between them. The engine owns the choice because it depends on the output
-    // mode; a divider already in force for this rate is left alone, because
-    // writing it re-latches the ADC PLL.
-    if (!videoPath_.installSampling(Tv5725::VideoPath::SamplingFollowsMeasurement))
+    if (!installSamplingForMeasurement())
         return false;
 
     return reading(sampling_.measureDuty(nowMs), settling);

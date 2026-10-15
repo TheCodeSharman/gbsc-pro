@@ -174,6 +174,12 @@ void HdBypass::applyForSource(uint16_t divider, uint32_t lineRateHz,
                               const HsyncPulse &pulse)
 {
     applyPassThroughSampling(divider, lineRateHz, pulse);
+    applyChannelRaster(timing, frameLines);
+}
+
+void HdBypass::applyChannelRaster(const SourceTiming &timing,
+                                  uint16_t frameLines)
+{
     SyncProcessor::applySdVsyncPosition();
     applyVerticalBlanking(timing.activeStartLine(frameLines),
                           timing.activeStopLine(frameLines));

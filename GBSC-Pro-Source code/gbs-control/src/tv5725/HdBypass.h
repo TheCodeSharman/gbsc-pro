@@ -230,6 +230,13 @@ public:
                                const SourceTiming &timing, uint16_t frameLines,
                                const HsyncPulse &pulse);
 
+    // The half of that which is not the ADC clock: both sync pulses and the
+    // vertical blanking. Separate because the clock has to be installed before
+    // the duty is read and this has to follow the duty -- the raster is derived
+    // from the measurement, and the measurement is taken through the clock.
+    static void applyChannelRaster(const SourceTiming &timing,
+                                   uint16_t frameLines);
+
     // Put the chip into the pass-through configuration for this source: the
     // route, this block, the colour path, the sync processor's half, the ADC
     // phases and the whole sampling group, in the order they have to land.
