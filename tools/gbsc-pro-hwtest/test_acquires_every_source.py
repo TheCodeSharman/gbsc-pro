@@ -56,6 +56,7 @@ import picture_jitter
 from gbs_unit import (
     SOURCES,
     acquired_and_settled,
+    autosave,
     choose_output,
     get,
     get_json,
@@ -148,21 +149,34 @@ def want_passed_through(host, passed_through):
     time.sleep(2.0)
 
 
-def want_shaping(host, on):
-    """Whether the solve narrows the room to the declared shape. /uc?S toggles
-    it, and `apply-aspect` is how it reads back."""
-    if (setting(host, "apply-aspect") == "1") == on:
-        return
-    get(host, "/uc?S")
-    time.sleep(2.0)
+def shaping(host):
+    """Whether the solve is narrowing the room to the declared shape.
+
+    **ASKED OF THE ENGINE, NOT OF THE PREFERENCE.** `apply-aspect` lags a toggle
+    behind: measured with the engine shaping it reads 0, after one /uc?S the
+    engine stops and it still reads 0, and after a second it reads 1 with the
+    engine shaping again. docs/known-issues.md
+    """
+    return get_json(host, "/geometry")[1].get("shaping") is True
+
+
+def want_shaping(host, on, tries=3):
+    """Narrow the room to the declared shape, or do not. /uc?S toggles it."""
+    for _ in range(tries):
+        if shaping(host) == on:
+            return True
+        get(host, "/uc?S")
+        time.sleep(2.0)
+        acquired_and_settled(host)
+    return shaping(host) == on
 
 
 def show_the_default_framing(host, where, scaled):
     """The card up, and on the scaling route the framing the solve computes.
 
-    IN THAT ORDER. A stored framing answers before the computed default, so the
-    reset comes first -- and it puts the declared shape back with it, so the
-    shape comes after. docs/aspect-ratio.md
+    A stored framing answers before the computed default, so the reset is what
+    makes this the engine's own answer rather than the last session's tuning.
+    The module turns autosave off, so nothing the run does is stored either.
 
     **PASS-THROUGH HAS NO FRAMING.** The source's own timing reaches the
     encoder there, so the reset has nothing to act on.
@@ -325,7 +339,7 @@ def bench(request, host):
 
     original = {
         "scale-rgbhv": setting(host, "scale-rgbhv"),
-        "apply-aspect": setting(host, "apply-aspect"),
+        "shaping": shaping(host),
         "input": setting(host, "input"),
         "output": setting(host, "output"),
         "sync": mode_serv(where, "SYNC"),
@@ -334,10 +348,17 @@ def bench(request, host):
     assert choose_output(host, OUTPUT), (
         f"the output never reached {OUTPUT}, so the legs would be judged "
         f"against different rasters")
-    want_shaping(host, False)
-    assert setting(host, "apply-aspect") == "0", (
+    assert want_shaping(host, False), (
         "the shape is still being applied, so every edge read would measure "
         "the bars it pillarboxes with")
+
+    # NO STORED FRAMING MAY ANSWER FOR THE COMPUTED DEFAULT. A stored entry is
+    # recalled on acquisition -- the console says `framing recalled` -- so what
+    # a run judges would be the last session's tuning. Each leg forgets this
+    # source's entry with /sc?B, and autosave is off so the run cannot write
+    # one of its own in the meantime. It is runtime state with no key in the
+    # preferences, so it goes back on at the end rather than being restored.
+    assert autosave(host, False), "the framing table would not stop autosaving"
 
     # The Wii is checked FIRST and by acquiring, not by a register: nothing on
     # the board can see whether anything is plugged into an input, so a source
@@ -367,7 +388,8 @@ def bench(request, host):
             if original["input"]:
                 select_input(host, original["input"])
             want_passed_through(host, original["scale-rgbhv"] == "0")
-            want_shaping(host, original["apply-aspect"] == "1")
+            want_shaping(host, original["shaping"])
+            autosave(host, True)
             get(host, "/sc?~")
         except Exception:  # noqa: BLE001 - teardown must not mask a failure
             pass
