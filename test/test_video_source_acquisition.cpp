@@ -1515,6 +1515,44 @@ TEST_CASE("unlocked is not absent, because the two want opposite things")
     CHECK_FALSE(unit.acquisition.sourceIsPresent());
 }
 
+// AN UNLOCKED SOURCE ARMS NOTHING, so the engine names the fault and then waits
+// on it. A selection edge installs the reference divider, and a detection that
+// returns without solving leaves it in force -- at which point the count is
+// plausible, it holds, and it equals the one the last solve measured, so every
+// arm below declines while the ADC clocks a line the sync processor is not
+// counting. Only a solve rewrites the divider, so nothing else can get out.
+// Measured on the bench, 8 of 8 on a composite-sync source against 0 of 8 on a
+// separate-sync one: selecting the input already in force lands here and stays
+// for as long as it is left.
+TEST_CASE("an unlocked source recovers, though its count has not moved")
+{
+    seedBenchSource();
+    Acquiring unit;
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+    for (uint8_t i = 0; i < SourceMeasurement::SteadySamples + 2; ++i)
+        unit.poll();
+
+    // The divider in force is not the one the line is counted against, under a
+    // source that has not moved.
+    seedLineSamplesUnlocked(976);
+    for (uint8_t i = 0; i < SourceMeasurement::SteadySamples + 2; ++i)
+        unit.poll();
+    REQUIRE(unit.acquisition.sourceState() == VideoSourceAcquisition::SourceUnlocked);
+
+    bool solved = false;
+    for (uint16_t i = 0; i < 4 * VideoSourceAcquisition::AbsentPasses; ++i) {
+        solved = unit.poll() || solved;
+        // The ADC locks to whatever divider a solve writes, which is what makes
+        // this recoverable at all and what the frozen fake cannot do by itself.
+        if (unit.path.changing())
+            Wire.lockSyncProcessor();
+    }
+
+    CHECK(solved);
+    CHECK(unit.acquisition.sourceState() == VideoSourceAcquisition::SourceAcquired);
+}
+
 TEST_CASE("a source is not present while a mode change is still working through")
 {
     // sourceMoved() runs only on the idle pass, so a change in flight leaves

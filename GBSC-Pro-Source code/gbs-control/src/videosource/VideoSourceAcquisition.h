@@ -506,6 +506,16 @@ private:
     uint16_t vsyncAbsentPasses_;
     bool vsyncAbsentArmed_;
 
+    // Consecutive passes on which the divider in force was not the one the
+    // sync processor counts the line against. It has to outlast a legitimate
+    // settle -- the PLL relocks in its own time after a solve writes the
+    // divider, and a reading taken inside that window says nothing -- so it is
+    // two of those plus the run the count is read over.
+    static const uint16_t UnlockedArmPasses =
+        2 * LatchSettlePasses + Tv5725::SourceMeasurement::SteadySamples;
+
+    uint16_t unlockedPasses_;
+
 
     // Consecutive passes that did not reach an acquired source.
     // The field rate pass-through was last sized for, which is what a later

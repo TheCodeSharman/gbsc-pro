@@ -36,6 +36,7 @@ VideoSourceAcquisition::VideoSourceAcquisition(Tv5725::SourceMeasurement &sampli
       dynamicForSearch_(false), dynamicForCsync_(false),
       sourceMeasured_(false),
       sourceState_(SourceAbsent),
+      unlockedPasses_(0),
       solvedLinePeriod_(0), rateRun_(0), recheckPasses_(0),
       sourceInterrupted_(false), unacquiredPasses_(0), absentPasses_(0),
       unsettledPasses_(0), unsettledArmed_(false),
@@ -688,6 +689,26 @@ bool VideoSourceAcquisition::sourceMoved()
     // one that would fire for the wrong reason.
     if (solvedLines_ == 0)
         return armMove("first count", lines, false);
+
+    // AN UNLOCKED SOURCE IS THE ENGINE'S OWN DIVIDER RATHER THAN THE SOURCE
+    // MOVING, so no arm below can see it: the count is the one the last solve
+    // measured and the rate has not changed. Only a solve rewrites the divider,
+    // so without this the engine names the state and then waits on it -- a
+    // selection edge installs the reference divider, a detection that returns
+    // without solving leaves it in force, and the source never comes back.
+    //
+    // IT RE-ARMS EVERY RUN RATHER THAN ONCE, because one attempt that does not
+    // take is the difference between slow recovery and none.
+    if (sourceState_ == SourceUnlocked) {
+        if (unlockedPasses_ < UnlockedArmPasses)
+            ++unlockedPasses_;
+        if (unlockedPasses_ >= UnlockedArmPasses) {
+            unlockedPasses_ = 0;
+            return armMove("unlocked", lines, false);
+        }
+    } else {
+        unlockedPasses_ = 0;
+    }
 
     // A composite-sync source held as separate-sync runs uncoasted: the count
     // loses the lines the vertical pulse occupies -- 308 against 311 -- dithers,
