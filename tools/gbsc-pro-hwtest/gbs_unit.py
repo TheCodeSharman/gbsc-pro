@@ -386,6 +386,28 @@ def framing_settled(host, interval=0.5):
                                     first) else None
 
 
+# The shapes a source can be declared in, as /geometry reports them.
+# docs/aspect-ratio.md
+FOUR_THREE = 13333
+SIXTEEN_NINE = 17778
+
+
+def choose_aspect(host, wanted, tries=4):
+    """Cycle the declared shape to `wanted`. /uc?G is the only route to it.
+
+    **AFTER a framing reset, never before one.** reset_framing() puts the shape
+    back to the raster's default along with the framing, so a shape chosen first
+    does not survive it -- and two readings either side of one are then taken on
+    different pictures.
+    """
+    for _ in range(tries):
+        if get_json(host, "/geometry")[1].get("aspect") == wanted:
+            return True
+        get(host, "/uc?G")
+        time.sleep(2.0)
+    return get_json(host, "/geometry")[1].get("aspect") == wanted
+
+
 def reset_framing(host, expect=None, timeout=20.0):
     """Put the engine's framing back to default. Reports where it landed, None
     if it did not land at all.
