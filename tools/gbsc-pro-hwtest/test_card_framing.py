@@ -114,19 +114,37 @@ SYNC_TYPES = ((False, "separate"), (True, "composite"))
 # VDS_DIS_HB_SP at link-up and lands a little before it.
 #
 # **THE DISPLACEMENT REVERSES SIGN WITH THE SYNC TYPE, AND THAT IS THE FINDING
-# THE SIZES CARRY.** Measured over the matrix: separate sync loses the NEAR
-# edge off the frame and keeps the margin at the far one on every horizontal
-# case, and composite sync does the opposite -- a margin at the near edge and
-# the far one gone. A shift moves the two ends together, so the pair is one
-# displacement per sync type rather than six modes misframed independently, and
-# the composite leg is the one carrying the larger size on every mode they can
-# both be read at. docs/known-issues.md
+# THE SIZES CARRY.** Separate sync loses the NEAR edge off the frame and keeps
+# the margin at the far one, and composite sync did the opposite. A shift moves
+# the two ends together, so the pair is one displacement per sync type rather
+# than six modes misframed independently.
+#
+# **THE COMPOSITE LEG'S SHARE OF IT WAS THE POLARITY CORRECTION**, which
+# follows the sync path now rather than the measured bit: 240x352@70 went from
+# 14 across to 2, 640x512@50 from 17 down to 1, 320x256@50 from overrunning
+# both ends to a bounded 16, and 800x600@60 from 5 to 2, which is why it is no
+# longer listed. Measured over three full runs. docs/known-issues.md
 NARROW = {
-    ("X240 Y352 C256 F70", True): "out by 14 across, 14 at the near edge",
-    ("X320 Y256 C256 F50", True): "the picture overruns both ends on both axes",
-    ("X640 Y480 C256 F60", False): "out by 12 to 15 across, the near edge off the frame",
-    ("X640 Y480 C256 F60", True): "the picture overruns both ends on both axes",
-    ("X640 Y512 C256 F50", True): "out by 17 down, or overrunning both ends",
+    ("X240 Y352 C256 F70", True): "out by 2 to 5, the near edge across or the "
+                                  "top edge -- the 14 across closed, this is "
+                                  "what it hid",
+    ("X320 Y256 C256 F50", True): "out by 16 across, 16 at the near edge",
+    ("X640 Y480 C256 F60", False): "out by 15 to 20 across, the near edge off the frame",
+    # NOT A FRAMING DEFICIT. The mode never acquires on composite -- 90 s and
+    # never acquired when probed directly, and every matrix run reads the state
+    # line as PLLAD_MD 2040 against a 2041-unit capture with a frame count of
+    # 312 on a mode that sends 525. It reaches here rather than being skipped
+    # because acquired_and_settled() cannot tell the asked-for mode from
+    # whatever else settled. docs/known-issues.md
+    ("X640 Y480 C256 F60", True): "never acquires -- an acquisition entry, not "
+                                  "a framing one; both ends overrun on both axes",
+    ("X640 Y512 C256 F50", True): "out by 8 across, the near edge off the "
+                                  "frame; the vertical reads 1 twice and 29 once",
+    # ONE SourceKey WITH 800x600@60 -- same field rate, same line rate, both
+    # 75.8% active -- so one solve frames both and the two want placements
+    # about 5 output pixels apart. Closing 800x600@60 opened this one, 2 to 6,
+    # and neither can be flush until something separates the key.
+    ("X1600 Y600 C256 F60", True): "out by 6 to 8 across, the near edge off the frame",
 }
 
 # Cases whose VERDICT varies between runs on one firmware, over two full runs of
@@ -145,8 +163,9 @@ NARROW = {
 UNSTABLE = {
     ("X240 Y352 C256 F70", False):
         "out by 10 across in one run, inside the allowance in the next",
-    ("X800 Y600 C256 F60", True):
-        "out by 5 across in one run, inside the allowance in the next",
+    ("X640 Y512 C256 F50", False):
+        "7, 4 and 7 at the far edge over three runs, straddling the limit the "
+        "width parity carries",
 }
 
 
@@ -299,6 +318,10 @@ def test_the_default_framing_puts_the_card_flush_to_the_emitted_edges(
     # divider left on another mode's value, and the declared shape coming back
     # under reset_framing(), whose bars are our own blanking.
     read += f"   {state_of(host)}"
+    # EVERY CASE, not only the ones that fail. A verdict records nothing a later
+    # run can be compared against, and the size is the whole point of out_by:
+    # a case that passes at 2 and one that passes at 0 are a drift in progress.
+    print(f"\n{mode} {'composite' if csync else 'separate'}: {read}")
     unstable = UNSTABLE.get((mode, csync))
     if unstable is not None:
         pytest.xfail(f"varies between runs -- {unstable}   [{read}]")
