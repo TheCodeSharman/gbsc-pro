@@ -76,21 +76,79 @@ source whose type has been forgotten cannot have its rate measured through any
 reference entry. That is the shape the second spin would need, and what it holds
 has not been read: nothing on the board reports `isCsync()`.
 
-**THE SUITE CASE DOES NOT REPRODUCE OUTSIDE THE SUITE.** It fails in every
-full six-case run from a settled start and passes in each narrower
-reproduction: three of three on its own, 27 s each; two of two paired with
-`composite-sync-scaled`; and both hand replays of the suite's own sequence,
-four legs and five, every leg acquiring inside the 14 s settle. So what
-provokes it is the run rather than the case, and the pytest reads between the
-legs are the difference left -- each one is deferred to `loop()`.
+**THE SECOND SPIN IS FIXED, AND IT WAS NOT INTERMITTENT.** It is the unlocked
+state with no arm: the reference divider in force, the count plausible, held and
+equal to the one the last solve measured, so every arm in `sourceMoved()`
+declined while only a solve could rewrite the divider. It reproduces in ONE
+request -- selecting the input already in force, 8 of 8 on composite sync
+against 0 of 8 on separate -- and `VideoSourceAcquisition::UnlockedArmPasses`
+arms a re-solve through it, 0 of 8 after.
+`investigations/the-unlocked-state-had-no-arm.md`.
 
-**It is not new, and the counts are not enough to say whether anything made it
-likelier.** The spin above was recorded from the build before the separation
-threshold stopped keying on the sync type, in this same arrangement. Since that
-change the full suite has failed this case three times out of three; the build
-immediately before it passed once out of once, from the same settled start. One
-sample against an intermittent settles nothing, so the measurement that would
-is several full runs per build rather than another narrower repro.
+**What made it look intermittent was the check, not the fault.** An acquisition
+wait that starts at the `/input` request answers about the state BEFORE it,
+because the selection is queued for `loop()` and the engine reports the previous
+solve until it has been consumed: the same eight trials read 5 of 6 acquiring
+without a hold check and 0 of 8 with one. Seven narrower reproductions had each
+passed for that reason, and the budgeted measurement -- several full six-case
+runs per build -- was never needed.
+
+**The first spin stays open**: `SP_SOG_MODE` 0 with no vertical count at all is
+a different state, with the chain below rather than this one.
+
+### One source on one cable emits two different pictures, one per sync type
+
+The sync type is how a source carries sync, not how many lines it has -- and the
+RISC PC at 800x600@60 is counted two ways:
+
+| | separate `SYNC 0` | composite `SYNC 1` |
+|---|---|---|
+| `STATUS_SYNC_PROC_VTOTAL` | 627 | **623** |
+| line rate | 37886 Hz | 37638 Hz |
+| `PLLAD_MD` | 1342 | 1436 |
+| capture `ch` x `cv` | 1343 x 628 | 1437 x 624 |
+| framing `oh`/`eh`/`ov`/`ev` | 275/1017/27/600 | 195/1242/38/582 |
+| `VDS_HSCALE` / `VDS_VSCALE` | 1342: 750 / 569 | 916 / 552 |
+
+**The count is the root and everything else follows it.** The line rate is the
+count times the field rate, the divider is derived from the line rate, and the
+capture, both scales and the framing are derived from the divider. DMT gives
+800x600@60 a total of 628 lines, so the separate path is one short and the
+composite path four.
+
+Read off the emitted frame at 1080p and 16:9 with the framing reset, **37.5% of
+pixels differ** by more than 16 levels, against 0% between two captures of the
+same state. The card's green frame lands differently too: separate fills the
+width and loses the source's left column off the frame, composite carries both
+horizontal edges inset 20 and 214 and cuts the top and bottom rows.
+
+`SP_PRE_COAST` 7 and `SP_POST_COAST` 6 are in circuit on the composite path and
+0/0 on the separate one, which is where four lines around the vertical interval
+could go, but neither walks the count: it reads 623 at every pre coast from 2 to
+18 and every post coast from 2 to 20.
+
+Guarded by `test_one_source_counts_the_same_on_both_sync_types` and
+`test_one_source_looks_the_same_on_both_sync_types`.
+
+### The top band shakes on composite sync, about one acquisition in five
+
+Measured off the USB capture as the horizontal displacement of each row band
+across 60 frames, `vga` at 800x600@60 into 1080p at 16:9. When it happens the
+top band moves by **sd 2.1 to 4.0 columns, p2p 4.4 to 11.5**, and every band
+below 135 rows reads 0.004 to 0.022 -- so it is confined to roughly the first
+90 to 135 output rows, which is where the lines just after the vertical interval
+land.
+
+It is a property of the ACQUISITION, not of a register: repeated solves at the
+default coast gave 1 of 6 shaking, and at `SP_PRE_COAST` 2 gave 1 of 4. Inside
+one shaking acquisition, writing the pre coast down to 2 by hand quiets it
+(0.006 against 2.573 at 7) and the post coast does nothing across 2..20 -- so
+the pre coast is a lever within the state rather than what decides entry to it.
+
+Separate sync in the same arrangement reads 0.005 to 0.014 in every band.
+
+**It is not the whole-picture shake**, which is vertical, affects every band
+alike, and is a property of the boot. `investigations/the-unlocked-state-had-no-arm.md`.
 
 ### A selection edge is swallowed in the pass-through cold state, so the sync type is never established
 
