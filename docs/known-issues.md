@@ -10,6 +10,40 @@ regardless of which step is in flight.
 
 ## Reaches the picture
 
+### The search's own pulse ignore is below the floor, and the search cannot leave it
+
+**On the composite pass-through route the engine drops into searching and stays
+there.** `applyForSearch()` writes `SearchPulseIgnore` 16, which is under the 86
+this source can be counted through, so the count it then takes is not the
+source's -- and a count that is not the source's is what keeps it searching.
+
+Measured on `vga`, RISC PC at 800x600@60 with `SYNC 1`, `scale-rgbhv = 0`, after
+`/sc?~`:
+
+| | `SP_H_PULSE_IGNOR` | `PLLAD_MD` | `STATUS_SYNC_PROC_HTOTAL` | `STATUS_SYNC_PROC_VTOTAL` | state |
+|---|---|---|---|---|---|
+| t+15..25 | 99 | 2038 | 2038 | **622** | acquired |
+| **t+30..70** | **16** | 2038 | 2038 | **703** | **unlocked** |
+
+It does not come out on its own -- 45 s with every reading identical -- and
+`/restart` clears it in about 20 s.
+
+**THE DIVIDER IN FORCE IS THE SOURCE'S, NOT THE REFERENCE.** 16 is sized for the
+chip's reference clock, where a pulse is a third of the samples it is at the
+divider, and the state above has 2038 latched against `HTOTAL` 2038. So the
+search is counting a 2038-sample line through a threshold meant for a
+760-sample one.
+
+What a fix needs is the floor at the REFERENCE clock, which nothing has
+measured: the settled threshold follows the divider already, and the search's
+cannot simply do the same without knowing that the value still works where
+nothing is latched. `separation_grid.py` walks it; the gate it needs is a state
+with the reference clock in force rather than a latched one.
+
+`tools/gbsc-pro-hwtest/test_acquires_every_source.py::composite-sync-passed-through`
+is the failing case, and the other five arrangements pass.
+`investigations/the-engine-makes-the-composite-count-unmeasurable.md`.
+
 ### Composite-sync VGA in pass-through acquires and emits nothing
 
 Measured 2026-10-14 on `vga`, RISC PC at 800x600@60 with `SYNC 1`, output
