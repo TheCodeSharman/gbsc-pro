@@ -51,6 +51,31 @@ on a line whose sync pulse measures `STATUS_SYNC_PROC_HLOW_LEN` 144. **Nothing
 changes.** A signal carrying equalising pulses at half-line spacing could not
 survive that untouched, so the pulses are not there.
 
+**Nor does anything else in the separation group**, which is what says the
+pulses are absent rather than filtered by one of them. At 800x600@60 with
+`SYNC 1`, automation frozen, every value written and read back, the count
+sampled eight times per value and the held value restored between each:
+
+| field | values | `STATUS_SYNC_PROC_VTOTAL` |
+|---|---|---|
+| `SP_DLT_REG` | 48, 112, 256, 1024, 4095 | 623 at every one |
+| `SP_DLT_REG` | 0 | 97..212, the separator collapsed |
+| `SP_H_PULSE_IGNOR` | 0, 16, 32, 128 | 623 at every one |
+| `SP_H_PULSE_IGNOR` | 255 | 97, the separator collapsed |
+| `SP_DIS_SUB_COAST` | 1 | 623 |
+| `SP_NO_COAST_REG` | 1 | 623 |
+| `SP_COAST_INV_REG` | 1 | 623 |
+| `SP_JITTER_SYNC` | 1 | 623 |
+| `SP_H_PROTECT` | 0 | 623 |
+
+`SP_DLT_REG` is the one the shortfall would be expected to answer to, being the
+sync separation threshold itself, and it reads **identically across its whole
+usable range**: a value either separates sync or does not, and nowhere between
+0 and 4095 does the counter see a pulse it was missing. `SP_DIS_SUB_COAST` is
+the other candidate -- the sub coast suppresses the horizontal count through
+the vertical interval, which is where lines could go -- and turning it off
+costs none and recovers none.
+
 **The filter used not to be applied by the sync type at all.**
 `SyncProcessor::applyForSyncType()` called `applyPulseIgnore()` on its
 separate-sync branch and not on its csync one, so on a csync source the field
@@ -122,6 +147,30 @@ console printing `source moved: count (623 lines, solved 627)` on every pass.
 `SyncProcessor::lineCount()` raw while the measurement reported the restored
 value, which is the same loop from the other side.
 
+**ONE OWNER IS NOT ENOUGH: THE WIDTH IS ESTABLISHED BY WHICHEVER READER RUNS.**
+A second reader that applied the held width without taking the offer left it
+unestablished wherever the measurement window passed without it, and the window
+can: `measureRate()` returns early once the rate is taken, so `sampleSteady()`
+-- the only caller that held the width -- never runs again for that
+acquisition. Measured at 800x600@60 composite, the two paths into the same
+state disagree:
+
+| reached by | first solve | held |
+|---|---|---|
+| a mode change from 1024x768@60 | 623, then 627 within 1.1 s | 627 |
+| `/sc?~` | 623 | 623 for the life of the acquisition |
+
+The formatter goes on offering the frame either way -- 1255 in 9 of 14 reads on
+the settled state, with 627 among the rest, both of which reconcile to the same
+width of 4 -- so nothing about the signal differs between the two. What differs
+is only whether a reader asked.
+
+Collapsed to one reader, the `/sc?~` path converges: the short count solves,
+the restored count moves the presence poll, and the arm the engine already has
+re-solves on it. `source key: 623@60.32` at 15.41 s and `627@60.32` at 16.61 s,
+after which the frame, the line rate, the divider, both scales and every window
+read the same as the separate-sync leg's.
+
 What it buys is one identity per source. 320x256@50 read 311 on separate sync
 and 308 on composite, 800x600@60 read 627 and 623, and the framing table keyed
 an entry to each; all three modes now agree across both sync types, and
@@ -147,6 +196,20 @@ The card then repeats about 1.7 times across over heavy green tearing.
 
 It also moves the source's identity, which is keyed on the count.
 `../source-identity-and-framing-lookup.md`, `../known-issues.md`.
+
+**That cost is now paid back on both paths**, and the capture is 1019 samples
+against a 1017-sample picture on either sync type where the short count took
+1243. What is still apart is `IF_HB_SP2`/`ST2`, 177..1196 on composite against
+274..1293 on separate, and that 97 is the engine's own
+`VideoSourceLine::SeparatorPulseEndLeadSamples` compensation rather than a
+difference in the solve: the separator reaches the counter a whole sync width
+less 66 samples late, which is 96 at the 162 samples of sync measured there.
+
+**And the picture still differs, with every number agreeing** -- 14.1%, 36.5%
+and 17.0% of pixels by more than 16 levels on three runs, against 0.0 to 0.1%
+between two captures of one state. It varies per run, so it is not a fixed
+displacement and not the count: what a single acquisition chooses is the
+candidate, the sampling phase search first.
 
 ### Putting the interval back
 

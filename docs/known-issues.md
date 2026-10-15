@@ -155,63 +155,57 @@ whether it is the same event as the top-band shake below are all open. It is a
 second mode showing composite-sync instability, which is what makes it worth
 recording rather than one more observation of the 800x600 case.
 
-### The composite capture window runs past the end of the picture
-
-Measured at 800x600@60 into 1080p: the capture window is **1243 samples against
-a picture 1088 samples wide**, so 155 samples of the source's own blanking are
-captured and shown -- about 214 emitted columns at the right. Separate sync on
-the same source takes 1019 against 1017.
-
-**The black at the right is the SOURCE'S, not ours**, which the `VDS_Y_OFST`
-lift settles: the last 30 columns rise by 31.5 on composite and by 0 to 2 on
-separate. So blanking it would lose picture, and what is wrong is the capture.
-
-The chain is the count. `SourceTiming::matching()` keys on the frame, which is
-`STATUS_SYNC_PROC_VTOTAL + 1`: separate's 627 gives 628, which is DMT's total
-for the mode, and the capture is derived from the raster's stated 800 active
-pixels. Composite's 623 gives 624, which matches no published raster, and the
-capture falls back to the computed default.
-`investigations/the-composite-capture-window-is-too-wide.md`.
-
 ### One source on one cable emits two different pictures, one per sync type
 
-The sync type is how a source carries sync, not how many lines it has -- and the
-RISC PC at 800x600@60 is counted two ways:
+**THE COUNT IS NO LONGER THE DIFFERENCE, AND THE REGISTER IS NOT THE THING TO
+ASK.** `STATUS_SYNC_PROC_VTOTAL` cannot agree across the two sync types: the
+RISC PC's composite sync is a NOR, so the hsync pulses inside the vertical
+pulse are absent from the wire and the counter is correctly short by the
+vertical sync width -- 3, 4 and 6 lines on three modes whose DMT widths are 3,
+4 and 6. What has to agree is the frame the ENGINE holds, restored from the
+input formatter's own measurement.
+`investigations/the-risc-pc-composite-sync-is-not-serrated.md`.
+
+Measured at 800x600@60 into 1080p with the framing reset, both legs now solve
+the same source:
 
 | | separate `SYNC 0` | composite `SYNC 1` |
 |---|---|---|
-| `STATUS_SYNC_PROC_VTOTAL` | 627 | **623** |
-| line rate | 37886 Hz | 37638 Hz |
-| `PLLAD_MD` | 1342 | 1436 |
-| capture `ch` x `cv` | 1343 x 628 | 1437 x 624 |
-| framing `oh`/`eh`/`ov`/`ev` | 275/1017/27/600 | 195/1242/38/582 |
-| `VDS_HSCALE` / `VDS_VSCALE` | 1342: 750 / 569 | 916 / 552 |
+| `STATUS_SYNC_PROC_VTOTAL` | 627 | 623 -- the pulses are not on the wire |
+| frame the engine holds | 628 | 628 |
+| line rate | 37879..37896 Hz | 37879 Hz |
+| `PLLAD_MD` | 1342 | 1342 |
+| capture `ch` x `cv` | 1343 x 628 | 1343 x 628 |
+| framing `oh`/`eh`/`ov`/`ev` | 275/1017/27/600 | 275/1017/27/600 |
+| `VDS_HSCALE` / `VDS_VSCALE` | 1000 / 569 | 1000 / 569 |
+| `IF_HB_SP2`/`ST2` | 274..1293 | 177..1196 |
 
-**The count is the root and everything else follows it.** The line rate is the
-count times the field rate, the divider is derived from the line rate, and the
-capture, both scales and the framing are derived from the divider. DMT gives
-800x600@60 a total of 628 lines, so the separate path is one short and the
-composite path four.
+The one register still apart is the capture window's position, and it is the
+engine's own compensation rather than a difference in the solve:
+`VideoSourceLine::SeparatorPulseEndLeadSamples` has the separator's output
+reach the counter a whole sync width less 66 samples late, which is 96 here
+against the 97 measured.
 
-Read off the emitted frame at 1080p and 16:9 with the framing reset, **37.5% of
-pixels differ** by more than 16 levels, against 0% between two captures of the
-same state. The card's green frame lands differently too: separate fills the
-width and loses the source's left column off the frame, composite carries both
-horizontal edges inset 20 and 214 and cuts the top and bottom rows.
+**WHAT IS STILL OPEN IS THE PICTURE.** With every number above agreeing,
+the emitted frames still differ -- **14.1%, 36.5% and 17.0% of pixels** by more
+than 16 levels on three runs, against 0.0 to 0.1% between two captures of one
+state. **It varies per run, so it is not a fixed displacement**, which points
+at what a single acquisition chooses rather than at the sync type: the sampling
+phase search is the candidate and its band question is open below.
 
-`SP_PRE_COAST` 7 and `SP_POST_COAST` 6 are in circuit on the composite path and
-0/0 on the separate one, which is where four lines around the vertical interval
-could go, but neither walks the count: it reads 623 at every pre coast from 2 to
-18 and every post coast from 2 to 20. `SP_DLT_REG` reads 192 on this path and 0
-on the other, and has not been walked.
+**The separation registers recover nothing**, which is the measurement that
+says the pulses are absent rather than filtered. At 800x600@60 composite,
+frozen, each written and read back with the count sampled eight times per
+value: `SP_DLT_REG` reads an identical 623 at 48, 112, 256, 1024 and 4095 and
+collapses the separator at 0 (190/212/97/100/112/205/152/97);
+`SP_H_PULSE_IGNOR` reads 623 at 0, 16, 32 and 128 and collapses at 255;
+`SP_DIS_SUB_COAST`, `SP_NO_COAST_REG`, `SP_COAST_INV_REG`, `SP_JITTER_SYNC` and
+`SP_H_PROTECT` each move it not at all. The coast lengths were walked
+separately and read 623 at every pre coast from 2 to 18 and post coast from 2
+to 20.
 
-**THE COUNT IS WHAT HAS TO BE FIXED**, rather than the framing it misleads: a
-count that is four short picks the wrong raster, and a count that dithers picks
-a different one from acquisition to acquisition. Both show as a framing fault
-and neither is one.
-
-Guarded by `test_one_source_counts_the_same_on_both_sync_types` and
-`test_one_source_looks_the_same_on_both_sync_types`.
+Guarded by `test_one_source_counts_the_same_on_both_sync_types`, which passes,
+and `test_one_source_looks_the_same_on_both_sync_types`, which does not.
 
 ### The top band shakes on composite sync, about one acquisition in five
 

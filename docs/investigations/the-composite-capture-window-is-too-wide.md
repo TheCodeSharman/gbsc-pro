@@ -71,24 +71,31 @@ rate, the divider, the capture, both scales, the framing -- follows from it, and
 the two sync types differ in nothing else. `known-issues.md`, "One source on one
 cable emits two different pictures".
 
-## What to try next, in order
+## Closed: the four lines are the vertical sync, and the engine was not asking
 
-1. **Find the four lines.** The count is four short, not one, and nothing yet
-   explains where they go. They are not the coast: the count reads 623 at every
-   `SP_PRE_COAST` from 2 to 18 and every `SP_POST_COAST` from 2 to 20, with the
-   window placed. `SP_DLT_REG` reads 192 on this path and 0 on the other, and
-   has not been walked.
-2. **Ask whether the count is the composite path's or the engine's.**
-   `/samplinglog?rates=120` times the field rate off `DEBUG_IN_PIN` with
-   automation frozen, so a count taken there is free of anything the solve
-   writes. Compare the two sync types in ONE window.
-3. **Ask what the fallback capture is.** If the raster match is the mechanism,
-   a source whose count is right but which matches no raster should show the
-   same margin -- the RISC PC has modes with no published equivalent, and
-   `published_rasters.py` says which.
-4. **Do not reach for a tolerance on the raster match first.** Widening the
-   match so 624 finds 628 hides a count that is wrong by four lines, and the
-   line rate derived from it is wrong by 0.65% whatever raster it then picks.
+The count is not four short of what arrives -- it is exact. The RISC PC's
+composite sync is a NOR, so the hsync pulses inside the vertical sync pulse are
+absent from the wire, and the shortfall is the mode's own vertical sync width.
+Nothing in the separation group recovers them, `SP_DLT_REG` included: it reads
+an identical 623 at every value from 48 to 4095 and collapses the separator at
+0. `the-risc-pc-composite-sync-is-not-serrated.md` has the walk.
+
+The width was already being restored from the input formatter's own frame, and
+the restoration was established by one reader at one moment -- a window the
+`/sc?~` path passes without it, where a mode change does not. One reader of the
+count now, so a width that window missed is established on the next pass.
+
+Measured after it, at 800x600@60 into 1080p with the framing reset, the capture
+window is 1019 samples against a 1017-sample picture on BOTH sync types, where
+the table above has composite at 1243 against 1088. Every figure in it that the
+count fed -- the divider, both scales, the capture, the framing -- now reads
+the same on either sync type.
+
+**What is not closed is the emitted picture**, which still differs with every
+one of those numbers agreeing: 14.1%, 36.5% and 17.0% of pixels by more than 16
+levels across three runs, against 0.0 to 0.1% between two captures of one
+state. It varies per run, so it is not a displacement the registers describe.
+`../known-issues.md`, "One source on one cable emits two different pictures".
 
 ## Not a defect
 
