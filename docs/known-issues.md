@@ -1972,18 +1972,18 @@ polarity and the raw low time read in one pass.
 
 #### The composite column is not reproducible, and the separate one is
 
-**Three full runs of the matrix on one firmware, same output, same shape
+**Four full runs of the matrix on one firmware, same output, same shape
 setting, framing reset per case.** The two sync types are not equally steady and
 the difference is two orders of magnitude:
 
-| mode | separate, three runs | composite, three runs |
+| mode | separate, four runs | composite, four runs |
 |---|---|---|
-| 240x352@70 | far 10, flush, far 2 | near 14, near 14, near 14 |
-| 320x256@50 | flush, flush, flush | both ends, both ends, **307\|222** |
-| 640x480@60 | far 12, far 15, far 12 | both ends, both ends, both ends |
-| 640x512@50 | flush, flush, flush | 17 down, both ends, **161\|168** |
-| 800x600@60 | far 0, flush, flush | near 5, flush, **19 down** |
-| 1600x600@60 | flush, flush, flush | near 2, flush, flush |
+| 240x352@70 | far 10, flush, far 2, far 10 | near 14 on all four |
+| 320x256@50 | flush on all four | both ends, both ends, **307\|222**, near 28 |
+| 640x480@60 | far 12, 15, 12, 13 | both ends on all four |
+| 640x512@50 | flush on all four | 17 down, both ends, **161\|168**, 12 down |
+| 800x600@60 | far 0, flush, flush, flush | near 5, flush, 19 down, near 4 |
+| 1600x600@60 | flush on all four | near 2, flush, flush, flush |
 
 **Separate sync repeats to a few pixels**, and what spread it has grows with the
 magnification -- about 8 output pixels on the 240-pixel source line, 3 on the
@@ -2006,11 +2006,24 @@ records which:
   it runs once per case, and the pillarboxed bars are our own blanking -- so a
   case judged with a shape applied measures the bars
 
-**Neither is diagnosed, and the reading is what has to say which**:
-`PLLAD_MD`, `shaping` and the capture are read beside every verdict now, so the
-next run separates a scale that came from the divider from one that came from
-the shape. Until then the composite column is evidence of a defect and not a
-measurement of its size.
+**THE SHAPE IS REFUTED.** `PLLAD_MD`, `shaping`, the declared aspect and the
+capture are read beside every verdict now, and a fourth run has them on all
+twelve cases: `shaping False` on every one, with `aspect 13333` declared
+throughout. So the declaration does come back under `reset_framing()` and the
+solve does not apply it, which leaves no bars of ours at any edge.
+
+**What is left is the acquisition's state, and the run where every divider was
+mode-correct carries no scale at all.** The same fourth run: `MD 2200 ch 1101`
+on 320x256@50, `MD 1342 ch 1343` on 800x600@60, `MD 1424 ch 1425` on
+640x512@50, `MD 1272 ch 1273` on both 31.5 kHz modes -- every one the value its
+mode wants. Its composite readings are 28 at the near edge on 320x256@50, 12
+either side down on 640x512@50 and 4 at the near edge on 800x600@60, all of them
+placements of a few to a few dozen columns. The 307 and 161 margins belong to a
+run with no divider recorded beside them, which is the reading the state line
+exists to catch.
+
+So the composite column's size is a placement where the divider is right, and a
+reading without the divider beside it is not evidence about either.
 
 
 **The measurement's own order is ruled out.** The concern was that
