@@ -1959,16 +1959,42 @@ leg carries the larger size on every mode they can both be read at.
 term in the horizontal origin, and it makes the displacement `sync width - 66`,
 so it SCALES with the source's pulse where a constant delay would not.
 
-**The pulse the origin is derived from is polarity-blind by construction.**
-`SyncProcessor::hsyncPulseSamples()` returns the shorter of the low time and its
-complement, so the value is the same whichever way the source goes, while the
-retimed EDGE the counter starts from is not. The RISC PC's composite sync is a
-NOR, so a mode's measured horizontal polarity need not be the one it sends on
-its own hsync line, and `SyncProcessor::InvertedPulseWidthSamples` is then taken
-off one sync type and not the other for one source mode. Whether
-`STATUS_SYNC_PROC_HSPOL` actually differs across a `SYNC` round trip is
-unmeasured, and it is the cheap discriminator: one mode, both sync types, the
-polarity and the raw low time read in one pass.
+**THE MEASURED POLARITY FLIPS WITH THE SYNC TYPE, AND THAT IS MEASURED.** One
+source mode, both sync types, every field read by name in one pass with
+`sync_polarity.py` -- 800x600@60 on `vga` into 1080p:
+
+| | `HSPOL` | `VSPOL` | low | pulse | folded | `HS_INV` | `SOG_MODE` | `RT_HS_SP` | `IF_HB` start |
+|---|---|---|---|---|---|---|---|---|---|
+| separate | **1** | 1 | 164 | 164 | **159** | 1 | 0 | 1247 | **274** |
+| composite | **0** | 0 | 162 | 162 | **162** | 0 | 1 | 1244 | **177** |
+
+The RISC PC's composite sync is a NOR, so the same mode presents high-active on
+its own hsync line and low-active through the separator.
+`SyncProcessor::hsyncPulseSamples()` takes `InvertedPulseWidthSamples` off a
+high-active reading, so **one source mode is corrected on one sync type and not
+on the other** -- folded 159 against 162 -- and the origin follows, 1247 against
+1244.
+
+**The constant was calibrated on DIRECT-path sources, where the polarity
+describes the source.** On the composite path it describes the SEPARATOR's
+output, so keying a direct-path calibration on it is applying the correction by
+a measurement of something else. `hsyncPulseSamples()` returns the shorter of
+the low time and its complement, so the pulse WIDTH is polarity-blind by
+construction while the retimed edge the counter starts from is not.
+
+**The two composite-specific terms are told apart by size, and the residual is
+the polarity's.** `SeparatorPulseEndLeadSamples` accounts for the 97 units
+between the two capture starts, 274 against 177, which is the sync width less
+66. What is left is the 3 samples of polarity correction -- and at this mode's
+1.43 output pixels per capture unit the composite framing is out by 4 at the
+near edge, which is 2.8 units. The deliberate compensation is therefore roughly
+right and the residual is about the size of the term applied to one sync type
+and not the other.
+
+**640x480@60 ON COMPOSITE DOES NOT ACQUIRE**, measured in the same pass: 90 s
+and `never acquired`. Its four matrix runs all read the picture overrunning both
+ends, which is the absence of a picture rather than a framing -- so that case is
+an acquisition entry and not a framing one.
 
 #### The composite column is not reproducible, and the separate one is
 
