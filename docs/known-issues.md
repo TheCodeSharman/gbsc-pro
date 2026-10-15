@@ -2634,6 +2634,21 @@ decides a bad landing is unmeasured. **The count dither is the cheap check**:
 sample `STATUS_SYNC_PROC_HTOTAL` against `PLLAD_MD` twenty times and a good
 phase reads the divider back every time.
 
+**IT IS SEEN ON A SECOND MODE, AND IT CHANGES PER ACQUISITION.** The high
+frequency graticule of the card at 640x480@60 shimmers, and differently from one
+acquisition of the same source to the next -- which is the signature of the
+phase search landing somewhere different each time rather than of a constant
+being wrong. That is a second mode and a second divider for a rule proven on one
+of each, so it is evidence the band question above is live rather than a new
+fault. The console says where each solve landed: `phase dither:` is the profile
+the search scored and `sampling phase: chosen, oversample N` is what it took.
+
+**THE CHEAP DISCRIMINATOR IS THE COUNT DITHER**, above: twenty samples of
+`STATUS_SYNC_PROC_HTOTAL` against `PLLAD_MD`, read in the acquisition that
+shimmers. A good phase reads the divider back every time, so a run that dithers
+says the phase landed badly and one that does not says the shimmer is something
+else.
+
 It also confounds anything else being judged on the picture at the same time, so
 establish the phase is good before collecting verdicts on another artefact.
 
