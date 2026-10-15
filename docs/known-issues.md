@@ -32,18 +32,65 @@ measures a rate through it. The list exists because no entry latches on both
 bench sources; what this state says is that for one source and one arrangement
 none of the four does.
 
-**It is rare and it has not been reproduced on demand.** The same sequence run
-deliberately -- the scaled case, the sync type re-issued, the route toggled, the
-input re-selected, `/sc?~` -- acquires in 16.5 s with 10 retry lines rather than
-209, and three full six-case runs since have passed. So it is one observation
-with a complete console record rather than a state to walk into.
+**TWO SPINS HAVE NOW BEEN READ AT THE REGISTER, AND THEY ARE NOT THE SAME
+STATE.** Both are `vga` at 800x600@60 with `SYNC 1`, output 1920x1080:
 
-**What would settle it is the threshold floor at the reference clock**, which is
-the open question under "What normalises the composite pulse-ignore floor" below:
-the threshold is in ADC samples and a reference entry runs the block at a line
-the divider does not describe, so whether the source can be counted there at all
-is unmeasured. `separation_grid.py` walks it, and the gate it needs is a state
-with the reference clock in force rather than a latched one.
+| | `SP_SOG_MODE` | `VTOTAL` | `PLLAD_MD` | `HTOTAL` | `SP_H_PULSE_IGNOR` |
+|---|---|---|---|---|---|
+| after two `/sc?~` round trips, scaled then passed through | **0** | **0** in 10 readings over 50 s | 1446 / 2040 | 988..1978 | 16 |
+| `test_acquires_every_source.py`, `composite-sync-passed-through` | 1 | 623 | 2040 | 963..991 | -- |
+
+So one spins with the arrangement WRONG and no vertical count to measure, and
+the other spins with the arrangement right, the count right, and the reference
+clock still in force. **The threshold is not either one's cause**: it reads 16
+throughout the first, which is the value sized for a block counting at the
+reference.
+
+**The first has a chain, and it is a second record of what is in force.**
+`/sc?~` reaches `SyncMeasurement::forget()` directly rather than
+`VideoPath::forgetSyncType()`, so `csync_` goes false while `syncTypeApplied_`
+and `syncTypeInForce_` keep the previous answer. Then:
+
+1. `establishSyncType()` finds nothing measured and probes.
+2. `SyncMeasurement::hasOwnVsync()` measures in the separate arrangement and
+   restores `applyForSyncType(isCsync(), ...)` -- `isCsync()` being the value
+   held *before* the probe assigns its answer, which the forget made false. The
+   chip is left on `SP_SOG_MODE` 0.
+3. `probe()` then sets `csync_` true, and `applySyncType(true)` returns early
+   because `syncTypeApplied_` is true and `syncTypeInForce_` is already true.
+
+The console shows it: `measured: own V sync no, composite or SOG` with **no
+`sync arrangement:` line after it**, so the engine believes the arrangement it
+measured is already in force while the chip is on the other one.
+`establishSyncType()`'s own comment states the rule that breaks -- one record of
+whether the type is known, and it is `SyncMeasurement`'s -- and
+`applySyncType()` keeps a second one of what is in FORCE.
+`investigations/sp-sog-mode-had-two-owners.md` is the same field with the
+arrangements the other way round.
+
+**And a forgotten sync type also decides which test-bus signal the RATE is
+measured from.** `TestBusRateMeasurement::sourceFieldRateHz()` and `pllRateHz()`
+both branch on `isCsync()`, and the separate branch watches vertical sync
+activity, which on a composite source is not there to see -- so a composite
+source whose type has been forgotten cannot have its rate measured through any
+reference entry. That is the shape the second spin would need, and what it holds
+has not been read: nothing on the board reports `isCsync()`.
+
+**THE SUITE CASE DOES NOT REPRODUCE OUTSIDE THE SUITE.** It fails in every
+full six-case run from a settled start and passes in each narrower
+reproduction: three of three on its own, 27 s each; two of two paired with
+`composite-sync-scaled`; and both hand replays of the suite's own sequence,
+four legs and five, every leg acquiring inside the 14 s settle. So what
+provokes it is the run rather than the case, and the pytest reads between the
+legs are the difference left -- each one is deferred to `loop()`.
+
+**It is not new, and the counts are not enough to say whether anything made it
+likelier.** The spin above was recorded from the build before the separation
+threshold stopped keying on the sync type, in this same arrangement. Since that
+change the full suite has failed this case three times out of three; the build
+immediately before it passed once out of once, from the same settled start. One
+sample against an intermittent settles nothing, so the measurement that would
+is several full runs per build rather than another narrower repro.
 
 ### A selection edge is swallowed in the pass-through cold state, so the sync type is never established
 
