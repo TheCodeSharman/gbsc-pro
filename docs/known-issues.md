@@ -1865,8 +1865,15 @@ once and the source came back in about twelve seconds.
 **`PATTERN CARD`'s one-pixel green frame does not reach the emitted frame at the
 left, on 28 of 28 stock AKF50 modes.** It reaches it at the right, at the top and
 mostly at the bottom. Measured with `card_edges.py` against the USB capture:
-`across` reports "one edge: the window is shifted off the picture" on 26 of the
-28, and `down` reports flush or two columns on most.
+`across` reports the near edge off the frame on 26 of the 28, and `down` reports
+flush or two columns on most.
+
+**That sweep is SEPARATE SYNC ONLY and it carries no sizes**, both of which the
+two subsections below supply: the displacement reverses sign on composite sync,
+and four of the six covered modes are flush on separate sync once the allowance
+covers the solve's own run-to-run spread. The margins recorded further down this
+entry stand as readings; the verdicts beside them were taken against an
+allowance of one output pixel.
 
 The picture IS in memory and our own display blanking is what cuts it. Frozen at
 640x480@60, walking `VDS_DIS_HB_SP` down from the solved 160:
@@ -1928,6 +1935,82 @@ change on the other five.
 
 **What is left**: re-measure the write-start constants with `measure_origin.py`
 -- `55 + 25m` is fitted and the aperture is floored from it.
+
+#### The displacement reverses sign with the sync type
+
+**Separate sync loses the NEAR edge and composite sync loses the FAR one, on
+every mode either can be read at.** Measured over two full runs of the matrix at
+1080p with the shape off and the framing reset, `card_edges.judge()` reporting
+each edge's own margin and the size it is out by:
+
+| mode | separate | composite |
+|---|---|---|
+| 240x352@70 | near edge off, far 10 | near 14, far edge off |
+| 320x256@50 | flush within the allowance | overruns both ends |
+| 640x480@60 | near edge off, far 12..15 | overruns both ends |
+| 640x512@50 | flush within the allowance | 17 rows at the top |
+| 800x600@60 | near edge off, far 0 | near 5, far edge off |
+| 1600x600@60 | flush within the allowance | near 2, far edge off |
+
+A shift moves a picture's two ends together, so the column is ONE displacement
+per sync type rather than six modes misframed independently -- and the composite
+leg carries the larger size on every mode they can both be read at.
+`VideoSourceLine::SeparatorPulseEndLeadSamples` is the only composite-specific
+term in the horizontal origin, and it makes the displacement `sync width - 66`,
+so it SCALES with the source's pulse where a constant delay would not.
+
+**The pulse the origin is derived from is polarity-blind by construction.**
+`SyncProcessor::hsyncPulseSamples()` returns the shorter of the low time and its
+complement, so the value is the same whichever way the source goes, while the
+retimed EDGE the counter starts from is not. The RISC PC's composite sync is a
+NOR, so a mode's measured horizontal polarity need not be the one it sends on
+its own hsync line, and `SyncProcessor::InvertedPulseWidthSamples` is then taken
+off one sync type and not the other for one source mode. Whether
+`STATUS_SYNC_PROC_HSPOL` actually differs across a `SYNC` round trip is
+unmeasured, and it is the cheap discriminator: one mode, both sync types, the
+polarity and the raw low time read in one pass.
+
+#### The composite column is not reproducible, and the separate one is
+
+**Three full runs of the matrix on one firmware, same output, same shape
+setting, framing reset per case.** The two sync types are not equally steady and
+the difference is two orders of magnitude:
+
+| mode | separate, three runs | composite, three runs |
+|---|---|---|
+| 240x352@70 | far 10, flush, far 2 | near 14, near 14, near 14 |
+| 320x256@50 | flush, flush, flush | both ends, both ends, **307\|222** |
+| 640x480@60 | far 12, far 15, far 12 | both ends, both ends, both ends |
+| 640x512@50 | flush, flush, flush | 17 down, both ends, **161\|168** |
+| 800x600@60 | far 0, flush, flush | near 5, flush, **19 down** |
+| 1600x600@60 | flush, flush, flush | near 2, flush, flush |
+
+**Separate sync repeats to a few pixels**, and what spread it has grows with the
+magnification -- about 8 output pixels on the 240-pixel source line, 3 on the
+640-pixel one, under 1 on the 1600-pixel one -- so the quantity that moves there
+is the source's own pixel or the capture's unit rather than the emitted frame's
+pixel. The green frame's captured width is too noisy to settle which: one clip
+at a magnification of 4.5 gives 4 columns at one edge and 8 at the other.
+
+**Composite sync does not repeat at all.** A mode reading the picture
+overrunning both ends in two runs and a margin of 307 columns in the third is
+not a framing spread; a margin that size is a picture far narrower than the
+raster, which is a SCALE and not a placement. Two candidates, and no run so far
+records which:
+
+- the composite acquisition landing in a different state. 320x256@50 on
+  composite is the entry above that can miss the source entirely, with the
+  divider left on another mode's value, and a wrong divider gives a wrong
+  capture and so a wrong scale
+- the declared shape coming back. `reset_framing()` resets the declared ASPECT,
+  it runs once per case, and the pillarboxed bars are our own blanking -- so a
+  case judged with a shape applied measures the bars
+
+**Neither is diagnosed, and the reading is what has to say which**:
+`PLLAD_MD`, `shaping` and the capture are read beside every verdict now, so the
+next run separates a scale that came from the divider from one that came from
+the shape. Until then the composite column is evidence of a defect and not a
+measurement of its size.
 
 
 **The measurement's own order is ruled out.** The concern was that
