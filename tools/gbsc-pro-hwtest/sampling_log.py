@@ -43,9 +43,6 @@ import websocket
 
 from gbs_unit import get
 
-COLUMNS = ["ms", "divider", "lock", "vtotal", "htotal", "hperiod", "vperiod",
-           "hsact", "ifbits", "intstatus"]
-
 # SamplingLog.cpp packs these into the ifbits byte, lowest bit first.
 IF_STATUS_BITS = ["STATUS_IF_HT_OK", "STATUS_IF_VT_OK", "STATUS_IF_HT_BAD",
                   "STATUS_IF_VT_BAD", "STATUS_IF_NO_SYNC",
@@ -53,29 +50,47 @@ IF_STATUS_BITS = ["STATUS_IF_HT_OK", "STATUS_IF_VT_OK", "STATUS_IF_HT_BAD",
 
 
 def parse(lines):
-    """The sample rows, as {column: array}. Everything else on the socket is
-    dropped rather than counted."""
-    rows = []
+    """The sample rows, as {column: array}, named by the capture's own header.
+
+    Everything else on the socket is dropped rather than counted. THE HEADER IS
+    THE AUTHORITY: a column list held here is a copy of the firmware's, and a
+    copy that falls behind drops every row -- which reads as a capture that
+    arrived too late rather than as a reader that cannot count.
+    """
+    columns, rows = None, []
     for line in lines:
         parts = line.strip().split(",")
-        if len(parts) != len(COLUMNS) + 1 or parts[0] != "smp" or parts[1] == "header":
+        if parts[0] != "smp":
+            continue
+        if parts[1] == "header":
+            columns = parts[2:]
+            continue
+        if columns is None or len(parts) != len(columns) + 1:
             continue
         try:
             rows.append([int(part) for part in parts[1:]])
         except ValueError:
             continue
     return {name: np.array([row[index] for row in rows], dtype=int)
-            for index, name in enumerate(COLUMNS)}
+            for index, name in enumerate(columns or [])}
+
+
+def clock(samples):
+    """The first column, which is the time one whatever the header calls it:
+    `ms` while a source is followed and `ms_since_latch` across a sweep."""
+    return (np.array([], dtype=int) if not samples
+            else samples[next(iter(samples))])
 
 
 def lock_statistics(samples):
-    count = len(samples["ms"])
+    ms = clock(samples)
+    count = len(ms)
     if count == 0:
         return dict(count=0, duty=0.0, transitions=0, rate=0.0, seconds=0.0,
                     offset_min=0, offset_max=0, offset_zero=0.0)
-    seconds = (samples["ms"][-1] - samples["ms"][0]) / 1000.0
-    lock = samples["lock"]
-    offset = samples["htotal"] - samples["divider"]
+    seconds = (ms[-1] - ms[0]) / 1000.0
+    lock = samples["pllad_lock"]
+    offset = samples["sp_htotal"] - samples["divider"]
     transitions = int((np.diff(lock) != 0).sum())
     return dict(count=count, seconds=seconds,
                 duty=float(lock.mean()), transitions=transitions,
@@ -132,11 +147,11 @@ def report(lines):
     print(f"  htotal-md  {stats['offset_min']:+d}..{stats['offset_max']:+d}"
           f"   exactly 0 in {stats['offset_zero'] * 100:.1f}%"
           f"   -- this one has a right answer")
-    for name in ("vtotal", "hperiod", "vperiod"):
+    for name in ("sp_vtotal", "hperiod_if", "vperiod_if"):
         values = samples[name]
         common = "  ".join(f"{value}x{count}" for value, count
                            in collections.Counter(values.tolist()).most_common(3))
-        print(f"  {name:9}  {values.min()}..{values.max()}"
+        print(f"  {name:10}  {values.min()}..{values.max()}"
               f"  sd {values.std():7.2f}   {common}")
     for value, count in collections.Counter(samples["ifbits"].tolist()).most_common(3):
         named = ", ".join(name for bit, name in enumerate(IF_STATUS_BITS)
