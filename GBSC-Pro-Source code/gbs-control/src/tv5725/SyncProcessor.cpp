@@ -194,6 +194,48 @@ void SyncProcessor::applyPulseIgnore(bool csync, uint16_t divider, bool progress
     SP_H_PULSE_IGNOR::write(pulseIgnoreFor(csync, divider, progressive));
 }
 
+// The threshold walk, at whatever level is in force.
+static bool walkThreshold(bool (*readable)())
+{
+    for (uint16_t at = SyncProcessor::SeparationCoarseStep; at <= 0xff;
+         at = (uint16_t)(at + SyncProcessor::SeparationCoarseStep)) {
+        SyncProcessor::SP_H_PULSE_IGNOR::write((uint8_t)at);
+        if (readable())
+            return true;
+    }
+    return false;
+}
+
+bool SyncProcessor::searchSeparation(uint8_t level, bool (*readable)(),
+                                     void (*applyLevel)(uint8_t))
+{
+    // The threshold to come back to. A walk that found nothing has learnt
+    // where the source cannot be read and nothing about where it can, so
+    // leaving it wherever the last probe stopped would park the source on a
+    // value the walk introduced.
+    const uint8_t entry = (uint8_t)SP_H_PULSE_IGNOR::read();
+
+    // THE THRESHOLD IS THE INNER LOOP. Every level measured has a threshold
+    // that reads the source -- 44 at level 4, 220 at level 6, 99 at level 9 --
+    // so a source readable where it sits costs no level change, and moving the
+    // level costs the caller an ADC PLL relatch.
+    if (walkThreshold(readable))
+        return true;
+
+    for (uint8_t at = SeparationLevelMin; at <= SeparationLevelMax;
+         at = (uint8_t)(at + SeparationLevelStep)) {
+        if (at == level)
+            continue;
+        applyLevel(at);
+        if (walkThreshold(readable))
+            return true;
+    }
+
+    applyLevel(level);
+    SP_H_PULSE_IGNOR::write(entry);
+    return false;
+}
+
 void SyncProcessor::applyPulseWidthDifference()
 {
     SP_DLT_REG::write(PulseWidthDifference);

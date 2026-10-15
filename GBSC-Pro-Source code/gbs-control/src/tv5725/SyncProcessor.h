@@ -435,6 +435,45 @@ public:
     // through a 1446-sample line.
     static const uint8_t ProgressiveCsyncPulseIgnore = 14;
 
+    // Search for a separation the source can be counted through, and leave it
+    // in force.
+    //
+    // **NOTHING ON THE BOARD MEASURES THE SYNC AMPLITUDE, OR THE JUNK THE
+    // SEPARATOR MAKES OF IT**, so neither the slice level nor this threshold
+    // can be calculated -- and the two are ONE setting, the working threshold
+    // moving with the level. Measured on `vga` at 800x600@60 composite in one
+    // frozen acquisition: 44 at level 4, 99 at level 9, and nothing in the
+    // whole field at level 12.
+    //
+    // `readable` is the caller's because the measurement is not this block's:
+    // reading the count here would make this a second owner of it.
+    // `applyLevel` likewise -- ADC_SOGCTRL is Tv5725::SyncOnGreen's one
+    // register and this must not become a second writer of it.
+    //
+    // Returns whether any pair passed. The threshold in force on entry is left
+    // standing when none did.
+    // ../../../docs/investigations/the-engine-makes-the-composite-count-unmeasurable.md
+    //
+    // `level` is the one in force, because it is HELD state rather than a
+    // register this may read: Tv5725::SyncOnGreen derives the next level from
+    // the one it last set, and a search that found nothing has to put that
+    // back rather than leave the level its last probe chose.
+    static bool searchSeparation(uint8_t level, bool (*readable)(),
+                                 void (*applyLevel)(uint8_t));
+
+    // How far apart the probed thresholds sit on the coarse pass. **A STEP
+    // WIDER THAN THE NARROWEST BAND WALKS OVER IT**, which reads as no value
+    // working, so this is a measured width rather than a convenient number.
+    static const uint8_t SeparationCoarseStep = 8;
+
+    // The levels the outer loop offers, and how far apart. It stops clear of
+    // the starved end for the reason Tv5725::SyncOnGreen's ladder does:
+    // nothing measured through a separator that slices almost nothing means
+    // anything, and 0 is the one value no ratchet climbs back out of.
+    static const uint8_t SeparationLevelMin = 4;
+    static const uint8_t SeparationLevelMax = 20;
+    static const uint8_t SeparationLevelStep = 2;
+
     // What a caller knows of the scan before anything has counted the source.
     // It reads as the fraction, which is what acquires either scan.
     static const bool ScanNotYetKnown = false;

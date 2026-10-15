@@ -1365,3 +1365,129 @@ TEST_CASE("the separation thresholds leave the pulse ignore alone")
 
     CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 0x6b);
 }
+
+// --- the separation a composite source can be counted through ----------------
+//
+// NOTHING ON THE BOARD MEASURES IT, so neither value can be calculated. The
+// slice level sets what the separator calls an edge and the pulse ignore sets
+// which of those edges reach the counter, and the two are ONE setting: measured
+// on `vga` at 800x600@60 composite in one frozen acquisition, the threshold the
+// source counts through is 44 at level 4 and 99 at level 9, and at level 12 no
+// value in the whole 8-bit field counts it.
+//
+// A constant cannot track that. ProgressiveCsyncPulseIgnore was 14, measured on
+// the Wii at 480p through a 1446-sample line, and through the RISC PC's 2038
+// it leaves the source unmeasurable -- the field rate reading 36.99 Hz against
+// 60.31 and the count 1430 against 622, both turning together on this one
+// register.
+// ../docs/investigations/the-engine-makes-the-composite-count-unmeasurable.md
+
+// The pair the search is handed, so a test can pass at one and nowhere else.
+static uint8_t g_readableLevel = 0;
+static uint8_t g_readableIgnore = 0;
+static unsigned g_probes = 0;
+static uint8_t g_levelInForce = 0;
+
+static void applyTestLevel(uint8_t level) { g_levelInForce = level; }
+
+// THE SOURCE READS THROUGH A BAND, NOT A VALUE, which is what makes a coarse
+// pass viable at all: a probe lands inside the band rather than on its centre.
+// Half-widths are per test, because a band narrower than the step is walked
+// over and that hazard is its own case below.
+static uint8_t g_bandHalf = 8;
+
+static bool readableAtChosenPair()
+{
+    ++g_probes;
+    const uint16_t at = (uint16_t)SyncProcessor::SP_H_PULSE_IGNOR::read();
+    const uint16_t low = g_readableIgnore > g_bandHalf
+                             ? (uint16_t)(g_readableIgnore - g_bandHalf) : 0;
+    const uint16_t high = (uint16_t)(g_readableIgnore + g_bandHalf);
+    return g_levelInForce == g_readableLevel && at >= low && at <= high;
+}
+
+static bool neverReadable()
+{
+    ++g_probes;
+    return false;
+}
+
+TEST_CASE("the separation search leaves the pair the source counts through")
+{
+    Wire.reset();
+    g_levelInForce = 4;
+    g_readableLevel = 4;
+    g_readableIgnore = 96;
+    g_probes = 0;
+
+    CHECK(SyncProcessor::searchSeparation(g_levelInForce, readableAtChosenPair,
+                                           applyTestLevel));
+
+    // Inside the band rather than at its centre: the coarse pass accepts the
+    // first probe the source reads at, which is wherever the step lands.
+    const uint16_t at = (uint16_t)SyncProcessor::SP_H_PULSE_IGNOR::read();
+    CHECK(at >= 96 - g_bandHalf);
+    CHECK(at <= 96 + g_bandHalf);
+    CHECK(g_levelInForce == 4);
+}
+
+TEST_CASE("a search that finds nothing leaves the threshold it started from")
+{
+    // THE STARVED END IS WHAT A FAILED WALK MUST NOT LAND ON. A threshold of 0
+    // ignores nothing and 255 ignores the source's own pulse, and a walk that
+    // ran off either end would leave the source unreadable for a reason the
+    // walk introduced rather than found.
+    Wire.reset();
+    SyncProcessor::SP_H_PULSE_IGNOR::write(99);
+    g_levelInForce = 4;
+    g_probes = 0;
+
+    CHECK_FALSE(SyncProcessor::searchSeparation(g_levelInForce, neverReadable,
+                                                 applyTestLevel));
+
+    CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 99);
+    CHECK(g_levelInForce == 4);
+}
+
+TEST_CASE("the level is stepped only when no threshold at it reads the source")
+{
+    // THE THRESHOLD WALK IS THE INNER LOOP because every level measured so far
+    // has one that works -- 44 at level 4, 220 at level 6, 99 at level 9 -- so
+    // a source readable where it sits must not pay for a level change, and
+    // moving the level costs an ADC PLL relatch the caller has to undo.
+    //
+    // The values are scattered rather than a ridge, which is why there is no
+    // formula and the walk is the whole of the answer.
+    Wire.reset();
+    g_probes = 0;
+
+    SUBCASE("a source readable at the level in force leaves the level alone") {
+        g_levelInForce = 6;
+        g_readableLevel = 6;
+        g_readableIgnore = 220;
+
+        CHECK(SyncProcessor::searchSeparation(g_levelInForce,
+                                              readableAtChosenPair,
+                                              applyTestLevel));
+
+        CHECK(g_levelInForce == 6);
+        const uint16_t at = (uint16_t)SyncProcessor::SP_H_PULSE_IGNOR::read();
+        CHECK(at >= 220 - g_bandHalf);
+        CHECK(at <= 220 + g_bandHalf);
+    }
+
+    SUBCASE("a source readable only at another level is still found") {
+        g_levelInForce = 12;
+        g_readableLevel = 4;
+        g_readableIgnore = 40;
+
+        CHECK(SyncProcessor::searchSeparation(g_levelInForce,
+                                              readableAtChosenPair,
+                                              applyTestLevel));
+
+        CHECK(g_levelInForce == 4);
+        const uint16_t at = (uint16_t)SyncProcessor::SP_H_PULSE_IGNOR::read();
+        CHECK(at >= 40 - g_bandHalf);
+        CHECK(at <= 40 + g_bandHalf);
+    }
+}
