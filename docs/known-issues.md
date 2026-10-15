@@ -5937,6 +5937,21 @@ no new instrument.
 
 ## Costs time rather than correctness
 
+### The acquisition acceptance test asks whether the source was ever acquired, not whether it is held
+
+`test_acquires_every_source.py` waits for one reading of `state: acquired` at
+the right line rate and then asserts the route and the latch. A source that
+reaches acquired and is then lost for good passes it: measured on `vga`, the
+RISC PC at 800x600@60 with `SYNC 1` passed through, the deadlocked engine
+reached acquired in **218 of 363 readings across 90 s** before stalling
+permanently, and a run of the two composite cases passed with the deadlock live.
+
+**So a green run of that file is not evidence the bench holds**, and the window
+it cannot see is the one every stall on this page lives in. What the cases need
+is the same reading at the END of a window as well as at the start; the
+instrument is `/geometry` polled at a few hertz, which is what the measurements
+in the entries above were taken with.
+
 ### FIXED: OTA ran out of heap margin, and a child array on every menu item was most of why
 
 `OLEDMenuManager` holds `OLEDMenuItem allItems[OLED_MENU_MAX_ITEMS_NUM]`, and
