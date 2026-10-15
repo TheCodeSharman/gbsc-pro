@@ -104,5 +104,12 @@ It is one column at one edge and it does not always happen: the same leg
 measured at 2 columns of margin with both green edges on screen in one
 acquisition and with the left column lost in another.
 
+**It reaches the pass-through leg as well, which makes the acceptance suite
+non-deterministic there.** `test_the_picture_fills_the_frame[separate-sync-
+passed-through]` failed one full run on exactly that edge and passed two
+immediate re-runs of the leg alone, with the vertical margins 1 and 0
+throughout. So a failure on that leg is one acquisition landing on the losing
+side rather than a regression -- re-run the leg before diagnosing it.
+
 **The Wii's bottom rows are in the signal.** The 51 black rows at the bottom of
 a 480p pass-through frame are the source's, not a framing deficit.
