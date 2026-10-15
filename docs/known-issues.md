@@ -45,13 +45,47 @@ the divider does not describe, so whether the source can be counted there at all
 is unmeasured. `separation_grid.py` walks it, and the gate it needs is a state
 with the reference clock in force rather than a latched one.
 
-### The composite count flaps the presence verdict, and the acceptance case is intermittent with it
+### A forgotten sync type reads as separate sync, and sync on green cannot be searched for through it
 
-The presence verdict is broken by ONE scattered count: `plausible && held` goes
-false, `sourceState_` becomes `SourceAbsent`, and the next reading takes it back
-to `SourceAcquired`. Measured on `vga`, the RISC PC at 800x600@60 with `SYNC 1`
-passed through, the console alternating every ~1.6 s with the divider latched
-throughout:
+Measured on `ypbpr`, the Wii at 480p, output 1920x1080, reached by leaving a
+`vga` pass-through run part way and then selecting `ypbpr`. The engine holds
+`state: absent` for as long as it is left, and `SP_H_PULSE_IGNOR` reads **255 --
+the separate-sync value -- on a sync-on-green source**, unchanged across a
+`/sc?~` and 60 s:
+
+```
+state=absent  md=2040  ht=850  vt=97   ign=255  sog=1
+state=absent  md=1446  ht=427  vt=100  ign=255  sog=1
+```
+
+`ht` is the 27 MHz reference count for the source's line rather than the
+divider, so the clock is not latched and nothing is measured: the console
+carries no `measured:` line at all over 60 s, only three `settle: spent after
+~100 ms`. **The `sync arrangement:` line is missing from the selection**, which
+a selection that establishes the type prints.
+
+**The candidate is that `isCsync()` answers for two different states.**
+`SyncMeasurement::forget()` clears `csync_` as well as `set_`, so a sync type
+that was forgotten is indistinguishable from one measured as separate -- and
+`searchPulseIgnoreFor()` reads that false as separate sync and writes
+`OwnVsyncPulseIgnore`. A source that carries sync on green then cannot be
+counted, so it is never acquired, so the type is never established.
+`isSet()` is the discriminator and nothing on that path asks it.
+
+**Selecting the other input is what recovers it**, not `/sc?~`: `vga` acquires
+in about 10 s and `ypbpr` then acquires in 3.1 s. So it is a stuck state reached
+by leaving an excursion part way rather than one a selection walks into --
+`test_acquires_every_source.py` passes 6 of 6 in 107 s from a settled start, and
+its fixture checks the Wii without establishing the route first, so a run begun
+from a left-over pass-through state fails all six at the fixture.
+
+### The composite count flapped the presence verdict -- FIXED
+
+The verdict was derived from ONE reading where earning presence takes a run:
+`plausible && held` false made `sourceState_` `SourceAbsent` and the next
+reading took it back, so `/geometry` alternated every ~1.6 s with the divider
+latched throughout. Measured on `vga`, the RISC PC at 800x600@60 with `SYNC 1`
+passed through:
 
 ```
  22.43  source absent: 557 lines, 2038 samples against divider 2038
@@ -60,23 +94,43 @@ throughout:
  24.03  source acquired: 626 lines, 2038 samples against divider 2038
 ```
 
-`SourceMeasurement::countContradicted()` already drops the readings the input
-formatter's own frame contradicts, and these are not among them: 175, 453 and
-557 lines all reach the verdict.
+**WHAT IT COST IS THE UNBROKEN ACQUIRED RUN, not the verdict.** The auto gain
+needs `acquiredPasses()` past 90, which is 1.82 s at the 20 ms pass, and a flap
+at 1.6 s zeroes the run at about 80 -- so it never ran at all on a composite
+source while the picture was perfect. The frame time lock arms on
+`FrameTimeLock::ArmPasses` and holds past `HeldPasses`, so it was interrupted
+for 400 ms out of every 1.6 s.
 
-**The acceptance case fails on it intermittently rather than reliably.**
-`wait_for_acquisition()` needs ONE acquired reading at the source's rate inside
-60 s, which a flap at 1.6 s supplies -- so a failure means a longer excursion
-than the 4.9 s the 240 s window's worst was. Measured: 2 of 2 composite-only
-runs pass, and one full six-case run had it fail at 74 s while a `/sc?~` from
-the same arrangement acquires in 17.1 s.
+`VideoSourceAcquisition::AbsentPasses` is what the verdict waits now, and it is
+derived rather than chosen: one scattered count costs the steadiness run its
+whole length, so a shorter run cannot survive a single miscount.
+`UnsettledArmPasses` is the same figure for the same reason, the arm that
+question raises rather than the verdict it reaches. `countContradicted()` does
+not reach these readings -- 175, 453 and 557 lines all pass it -- and the run is
+what tells a miscount from a source leaving: a miscount does not persist.
 
-**AND A FAILED CASE CASCADES.** The two `ypbpr` cases failed in the same run
-with `STATUS_SYNC_PROC_VTOTAL` 97 and `PLLAD_MD` 2040 -- nothing counting -- and
-the Wii on the same route acquires in **3.6 s** when asked on its own. So a case
-that leaves the unit mid-excursion is not given enough by the next case's
-`/sc?~` and 14 s settle, and a run's later failures are not independent
-evidence.
+Measured on the same arrangement passed through to 1920x1080, `/geometry` polled
+at about 58 Hz against the 3.6 Hz of the reading before it:
+
+| | before | after |
+|---|---|---|
+| console `source absent` transitions | every ~1.6 s | **0 in 240 s** |
+| readings acquired | 788 of 865, 91.1% | **12810 of 13838, 92.6%** |
+| longest unacquired run | 4.9 s | **3.5 s** |
+
+**WHAT REMAINS IS NOT THE VERDICT.** The 13 excursions left in that window are
+`measureSource()`'s own absent verdict on a measurement that failed, which takes
+no run and should not -- a measurement that failed is a stronger statement than
+one count -- and 644 of the readings are `SourceUnlocked`, the divider not
+latched under a count that reads the source. Both are the open pulse-ignore
+floor question below rather than the flap.
+
+It also exposed a second defect, fixed with it: the dynamic sync-processor
+configuration is keyed on the sync type as well as on the search, and the latch
+held only the search answer, so the pass that falls back into searching -- which
+is the pass that forgets the sync type -- recorded the configuration as applied
+with its csync half skipped.
+`investigations/the-search-coast-inversion-outlived-the-search.md`.
 
 `investigations/the-composite-sync-count-re-arms-its-own-solve.md`,
 `investigations/the-engine-makes-the-composite-count-unmeasurable.md`.
@@ -5675,8 +5729,7 @@ Measured on `vga`, the RISC PC at 800x600@60 with `SYNC 1` passed through to
 | after the first acquisition | -- | 788 of 834, longest run **4.9 s** |
 
 `/sc?~` on that route acquires in 17.1 s, and 14.3 s after a `/uc?x` toggle. The
-Wii on `ypbpr` acquires in 3.6 s on the same route. What remains is the count
-flap under "The composite count flaps the presence verdict" above.
+Wii on `ypbpr` acquires in 3.6 s on the same route.
 
 ### The search's own pulse ignore sat below the floor at a latched divider -- FIXED
 

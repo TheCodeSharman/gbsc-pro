@@ -79,6 +79,42 @@ is the 21 s.
   It used to advance on every pass that had not reached an *acquired* source,
   which a healthy selection spends several of.
 
+## The latch held only half of what the configuration is keyed on
+
+The inversion came back a second time, through the latch rather than through the
+branch. `applyDynamic()` is decided by TWO facts -- whether the engine is
+searching and whether the source carries composite sync -- and
+`followDynamicFacts()` re-applied on a change of the first only:
+
+```
+if (dynamicApplied_ && dynamicForSearch_ == sourceIsSearching())
+    return;
+```
+
+So a pass that applies the configuration with `csync` false skips
+`setCoastInvert()`, `applySeparationThresholds()` and `applyPulseIgnore()`
+outright, and the latch still records the whole configuration as applied.
+Nothing puts the skipped half back, because the searching answer does not move
+again.
+
+**THE TWO FACTS CHANGE ON THE SAME PASS, which is why it is reachable rather
+than theoretical.** The unusable-count arm calls `forgetSyncType()` and arms the
+re-measure together, and `SyncMeasurement::forget()` clears `csync_` as well as
+`set_` -- so the pass that drops back into searching is the pass on which
+`isCsync()` reads false. Traced at the acquisition layer with a count of 97 held
+under a settled csync source:
+
+```
+pass  2  searching 0  csync 1  inv 0
+pass  3  searching 1  csync 0  inv 0     <- applied here, inversion skipped
+pass  4  searching 1  csync 1  inv 0
+pass 35  searching 1  csync 1  inv 0
+```
+
+The latch holds both facts now. `SP_H_PULSE_IGNOR` is the cheaper witness of the
+same rule and does not need the search: forgetting the sync type under a settled
+source has to move it, because the value is chosen by csync.
+
 ## The models that were refuted on the way
 
 - **The sub coast.** `SP_DIS_SUB_COAST` is set from `hasSerratedSync()`, which
