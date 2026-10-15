@@ -134,7 +134,7 @@ one on some modes and two on others with the whole ADC clock group identical --
 apart -- so both are tried and the screen picks. Holding a divider from 1100 to
 2000 through `/sampleclock?hold=` moves neither the factor nor the reading.
 
-**The width is HELD once two readings agree, not recomputed per sample.**
+**The FRAME is HELD once two readings agree, not recomputed per sample.**
 `VPERIOD_IF` spans two registers and a counter can advance between the byte
 fetches, so a reading tears -- 1255 in 539 of 721 samples from `loop()` at
 800x600@60, with 615 and 1267 among the rest, both of which are one byte from
@@ -142,6 +142,26 @@ each of the two coherent states. Reconciling per sample moves the count by the
 whole vertical sync whenever a reading is refused, and the presence poll reads
 that as the source moving: measured as an endless acquire/absent loop with the
 console printing `source moved: count (623 lines, solved 627)` on every pass.
+
+**THE FRAME IS WHAT IS HELD, AND NOT THE WIDTH.** The width is the difference
+between the frame and the count, so a width established while the count read
+one low is one too many and outlives the reading it came from: measured, three
+acquisitions in six held a frame of 629 against a count of 623, where no
+published raster has 629 lines and the capture fell through to its computed
+default. The frame comes from the formatter alone, so a held frame rides a
+count that dithers where a held width moves with it -- 12 acquisitions of 12
+hold 628 since, against 3 of 6 holding 629 before.
+
+It answers only where it can be the frame of the count being read, which is the
+same bound the reconciliation applies. Without that, the width from one mode is
+added to the next mode's count -- 4 added to 805 is 809, which is neither
+mode's frame, and that is the first reading the new mode's solve takes.
+
+The reading's distribution in the settled state, 180 samples over HTTP at
+800x600@60 composite: 1255 x137, 615 x24, 627 x11, 1267 x8. Both coherent
+values reconcile to the same frame of 628, both tears are refused, and no other
+width is offered at all -- so the hold is not choosing between candidates
+there, it is waiting out refusals.
 
 **And the count has one owner.** The presence poll read
 `SyncProcessor::lineCount()` raw while the measurement reported the restored
