@@ -448,6 +448,7 @@ private:
     // indistinguishable from the ones a settled source wants.
     bool dynamicApplied_;
     bool dynamicForSearch_;
+    bool dynamicForCsync_;
     SourceState sourceState_;
     uint16_t solvedLinePeriod_;
     uint8_t rateRun_;

@@ -33,7 +33,7 @@ VideoSourceAcquisition::VideoSourceAcquisition(Tv5725::SourceMeasurement &sampli
       idle_(Tv5725::SourceMeasurement::SteadySamples,
             Tv5725::SourceMeasurement::CountPairSpread),
       unusableCountArmed_(false), dynamicApplied_(false),
-      dynamicForSearch_(false),
+      dynamicForSearch_(false), dynamicForCsync_(false),
       sourceMeasured_(false),
       sourceState_(SourceAbsent),
       solvedLinePeriod_(0), rateRun_(0), recheckPasses_(0),
@@ -1292,9 +1292,20 @@ void VideoSourceAcquisition::placeClampWindow()
     Tv5725::SyncProcessor::adoptClampPlacement();
 }
 
+// THE LATCH HOLDS EVERY FACT THE CONFIGURATION IS KEYED ON. Half of
+// SyncProcessor::applyDynamic() is decided by the sync type -- the coast
+// inversion, the separation thresholds and the pulse ignore -- so a latch that
+// remembers only the searching answer reports the configuration applied when
+// the csync half was skipped, and nothing puts it back.
+//
+// The pass that falls back into searching is exactly the pass that forgets the
+// sync type, the unusable-count arm doing both, so the inversion the search
+// needs was written on none of them.
+// ../../../docs/investigations/the-search-coast-inversion-outlived-the-search.md
 void VideoSourceAcquisition::followDynamicFacts()
 {
-    if (dynamicApplied_ && dynamicForSearch_ == sourceIsSearching())
+    if (dynamicApplied_ && dynamicForSearch_ == sourceIsSearching()
+        && dynamicForCsync_ == Tv5725::SyncMeasurement::isCsync())
         return;
 
     applySyncProcessorDynamic();
@@ -1317,6 +1328,7 @@ void VideoSourceAcquisition::applySyncProcessorDynamic()
 
     dynamicApplied_ = true;
     dynamicForSearch_ = source.searching;
+    dynamicForCsync_ = source.csync;
 
     Tv5725::SyncProcessor::applyDynamic(source);
 }

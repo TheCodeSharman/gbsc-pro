@@ -1415,7 +1415,6 @@ TEST_CASE("a source counted steadily and sampled at the chosen divider is acquir
 }
 
 
-
 TEST_CASE("a source counted steadily at a line the ADC is not sampling is unlocked")
 {
     seedBenchSource();
@@ -3330,6 +3329,37 @@ TEST_CASE("a source that falls back into searching gets the search configuration
     CHECK(SyncProcessor::SP_COAST_INV_REG::read() == 1);
     CHECK(SyncProcessor::SP_H_CST_ST::read() == 0x10);
     CHECK(SyncProcessor::SP_H_CST_SP::read() == 0x100);
+}
+
+TEST_CASE("the dynamic configuration follows the sync type")
+{
+    // THE LATCH HOLDS EVERY FACT THE CONFIGURATION IS KEYED ON. Half of
+    // SyncProcessor::applyDynamic() is decided by csync -- the coast inversion,
+    // the separation thresholds and the pulse ignore -- so a latch that
+    // remembers only the searching answer reports the whole configuration
+    // applied when the csync half was skipped, and nothing puts it back.
+    //
+    // The pass that falls back into searching is also the pass that forgets the
+    // sync type, the unusable-count arm doing both, which is how the search
+    // coast inversion came to be written on none of them.
+    seedPassThroughSource();
+    Acquiring unit;
+    unit.acquisition.allowMaintenance(true);
+    unit.path.useSyncTypeProbe(probeOwnVsync);
+
+    VideoSourceSelection::select(VideoSourceSelection::Vga);
+    g_hasOwnVsync = false;
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+    unit.pollFor(2);
+    REQUIRE(SyncProcessor::SP_SOG_MODE::read() == 1);
+    const uint8_t onCsync = SyncProcessor::SP_H_PULSE_IGNOR::read();
+
+    unit.path.forgetSyncType();
+    REQUIRE_FALSE(SyncMeasurement::isCsync());
+    unit.poll();
+
+    CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() != onCsync);
 }
 
 TEST_CASE("a csync selection does not inherit the separate-sync pulse ignore")
