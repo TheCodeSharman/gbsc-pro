@@ -1743,13 +1743,35 @@ TEST_CASE("one source's pulse reads the same through the inversion as without it
 
     seedSourceLines(798);
     seedHsync(107, false);
-    const uint16_t lowActive = SyncProcessor::hsyncPulseSamples(1448, false);
+    const uint16_t lowActive = SyncProcessor::hsyncPulseSamples(1448, false, false);
 
     seedSourceLines(798);
     seedHsync(112, true);
-    const uint16_t highActive = SyncProcessor::hsyncPulseSamples(1448, true);
+    const uint16_t highActive = SyncProcessor::hsyncPulseSamples(1448, true, false);
 
     CHECK(lowActive == highActive);
+}
+
+// THE SEPARATOR'S OUTPUT DOES NOT REPORT THE SOURCE'S POLARITY, so the PATH
+// decides this correction where the measured bit cannot. The RISC PC's
+// composite sync is a NOR: one mode presents high-active on its own hsync line
+// and low-active through the separator, so STATUS_SYNC_PROC_HSPOL reads 1 on
+// separate sync and 0 on composite for ONE source mode.
+//
+// Measured on 800x600@60 on vga into 1080p, shape off and framing reset:
+// separate sync puts the card flush on both axes, and composite leaves 5
+// output columns at the near edge with the far one off the frame -- 3.5 capture
+// units at this mode's 1.43 px per unit, which is the term the direct leg takes
+// off and the separated leg does not. docs/known-issues.md
+TEST_CASE("the separator's path has the inverted width taken off either polarity")
+{
+    Adc::applyDivider(1343);
+
+    seedSourceLines(628);
+    seedHsync(162, false);
+
+    CHECK(SyncProcessor::hsyncPulseSamples(1343, false, true)
+          == 162u - SyncProcessor::InvertedPulseWidthSamples);
 }
 
 // A REFUSED DUTY STALLS ACQUISITION, IT DOES NOT MERELY LOSE THE ORIGIN.

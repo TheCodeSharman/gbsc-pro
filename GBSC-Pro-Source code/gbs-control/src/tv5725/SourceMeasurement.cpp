@@ -547,9 +547,9 @@ SourceKey::Polarity SourceMeasurement::vsyncPolarity() const { return vsyncPolar
 // The arrangement IN FORCE rather than whether it has been probed -- a held
 // sync type nothing probed still says which path the pins are read through,
 // and isSet() governs whether to probe again, which is a different question.
-SourceKey::Polarity SourceMeasurement::polarityOf(bool positive)
+SourceKey::Polarity SourceMeasurement::polarityOf(bool positive, bool separated)
 {
-    if (SyncMeasurement::isCsync())
+    if (separated)
         return SourceKey::Undetermined;
     return positive ? SourceKey::Positive : SourceKey::Negative;
 }
@@ -608,13 +608,18 @@ bool SourceMeasurement::readSource()
     // minus the pulse -- around 0.9, which forDuty() refuses.
     const bool found = SyncProcessor::hsyncFound();
     const bool positive = normalisePolarity();
-    hsyncPolarity_ = polarityOf(positive);
-    vsyncPolarity_ = polarityOf(SyncProcessor::vsyncPositive());
+
+    // The arrangement is read ONCE and handed to everything that needs it: it
+    // decides whether a measured polarity describes the source at all.
+    const bool separated = SyncMeasurement::isCsync();
+    hsyncPolarity_ = polarityOf(positive, separated);
+    vsyncPolarity_ = polarityOf(SyncProcessor::vsyncPositive(), separated);
 
     // The duty rather than the register, because the divider this was counted
     // against is about to move. HsyncPulse.h.
     const uint16_t divider = Adc::dividerInForce();
-    const uint16_t low = SyncProcessor::hsyncPulseSamples(divider, positive);
+    const uint16_t low = SyncProcessor::hsyncPulseSamples(divider, positive,
+                                                          separated);
     const uint16_t lineSamples = SyncProcessor::lineSamples();
     const bool latched = Adc::dividerLatched(lineSamples);
     const float duty = divider > 0 ? (float)low / (float)divider : 0.0f;

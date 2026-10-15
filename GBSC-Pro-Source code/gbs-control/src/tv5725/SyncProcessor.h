@@ -554,9 +554,13 @@ public:
     // it needs no write to have taken effect.
     // docs/investigations/the-duty-is-the-shorter-interval.md
     //
-    // The polarity is what decides whether the count was taken through
-    // normaliseHsyncPolarity()'s inversion, which is what the width below is.
-    static uint16_t hsyncPulseSamples(uint16_t lineSamples, bool positive);
+    // ONE READING DOES NOT WANT THE WIDTH BELOW TAKEN OFF IT: a low-active
+    // source counted on its own hsync line. `separated` is whether the sync
+    // separator regenerated the pulse, which is composite sync and sync on
+    // green both -- there the measured polarity reports the SEPARATOR and
+    // cannot report the source, so the path answers for it.
+    static uint16_t hsyncPulseSamples(uint16_t lineSamples, bool positive,
+                                      bool separated);
 
     // WHAT THE INVERTED PATH ADDS TO THE COUNT, in ADC samples. The same source
     // read through the inversion measures wider than one read directly, and
@@ -570,6 +574,15 @@ public:
     // beside them step by 5.27. RetimeOriginSamples was calibrated on
     // H-negative states, so the direct reading is the one it suits.
     // ../../../docs/investigations/the-capture-origin-varies-by-mode-at-one-line-rate.md
+    //
+    // **IT IS NOT THE INVERSION BEING IN CIRCUIT**, which those seven modes
+    // could not separate from the source's polarity because on a direct path
+    // the two are one condition. The separated path is where they come apart --
+    // a NOR composite sync presents a high-active source low-active, so the
+    // inversion is OUT -- and the window still wants the term: measured on
+    // 800x600@60 into 1080p, separate sync frames the card flush and composite
+    // leaves 5 output columns at the near edge with the far one off the frame.
+    // ../../../docs/known-issues.md
     static const uint16_t InvertedPulseWidthSamples = 5;
 
     // Whether an hsync edge was found to take the polarity from. A polarity

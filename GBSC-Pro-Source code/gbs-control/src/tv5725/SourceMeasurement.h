@@ -394,7 +394,7 @@ private:
     // Whether a readable pulse is waiting for a second reading to agree with
     // it, which is what measureDuty() holds the rate back across.
     bool awaitingDutyAgreement() const;
-    static SourceKey::Polarity polarityOf(bool positive);
+    static SourceKey::Polarity polarityOf(bool positive, bool separated);
 
     // --- what the pass reads and judges --------------------------------------
 
