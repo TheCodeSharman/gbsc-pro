@@ -29,18 +29,36 @@ throughout.
 | an HTTP read of `STATUS_SYNC_PROC_VTOTAL` | **623** |
 | field rate | 60.31 Hz, correct, every pass |
 
-The two counts differ by four and which of them the steadiness run sees is not
-established. A count that never steadies is a stall this page already carries
-one exit for, and this may be another.
+**THE REFERENCE CLOCK IS A ONE-WAY DOOR ON THE PASS-THROUGH ROUTE**, and the
+two halves of that are both in the code. `VideoPath::installSampling()` returns
+true on its first line when `passedThrough()`, because the channel's divider is
+`HdBypass`'s and the duty is counted against the raster it sized -- so the one
+function that would replace a clock does nothing there. And the reference retry
+lives only in the branch that takes a FAILED RATE: `measureRate()` succeeds
+here, so the pass reaches `measureDuty()`, which refuses through an unlatched
+clock, and that exit has no retry of any kind.
+
+So a rate reading that fails once installs a reference, the reference lets the
+rate read and stops the duty reading, and nothing on the route can put the
+channel's divider back. `restartSamplingClock()` is no exit either: with a
+reference in force it installs the NEXT one.
+
+What a fix needs is an action that re-asserts the channel's own clock, which no
+path currently has -- cycling the references cannot be it, because none of them
+is the clock the channel's raster was sized for.
 
 **It is not the separation threshold.** `SP_H_PULSE_IGNOR` 48, the fraction of
 the 988-sample line the block is counting, written by name into the live state
 with the engine running, left every reading identical for 45 s -- state,
 `HTOTAL`, lock bit, count and rate.
 
-**And the state is reachable on either side of the search fix**, because the
-threshold in force there is the search's own: nothing is latched, which is the
-arm both the fixed and the unfixed engine write 16 for.
+**And the two counts differing by four is not the mechanism either**, though it
+is unexplained: the steadiness run is not what the pass is failing on.
+
+`tools/gbsc-pro-hwtest/test_acquires_every_source.py::composite-sync-passed-through`
+is the failing case and the other five arrangements pass. Its signature is the
+source's own count beside an unlatched reference -- `STATUS_SYNC_PROC_VTOTAL`
+623, `STATUS_SYNC_PROC_HTOTAL` 992, `PLLAD_MD` 2040.
 
 `/restart` clears it, in about 20 s.
 
