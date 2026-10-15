@@ -1941,7 +1941,9 @@ change on the other five.
 **Separate sync loses the NEAR edge and composite sync loses the FAR one, on
 every mode either can be read at.** Measured over two full runs of the matrix at
 1080p with the shape off and the framing reset, `card_edges.judge()` reporting
-each edge's own margin and the size it is out by:
+each edge's own margin and the size it is out by. **This is the state BEFORE the
+polarity correction followed the path**; the entry below carries what the
+composite column reads now.
 
 | mode | separate | composite |
 |---|---|---|
@@ -1953,11 +1955,18 @@ each edge's own margin and the size it is out by:
 | 1600x600@60 | flush within the allowance | near 2, far edge off |
 
 A shift moves a picture's two ends together, so the column is ONE displacement
-per sync type rather than six modes misframed independently -- and the composite
-leg carries the larger size on every mode they can both be read at.
+per sync type rather than six modes misframed independently.
 `VideoSourceLine::SeparatorPulseEndLeadSamples` is the only composite-specific
-term in the horizontal origin, and it makes the displacement `sync width - 66`,
-so it SCALES with the source's pulse where a constant delay would not.
+term in the horizontal origin that SCALES with the source's pulse -- it makes
+the displacement `sync width - 66` where a constant delay would not -- and
+`SyncProcessor::InvertedPulseWidthSamples` is the other one, five flat samples,
+which the entry below is about.
+
+**THE SEPARATE COLUMN'S SPREAD SWAMPS A FEW PIXELS ON THE SHORT LINES, so judge
+a horizontal change on 800x600@60 or 1600x600@60.** Two runs on one firmware
+give 240x352@70 out by 2 and then by 10, where 320x256@50 repeats at 2 and
+800x600@60 at 1 and 2. The ordering tracks the magnification, so the quantity is
+the source's own pixel rather than the emitted frame's.
 
 **THE MEASURED POLARITY FLIPS WITH THE SYNC TYPE, AND THAT IS MEASURED.** One
 source mode, both sync types, every field read by name in one pass with
@@ -1970,31 +1979,56 @@ source mode, both sync types, every field read by name in one pass with
 
 The RISC PC's composite sync is a NOR, so the same mode presents high-active on
 its own hsync line and low-active through the separator.
-`SyncProcessor::hsyncPulseSamples()` takes `InvertedPulseWidthSamples` off a
-high-active reading, so **one source mode is corrected on one sync type and not
-on the other** -- folded 159 against 162 -- and the origin follows, 1247 against
-1244.
 
-**The constant was calibrated on DIRECT-path sources, where the polarity
-describes the source.** On the composite path it describes the SEPARATOR's
-output, so keying a direct-path calibration on it is applying the correction by
-a measurement of something else. `hsyncPulseSamples()` returns the shorter of
-the low time and its complement, so the pulse WIDTH is polarity-blind by
-construction while the retimed edge the counter starts from is not.
+**THE SEPARATED PATH IS WHAT DISCRIMINATES THE TWO MODELS, and the correction
+follows the path now.** The seven direct-path modes
+`SyncProcessor::InvertedPulseWidthSamples` was fitted on could not tell the
+source being high-active from the count having been taken through
+`normaliseHsyncPolarity()`'s inversion, because on a direct path those are ONE
+condition. A NOR composite sync is where they come apart -- the source is
+high-active, the separator presents it low-active, `SP_HS_INV_REG` reads 0 and
+the inversion is out of circuit -- and the capture window still wants the term.
+`hsyncPulseSamples()` therefore takes it off a high-active reading OR a
+separated one: the measured bit answers where it describes the source, and the
+path answers where it cannot.
 
-**The two composite-specific terms are told apart by size, and the residual is
-the polarity's.** `SeparatorPulseEndLeadSamples` accounts for the 97 units
+**The two composite-specific terms are told apart by size.**
+`VideoSourceLine::SeparatorPulseEndLeadSamples` accounts for the 97 units
 between the two capture starts, 274 against 177, which is the sync width less
-66. What is left is the 3 samples of polarity correction -- and at this mode's
-1.43 output pixels per capture unit the composite framing is out by 4 at the
-near edge, which is 2.8 units. The deliberate compensation is therefore roughly
-right and the residual is about the size of the term applied to one sync type
-and not the other.
+66. What was left is the 3 samples of polarity -- and at this mode's 1.43 output
+pixels per capture unit that is the 5 columns the composite framing was out by
+at the near edge.
 
-**640x480@60 ON COMPOSITE DOES NOT ACQUIRE**, measured in the same pass: 90 s
-and `never acquired`. Its four matrix runs all read the picture overrunning both
-ends, which is the absence of a picture rather than a framing -- so that case is
-an acquisition entry and not a framing one.
+| composite, 1080p, shape off, framing reset | before | after, three runs |
+|---|---|---|
+| 240x352@70 | near 14, far edge off | 2 to 4 across, 2 to 5 down |
+| 320x256@50 | overruns both ends | near 16, three times |
+| 640x512@50 | 17 rows at the top | 8 across, 1 down twice and 29 once |
+| 800x600@60 | near 5, far edge off | far 2, 3, 3 -- it passes |
+| 1600x600@60 | near 2, far edge off | far 6, 7, 8 |
+
+**The vertical readings are the ones that still swing**, 1 and 1 and 29 on
+640x512@50 and 2 to 5 on 240x352@70, on an axis the correction does not touch
+-- `capturableFrame()` takes no polarity. So they are the spread this matrix
+already carries rather than anything the horizontal change reached.
+
+**IT COSTS THE KEY COLLISION.** 800x600@60 and 1600x600@60 are one `SourceKey`
+-- same field rate, same line rate, both 75.8% active -- so one solve frames
+both, and the two want placements about 5 output pixels apart. The move takes
+800x600@60 from 5 to 2 and 1600x600@60 from 2 to 6..8, so the pair cannot both
+be flush until something separates the key.
+
+**AND THE DUTY MOVES WITH IT.** 5 samples of the divider is 0.0023 to 0.0037
+against `SourceKey::SyncWidthIdentity` of 0.002, so a composite framing stored
+by an earlier build is keyed differently and the computed default answers for it
+instead.
+
+**640x480@60 ON COMPOSITE DOES NOT ACQUIRE**, measured in the same pass -- 90 s
+and `never acquired` -- and again on every matrix run since, where the state
+line reads `PLLAD_MD` 2040 against a 2041-unit capture and a frame count of 312
+on a mode that sends 525. Its cases all read the picture overrunning both ends,
+which is the absence of a picture rather than a framing, so that case is an
+acquisition entry and not a framing one.
 
 #### The composite column is not reproducible, and the separate one is
 
