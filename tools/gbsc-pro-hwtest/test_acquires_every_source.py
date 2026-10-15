@@ -26,9 +26,20 @@ draws a one-pixel green frame on the source's outermost pixels, so a framing is
 right when that frame is flush to all four emitted edges with no black between.
 `docs/bench-output-capture.md`, card_edges.py.
 
-**AT 1080p AND 16:9.** The output is one variable the legs must share, and a 4:3
-declaration pillarboxes -- the bars are OUR blanking, so a strip at the frame's
-own edge measures them instead of the picture.
+**WHAT ACCEPTANCE MEANS HERE**, on the VGA sources:
+
+  the card's green border on all four emitted edges
+  a stable acquisition, with no shake
+  the same framing chosen on every acquisition of the same source
+  no difference at all between composite and separate sync
+
+**AT 1080p, AND SHAPING OFF.** The output is one variable every leg must share,
+and lower resolutions have known issues and are out of scope. The shape is
+turned OFF rather than set to 16:9: a declared shape narrows the room, the bars
+it pillarboxes with are OUR blanking, and a strip taken at the frame's own edge
+then measures them instead of the picture. `Aspect::Fill` is the absence of a
+shape, so the picture takes the whole raster whatever the user has stored --
+which cycling /uc?G to 16:9 cannot promise, the stored shape being per source.
 """
 
 import os
@@ -41,22 +52,23 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import card_edges
 import hdmi_capture
+import picture_jitter
 from gbs_unit import (
-    SIXTEEN_NINE,
     SOURCES,
     acquired_and_settled,
-    choose_aspect,
     choose_output,
     get,
     get_json,
     mode_serv,
     read_fields,
+    freeze,
     reset_framing,
     restore_output_mode,
     select_input,
     setting,
     show_card,
     wait_for_acquisition,
+    write_named,
 )
 
 # 800x600@60 is what SOURCES holds the `vga` line rate for, and it is above the
@@ -87,8 +99,15 @@ OUTPUT = "1080p"
 # horizontal edges but inset, and cuts the source's first and last rows.
 # docs/investigations/full-screen-framing-on-the-vesa-modes.md
 DEFICITS = {
+    # ACCEPTED rather than chased: it is one column at one edge, and it varies
+    # between acquisitions of the same source -- 2 columns of margin with both
+    # green edges on screen in one, the left column lost in another.
     "separate sync, scaled":
-        "the source's left column is off the frame; the right is flush",
+        "a column or two at the left, varying between acquisitions",
+    # THE ONE THAT MATTERS. The capture window runs 155 samples past the end of
+    # the source's picture, so what fills the right of the frame is the
+    # source's own blanking, lifted out of the question with VDS_Y_OFST.
+    # docs/investigations/the-composite-capture-window-is-too-wide.md
     "composite sync, scaled":
         "inset 20 at the left and 214 at the right, and the top and bottom "
         "rows are cut",
@@ -96,14 +115,6 @@ DEFICITS = {
     # is nowhere on the emitted frame.
     "composite sync, passed through":
         "neither edge on either axis -- it acquires and emits no picture",
-    # Judged by the lit box rather than the card, so part of each border may be
-    # the Wii's own. Whose black it is needs the VDS_Y_OFST lift, which
-    # pass-through routes around -- HD_MATRIX_BYPS is the lift there.
-    # docs/investigations/the-encoder-tunes-the-left-edge-in-pass-through.md
-    "sync on green, scaled":
-        "37 left, 51 right, 32 top and 19 bottom black, picture 1832x1029",
-    "sync on green, passed through":
-        "the bottom 51 rows, which no acquisition reaches",
 }
 
 
@@ -137,6 +148,15 @@ def want_passed_through(host, passed_through):
     time.sleep(2.0)
 
 
+def want_shaping(host, on):
+    """Whether the solve narrows the room to the declared shape. /uc?S toggles
+    it, and `apply-aspect` is how it reads back."""
+    if (setting(host, "apply-aspect") == "1") == on:
+        return
+    get(host, "/uc?S")
+    time.sleep(2.0)
+
+
 def show_the_default_framing(host, where, scaled):
     """The card up, and on the scaling route the framing the solve computes.
 
@@ -144,42 +164,111 @@ def show_the_default_framing(host, where, scaled):
     reset comes first -- and it puts the declared shape back with it, so the
     shape comes after. docs/aspect-ratio.md
 
-    **PASS-THROUGH DECLARES NO SHAPE AND HAS NO FRAMING.** The source's own
-    timing reaches the encoder there, so neither the reset nor the shape has
-    anything to act on and asking for 16:9 never lands.
+    **PASS-THROUGH HAS NO FRAMING.** The source's own timing reaches the
+    encoder there, so the reset has nothing to act on.
     """
     assert show_card(where), "the source would not draw the card"
     if not scaled:
         return
     assert reset_framing(host) is not None, "the framing never reset"
-    assert choose_aspect(host, SIXTEEN_NINE), (
-        "the shape never reached 16:9, so the bars a 4:3 declaration "
-        "pillarboxes with would be measured instead of the picture")
     assert acquired_and_settled(host), "the engine never stopped re-solving"
 
 
 # What the Wii is judged by instead of the card. It draws whatever it draws, so
 # the green frame is not available there -- what is, is whether the emitted
-# picture reaches the frame's edges. Wider than the card's one pixel because it
-# finds the first LIT row rather than a known feature, so the source's own
-# letterbox counts against it.
+# picture reaches the frame's edges.
+#
+# **AND WHICH REGISTER SEPARATES THE TWO BLACKS DEPENDS ON THE ROUTE.** A
+# source's own border is black ACTIVE video and ours is blanking, and a lit-box
+# reading cannot tell them apart: the Wii's 480p carries black rows at the
+# bottom that are in its signal. Scaled, VDS_Y_OFST raises the picture's luma,
+# captured border with it, while the blanking interval keeps its value. Passed
+# through, video routes around the VDS and that offset reaches nothing --
+# HD_MATRIX_BYPS is the one there, which leaves the picture green and the
+# source's border dark magenta at G exactly 0 while our blanking stays black on
+# every channel.
 FILLED_PX = 8
+LIFT = 40
+
+# Our blanking against a border that has been coloured rather than lifted, so
+# the threshold is any channel rather than luma, and lower than hdmi_capture's
+# because dark magenta is dark.
+COLOURED = 8
 
 
-def judge_the_picture(dev, carries_card):
-    """What the emitted frame says about all four of its edges.
+def judge_the_lit_box(host, dev, passed_through):
+    """Where the emitted picture stops, with the source's own border taken out
+    of the question by whichever register the route leaves in circuit."""
+    assert freeze(host, True), "the engine would not freeze for the lift"
+    held = "HD_MATRIX_BYPS" if passed_through else "VDS_Y_OFST"
+    try:
+        if passed_through:
+            assert write_named(host, held, 1) == 1, "the matrix stayed in"
+        else:
+            assert write_named(host, "VDS_DYN_BYPS", 0) == 0, "the lift was bypassed"
+            assert write_named(host, held, LIFT) == LIFT, "the lift never landed"
+        time.sleep(1.5)
+        frame = hdmi_capture.frames(4, dev, warmup=20)[0]
+    finally:
+        write_named(host, held, 0)
+        freeze(host, False)
+
+    if passed_through:
+        found = hdmi_capture.borders(frame.max(axis=2), threshold=COLOURED)
+    else:
+        found = hdmi_capture.borders(hdmi_capture.luma(frame))
+    over = [f"{found[edge]} at the {edge}" for edge in
+            ("left", "right", "top", "bottom") if found[edge] > FILLED_PX]
+    return ([f"our blanking at the edges: {', '.join(over)}"] if over else [],
+            f"borders {found}")
+
+
+# What a steady picture reads, in emitted columns. A quiet band sits at 0.004
+# to 0.022 and the bench floor is 0.05; a shaking one reads 2.1 to 4.0.
+STEADY_PX = 0.25
+BANDS = 6
+BAND_SPAN = 120
+
+
+def unsteady(clip):
+    """Bands of the picture that MOVE between frames.
+
+    **PER BAND, AND THE EDGE TEST CANNOT SEE THIS AT ALL.** The green frame is
+    read at each column's greenest moment across the clip, so a wobbling edge
+    still registers at its extreme -- and a whole-picture figure averages away
+    a shake confined to the rows just after the vertical interval, which is
+    where the one on composite sync lives.
+    """
+    grey = hdmi_capture.luma(clip)
+    box = picture_jitter.lit_box(grey[0])
+    if box is None:
+        return ["all black, so nothing can be said about steadiness"]
+    left, right, top, bottom = box
+    moved = []
+    for at in picture_jitter.band_starts(top, bottom, BANDS, BAND_SPAN):
+        profiles = [frame[at:at + BAND_SPAN, left:right].mean(axis=0)
+                    for frame in grey]
+        gain = picture_jitter.gain_for(profiles[0])
+        spread = float(np.std([picture_jitter.displacement(profiles[0], p)[0] / gain
+                               for p in profiles]))
+        if spread > STEADY_PX:
+            moved.append(f"rows {at}..{at + BAND_SPAN} move by sd {spread:.2f} px")
+    return moved
+
+
+def judge_the_picture(host, dev, carries_card, passed_through):
+    """What the emitted frame says about its four edges, and whether it is
+    still between frames.
 
     A clip rather than a frame: the card's green frame is one source pixel wide
     and lands on a fraction of an output one, so each position's greenest
-    moment across the clip is what finds it.
+    moment across the clip is what finds it -- and steadiness needs a clip by
+    its nature.
     """
     clip = hdmi_capture.frames(card_edges.CLIP_FRAMES, dev)
     if not carries_card:
-        found = hdmi_capture.borders(hdmi_capture.luma(clip[0]))
-        over = [f"{found[edge]} at the {edge}" for edge in
-                ("left", "right", "top", "bottom") if found[edge] > FILLED_PX]
-        return ([f"black at the edges: {', '.join(over)}"] if over else [],
-                f"borders {found}")
+        whys, margins = judge_the_lit_box(host, dev, passed_through)
+        return whys + unsteady(clip), margins
 
     whys, margins = [], []
     for name, axis in (("across", 1), ("down", 0)):
@@ -187,7 +276,7 @@ def judge_the_picture(dev, carries_card):
         margins.append(f"{name} {found if found else '-'}")
         if why:
             whys.append(f"{name}: {why}")
-    return whys, "  ".join(margins)
+    return whys + unsteady(clip), "  ".join(margins)
 
 
 @pytest.fixture(scope="module")
@@ -236,6 +325,7 @@ def bench(request, host):
 
     original = {
         "scale-rgbhv": setting(host, "scale-rgbhv"),
+        "apply-aspect": setting(host, "apply-aspect"),
         "input": setting(host, "input"),
         "output": setting(host, "output"),
         "sync": mode_serv(where, "SYNC"),
@@ -244,6 +334,10 @@ def bench(request, host):
     assert choose_output(host, OUTPUT), (
         f"the output never reached {OUTPUT}, so the legs would be judged "
         f"against different rasters")
+    want_shaping(host, False)
+    assert setting(host, "apply-aspect") == "0", (
+        "the shape is still being applied, so every edge read would measure "
+        "the bars it pillarboxes with")
 
     # The Wii is checked FIRST and by acquiring, not by a register: nothing on
     # the board can see whether anything is plugged into an input, so a source
@@ -273,6 +367,7 @@ def bench(request, host):
             if original["input"]:
                 select_input(host, original["input"])
             want_passed_through(host, original["scale-rgbhv"] == "0")
+            want_shaping(host, original["apply-aspect"] == "1")
             get(host, "/sc?~")
         except Exception:  # noqa: BLE001 - teardown must not mask a failure
             pass
@@ -342,7 +437,8 @@ def test_the_picture_fills_the_frame(bench, host, capture_device, preset_save,
         f"{source} on {what} never acquired, so its picture cannot be judged")
     show_the_default_framing(host, where, not passed_through)
 
-    whys, margins = judge_the_picture(capture_device, source == "vga")
+    whys, margins = judge_the_picture(host, capture_device, source == "vga",
+                                      passed_through)
     known = DEFICITS.get(what)
     if known is not None:
         assert whys, (
@@ -440,3 +536,44 @@ def test_one_source_looks_the_same_on_both_sync_types(bench, host, capture_devic
     if known is not None and apart > floor + 0.01:
         pytest.xfail(f"{known}: {said}")
     assert apart <= floor + 0.01, said
+
+
+# How many times the same source is acquired when the question is whether the
+# answer repeats. Two says whether it can differ at all; more would say how
+# often, which is a survey rather than an acceptance.
+ACQUISITIONS = 3
+
+
+@pytest.mark.source_mode
+def test_one_source_is_framed_the_same_on_every_acquisition(bench, host,
+                                                            capture_device,
+                                                            preset_save):
+    """The default framing is computed from the source, so the same source
+    acquired twice must come out the same.
+
+    **BOTH HALVES, BECAUSE THEY FAIL SEPARATELY.** What the engine solved is in
+    /geometry and what reached the screen is in the capture, and the emitted
+    frame can move while every register holds: the sink's window is latched when
+    the link acquires, downstream of the board.
+    docs/investigations/the-shown-window-is-latched-at-lock.md
+    """
+    where = bench
+    want_passed_through(host, False)
+
+    solved, frames = [], []
+    for _ in range(ACQUISITIONS):
+        settled_on(host, where, False)
+        got = get_json(host, "/geometry")[1]
+        solved.append(tuple(got.get(key) for key in
+                            ("ch", "cv", "oh", "eh", "ov", "ev")))
+        frames.append(shot(capture_device))
+
+    floor = differing(frames[0], shot(capture_device))
+    apart = [differing(frames[0], later) for later in frames[1:]]
+    said = (f"solved {solved}, emitted differ by "
+            f"{['%.1f%%' % (v * 100) for v in apart]} against a {floor:.1%} "
+            f"floor between two captures of one acquisition")
+
+    assert len(set(solved)) == 1, f"the engine solved it two ways: {said}"
+    assert max(apart) <= floor + 0.01, (
+        f"the same solve reached the screen differently: {said}")

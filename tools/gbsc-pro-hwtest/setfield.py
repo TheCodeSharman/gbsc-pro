@@ -83,12 +83,7 @@ def apply(host, name, spec, value, dry_run):
     if dry_run:
         return True
 
-    for register, _old, new in writes:
-        if gbs_unit.write_reg(host, spec["seg"], register, new) is None:
-            print(f"    write to s{spec['seg']} 0x{register:02x} failed")
-            return False
-
-    after = read_field(host, spec)
+    after = gbs_unit.write_named(host, name, value)
     if after != value:
         print(f"    VERIFY FAILED: reads back {after}, not {value}")
         return False

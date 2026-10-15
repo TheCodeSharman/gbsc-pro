@@ -584,6 +584,32 @@ def read_named(host, name):
     return None if values is None else values[name]
 
 
+def write_named(host, name, value):
+    """One field, BY NAME, read-modify-write so a neighbour sharing the byte
+    survives. Returns what it reads back, which is None where a read failed.
+
+    A wrong name raises before a request goes out; a hand-written
+    segment/register/offset/width does not error, it writes somewhere else.
+    """
+    seg, reg, off, width = field_spec(name)
+    span = (off + width + 7) // 8
+    raw = 0
+    for index in range(span):
+        byte = read_reg(host, seg, reg + index)
+        if byte is None:
+            return None
+        raw |= byte << (8 * index)
+
+    mask = ((1 << width) - 1) << off
+    updated = (raw & ~mask) | ((value << off) & mask)
+    for index in range(span):
+        old = (raw >> (8 * index)) & 0xFF
+        new = (updated >> (8 * index)) & 0xFF
+        if old != new and write_reg(host, seg, reg + index, new) is None:
+            return None
+    return read_named(host, name)
+
+
 def read_segment(host, segment, first=0x00, last=0xFF):
     """A run of registers in one /getregs request, as {register: value}.
 
