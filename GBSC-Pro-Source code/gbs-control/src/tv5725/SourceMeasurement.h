@@ -361,8 +361,17 @@ private:
 
     // --- the one pass, in the order it takes them ----------------------------
 
-    // The count both readers report, taken from one reading so the hold and the
-    // answer cannot straddle a change.
+    // The count to report: the held frame where it can be this count's frame,
+    // and the count itself where it cannot.
+    //
+    // **THE FRAME IS WHAT IS HELD, NOT THE WIDTH.** The formatter measures the
+    // frame and the width is the difference between it and the count, so a
+    // width established while the count read one low is one too many and
+    // outlives the reading it came from -- measured on `vga` at 800x600@60
+    // composite, three acquisitions in six held a frame of 629 against a count
+    // of 623, where the formatter read 628 throughout and no raster has 629
+    // lines. A held frame rides a count that dithers; a held width moves with
+    // it.
     uint16_t countFrom(uint16_t correctedLines) const;
 
     bool sampleSteady();
@@ -446,8 +455,8 @@ private:
     InputFormatter &inputFormatter_;
     uint32_t lineRateHz_;
     uint16_t sourceLines_;
-    uint16_t verticalSyncLines_;          // held; what the count is short by
-    uint16_t offeredVerticalSyncLines_;   // the reading it has to repeat
+    uint16_t heldFrame_;                  // held; the source's whole frame
+    uint16_t offeredFrame_;               // the reading it has to repeat
     float fieldRateHz_;
     float agreedRateHz_;
     // The settled pair a later reading is judged against, and the last rate

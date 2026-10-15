@@ -1442,6 +1442,43 @@ TEST_CASE("the composite count is restored to the frame the source sends")
     CHECK(measurement.sourceLines() == 311);
 }
 
+TEST_CASE("a count one short while the width is established does not shift the frame")
+{
+    // The formatter measures the FRAME and the width is the difference between
+    // it and the count, so a width established while the count reads one low
+    // is one too many -- and it outlives the reading it came from. Measured on
+    // `vga` at 800x600@60 composite: three acquisitions in six held a frame of
+    // 629 against a count of 623, where the formatter read 628 throughout and
+    // no raster has 629 lines.
+    seedSource(622, 1436, 1436);
+    seedSourceHalfLines(1255);
+    SourceMeasurement measurement(inputFormatter);
+    measurement.readSourceLines();
+    measurement.readSourceLines();
+
+    seedSourceLines(623);
+    seedSourceHalfLines(1255);
+
+    CHECK(measurement.readSourceLines() == 627);
+}
+
+TEST_CASE("the held frame stops answering for a count it cannot be the frame of")
+{
+    // What is held belongs to the mode it was measured in, so a count from the
+    // next mode must not be restored with it: a width of 4 added to 805 is 809,
+    // which is neither mode's frame, and that is the first reading the solve
+    // for the new mode takes.
+    seedSource(623, 1436, 1436);
+    seedSourceHalfLines(1255);
+    SourceMeasurement measurement(inputFormatter);
+    measurement.readSourceLines();
+    REQUIRE(measurement.readSourceLines() == 627);
+
+    seedSourceLines(805);
+
+    CHECK(measurement.readSourceLines() == 805);
+}
+
 TEST_CASE("the width is established by whichever reader runs")
 {
     // The measurement window can pass without establishing it, and from then on

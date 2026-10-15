@@ -103,7 +103,7 @@ const uint32_t SourceMeasurement::UnconfirmedRatePulses;
 
 SourceMeasurement::SourceMeasurement(InputFormatter &inputFormatter)
     : inputFormatter_(inputFormatter), lineRateHz_(0), sourceLines_(0),
-      verticalSyncLines_(0), offeredVerticalSyncLines_(0), fieldRateHz_(0.0f),
+      heldFrame_(0), offeredFrame_(0), fieldRateHz_(0.0f),
       agreedRateHz_(0.0f), judgedLines_(0), judgedRateHz_(0), goodLineRateHz_(0),
       rateRejections_(0), hsyncPolarity_(SourceKey::Undetermined),
       vsyncPolarity_(SourceKey::Undetermined), verticalPeriod_(0),
@@ -157,7 +157,11 @@ uint16_t SourceMeasurement::verticalPeriod() const { return verticalPeriod_; }
 
 uint16_t SourceMeasurement::countFrom(uint16_t correctedLines) const
 {
-    return (uint16_t)(correctedLines + verticalSyncLines_);
+    const uint16_t counted = (uint16_t)(correctedLines + 1);
+    if (heldFrame_ < counted
+        || (uint16_t)(heldFrame_ - counted) > VerticalSyncMaxLines)
+        return correctedLines;
+    return (uint16_t)(heldFrame_ - 1);
 }
 
 bool SourceMeasurement::countContradicted(uint16_t lines)
@@ -193,8 +197,8 @@ void SourceMeasurement::modeChanged()
     dutyMeasured_ = false;
     offeredHsync_ = HsyncPulse();
     dutyAttempts_ = 0;
-    verticalSyncLines_ = 0;
-    offeredVerticalSyncLines_ = 0;
+    heldFrame_ = 0;
+    offeredFrame_ = 0;
 }
 
 void SourceMeasurement::samplingClockLatched()
@@ -584,10 +588,9 @@ void SourceMeasurement::holdVerticalSync(uint16_t lines)
     if (frame == 0)
         return;
 
-    const uint16_t offered = (uint16_t)(frame - (lines + 1));
-    if (offered == offeredVerticalSyncLines_)
-        verticalSyncLines_ = offered;
-    offeredVerticalSyncLines_ = offered;
+    if (frame == offeredFrame_)
+        heldFrame_ = frame;
+    offeredFrame_ = frame;
 }
 
 uint16_t SourceMeasurement::readSourceLines()
