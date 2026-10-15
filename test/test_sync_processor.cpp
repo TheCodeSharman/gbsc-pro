@@ -94,7 +94,6 @@ TEST_CASE("separate sync runs off the source's own H and V, uncoasted")
     CHECK(applied<SyncProcessor::SP_NO_COAST_REG>(csync) == 1);
     CHECK(applied<SyncProcessor::SP_PRE_COAST>(csync) == 0);
     CHECK(applied<SyncProcessor::SP_POST_COAST>(csync) == 0);
-    CHECK(applied<SyncProcessor::SP_H_PULSE_IGNOR>(csync) == 0xff);
     CHECK(applied<SyncProcessor::SP_SYNC_BYPS>(csync) == 0);
     CHECK(applied<SyncProcessor::SP_HS_POL_ATO>(csync) == 1);
     CHECK(applied<SyncProcessor::SP_VS_POL_ATO>(csync) == 1);
@@ -128,7 +127,7 @@ TEST_CASE("the polarity auto-corrects stay the separate-sync branch's")
     CHECK(wasWritten<SyncProcessor::SP_VS_POL_ATO>(false));
 }
 
-TEST_CASE("the separation threshold follows the sync type and the line in force")
+TEST_CASE("the separation threshold follows the line in force on both arrangements")
 {
     // THE CSYNC BRANCH LEFT IT ON THE PREVIOUS SOURCE'S VALUE. Measured on the
     // bench, RISC PC on vga then the Wii selected on ypbpr: the arrangement
@@ -143,11 +142,15 @@ TEST_CASE("the separation threshold follows the sync type and the line in force"
     // measured at -- and on the RISC PC's unserrated composite sync 2 and 107
     // are indistinguishable, frozen, with controls, at 15 kHz and at 37.9 kHz.
     // ../docs/investigations/the-risc-pc-composite-sync-is-not-serrated.md
+    //
+    // The same fraction reaches a separate-sync source, which is indifferent to
+    // the whole range -- so the arrangement decides the coast and the
+    // separator, and not this.
     CHECK(wasWritten<SyncProcessor::SP_H_PULSE_IGNOR>(true));
     CHECK(wasWritten<SyncProcessor::SP_H_PULSE_IGNOR>(false));
 
     CHECK(applied<SyncProcessor::SP_H_PULSE_IGNOR>(true) == 0x6b);
-    CHECK(applied<SyncProcessor::SP_H_PULSE_IGNOR>(false) == 0xff);
+    CHECK(applied<SyncProcessor::SP_H_PULSE_IGNOR>(false) == 0x6b);
 }
 
 TEST_CASE("sync-on-green is enabled on both paths")
@@ -582,12 +585,24 @@ TEST_CASE("the pulse-width difference threshold clears the measured floor")
 // docs/investigations/the-pulse-ignore-is-a-fraction-of-the-line.md
 // docs/investigations/the-risc-pc-composite-sync-is-not-serrated.md
 
-TEST_CASE("a source with its own vertical sync ignores every pulse")
+TEST_CASE("the pulse ignore does not key on the sync type")
 {
+    // ONE VALUE FOR EVERY SOURCE, the way SP_DLT_REG beside it is. A
+    // separate-sync source is indifferent across the whole range: measured on
+    // `vga`, the RISC PC at 800x600@60 with separate sync into 1080p, frozen,
+    // the register written by name -- 255, 16 and 65 each left
+    // STATUS_SYNC_PROC_VTOTAL 627 in every one of 311 samples at 25 ms, with
+    // STATUS_SYNC_PROC_HTOTAL 1342, the measured sync width 164 and the emitted
+    // frame 1439x1080 at the same margins under all three.
+    //
+    // So the sync type must not decide it. A type that has been forgotten
+    // cannot be told from one measured as separate, and reading that as
+    // separate wrote 255 onto a sync-on-green source and left it uncountable.
+    // ../docs/investigations/the-pulse-ignore-is-a-fraction-of-the-line.md
     Wire.reset();
-    SyncProcessor::applyPulseIgnore(false, MeasuredCsyncDivider);
+    SyncProcessor::applyPulseIgnore(MeasuredCsyncDivider);
 
-    CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 0xff);
+    CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 0x6b);
 }
 
 TEST_CASE("a composite source's pulse ignore is a fraction of the line in ADC samples")
@@ -600,16 +615,16 @@ TEST_CASE("a composite source's pulse ignore is a fraction of the line in ADC sa
     // the separator ignores the source; lowered by hand, it measured within
     // half a second. docs/investigations/the-pulse-ignore-is-a-fraction-of-the-line.md
     Wire.reset();
-    SyncProcessor::applyPulseIgnore(true, MeasuredCsyncDivider);
+    SyncProcessor::applyPulseIgnore(MeasuredCsyncDivider);
     CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 0x6b);
 
     SUBCASE("a shorter line in samples takes a threshold under its sync pulse") {
-        SyncProcessor::applyPulseIgnore(true, 1446);
+        SyncProcessor::applyPulseIgnore(1446);
         CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 70);
     }
 
     SUBCASE("and the reference line likewise") {
-        SyncProcessor::applyPulseIgnore(true, 2040);
+        SyncProcessor::applyPulseIgnore(2040);
         CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 99);
     }
 }
@@ -701,9 +716,15 @@ TEST_CASE("the search admits the sync pulse at whatever clock the block is count
 
     CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 16);
 
-    SUBCASE("a source with its own vertical sync still ignores every pulse") {
+    SUBCASE("and whatever the sync type, which a search has not established") {
+        // A forgotten sync type cannot be told from one measured as separate,
+        // and the separate-sync value admits no pulse at all: measured on
+        // `ypbpr`, the Wii at 480p into 1920x1080, SP_H_PULSE_IGNOR 255 held
+        // the engine at state: absent with the sync processor counting the 27
+        // MHz reference rather than the divider, and /sc?~ did not clear it.
+        // ../docs/known-issues.md
         SyncProcessor::applyForSearch(hunting(false, false));
-        CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 0xff);
+        CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 16);
     }
 }
 
@@ -878,9 +899,8 @@ TEST_CASE("a source that cannot be counted gets the search configuration")
     Wire.poison(Poisons[0]);
     SyncProcessor::applyDynamic(source);
 
-    // settled() searches on separate sync, so the threshold is that
-    // arrangement's.
-    CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 0xff);
+    // settled() is latched, so the threshold is the line's own fraction.
+    CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 0x6b);
     CHECK(SyncProcessor::SP_H_TIMER_VAL::read() == 0x3a);
     CHECK(SyncProcessor::SP_H_COAST::read() == 0);
     CHECK(SyncProcessor::SP_H_CST_ST::read() == 0x10);
@@ -1227,7 +1247,7 @@ TEST_CASE("the per-load setup leaves the sync mode the sync type chose")
     Wire.poison(Poisons[0]);
     SyncProcessor::applyForSyncType(false, MeasuredCsyncDivider);
 
-    SyncProcessor::prepare(false, MeasuredCsyncDivider);
+    SyncProcessor::prepare(MeasuredCsyncDivider);
 
     CHECK(SyncProcessor::SP_SOG_MODE::read() == 0u);
 }
@@ -1238,7 +1258,7 @@ TEST_CASE("the per-load setup leaves the coast enable the sync type chose")
     Wire.poison(Poisons[0]);
     SyncProcessor::applyForSyncType(false, MeasuredCsyncDivider);
 
-    SyncProcessor::prepare(false, MeasuredCsyncDivider);
+    SyncProcessor::prepare(MeasuredCsyncDivider);
 
     CHECK(SyncProcessor::SP_NO_COAST_REG::read() == 1u);
 }
@@ -1257,7 +1277,7 @@ TEST_CASE("the per-load setup leaves the overflow protect the sync type chose")
     Wire.poison(Poisons[0]);
     SyncProcessor::applyForSyncType(false, MeasuredCsyncDivider);
 
-    SyncProcessor::prepare(false, MeasuredCsyncDivider);
+    SyncProcessor::prepare(MeasuredCsyncDivider);
 
     CHECK(SyncProcessor::SP_H_PROTECT::read() == 0u);
 }
@@ -1300,13 +1320,13 @@ TEST_CASE("the sync type writes the pulse width difference with the coast")
 // ../docs/investigations/the-detection-defaults-are-not-the-preset-paths.md
 
 template <typename Field>
-static bool prepareWrote(bool csync)
+static bool prepareWrote()
 {
     uint32_t under[2];
     for (int i = 0; i < 2; ++i) {
         Wire.reset();
         Wire.poison(Poisons[i]);
-        SyncProcessor::prepare(csync, MeasuredCsyncDivider);
+        SyncProcessor::prepare(MeasuredCsyncDivider);
         under[i] = Field::read();
     }
     return under[0] == under[1];
@@ -1354,16 +1374,16 @@ TEST_CASE("readying for detection leaves the polarity auto-correct alone")
 
 TEST_CASE("the per-load setup leaves the coast window to the solve")
 {
-    CHECK_FALSE(prepareWrote<SyncProcessor::SP_H_CST_ST>(false));
-    CHECK_FALSE(prepareWrote<SyncProcessor::SP_H_CST_SP>(false));
-    CHECK_FALSE(prepareWrote<SyncProcessor::SP_HCST_AUTO_EN>(false));
+    CHECK_FALSE(prepareWrote<SyncProcessor::SP_H_CST_ST>());
+    CHECK_FALSE(prepareWrote<SyncProcessor::SP_H_CST_SP>());
+    CHECK_FALSE(prepareWrote<SyncProcessor::SP_HCST_AUTO_EN>());
 }
 
 TEST_CASE("the per-load setup leaves the clamp to the window that places it")
 {
-    CHECK_FALSE(prepareWrote<SyncProcessor::SP_CLAMP_MANUAL>(false));
-    CHECK_FALSE(prepareWrote<SyncProcessor::SP_CLP_SRC_SEL>(false));
-    CHECK_FALSE(prepareWrote<SyncProcessor::SP_NO_CLAMP_REG>(false));
+    CHECK_FALSE(prepareWrote<SyncProcessor::SP_CLAMP_MANUAL>());
+    CHECK_FALSE(prepareWrote<SyncProcessor::SP_CLP_SRC_SEL>());
+    CHECK_FALSE(prepareWrote<SyncProcessor::SP_NO_CLAMP_REG>());
 }
 
 TEST_CASE("the clamp is released only once it has been placed")

@@ -1052,7 +1052,7 @@ TEST_CASE("pass-through leaves the retime window alone with nothing measured")
 TEST_CASE("the channel's entry leaves the separation threshold alone")
 {
     Wire.reset();
-    Tv5725::SyncProcessor::applyPulseIgnore(true, 1212);
+    Tv5725::SyncProcessor::applyPulseIgnore(1212);
     const uint32_t tuned = Tv5725::SyncProcessor::SP_H_PULSE_IGNOR::read();
 
     HdBypass::enterFor(true, true, 31469, Unpublished, 525, BenchPulse);

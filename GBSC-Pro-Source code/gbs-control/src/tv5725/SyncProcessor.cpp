@@ -74,7 +74,6 @@ bool sogInverted_ = false;
 bool coastOverridden_ = false;
 uint8_t preCoastOverride_ = 0;
 uint8_t postCoastOverride_ = 0;
-const uint8_t OwnVsyncPulseIgnore = 0xff;
 
 // 107 through a 2200-sample line is the value measured to read PAL 576i.
 const uint16_t CsyncPulseIgnorePerThousand = 49;
@@ -83,18 +82,14 @@ const uint16_t CsyncPulseIgnorePerThousand = 49;
 // not the line: 31 samples, a 7.3% pulse at half the 27 MHz reference.
 const uint8_t SearchPulseIgnore = 16;
 
-uint8_t pulseIgnoreFor(bool csync, uint16_t divider)
+uint8_t pulseIgnoreFor(uint16_t divider)
 {
-    if (!csync)
-        return OwnVsyncPulseIgnore;
     return (uint8_t)((uint32_t)divider * CsyncPulseIgnorePerThousand / 1000u);
 }
 
-uint8_t searchPulseIgnoreFor(bool csync, bool latched, uint16_t divider)
+uint8_t searchPulseIgnoreFor(bool latched, uint16_t divider)
 {
-    if (latched)
-        return pulseIgnoreFor(csync, divider);
-    return csync ? SearchPulseIgnore : OwnVsyncPulseIgnore;
+    return latched ? pulseIgnoreFor(divider) : SearchPulseIgnore;
 }
 
 // The H timer the search asks for, measured as a don't-care across its whole
@@ -192,9 +187,9 @@ uint8_t SyncProcessor::postCoastLines()
     return coastOverridden_ ? postCoastOverride_ : CompositePostCoastLines;
 }
 
-void SyncProcessor::applyPulseIgnore(bool csync, uint16_t divider)
+void SyncProcessor::applyPulseIgnore(uint16_t divider)
 {
-    SP_H_PULSE_IGNOR::write(pulseIgnoreFor(csync, divider));
+    SP_H_PULSE_IGNOR::write(pulseIgnoreFor(divider));
 }
 
 void SyncProcessor::applyPulseWidthDifference()
@@ -205,8 +200,7 @@ void SyncProcessor::applyPulseWidthDifference()
 void SyncProcessor::applyForSearch(const Dynamic &source)
 {
     applyPulseWidthDifference();
-    SP_H_PULSE_IGNOR::write(searchPulseIgnoreFor(source.csync, source.latched,
-                                                 source.divider));
+    SP_H_PULSE_IGNOR::write(searchPulseIgnoreFor(source.latched, source.divider));
     applyDefaultCoastWindow();
     SP_H_COAST::write(0);
     SP_H_TIMER_VAL::write(SearchHTimerValue);
@@ -234,11 +228,11 @@ void SyncProcessor::applyDynamic(const Dynamic &source)
     else if (source.present)
         applyPulseWidthDifference();
 
-    // THE THRESHOLD FOLLOWS THE MEASURED SCAN ON EVERY ROUTE, and waits for the
-    // source to be present because the fraction is of the LATCHED line.
+    // THE THRESHOLD FOLLOWS THE LINE ON EVERY ROUTE, and waits for the source
+    // to be present because the fraction is of the LATCHED line.
     // ../../../../docs/investigations/the-pulse-ignore-outlived-the-channels-entry.md
     if (source.present)
-        applyPulseIgnore(source.csync, source.divider);
+        applyPulseIgnore(source.divider);
 }
 
 void SyncProcessor::applyForOffsetCalibration()
@@ -267,13 +261,13 @@ void SyncProcessor::applyDefaultCoastWindow()
     SP_H_CST_SP::write(DefaultCoastStop);
 }
 
-void SyncProcessor::prepare(bool csync, uint16_t divider)
+void SyncProcessor::prepare(uint16_t divider)
 {
     SP_SOG_P_ATO::write(0);
     SP_JITTER_SYNC::write(0);
 
     applyPulseWidthDifference();
-    applyPulseIgnore(csync, divider);
+    applyPulseIgnore(divider);
 
     SP_H_TOTAL_EQ_THD::write(3);
 
@@ -327,6 +321,10 @@ void SyncProcessor::applyForSyncType(bool csync, uint16_t divider)
     // branches keep their own write order.
     invertSogReference(false);
 
+    // OUTSIDE THE BRANCH, because the separation threshold is a fraction of the
+    // line rather than a property of the arrangement.
+    applyPulseIgnore(divider);
+
     if (csync) {
         SP_SOG_SRC_SEL::write(0);
         SP_EXT_SYNC_SEL::write(1);
@@ -336,7 +334,6 @@ void SyncProcessor::applyForSyncType(bool csync, uint16_t divider)
         SP_PRE_COAST::write(preCoastLines());
         SP_POST_COAST::write(postCoastLines());
         applyPulseWidthDifference();
-        applyPulseIgnore(csync, divider);
         SP_SYNC_BYPS::write(0);
         SP_HS_LOOP_SEL::write(0);
         SP_H_PROTECT::write(1);
@@ -348,7 +345,6 @@ void SyncProcessor::applyForSyncType(bool csync, uint16_t divider)
         SP_NO_COAST_REG::write(1);
         SP_PRE_COAST::write(0);
         SP_POST_COAST::write(0);
-        applyPulseIgnore(csync, divider);
         SP_SYNC_BYPS::write(0);
         SP_HS_POL_ATO::write(1);
         SP_VS_POL_ATO::write(1);

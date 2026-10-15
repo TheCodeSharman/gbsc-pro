@@ -842,7 +842,7 @@ void VideoPath::configureSyncPath()
 
     SyncOnGreen::chooseForInput();
 
-    SyncProcessor::prepare(csync, Adc::dividerInForce());
+    SyncProcessor::prepare(Adc::dividerInForce());
 }
 
 void VideoPath::armSolveForSource()
@@ -1212,7 +1212,7 @@ void VideoPath::writePulseIgnore()
     if (!syncTypeApplied_)
         return;
 
-    SyncProcessor::applyPulseIgnore(syncTypeInForce_, Adc::dividerInForce());
+    SyncProcessor::applyPulseIgnore(Adc::dividerInForce());
 }
 
 

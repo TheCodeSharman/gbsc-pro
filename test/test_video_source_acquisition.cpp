@@ -3430,27 +3430,34 @@ TEST_CASE("the dynamic configuration follows the sync type")
     REQUIRE(unit.pollUntilSolved());
     unit.pollFor(2);
     REQUIRE(SyncProcessor::SP_SOG_MODE::read() == 1);
-    const uint8_t onCsync = SyncProcessor::SP_H_PULSE_IGNOR::read();
+    const uint8_t onCsync = SyncProcessor::SP_PRE_COAST::read();
+    REQUIRE(onCsync != 0);
 
     unit.path.forgetSyncType();
     REQUIRE_FALSE(SyncMeasurement::isCsync());
     unit.poll();
 
-    CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() != onCsync);
+    CHECK(SyncProcessor::SP_PRE_COAST::read() != onCsync);
 }
 
-TEST_CASE("a csync selection does not inherit the separate-sync pulse ignore")
+TEST_CASE("a selection carries the threshold of the line, not of the source before")
 {
-    // THE CSYNC BRANCH WROTE EVERY FIELD OF THE ARRANGEMENT BUT THIS ONE, so a
-    // source selected after a separate-sync one ran on 0xff -- the value the
-    // other branch writes. Measured on the bench, RISC PC on vga then the Wii
-    // selected on ypbpr: the coast went to 7/6 and SP_DLT_REG to 192 while
-    // SP_H_PULSE_IGNOR stayed 0xff, and the sync processor counted 270/271
-    // lines with the ADC PLL free-running until the recovery ladder repaired it
-    // about fifteen seconds later.
+    // THE SEPARATE-SYNC VALUE ADMITTED NO PULSE AT ALL, and the csync branch
+    // wrote every field of the arrangement but this one -- so a source selected
+    // after a separate-sync one ran on 0xff. Measured on the bench, RISC PC on
+    // vga then the Wii selected on ypbpr: the coast went to 7/6 and SP_DLT_REG
+    // to 192 while SP_H_PULSE_IGNOR stayed 0xff, and the sync processor counted
+    // 270/271 lines with the ADC PLL free-running until the recovery ladder
+    // repaired it about fifteen seconds later. The same value reached a
+    // sync-on-green source through a sync type that had been forgotten, where
+    // nothing repaired it at all. ../docs/known-issues.md
     //
-    // The predecessor is seedPassThroughSource(), 524 lines at 60 Hz, so the
-    // arrangement being left is the separate-sync one.
+    // Nothing can be inherited now: the threshold is a fraction of the line in
+    // force on every arrangement, so the predecessor cannot leave a value
+    // behind for the next source to run on.
+    //
+    // The predecessor is seedPassThroughSource(), 524 lines at 60 Hz, selected
+    // as separate sync.
     seedPassThroughSource();
     Acquiring unit;
     unit.path.useSyncTypeProbe(probeOwnVsync);
@@ -3460,7 +3467,8 @@ TEST_CASE("a csync selection does not inherit the separate-sync pulse ignore")
     unit.start();
     REQUIRE(unit.pollUntilSolved());
     REQUIRE_FALSE(unit.acquisition.sourceLowLineRate());
-    REQUIRE(SyncProcessor::SP_H_PULSE_IGNOR::read() == 0xff);
+    const uint32_t onSeparate = SyncProcessor::SP_H_PULSE_IGNOR::read();
+    REQUIRE(onSeparate != 0xff);
 
     VideoSourceSelection::select(VideoSourceSelection::Ypbpr);
     g_hasOwnVsync = false;

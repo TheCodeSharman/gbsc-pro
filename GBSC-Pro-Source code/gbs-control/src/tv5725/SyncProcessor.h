@@ -308,8 +308,7 @@ public:
     // only reports correctly once the type is already right.
     //
     // `serrated` comes in for the sub coast alone -- the coast WITHIN a line,
-    // which only a source carrying serrations needs. The separation threshold
-    // beside it does NOT key on it: see applyPulseIgnore().
+    // which only a source carrying serrations needs.
     static void applyForSyncType(bool csync, uint16_t divider);
 
     // The per-load sync processor setup that does not follow the sync type.
@@ -322,7 +321,7 @@ public:
     //
     // Nor are the clamp and the coast window, which are prepareForDetection()'s:
     // on this path the solve places both afterwards.
-    static void prepare(bool csync, uint16_t divider);
+    static void prepare(uint16_t divider);
 
 
     // The clamp and the coast window an UNMEASURED source is counted through.
@@ -430,16 +429,15 @@ public:
     // docs/investigations/the-pulse-ignore-value-is-measured-not-chosen.md
     static void applyPulseWidthDifference();
 
-    // How short a horizontal pulse must be to be ignored. The sync type is the
-    // whole of what decides it: a source carrying its own vertical sync has no
-    // serration to discriminate, so every pulse can be ignored, and a composite
-    // source takes one fraction of the line whatever it is scanning.
-    //
-    // **THE MEASURED SCAN DOES NOT CHOOSE IT.** A value sized for a progressive
-    // source's narrower sync pulse lands under the floor an unserrated vertical
-    // interval imposes, and there the source cannot be counted at all.
+    // How short a horizontal pulse must be to be ignored: one fraction of the
+    // line in ADC samples, for every source. NEITHER THE SYNC TYPE NOR THE
+    // MEASURED SCAN CHOOSES IT. A separate-sync source is indifferent across
+    // the whole range, and a value sized for a progressive source's narrower
+    // sync pulse lands under the floor an unserrated vertical interval imposes,
+    // where the source cannot be counted at all.
+    // docs/investigations/the-pulse-ignore-is-a-fraction-of-the-line.md
     // docs/investigations/the-engine-makes-the-composite-count-unmeasurable.md
-    static void applyPulseIgnore(bool csync, uint16_t divider);
+    static void applyPulseIgnore(uint16_t divider);
 
     // The block parked so the ADC can measure its own black level: nothing
     // clamped, nothing coasting, no inversion anywhere, and the clamp window

@@ -1308,8 +1308,7 @@ static Tv5725::HdBypass::SourceSyncEdges sourceSyncEdges()
 
 void prepareSyncProcessor()
 {
-    Tv5725::SyncProcessor::prepare(Tv5725::SyncMeasurement::isCsync(),
-                                   Tv5725::Adc::dividerInForce());
+    Tv5725::SyncProcessor::prepare(Tv5725::Adc::dividerInForce());
 }
 
 void goLowPowerWithInputDetection()
@@ -2309,9 +2308,9 @@ void applyPresets()
             // is circular -- VSACT only reports correctly once the sync type is
             // already right, so the choice latches to whatever the chip happens
             // to be configured for. Landing in the wrong basin has
-            // applySyncProcessorDynamic() write the separate-sync quadruple (SP_PRE_COAST
-            // 0, SP_POST_COAST 0, SP_DLT_REG 0, SP_H_PULSE_IGNOR 0xFF) onto a
-            // source with no separate sync. docs/sync-type-selection.md
+            // applySyncProcessorDynamic() write the separate-sync triple
+            // (SP_PRE_COAST 0, SP_POST_COAST 0, SP_DLT_REG 0) onto a source
+            // with no separate sync. docs/sync-type-selection.md
             //
             // sourceHasOwnVsync() answers it properly: it switches
             // SP_EXT_SYNC_SEL off and asks whether a V sync line actually
