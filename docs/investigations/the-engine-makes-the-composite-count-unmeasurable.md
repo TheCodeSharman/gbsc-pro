@@ -188,35 +188,95 @@ one, where the source becomes unmeasurable -- the pattern `known-issues.md`
 already records for this register, a byte that reads one divider ignoring the
 source at another.
 
-## And no single rule fits both sources yet
+## The threshold reads through one wide plateau, not a scattered pair
 
-`the-pulse-ignore-fraction-breaks-a-progressive-source.md` measured **70 bad on
-the Wii** -- the ADC PLL locked 60% of the time with the picture shearing in
-runs of frames -- against 14 good. So the two sources bracket from opposite
-sides:
+The space is a single contiguous band whose floor is the same at every separator
+level and whose ceiling is the source's own sync pulse. Measured on `vga`, the
+RISC PC at 800x600@60 with `SYNC 1`, frozen with `PLLAD_MD` 2038 confirmed
+latched against `STATUS_SYNC_PROC_HTOTAL` **after** the freeze, ten on-device
+readings a threshold:
 
-| | sync pulse | bad | good |
+| level | never counts the source | counts it | collapses from |
 |---|---|---|---|
-| Wii 480p, divider 1446 | 106 samples, 2.33 us | 70 (66%, 1.54 us), 107 (101%) | **14** (13%, 0.31 us) |
-| RISC PC 800x600@60 composite, divider 2038 | 245 samples, 3.17 us | 14, 16, 50 (20%, 0.65 us) | **99** (40%, 1.28 us), 150 (61%) |
+| 9 | 1..84 | **86..236** | 245 |
+| 12 | 1..84 | **86..110** (range walked) | -- |
+| 12, descending from 130 | 1..85 | **86..130** | -- |
 
-A fraction of the LINE gives the Wii 70, which is measured bad. A fraction of
-the PULSE is refuted on that page already, and the pair here refutes it again
-from the other side: 61% is good on the RISC PC where 66% is bad on the Wii, and
-13% is good on the Wii where 20% is bad on the RISC PC.
+**151 of 255 thresholds read the source, and 86 is the floor in every walk** --
+ascending, descending, and at both levels. The ceiling is where the threshold
+reaches the source's own pulse, which `STATUS_SYNC_PROC_HLOW_LEN` measures at
+**246 samples** on this source at this divider.
 
-**In absolute TIME the windows overlap.** The Wii is good at 0.31 us and bad at
-1.54 us; the RISC PC is bad at 0.65 us and good at 1.28 us, so a fixed duration
-of roughly 0.7 to 1.4 us satisfies both -- and a fixed duration is a fixed count
-of the 27 MHz reference, which is neither of the normalisations tried. It is not
-a fraction of anything, which is why both fractions failed.
+**The level is not the other half of a pair.** At threshold 99, the count reads
+622 at 60.33 Hz at every level from 2 to 31; 0 and 1 are the starved end where
+the separator slices almost nothing.
 
-**It is a hypothesis and not a rule**, because it lands in the untested gap on
-both sources: 50..99 on the RISC PC and 14..70 on the Wii. Those two sweeps are
-what would settle it, and a value chosen without them repeats the mistake that
-put a Wii measurement on every progressive source.
+### The protocol decides whether the floor is visible
 
-The interlaced bound stays whatever happens: 576i needs 107 at divider 2200,
-3.11 us, above its equalising pulse, which is outside the progressive overlap
-entirely. One rule for progressive and one for serrated is the shape the
-evidence supports.
+A walk that freezes on request lands on the reference clock about as often as
+the solved one, and through a 982-sample line the same byte is a different
+fraction. That is the whole of why the space reads as scattered: readings taken
+at two different clocks are not readings of one surface.
+
+**And a value poked after the lock is a different experiment from the value the
+block locked on**, which is the only one the firmware performs. Re-issuing the
+source's mode with automation frozen makes the separator re-lock with the
+threshold in force, the divider unmoved. Four interleaved controls at 99:
+
+| threshold | 2 | 14 | 50 | 70 | 86 | 99 (x4) |
+|---|---|---|---|---|---|---|
+| `STATUS_SYNC_PROC_VTOTAL` | 1226 | 213, 554 | 554 | 426 | **622** | **622** |
+| field rate | 36.99 | 36.99 | 36.99 | 36.99 | **60.32** | **60.32** |
+
+The floor holds under both protocols, and **36.99 Hz is the engine's own wrong
+rate on this source** -- so the threshold the engine writes is what produces it.
+
+## The Wii's bound was the old divider, and it is gone
+
+`the-pulse-ignore-fraction-breaks-a-progressive-source.md` measured 70 marginal
+and 107 black on the Wii at 480p, and sized `ProgressiveCsyncPulseIgnore` from
+it. Those readings were taken through a **1446-sample** line, where the source's
+pulse is 106 samples -- 70 is 66% of it and 107 is above it altogether.
+
+The engine installs **2038** for that source now, where its pulse measures 148
+samples. Frozen, one acquisition, 40 readings a threshold at step 1 from 10 to
+146, with the emitted frame read off the USB dongle and a control at 14 between
+treatments:
+
+| | |
+|---|---|
+| `STATUS_SYNC_PROC_VTOTAL` | **524 in every reading at every threshold** |
+| field rate | 59.94 throughout |
+| emitted mean luma | **194..196 throughout**, control steady |
+| measured sync pulse | 148 samples, falling to 98 at 146 |
+
+**So the source is indifferent across the whole range the RISC PC's plateau
+lives in**, and nothing in it brackets the plateau from above.
+
+**THE COUNT CANNOT SEE THAT SOURCE FAIL.** Its documented failure is a steady
+524 beside an emitted frame at mean luma 0.00, so a predicate built on the count
+accepts a black screen -- which is what a search over this space would have been
+scored on.
+
+## What the two sources together bound
+
+| source | divider | pulse | bad | counts it |
+|---|---|---|---|---|
+| RISC PC 800x600@60 csync | 2038 | 246 | 2, 14, 50, 70 | **86..236** |
+| RISC PC 800x600@60 csync | 1438 | ~174 | -- | 2 and 107 alike |
+| Wii 480p SOG | 2038 | 148 | -- | 10..146 |
+| Wii 480p SOG | 1446 | 106 | 70, 107 | 14 |
+| Wii 576i SOG | 2200 | 158 | 2, 6, 8, 14, 51, 144, 255 | **107** |
+
+The fraction of the line the engine already holds -- 49 per thousand -- is 99 at
+2038 and lands inside both live sources' bands, and 107 at 2200 which is the
+measured value for 576i. **The floor is a property of the divider rather than of
+the level or the sync arrangement**: it is absent at 1438 and 86 at 2038 on one
+source and one mode.
+
+**What is not settled is the normalisation.** A floor absent at one divider and
+present at another fits neither a fixed duration nor a fixed fraction of the
+line nor a fixed fraction of the pulse, and three rows above are at dividers the
+engine no longer installs. The measurement that would close it is the serrated
+source's own floor, which lies between 51 and 107 at divider 2200 and needs the
+Wii set to 576i.
