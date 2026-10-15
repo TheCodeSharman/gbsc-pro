@@ -929,19 +929,26 @@ reachable only through a window of one detection interval.
 `VideoSourceAcquisition::runAdvanced()` says which pass advanced the run, and
 that is the gate.
 
-**THE SEARCH ASKS THE SYNC TYPE AND NOTHING ELSE, BECAUSE NOTHING ELSE IS
-MEASURED YET.** `applyForSearch(csync)` writes `SP_H_PULSE_IGNOR` 0xFF for a
-source with a V sync line of its own and 16 for composite sync -- 16 being
-under the narrowest pulse the block can be counting while nothing is locked,
-31 samples at half the 27 MHz reference. A threshold sized for the divider
-cannot be written before the clock is latched, which is why the search has a
-value of its own rather than the solved one.
+**THE SEARCH ASKS THE LATCH AND NOTHING ELSE, BECAUSE NOTHING ELSE IS MEASURED
+YET.** `applyForSearch()` writes `SP_H_PULSE_IGNOR` 16 while the clock is
+unlatched -- under the narrowest pulse the block can be counting while nothing
+is locked, 31 samples at half the 27 MHz reference -- and the line's own
+fraction once it is. A threshold sized for the divider cannot be written before
+the clock is latched, which is why the search has a value of its own rather
+than the solved one.
 
-**Once the source is present the threshold follows the measured scan as well.**
-`pulseIgnoreFor()` returns 0xFF on separate sync, `ProgressiveCsyncPulseIgnore`
-for progressive composite, and `divider x 49 / 1000` for interlaced composite
--- a fraction of the line rather than a byte, because a byte that reads one
-divider ignores the source at another.
+**IT MUST NOT ASK THE SYNC TYPE, WHICH A SEARCH HAS NOT ESTABLISHED.** It used
+to, and 0xFF for a source carrying its own V sync is also what a forgotten sync
+type reads as -- `SyncMeasurement::forget()` clearing the answer with the
+arming. A sync-on-green source then met a threshold that admits no pulse and
+was never counted, so the type was never established either.
+`known-issues.md`.
+
+**Once the source is present the threshold follows the line in force.**
+`pulseIgnoreFor()` returns `divider x 49 / 1000` for every source -- a fraction
+of the line rather than a byte, because a byte that reads one divider ignores
+the source at another, and a separate-sync source is indifferent to the whole
+range.
 `investigations/the-pulse-ignore-is-a-fraction-of-the-line.md`.
 
 **WHAT A SEARCH VALUE COSTS IS MEASURED ONLY WHERE TWO VALUES ARE

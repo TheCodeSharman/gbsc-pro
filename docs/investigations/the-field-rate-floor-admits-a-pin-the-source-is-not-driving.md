@@ -122,8 +122,8 @@ signal reaching a measurement that wants vertical sync.
 Two findings belong to that half and are recorded here because they were taken
 in the same window:
 
-- `SP_H_PULSE_IGNOR` is found at 255 -- `OwnVsyncPulseIgnore`, the separate-sync
-  value -- inside a `SP_SOG_MODE` 1 configuration. Two writers disagree. Moving
+- `SP_H_PULSE_IGNOR` is found at 255 -- the value the separate-sync arrangement
+  then wrote -- inside a `SP_SOG_MODE` 1 configuration. Two writers disagree. Moving
   it off 255 takes `VTOTAL` from 498 to 521 at once, and 107, 51, 16 and 2 are
   indistinguishable from each other.
 - The separator level matters more than the coast window. `ADC_SOGCTRL` 1 gives

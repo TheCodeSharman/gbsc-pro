@@ -91,11 +91,11 @@ window. `the-engine-makes-the-composite-count-unmeasurable.md`.
 
 ## What the engine does now
 
-`SyncProcessor::applyPulseIgnore(csync, divider)` writes
-`divider x 49 / 1000` for a composite source, 107 at 2200 as measured, 99 at the
-2040 reference and 70 at 1446, and every pulse ignored for a source carrying its
-own vertical sync. Every entry point that writes the field takes the divider:
-`applyForSyncType()`, `prepare()` and the `Dynamic` pass on a present source.
+`SyncProcessor::applyPulseIgnore(divider)` writes `divider x 49 / 1000` for
+every source -- 107 at 2200 as measured, 99 at the 2040 reference and 70 at
+1446. Every entry point that writes the field takes the divider and nothing
+else: `applyForSyncType()`, `prepare()` and the `Dynamic` pass on a present
+source.
 
 `applyForSearch()` takes the latch as well, from `Dynamic`, which
 `VideoPath::samplingClockLatched()` supplies: the divider's fraction where the
@@ -103,6 +103,39 @@ block is counting that divider's line, and the search's own 16 where it is not.
 `VideoPath::writePulseIgnore()` re-places the fraction beside the retime origin
 when the solve installs its divider, and a reference install leaves whatever the
 hunt chose.
+
+## The sync type is not one of its inputs, and asking cost a source
+
+The field used to answer the sync type first and the line second: a source
+carrying its own H and V took 0xFF, every pulse ignored, on the reasoning that
+it has no serration to discriminate. **A separate-sync source is indifferent to
+the whole range instead**, so that branch was choosing between values measured
+to be the same -- the position `SP_DLT_REG` beside it already held.
+
+Measured on `vga`, the RISC PC at 800x600@60 with `SYNC 0` into 1920x1080,
+automation frozen, one register written by name, `STATUS_SYNC_PROC_*` sampled
+on the device at 25 ms and the emitted frame read off the dongle:
+
+| `SP_H_PULSE_IGNOR` | `STATUS_SYNC_PROC_VTOTAL` | `HTOTAL` | `HLOW_LEN` | emitted frame |
+|---|---|---|---|---|
+| 255, the separate-sync value | 627 in 311 of 311 | 1342 | 164 | 1439x1080, margins 240/241/0/0 |
+| 16, the search's | 627 in 310 of 310 | 1342 | 164 | identical |
+| 65, the line's fraction | 627 in 312 of 312 | 1342 | 164 | identical |
+| 255 again | 627 in 311 of 311 | 1342 | 164 | identical |
+
+**What the branch cost is a sync-on-green source that cannot be counted.**
+`SyncMeasurement::forget()` clears the answer as well as the arming, so a sync
+type that has been forgotten reads as separate -- and the search then wrote
+0xFF, which admits no pulse at all. Measured on `ypbpr`, the Wii at 480p into
+1920x1080: `state: absent` for as long as it was left, `SP_H_PULSE_IGNOR` 255
+on a sync-on-green source, the sync processor counting the 27 MHz reference
+rather than the divider, no `measured:` line in 60 s, and `/sc?~` not clearing
+it. `../known-issues.md`.
+
+So the question is gone rather than answered more carefully: there is no value
+the engine has to pick a sync type to choose, and a forgotten type cannot
+reach this field. A composite source is unchanged by it -- the fraction at a
+given divider is what it always was.
 
 ## What it is not
 

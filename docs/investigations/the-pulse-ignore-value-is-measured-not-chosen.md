@@ -52,10 +52,11 @@ rather than on a standard: a source with its own vertical sync wants 0xFF, and
 ## Why 0xFF is right on one source and no-lock on another
 
 0xFF is what the separate-sync arms write, and the RISC PC runs on it with a
-steady 311. On the Wii it gives 97. The field follows the SYNC TYPE, not the
-video standard: with a real vertical sync line there are no serrations to
-discriminate and every pulse can be ignored, while a source carrying sync on
-green needs the threshold placed on its actual pulse width.
+steady 311. On the Wii it gives 97. So the field does not follow the video
+standard. What it follows is the SOURCE'S OWN PULSE WIDTH against the line the
+block is counting -- the RISC PC runs on 0xFF because a separate-sync source is
+indifferent to the field, not because every pulse can be ignored there, which
+the section below establishes.
 
 ## One value serves every composite source, and that is why a selection can write it
 
@@ -78,10 +79,18 @@ unserrated composite sync -- `the-risc-pc-composite-sync-is-not-serrated.md`
 -- so the separator is locked and counting correctly on both. That doc measured
 the same indifference at 15 kHz by the same method.
 
-So the field follows the SYNC TYPE alone: `OwnVsyncPulseIgnore` 0xFF where the
-source carries its own vertical sync, and one value for every composite source.
-`UnserratedPulseIgnore` is deleted, and with it the only reason the arrangement
-needed to know a serration it could not measure.
+So the field follows the SYNC TYPE alone: 0xFF where the source carries its own
+vertical sync, and one value for every composite source. `UnserratedPulseIgnore`
+is deleted, and with it the only reason the arrangement needed to know a
+serration it could not measure.
+
+**THE SYNC TYPE HALF OF THAT DID NOT SURVIVE EITHER.** A separate-sync source
+is indifferent across the whole range, so 0xFF was one more choice between
+values measured to be the same -- and it reached a sync-on-green source through
+a forgotten sync type, where it admits no pulse and the source cannot be
+counted. One fraction of the line now serves every source and the field asks
+nothing about the arrangement.
+`the-pulse-ignore-is-a-fraction-of-the-line.md`.
 
 **And the search takes the same value rather than a third.** `applyForSearch()`
 wrote 2 so every pulse reaches the separator while nothing is counting, which

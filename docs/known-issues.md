@@ -45,13 +45,12 @@ the divider does not describe, so whether the source can be counted there at all
 is unmeasured. `separation_grid.py` walks it, and the gate it needs is a state
 with the reference clock in force rather than a latched one.
 
-### A forgotten sync type reads as separate sync, and sync on green cannot be searched for through it
+### A selection edge is swallowed in the pass-through cold state, so the sync type is never established
 
 Measured on `ypbpr`, the Wii at 480p, output 1920x1080, reached by leaving a
 `vga` pass-through run part way and then selecting `ypbpr`. The engine holds
-`state: absent` for as long as it is left, and `SP_H_PULSE_IGNOR` reads **255 --
-the separate-sync value -- on a sync-on-green source**, unchanged across a
-`/sc?~` and 60 s:
+`state: absent` for as long as it is left, with no `measured:` line at all over
+60 s and only three `settle: spent after ~100 ms`:
 
 ```
 state=absent  md=2040  ht=850  vt=97   ign=255  sog=1
@@ -59,25 +58,39 @@ state=absent  md=1446  ht=427  vt=100  ign=255  sog=1
 ```
 
 `ht` is the 27 MHz reference count for the source's line rather than the
-divider, so the clock is not latched and nothing is measured: the console
-carries no `measured:` line at all over 60 s, only three `settle: spent after
-~100 ms`. **The `sync arrangement:` line is missing from the selection**, which
-a selection that establishes the type prints.
+divider, so the clock is not latched and nothing is measured. **The `sync
+arrangement:` line is missing from the selection**, which a selection that
+establishes the type prints.
 
-**The candidate is that `isCsync()` answers for two different states.**
-`SyncMeasurement::forget()` clears `csync_` as well as `set_`, so a sync type
-that was forgotten is indistinguishable from one measured as separate -- and
-`searchPulseIgnoreFor()` reads that false as separate sync and writes
-`OwnVsyncPulseIgnore`. A source that carries sync on green then cannot be
-counted, so it is never acquired, so the type is never established.
-`isSet()` is the discriminator and nothing on that path asks it.
+**The edge is dropped before anything can act on it.** `sourceMoved()` returns
+early where `solvedLines_ == 0` and the output is passed through -- the one
+cold state with no way forward, since bypass has no raster to solve -- and
+`selectionMoved()` sits inside that early return. So the selection arms no mode
+change, `runPass()` reaches `establishSyncType()` only while one is pending, and
+the type stays as `LoadDefault()` left it: forgotten. Nothing probes, and
+nothing says so.
 
 **Selecting the other input is what recovers it**, not `/sc?~`: `vga` acquires
-in about 10 s and `ypbpr` then acquires in 3.1 s. So it is a stuck state reached
-by leaving an excursion part way rather than one a selection walks into --
-`test_acquires_every_source.py` passes 6 of 6 in 107 s from a settled start, and
-its fixture checks the Wii without establishing the route first, so a run begun
-from a left-over pass-through state fails all six at the fixture.
+in about 10 s and `ypbpr` then acquires in 3.1 s. So it is a stuck state
+reached by leaving an excursion part way rather than one a selection walks
+into, and it does not reproduce on demand -- composite-sync `vga` in
+pass-through acquired within 25 s on one attempt, which left `solvedLines_`
+non-zero and took the edge normally.
+
+**WHAT MADE IT UNRECOVERABLE IS FIXED SEPARATELY.** A forgotten sync type read
+as separate sync, and the separation threshold keyed on that read wrote 0xff --
+every pulse ignored -- onto a sync-on-green source, which then could not be
+counted at all, so the type was never established either. The threshold is a
+fraction of the line for every source now and asks nothing about the
+arrangement, so a forgotten type cannot reach it.
+`investigations/the-pulse-ignore-is-a-fraction-of-the-line.md`.
+
+**`isCsync()` STILL ANSWERS FOR TWO STATES**, and one more consumer keys on it
+while a source is being searched for: `applyDynamic()` writes the search's
+coast inversion only under `if (source.csync)`, so a forgotten type skips it.
+`isSet()` is the discriminator and nothing on that path asks it. Nothing is
+measured about what that costs -- the threshold alone was enough to hold the
+source absent, and one register written by hand was enough to release it.
 
 ### The composite count flapped the presence verdict -- FIXED
 
@@ -2048,7 +2061,7 @@ the ADC PLL was not a usable reference. Two defects, both fixed:
 
 - `SyncProcessor::applyForSyncType()`'s **csync branch never wrote the field**,
   and the separate-sync branch does -- so a source selected after a
-  separate-sync one ran on `OwnVsyncPulseIgnore` 0xff.
+  separate-sync one ran on 0xff, the value that branch wrote.
 - `applySeparationThresholds()` **wrote it back from a serration it could not
   know**, the outgoing source's. Measured over three selections from the bench
   mode: 0x6b at 1.6 s on all three, and on one of them 0x02 at 3.3 s, after
@@ -4844,8 +4857,8 @@ that a sync-type change arms no re-probe, so the held answer stands.
 
 Three findings from the same window:
 
-- `SP_H_PULSE_IGNOR` is found at 255, which is `OwnVsyncPulseIgnore`, the
-  separate-sync value, inside a `SP_SOG_MODE` 1 configuration: two writers
+- `SP_H_PULSE_IGNOR` is found at 255, the value the separate-sync arrangement
+  then wrote, inside a `SP_SOG_MODE` 1 configuration: two writers
   disagree. Moving it off 255 takes `VTOTAL` from 498 to 521 at once, and 107,
   51, 16 and 2 are indistinguishable from each other.
 - The separator level matters more than the coast window. `ADC_SOGCTRL` 1 gives
