@@ -441,19 +441,6 @@ public:
     // docs/investigations/the-engine-makes-the-composite-count-unmeasurable.md
     static void applyPulseIgnore(bool csync, uint16_t divider);
 
-    // Configure the separator to HUNT for a source rather than to read one it
-    // has already found: coast on the default window without the sub coast, and
-    // forget both placements so whatever locks is measured for itself rather
-    // than against the source before.
-    //
-    // The pulse ignore is the search's own here, because nothing is locked and
-    // the block counts at the chip's reference, where a pulse is a third of the
-    // samples it will be at the divider. It is replaced by the solve's install
-    // and by the dynamic pass on a present source, both latched states; the
-    // count in range between them is not one on a sync-on-green source.
-    // docs/investigations/the-pulse-ignore-is-a-fraction-of-the-line.md
-    static void applyForSearch(bool csync);
-
     // The block parked so the ADC can measure its own black level: nothing
     // clamped, nothing coasting, no inversion anywhere, and the clamp window
     // collapsed so the measurement is of the input rather than of a window
@@ -467,14 +454,32 @@ public:
     // measured are not this block's to read, and `serrated` has one definition
     // above this layer. `pathSource` is a source whose sync carries no
     // broadcast vertical interval -- the RGBHV connector, or a component source
-    // through the channel.
+    // through the channel. `latched` is whether the block is counting the line
+    // the divider describes, which is what decides the threshold below.
     struct Dynamic {
         bool searching;
         bool present;
         bool csync;
         bool pathSource;
+        bool latched;
         uint16_t divider;
     };
+
+    // Configure the separator to HUNT for a source rather than to read one it
+    // has already found: coast on the default window without the sub coast, and
+    // forget both placements so whatever locks is measured for itself rather
+    // than against the source before.
+    //
+    // THE THRESHOLD FOLLOWS THE LINE THE BLOCK IS COUNTING HERE TOO. Through an
+    // unlatched reference the block counts at the chip's own clock, where a
+    // pulse is a third of the samples it will be at the divider and the
+    // divider's fraction sits above it, so there the search's own value stands.
+    // Through the divider's own line that value is under the floor an
+    // unserrated vertical interval imposes, and a count taken below the floor
+    // is what keeps the source searched for.
+    // docs/investigations/the-pulse-ignore-is-a-fraction-of-the-line.md
+    // docs/investigations/the-engine-makes-the-composite-count-unmeasurable.md
+    static void applyForSearch(const Dynamic &source);
 
     static void applyDynamic(const Dynamic &source);
 

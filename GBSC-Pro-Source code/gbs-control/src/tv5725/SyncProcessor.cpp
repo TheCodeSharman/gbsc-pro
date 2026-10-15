@@ -79,8 +79,8 @@ const uint8_t OwnVsyncPulseIgnore = 0xff;
 // 107 through a 2200-sample line is the value measured to read PAL 576i.
 const uint16_t CsyncPulseIgnorePerThousand = 49;
 
-// Under the narrowest sync pulse the block can be counting while nothing is
-// locked: 31 samples, a 7.3% pulse at half the 27 MHz reference.
+// Under the narrowest sync pulse the block can be counting while the divider is
+// not the line: 31 samples, a 7.3% pulse at half the 27 MHz reference.
 const uint8_t SearchPulseIgnore = 16;
 
 uint8_t pulseIgnoreFor(bool csync, uint16_t divider)
@@ -88,6 +88,13 @@ uint8_t pulseIgnoreFor(bool csync, uint16_t divider)
     if (!csync)
         return OwnVsyncPulseIgnore;
     return (uint8_t)((uint32_t)divider * CsyncPulseIgnorePerThousand / 1000u);
+}
+
+uint8_t searchPulseIgnoreFor(bool csync, bool latched, uint16_t divider)
+{
+    if (latched)
+        return pulseIgnoreFor(csync, divider);
+    return csync ? SearchPulseIgnore : OwnVsyncPulseIgnore;
 }
 
 // The H timer the search asks for, measured as a don't-care across its whole
@@ -195,10 +202,11 @@ void SyncProcessor::applyPulseWidthDifference()
     SP_DLT_REG::write(PulseWidthDifference);
 }
 
-void SyncProcessor::applyForSearch(bool csync)
+void SyncProcessor::applyForSearch(const Dynamic &source)
 {
     applyPulseWidthDifference();
-    SP_H_PULSE_IGNOR::write(csync ? SearchPulseIgnore : OwnVsyncPulseIgnore);
+    SP_H_PULSE_IGNOR::write(searchPulseIgnoreFor(source.csync, source.latched,
+                                                 source.divider));
     applyDefaultCoastWindow();
     SP_H_COAST::write(0);
     SP_H_TIMER_VAL::write(SearchHTimerValue);
@@ -217,7 +225,7 @@ void SyncProcessor::applyDynamic(const Dynamic &source)
         setCoastInvert(source.searching);
 
     if (source.searching) {
-        applyForSearch(source.csync);
+        applyForSearch(source);
         return;
     }
 

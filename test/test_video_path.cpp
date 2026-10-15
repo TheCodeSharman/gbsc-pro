@@ -2581,7 +2581,14 @@ TEST_CASE("a reference install leaves the search's threshold in force")
     engine.establishSyncType(4);
     REQUIRE(SyncMeasurement::isCsync());
 
-    SyncProcessor::applyForSearch(true);
+    SyncProcessor::Dynamic hunt;
+    hunt.searching = true;
+    hunt.present = false;
+    hunt.csync = true;
+    hunt.pathSource = false;
+    hunt.latched = false;
+    hunt.divider = Adc::dividerInForce();
+    SyncProcessor::applyForSearch(hunt);
     const uint32_t searching = SyncProcessor::SP_H_PULSE_IGNOR::read();
 
     engine.installReferenceClock();

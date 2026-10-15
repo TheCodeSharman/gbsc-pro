@@ -655,29 +655,54 @@ TEST_CASE("a new source forgets both windows")
 }
 
 // Configuring the separator to HUNT for a source, rather than to read one it
-// has already found. The search runs when nothing is counting, so it asks for
-// the settings most likely to see a pulse at all.
+// has already found. The search runs when the count is not the source's, so it
+// asks for the settings most likely to see a pulse at all.
+
+static SyncProcessor::Dynamic settled()
+{
+    SyncProcessor::Dynamic source;
+    source.searching = false;
+    source.present = true;
+    source.csync = false;
+    source.pathSource = false;
+    source.divider = MeasuredCsyncDivider;
+    source.latched = true;
+    return source;
+}
+
+// A source being hunted for: nothing present, and the line the block is
+// counting is what the threshold keys on.
+static SyncProcessor::Dynamic hunting(bool csync, bool latched)
+{
+    SyncProcessor::Dynamic source = settled();
+    source.searching = true;
+    source.present = false;
+    source.csync = csync;
+    source.latched = latched;
+    source.divider = ChannelDivider;
+    return source;
+}
 
 TEST_CASE("the search admits the sync pulse at whatever clock the block is counting at")
 {
-    // NOTHING IS LOCKED WHILE THE SEARCH RUNS, so the block counts at the
-    // chip's 27 MHz reference or half of it, and a 7.3% pulse is 63 or 31
-    // samples there -- under any threshold sized for a divider. Measured on a
-    // ypbpr selection from vga at 1920x1080: the retry cycled for 45 s with the
-    // divider's fraction in force, and 16 written by hand measured the source
-    // within half a second. docs/investigations/the-pulse-ignore-is-a-fraction-of-the-line.md
+    // WITH THE DIVIDER UNLATCHED the block counts at the chip's 27 MHz
+    // reference or half of it, and a 7.3% pulse is 63 or 31 samples there --
+    // under any threshold sized for a divider. Measured on a ypbpr selection
+    // from vga at 1920x1080: the retry cycled for 45 s with the divider's
+    // fraction in force, and 16 written by hand measured the source within half
+    // a second. docs/investigations/the-pulse-ignore-is-a-fraction-of-the-line.md
     //
     // The value does not outlive the search -- the dynamic pass below writes
     // the divider's fraction the moment the count is in range -- because a
     // search value that did was measured reading 271 lines against a source's
     // 260 for thirteen seconds.
     Wire.reset();
-    SyncProcessor::applyForSearch(true);
+    SyncProcessor::applyForSearch(hunting(true, false));
 
     CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 16);
 
     SUBCASE("a source with its own vertical sync still ignores every pulse") {
-        SyncProcessor::applyForSearch(false);
+        SyncProcessor::applyForSearch(hunting(false, false));
         CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 0xff);
     }
 }
@@ -689,7 +714,7 @@ TEST_CASE("the search separates on the threshold every source is read with")
     const uint32_t settled = SyncProcessor::SP_DLT_REG::read();
 
     Wire.reset();
-    SyncProcessor::applyForSearch(false);
+    SyncProcessor::applyForSearch(hunting(false, false));
 
     CHECK(SyncProcessor::SP_DLT_REG::read() == settled);
 }
@@ -705,7 +730,7 @@ TEST_CASE("the search coasts on the default window and over no sub coast")
     SyncProcessor::SP_H_CST_SP::write(0x777);
     SyncProcessor::SP_H_COAST::write(1);
 
-    SyncProcessor::applyForSearch(false);
+    SyncProcessor::applyForSearch(hunting(false, false));
 
     CHECK(SyncProcessor::SP_H_CST_ST::read() == start);
     CHECK(SyncProcessor::SP_H_CST_SP::read() == stop);
@@ -732,7 +757,7 @@ TEST_CASE("the search coasts the way every composite source is read")
         for (int i = 0; i < 2; ++i) {
             Wire.reset();
             Wire.poison(Poisons[i]);
-            SyncProcessor::applyForSearch(csync);
+            SyncProcessor::applyForSearch(hunting(csync, false));
             under[i] = SyncProcessor::SP_COAST_INV_REG::read();
         }
 
@@ -747,7 +772,7 @@ TEST_CASE("the search forgets where the windows were placed")
     REQUIRE(SyncProcessor::acquireCoastWindow(false, BenchLineRateHz));
     REQUIRE(SyncProcessor::coastPlaced());
 
-    SyncProcessor::applyForSearch(false);
+    SyncProcessor::applyForSearch(hunting(false, false));
 
     CHECK_FALSE(SyncProcessor::coastPlaced());
     CHECK_FALSE(SyncProcessor::clampPlaced());
@@ -812,17 +837,6 @@ TEST_CASE("the SD vertical sync position is one value for every source")
 // against the static half init() writes and the per-sync-type half
 // applyForSyncType() writes. Every fact comes in, because where the source is
 // selected and what the engine measured are not this block's to read.
-
-static SyncProcessor::Dynamic settled()
-{
-    SyncProcessor::Dynamic source;
-    source.searching = false;
-    source.present = true;
-    source.csync = false;
-    source.pathSource = false;
-    source.divider = MeasuredCsyncDivider;
-    return source;
-}
 
 template <typename Field>
 static uint32_t dynamicValue(const SyncProcessor::Dynamic &source)
@@ -957,9 +971,49 @@ TEST_CASE("a source neither searched for nor acquired keeps the search's thresho
     source.present = false;
     source.csync = true;
     source.divider = 1446;
+    source.latched = false;
 
     CHECK_FALSE(dynamicWrites<SyncProcessor::SP_DLT_REG>(source));
     CHECK_FALSE(dynamicWrites<SyncProcessor::SP_H_PULSE_IGNOR>(source));
+}
+
+// THE SEARCH IS ENTERED FROM A LATCHED STATE AS WELL AS FROM A COLD ONE, and
+// the search's threshold is sized for the chip's reference clock: through the
+// divider's own line it sits under the floor an unserrated vertical interval
+// imposes, and the count it then takes is not the source's -- which is what
+// keeps the source searched for.
+//
+// Measured on `vga`, the RISC PC at 800x600@60 with `SYNC 1` passed through to
+// 1920x1080: one reading of 171 lines armed the search 54 s into a window the
+// source had been held in, SP_H_PULSE_IGNOR went 99 to 16 with PLLAD_MD 2038
+// against STATUS_SYNC_PROC_HTOTAL 2038, and the counts from there were 512,
+// 558, 559, 824, 1069 and 1185 against the source's 622 for the remaining 35 s.
+// docs/investigations/the-engine-makes-the-composite-count-unmeasurable.md
+TEST_CASE("a search through the divider's own line takes that line's fraction")
+{
+    SyncProcessor::Dynamic source = settled();
+    source.searching = true;
+    source.present = false;
+    source.csync = true;
+    source.divider = ChannelDivider;
+
+    CHECK(dynamicValue<SyncProcessor::SP_H_PULSE_IGNOR>(source) == 99);
+}
+
+// AND THE REFERENCE CLOCK KEEPS IT, because there the block counts a line the
+// divider does not describe: measured at 860 or 430 samples against either
+// reference divider, where the Wii's 480p pulse reads 63 or 31 samples and the
+// divider's fraction is above it.
+TEST_CASE("a search through a line the divider does not describe keeps the search's threshold")
+{
+    SyncProcessor::Dynamic source = settled();
+    source.searching = true;
+    source.present = false;
+    source.csync = true;
+    source.divider = ChannelDivider;
+    source.latched = false;
+
+    CHECK(dynamicValue<SyncProcessor::SP_H_PULSE_IGNOR>(source) == 16);
 }
 
 TEST_CASE("the coast inversion follows whether the source can be counted yet")
