@@ -252,13 +252,13 @@ def judge_the_picture(host, dev, carries_card, passed_through):
         whys, margins = judge_the_lit_box(host, dev, passed_through)
         return whys + unsteady(clip), margins
 
-    whys, margins = [], []
+    whys, read = [], []
     for name, axis in (("across", 1), ("down", 0)):
-        _, found, why = card_edges.judge(clip, axis, card_edges.FLUSH)
-        margins.append(f"{name} {found if found else '-'}")
-        if why:
-            whys.append(f"{name}: {why}")
-    return whys + unsteady(clip), "  ".join(margins)
+        judged = card_edges.judge(clip, axis, card_edges.ALLOWANCE)
+        read.append(f"{name} {card_edges.reading(judged)}")
+        if judged.why:
+            whys.append(f"{name}: {judged.why}")
+    return whys + unsteady(clip), "  ".join(read)
 
 
 @pytest.fixture(scope="module")

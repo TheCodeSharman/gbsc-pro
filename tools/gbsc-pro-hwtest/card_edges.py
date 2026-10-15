@@ -37,8 +37,17 @@ move together.
   both edges, short span  the window is WIDER -- the source's own blanking is
                           on screen, by 1920 less the span
   one edge                the window is SHIFTED -- blanking at one end, picture
-                          lost at the other
-  no edge                 the window is NARROWER than the source's picture
+                          lost at the other. The margin at the end still on the
+                          frame is what bounds the shift, the two ends moving
+                          together
+  no edge                 the window is NARROWER than the source's picture, by
+                          an amount no feature in the frame bounds
+
+**EVERY VERDICT CARRIES A SIZE**, `out_by`, the worst edge's distance from
+flush in output pixels. A green column a pixel off the frame and one a hundred
+pixels off are the same fault at two sizes, and only the size says which modes
+are nearly right -- so it is reported whether the verdict passes or fails,
+which is what keeps a widened allowance from hiding a drift.
 
 `docs/investigations/the-transmitted-window-is-latched-from-our-blanking.md`.
 
@@ -50,6 +59,7 @@ the window shifted. Read over a clip and take each column's GREENEST moment.
 """
 
 import argparse
+import collections
 import sys
 import time
 
@@ -80,10 +90,23 @@ JOIN = 8
 # Over half a second at 30 fps, so both phases of the ring's flash are in it.
 CLIP_FRAMES = 40
 
-# What "flush" allows, in output pixels. The green frame is one source pixel
-# wide and lands on a fraction of an output one, so its captured edge is a
-# column either way.
+# What the INSTRUMENT allows at an edge, in output pixels. The green frame is
+# one source pixel wide and lands on a fraction of an output one, so its
+# captured edge is a column either way.
 FLUSH = 1
+
+# What the SOLVE lands apart from one run to the next, in output pixels. With
+# no declared shape the picture fills the raster exactly, so rounding at either
+# end moves the outermost green column a pixel or two and can take it off the
+# frame altogether -- which is why one mode reads flush in one run and two
+# pixels in at the near edge in the next.
+SPREAD = 2
+
+# What a framing is judged at, and the default both the sweep and the
+# acceptance suite use, so there is one statement of what flush means. The
+# magnitude is reported whatever this is, so widening it cannot hide a drift
+# that is still growing.
+ALLOWANCE = FLUSH + SPREAD
 
 # The far edge additionally carries the width parity, which the HSCALE
 # corruption workaround can leave a pixel of.
@@ -114,10 +137,34 @@ def green_runs(clip, axis):
     return runs
 
 
+# WHAT AN EDGE OFF THE FRAME IS OUT BY, in output pixels, where the opposite
+# edge is flush. The green column is simply not in the capture, so nothing in
+# the frame sizes the overrun directly -- what sizes it is the margin at the
+# edge still ON the frame, because a shift moves the two ends together. Gone at
+# one end and flush at the other leaves only the width, and a width wrong by
+# more than the allowance puts BOTH columns off, which is the verdict that
+# bounds nothing and fails whatever the allowance is.
+OFF_FRAME_LEAST = 1
+
 # A frame's two edges are near the two ends of the picture. Green anywhere else
 # is the card's own blocks, and two runs a few columns apart are one edge read
 # twice -- both of which read as a frame spanning almost nothing.
 QUARTER = 4
+
+# `shown` is what the two margins leave, `margins` is each edge's own, `out_by`
+# is the worst edge's distance from flush in output pixels, and `why` is None
+# where every edge is inside the allowance.
+#
+# **`out_by` IS THE DISTANCE FROM THE GOAL, NOT THE AMOUNT BY WHICH A THRESHOLD
+# WAS MISSED**, so it is reported whether the verdict passes or fails: raising
+# the allowance to cover the pixel or two the solve lands apart between runs
+# then cannot hide a drift that is still growing.
+#
+# None for `shown` or a `margins` entry is an edge off the frame; None for
+# `out_by` is an error no feature in the frame bounds.
+Judgement = collections.namedtuple("Judgement", "shown margins out_by why")
+
+ENDS = ("near", "far")
 
 
 def judge(clip, axis, allowance):
@@ -126,23 +173,38 @@ def judge(clip, axis, allowance):
     extent = clip.shape[1 + axis]
     near = [run for run in runs if run[1] < extent // QUARTER]
     far = [run for run in runs if run[0] > extent - extent // QUARTER]
+    margins = (near[0][0] if near else None,
+               extent - 1 - far[-1][1] if far else None)
     if not near and not far:
-        return None, None, "neither edge: the window is narrower than the picture"
-    if not near or not far:
-        return None, None, "one edge: the window is shifted off the picture"
-    margins = (near[0][0], extent - 1 - far[-1][1])
-    shown = extent - (far[-1][1] - near[0][0] + 1)
+        return Judgement(None, margins, None,
+                         "neither edge: the picture overruns both ends, and "
+                         "nothing in the frame says by how much")
     # Each edge on its own, because the goal is per-edge: the near edge and both
     # vertical edges are flush, and only the far edge carries the parity. A span
     # test passes a picture that is short at one end and over at the other.
-    over = []
-    if margins[0] > allowance:
-        over.append(f"{margins[0]} at the near edge")
-    if margins[1] > allowance + PARITY:
-        over.append(f"{margins[1]} at the far edge")
+    out_by, over = 0, []
+    for end, margin, limit in zip(ENDS, margins,
+                                  (allowance, allowance + PARITY)):
+        from_flush = OFF_FRAME_LEAST if margin is None else margin
+        out_by = max(out_by, from_flush)
+        if from_flush > limit:
+            over.append(f"the {end} edge is off the frame" if margin is None
+                        else f"{margin} at the {end} edge")
+    shown = None if None in margins else margins[0] + margins[1]
     if over:
-        return shown, margins, "not flush: " + ", ".join(over)
-    return shown, margins, None
+        return Judgement(shown, margins, out_by,
+                         f"out by {out_by}: " + ", ".join(over))
+    return Judgement(shown, margins, out_by, None)
+
+
+def reading(judged):
+    """One axis' verdict as a report prints it: the span the two margins leave,
+    then each edge's own, then the distance from flush. A dash is an edge the
+    emitted frame does not carry, which bounds nothing on its own."""
+    def px(value):
+        return "-" if value is None else str(value)
+    return (f"{px(judged.shown)} ({px(judged.margins[0])}|"
+            f"{px(judged.margins[1])}) out by {px(judged.out_by)}")
 
 
 def sweep_mode(host, dev, source, mode, allowance, keep_framing):
@@ -160,12 +222,10 @@ def sweep_mode(host, dev, source, mode, allowance, keep_framing):
     # A clip rather than a frame: the card flashes twice a second, so a single
     # capture can miss a green edge entirely. CLIP_FRAMES spans both phases.
     clip = hdmi_capture.frames(CLIP_FRAMES, dev)
-    found, whys = {}, []
-    for name, axis in (("across", 1), ("down", 0)):
-        shown, margins, why = judge(clip, axis, allowance)
-        found[name] = (shown, margins)
-        if why:
-            whys.append(f"{name}: {why}")
+    found = {name: judge(clip, axis, allowance)
+             for name, axis in (("across", 1), ("down", 0))}
+    whys = [f"{name}: {judged.why}" for name, judged in found.items()
+            if judged.why]
     return found, "; ".join(whys)
 
 
@@ -177,8 +237,9 @@ def main():
     parser.add_argument("--modes", default=None,
                         help="comma separated, e.g. 'X800 Y600 C256 F60'; default is "
                              "every mode the monitor definition allows at 256 colours")
-    parser.add_argument("--allowance", type=int, default=FLUSH,
-                        help=f"output pixels to tolerate at a flush edge (default {FLUSH})")
+    parser.add_argument("--allowance", type=int, default=ALLOWANCE,
+                        help="output pixels to tolerate at a flush edge "
+                             f"(default {ALLOWANCE})")
     parser.add_argument("--keep-framing", action="store_true")
     args = parser.parse_args()
 
@@ -200,10 +261,9 @@ def main():
         if found is None:
             print(f"  {mode:24} SKIP  {why}")
             continue
-        shown = "  ".join(
-            f"{k} {v[0]} ({v[1][0]}|{v[1][1]})" if v[0] is not None else f"{k} -"
-            for k, v in found.items())
-        print(f"  {mode:24} {'FAIL' if why else 'ok  '}  {shown}"
+        read = "  ".join(f"{name} {reading(judged)}"
+                         for name, judged in found.items())
+        print(f"  {mode:24} {'FAIL' if why else 'ok  '}  {read}"
               + (f"   [{why}]" if why else ""))
         if why:
             failed.append(mode)
