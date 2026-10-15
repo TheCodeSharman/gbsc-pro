@@ -19,14 +19,25 @@ the tool has not is the standing record: a mode in `NARROW` is a known deficit
 with its measured size, so a NEW mode failing is a regression and a listed one
 passing is the gap having closed.
 
-Changes the SOURCE mode and resets the framing, so it needs --modeserv and
---source, and it puts the bench mode back however the module ends. Each mode
-costs about twenty seconds: a mode change, the engine settling, and a clip off
-the USB capture.
+**AT ONE OUTPUT AND WITH NO DECLARED SHAPE, ON BOTH SYNC TYPES.** The output
+is a variable every case has to share, or the modes are judged against
+different rasters. The shape has to be OFF rather than 16:9: a declared shape
+narrows the room, the bars it pillarboxes with are OUR blanking, and a strip
+taken at the frame's own edge then measures them instead of the picture --
+which reported all six modes' horizontal edges as missing. And the sync type is
+the dimension nothing crossed: a mode judged on one of them is a framing fitted
+to one half of the bench.
+
+Changes the SOURCE mode and its sync type and resets the framing, so it needs
+--modeserv and --source, and it puts the bench mode, the sync type, the output
+and the shape back however the module ends. Each case costs about forty
+seconds: a sync-type change with the re-probe that makes the engine follow it,
+a mode change, the engine settling, and a clip off the USB capture.
 """
 
 import os
 import sys
+import time
 
 import pytest
 
@@ -36,6 +47,16 @@ import gbs_unit
 import hdmi_capture
 
 BENCH_MODE = "X320 Y256 C256 F50"
+
+# The output every case is judged at. 1080p because it is the one the acceptance
+# suite uses and the one the lower resolutions' own open entries are measured
+# against. docs/known-issues.md
+OUTPUT = "1080p"
+
+# A sync-type change leaves the engine on the path it held, and the re-probe
+# that follows it is a detection sweep -- so a case pays for the source leaving
+# and returning before anything it measures means the mode it asked for.
+SETTLE_SECONDS = 14.0
 
 # One mode per behaviour the solve has, with what each is here for. Adding a
 # mode that shares every entry in this table with one already here buys a second
@@ -69,7 +90,44 @@ COVERS = {
 # Closing it needs minification, which the VDS cannot do.
 # docs/investigations/full-screen-framing-on-the-vesa-modes.md,
 # docs/scaling-down-path.md
-NARROW = {}
+# How the cases read: the mode, then which sync type carried it.
+SYNC_TYPES = ((False, "separate"), (True, "composite"))
+
+# What each case currently gets wrong, measured at 1080p with the shape off and
+# the framing reset, over two full runs of the matrix. A case listed here that
+# PASSES is the gap having closed; one not listed that fails is a regression.
+#
+# **THE TWO SYNC TYPES AGREE ON 800x600@60 AND 1600x600@60 AND NOWHERE ELSE**,
+# and 800x600@60 is the mode every other measurement has been taken on. That is
+# what this matrix exists to catch.
+#
+# **A NEAR MARGIN OF 2 FAILS BY ONE PIXEL AGAINST `card_edges.FLUSH`**, and the
+# sink's own latch is in it: the transmitted window's start is taken from
+# VDS_DIS_HB_SP at link-up and lands a little before it, so a correct framing
+# reads a few columns at the near edge. Whether 1 is the right allowance is
+# open -- it is an acceptance threshold rather than a measurement, so it is not
+# being widened to suit a reading.
+#
+# **A VERDICT OF `one edge` CARRIES NO MAGNITUDE.** Green is found at one end
+# only, so judge() has no near margin to report and a one-pixel shift reads the
+# same as a hundred-pixel one. With the shape off the picture fills the raster
+# exactly, so rounding at either end is enough to put the outermost green
+# column off the frame -- which is why the same case reads `one edge` in one run
+# and `2 at the near edge` in the next.
+NARROW = {
+    ("X240 Y352 C256 F70", False): "one horizontal edge off, 2 rows at the top",
+    ("X240 Y352 C256 F70", True): "one edge off on both axes",
+    ("X320 Y256 C256 F50", False): "2 at the near edge on both axes",
+    ("X320 Y256 C256 F50", True): "one horizontal edge off, vertically flush",
+    ("X640 Y480 C256 F60", False): "one horizontal edge off, vertically flush",
+    ("X640 Y480 C256 F60", True): "neither edge on either axis",
+    ("X640 Y512 C256 F50", False): "one horizontal edge off, vertically flush",
+    ("X640 Y512 C256 F50", True): "2 at the near edge, and 29 rows at the top",
+    ("X800 Y600 C256 F60", False): "2 at the near edge, vertically flush",
+    ("X800 Y600 C256 F60", True): "2 at the near edge, vertically flush",
+    ("X1600 Y600 C256 F60", False): "one horizontal edge off, vertically flush",
+    ("X1600 Y600 C256 F60", True): "one horizontal edge off, vertically flush",
+}
 
 
 def pytest_generate_tests(metafunc):
@@ -90,7 +148,11 @@ def pytest_generate_tests(metafunc):
         chosen = offered
     else:
         chosen = [m for m in offered if m in COVERS]
-    metafunc.parametrize("mode", chosen, ids=lambda m: m.replace(" ", ""))
+    cases = [(mode, csync) for csync, _ in SYNC_TYPES for mode in chosen]
+    metafunc.parametrize(
+        "mode,csync", cases,
+        ids=[f"{mode.replace(' ', '')}-{name}"
+             for _, name in SYNC_TYPES for mode in chosen])
 
 
 @pytest.fixture(scope="module")
@@ -104,26 +166,88 @@ def capture_device():
 
 
 @pytest.fixture(scope="module")
-def bench_mode_restored(request):
-    """The source back on the bench mode when the module ends, however it ends.
-    The modes are judged in whatever order the monitor definition lists them, so
-    the last one is nobody's choice."""
-    yield
+def judged_at(request, host):
+    """One output and no declared shape for every case, and the bench put back.
+
+    The modes are judged in whatever order the monitor definition lists them,
+    so the last one is nobody's choice -- and neither is the output, the shape
+    or the sync type a run happens to end on.
+
+    **NO STORED FRAMING MAY ANSWER.** An entry is recalled on acquisition, so
+    what a case would judge is the last session's tuning rather than the
+    computed default. Each case resets this source's entry, and autosave is off
+    so the run cannot write one of its own. It is runtime state with no key in
+    the preferences, so it goes back on at the end rather than being restored.
+    """
     where = request.config.getoption("--modeserv")
+    original = {
+        "output": gbs_unit.setting(host, "output"),
+        "shaping": gbs_unit.shaping(host),
+        "sync": gbs_unit.mode_serv(where, "SYNC") if where else "",
+    }
+
+    assert gbs_unit.choose_output(host, OUTPUT), (
+        f"the output never reached {OUTPUT}, so the modes would be judged "
+        f"against different rasters")
+    assert gbs_unit.want_shaping(host, False), (
+        "the shape is still being applied, so every edge read would measure "
+        "the bars it pillarboxes with")
+    assert gbs_unit.autosave(host, False), (
+        "the framing table would not stop autosaving")
+
+    yield
+
     if where:
+        gbs_unit.mode_serv(where, "SYNC 1"
+                           if " SYNC 1 " in original["sync"] + " " else "SYNC 0")
         gbs_unit.mode_serv(where, f"MODE {BENCH_MODE}")
         gbs_unit.show_card(where)
+    if original["output"]:
+        gbs_unit.restore_output_mode(host, original["output"])
+    gbs_unit.want_shaping(host, original["shaping"])
+    gbs_unit.autosave(host, True)
+
+
+def acquired_or_recovered(host):
+    """Acquired, with the one recovery the open entries name if it is not.
+
+    **A CASE THAT LANDS IN THE NON-COUNTING STATE POISONS EVERY CASE AFTER
+    IT.** Measured over the matrix: one composite case acquired and the five
+    after it reported `never acquired` without being judged at all, which reads
+    as five broken modes and is one state nothing cleared. `/sc?~` does not
+    clear it where an input bounce does, so a run that cannot recover reports a
+    cascade instead of a verdict. docs/known-issues.md
+
+    The bounce goes by way of `ypbpr`, which is the other bench source: nothing
+    on the board can see whether anything is plugged into an input, so this
+    needs the Wii present as well.
+    """
+    if gbs_unit.acquired_and_settled(host, limit_s=90.0):
+        return True
+
+    gbs_unit.select_input(host, "ypbpr")
+    time.sleep(10.0)
+    gbs_unit.select_input(host, "vga")
+    time.sleep(SETTLE_SECONDS)
+    return gbs_unit.acquired_and_settled(host, limit_s=90.0)
 
 
 @pytest.mark.source_mode
 def test_the_default_framing_puts_the_card_flush_to_the_emitted_edges(
-        request, host, source, capture_device, bench_mode_restored, mode):
+        request, host, source, capture_device, judged_at, mode, csync):
     where = request.config.getoption("--modeserv")
 
+    gbs_unit.set_sync_type(where, csync)
     reply = gbs_unit.mode_serv(where, f"MODE {mode}")
     assert gbs_unit.modeserv_ok(reply), f"the source refused {mode!r}: {reply!r}"
-    assert gbs_unit.acquired_and_settled(host), \
-        "never acquired, or never stopped re-solving"
+
+    # The arrangement is re-probed rather than trusted: establishSyncType()
+    # keys on the input selection, so the engine follows a SYNC command only
+    # once something makes it probe again. docs/sync-type-selection.md
+    gbs_unit.get(host, "/sc?~")
+    time.sleep(SETTLE_SECONDS)
+    assert acquired_or_recovered(host), \
+        "never acquired, or never stopped re-solving, even after an input bounce"
     # AFTER the mode change, which repaints the source's default pattern, and
     # with the animation off so one clip is evidence.
     assert gbs_unit.show_card(where), "the source would not draw the card"
@@ -141,7 +265,7 @@ def test_the_default_framing_puts_the_card_flush_to_the_emitted_edges(
     whys = [f"{name}: {v[2]}" for name, v in found.items() if v[2]]
     margins = "  ".join(f"{name} {v[1]}" if v[1] else f"{name} -"
                         for name, v in found.items())
-    known = NARROW.get(mode)
+    known = NARROW.get((mode, csync))
     if known is not None:
         assert whys, f"known deficit {known} has closed -- take it out of NARROW"
         pytest.xfail(f"{known}: {'; '.join(whys)}   [{margins}]")

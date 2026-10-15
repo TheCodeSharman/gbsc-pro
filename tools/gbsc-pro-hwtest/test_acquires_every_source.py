@@ -66,9 +66,12 @@ from gbs_unit import (
     reset_framing,
     restore_output_mode,
     select_input,
+    set_sync_type,
     setting,
+    shaping,
     show_card,
     wait_for_acquisition,
+    want_shaping,
     write_named,
 )
 
@@ -128,48 +131,12 @@ def scaling(at):
     return at["DAC_RGBS_BYPS2DAC"] == 0 and at["OUT_SYNC_SEL"] == 0
 
 
-def set_sync_type(where, csync):
-    """The source's sync type, and the re-probe that makes the engine follow it.
-
-    establishSyncType() keys on the input selection, so a SYNC command alone
-    leaves the engine on the path it held -- and a measurement taken through the
-    wrong path is evidence about nothing. docs/sync-type-selection.md
-    """
-    reply = mode_serv(where, "SYNC 1" if csync else "SYNC 0")
-    assert reply.startswith("OK"), f"the source refused the sync type: {reply}"
-    wanted = " SYNC 1 " if csync else " SYNC 0 "
-    assert wanted in mode_serv(where, "SYNC") + " ", (
-        f"the source did not take {wanted.strip()}: {mode_serv(where, 'SYNC')}")
-
-
 def want_passed_through(host, passed_through):
     """`preferScalingRgbhv` is what decides the route, and /uc?x toggles it."""
     if (setting(host, "scale-rgbhv") == "0") == passed_through:
         return
     get(host, "/uc?x")
     time.sleep(2.0)
-
-
-def shaping(host):
-    """Whether the solve is narrowing the room to the declared shape.
-
-    **ASKED OF THE ENGINE, NOT OF THE PREFERENCE.** `apply-aspect` lags a toggle
-    behind: measured with the engine shaping it reads 0, after one /uc?S the
-    engine stops and it still reads 0, and after a second it reads 1 with the
-    engine shaping again. docs/known-issues.md
-    """
-    return get_json(host, "/geometry")[1].get("shaping") is True
-
-
-def want_shaping(host, on, tries=3):
-    """Narrow the room to the declared shape, or do not. /uc?S toggles it."""
-    for _ in range(tries):
-        if shaping(host) == on:
-            return True
-        get(host, "/uc?S")
-        time.sleep(2.0)
-        acquired_and_settled(host)
-    return shaping(host) == on
 
 
 def show_the_default_framing(host, where, scaled):

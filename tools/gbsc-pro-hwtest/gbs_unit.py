@@ -730,6 +730,36 @@ def acquired_and_settled(host, limit_s=60.0, holds=3):
     return False
 
 
+def shaping(host):
+    """Whether the solve is narrowing the room to the declared shape.
+
+    **ASKED OF THE ENGINE, NOT OF THE PREFERENCE.** `apply-aspect` lags a toggle
+    behind: measured with the engine shaping it reads 0, after one /uc?S the
+    engine stops and it still reads 0, and after a second it reads 1 with the
+    engine shaping again. docs/known-issues.md
+    """
+    return get_json(host, "/geometry")[1].get("shaping") is True
+
+
+def want_shaping(host, on, tries=3):
+    """Narrow the room to the declared shape, or do not. /uc?S toggles it.
+
+    **A MEASUREMENT AT AN EDGE NEEDS IT OFF.** A declared shape narrows the
+    room, the bars it pillarboxes with are OUR blanking, and a strip taken at
+    the frame's own edge then measures them instead of the picture -- which
+    reports every mode's horizontal edges as missing. `Aspect::Fill` is the
+    absence of a shape, so the picture takes the whole raster whatever the user
+    has stored, which cycling /uc?G to 16:9 cannot promise.
+    """
+    for _ in range(tries):
+        if shaping(host) == on:
+            return True
+        get(host, "/uc?S")
+        time.sleep(2.0)
+        acquired_and_settled(host)
+    return shaping(host) == on
+
+
 # --- the source ------------------------------------------------------------
 
 MODESERV_PORT = 6502
@@ -790,6 +820,21 @@ def list_modes(where):
         return parse_modes(mode_serv(where, "MODES", timeout=15))
     except OSError:
         return []
+
+
+def set_sync_type(where, csync):
+    """The source's sync type, and the assertion that it took.
+
+    establishSyncType() keys on the input selection, so a SYNC command alone
+    leaves the engine on the path it held -- the caller re-probes with /sc?~ or
+    an input change, and a measurement taken through the wrong path is evidence
+    about nothing. docs/sync-type-selection.md
+    """
+    reply = mode_serv(where, "SYNC 1" if csync else "SYNC 0")
+    assert reply.startswith("OK"), f"the source refused the sync type: {reply}"
+    wanted = " SYNC 1 " if csync else " SYNC 0 "
+    assert wanted in mode_serv(where, "SYNC") + " ", (
+        f"the source did not take {wanted.strip()}: {mode_serv(where, 'SYNC')}")
 
 
 def show_card(where):
