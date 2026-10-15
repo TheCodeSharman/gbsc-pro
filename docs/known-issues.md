@@ -10,6 +10,41 @@ regardless of which step is in flight.
 
 ## Reaches the picture
 
+### The reference clock list can spin until low power, and nothing measures through any entry
+
+Measured on `vga`, the RISC PC at 800x600@60 with `SYNC 1`, output 1920x1080,
+`scale-rgbhv = 0`, on an input selection followed by `/sc?~`. Detection found
+sync in 6.4 s, and from there the console carried **209 `measure: the reference
+clock measured nothing, trying the next` lines in 68 s**, each with its own
+`settle: spent after 100 ms` and nothing else at all, ending in `LOWPOWER:
+entered (no sync found)`.
+
+```
+  72.32  DETECT: 6387ms, syncFound 1
+  72.72  measure: the reference clock measured nothing, trying the next
+  72.72  settle: spent after 100 ms
+  ... 207 more, 0.2 to 0.4 s apart ...
+ 140.64  LOWPOWER: entered at t=426562ms (no sync found)
+```
+
+So the source is pulsing, detection sees it, and no entry in the reference list
+measures a rate through it. The list exists because no entry latches on both
+bench sources; what this state says is that for one source and one arrangement
+none of the four does.
+
+**It is rare and it has not been reproduced on demand.** The same sequence run
+deliberately -- the scaled case, the sync type re-issued, the route toggled, the
+input re-selected, `/sc?~` -- acquires in 16.5 s with 10 retry lines rather than
+209, and three full six-case runs since have passed. So it is one observation
+with a complete console record rather than a state to walk into.
+
+**What would settle it is the threshold floor at the reference clock**, which is
+the open question under "What normalises the composite pulse-ignore floor" below:
+the threshold is in ADC samples and a reference entry runs the block at a line
+the divider does not describe, so whether the source can be counted there at all
+is unmeasured. `separation_grid.py` walks it, and the gate it needs is a state
+with the reference clock in force rather than a latched one.
+
 ### The composite count flaps the presence verdict, and the acceptance case is intermittent with it
 
 The presence verdict is broken by ONE scattered count: `plausible && held` goes
