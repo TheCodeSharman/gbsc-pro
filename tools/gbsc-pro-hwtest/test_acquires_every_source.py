@@ -105,13 +105,14 @@ DEFICITS = {
     # green edges on screen in one, the left column lost in another.
     "separate sync, scaled":
         "a column or two at the left, varying between acquisitions",
-    # THE ONE THAT MATTERS. The capture window runs 155 samples past the end of
-    # the source's picture, so what fills the right of the frame is the
-    # source's own blanking, lifted out of the question with VDS_Y_OFST.
-    # docs/investigations/the-composite-capture-window-is-too-wide.md
+    # The capture window is right now -- 1019 samples against a 1017-sample
+    # picture, the same as the separate leg takes. What is left is one edge off
+    # the picture, as on the separate leg, and a shake in the top rows that the
+    # separate leg does not have.
+    # docs/investigations/the-risc-pc-composite-sync-is-not-serrated.md
     "composite sync, scaled":
-        "inset 20 at the left and 214 at the right, and the top and bottom "
-        "rows are cut",
+        "one edge shifted off the picture, and the top rows move by sd 1.1 to "
+        "1.6 px",
     # The open entry in docs/known-issues.md: it acquires, holds, and the card
     # is nowhere on the emitted frame.
     "composite sync, passed through":
@@ -471,12 +472,10 @@ def test_the_picture_fills_the_frame(bench, host, capture_device, preset_save,
 
 
 # What the two sync types currently differ by, measured at 800x600@60 into
-# 1080p at 16:9: the composite path counts four lines fewer, and every number
-# downstream follows it -- the line rate, the divider, the capture, both scales
-# and the framing. Remove these as the gap closes.
+# 1080p with the shape off. Remove these as the gap closes.
 SYNC_TYPE_DEFICITS = {
-    "count": "composite counts 623 against separate's 627",
-    "picture": "37.5% of pixels differ, the count carried through the solve",
+    "picture": "14.1% and 36.5% of pixels differ on two runs, with the frame, "
+               "the line rate, the divider and every window agreeing",
 }
 
 # How far apart two captures of the SAME state sit, as a fraction of pixels
@@ -510,28 +509,53 @@ def shot(dev):
     return np.median(clip.astype(np.float32), axis=0).astype(np.uint8)
 
 
+# How far two line rates may sit apart and still be one source, in parts per
+# thousand -- SourceKey::SourceIdentityPerThousand, which is what the engine
+# itself treats as one source. The rate is the frame times a MEASURED field
+# rate, so an exact equality across two acquisitions asks more of the
+# instrument than the engine does: 37896 against 37879 is two hundredths of a
+# hertz on the field rate.
+RATE_IDENTITY_PER_THOUSAND = 3
+
+
 @pytest.mark.source_mode
 def test_one_source_counts_the_same_on_both_sync_types(bench, host, preset_save):
     """The sync type is how the source carries sync, not how many lines it has.
 
     This is the root of the picture difference below rather than a second
-    symptom: the count sets the line rate, the line rate sets the divider, and
+    symptom: the frame sets the line rate, the line rate sets the divider, and
     the divider sets the capture, both scales and the framing.
     """
     where = bench
     want_passed_through(host, False)
 
-    counted = {}
+    counted, held = {}, {}
     for name, csync in (("separate", False), ("composite", True)):
         settled_on(host, where, csync)
         counted[name] = read_fields(host, PATH)
+        held[name] = get_json(host, "/geometry")[1]
 
-    apart = (counted["separate"]["STATUS_SYNC_PROC_VTOTAL"]
-             - counted["composite"]["STATUS_SYNC_PROC_VTOTAL"])
+    frames = {name: held[name].get("cv") for name in held}
+    rates = {name: held[name].get("lineRateHz") for name in held}
+    dividers = {name: counted[name]["PLLAD_MD"] for name in counted}
+    apart = abs(rates["separate"] - rates["composite"])
+    tolerance = rates["separate"] * RATE_IDENTITY_PER_THOUSAND / 1000.0
+
+    said = (f"frames {frames}, line rates {rates} ({apart} apart, "
+            f"{tolerance:.0f} allowed), dividers {dividers}, "
+            f"registers {counted}")
     known = SYNC_TYPE_DEFICITS.get("count")
-    if known is not None and apart:
-        pytest.xfail(f"{known}: {apart} lines apart, {counted}")
-    assert apart == 0, f"the same source counted two ways: {counted}"
+    if known is not None and (frames["separate"] != frames["composite"]
+                              or apart > tolerance):
+        pytest.xfail(f"{known}: {said}")
+
+    # The FRAME exactly: it is a count of lines the engine reconstructs, so a
+    # difference there is a different source rather than a different reading.
+    assert frames["separate"] == frames["composite"], (
+        f"the same source read as two frames: {said}")
+    assert apart <= tolerance, f"one frame, two line rates: {said}"
+    assert dividers["separate"] == dividers["composite"], (
+        f"one frame, two dividers: {said}")
 
 
 @pytest.mark.source_mode
