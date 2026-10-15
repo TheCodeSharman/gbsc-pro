@@ -96,6 +96,26 @@ runs per build -- was never needed.
 **The first spin stays open**: `SP_SOG_MODE` 0 with no vertical count at all is
 a different state, with the chain below rather than this one.
 
+### `apply-aspect` lags the engine by one toggle
+
+Measured on `vga` at 640x480@60 into 1080p, reading `/geometry` and the emitted
+frame together against the preference:
+
+| | `apply-aspect` | `/geometry` `shaping` | emitted side borders |
+|---|---|---|---|
+| as found | 0 | **true** | 242 / 251 |
+| after one `/uc?S` | **0** | false | 2 / 16 |
+| after a second | 1 | true | 242 / 251 |
+
+So the persisted byte reports the state BEFORE the toggle, and a tool that reads
+it to decide whether to toggle moves the engine the wrong way. **`/geometry`'s
+`shaping` is the witness**; `shaped` is not, staying true across both states.
+
+`/uc?S` does `geometry.setApplyAspect(!geometry.appliesAspect())` and then
+mirrors it into `uopt->applyAspect`, which should agree -- so what is wrong is
+between that and what `/preferences.txt` serves. Whether the engine's state is
+correct across a reboot is unmeasured, and is the thing that matters.
+
 ### What acceptance means on the VGA sources
 
 Stated here because several of the entries below are measured against it and a
