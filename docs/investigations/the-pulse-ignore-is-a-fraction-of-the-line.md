@@ -77,9 +77,17 @@ later, where the previous run took 45 s.
 **And the fraction must wait for a latched state.** Written the moment the
 count came into range, through a 2040 reference the PLL had not latched -- the
 block counting 1187 samples a line, the pulse 87 -- the divider's 99 sat above
-the pulse again, and the counts the solve then read were 271 and 431. The
-search's threshold stays until the solve installs the divider or the source is
-present, both of which are latched states.
+the pulse again, and the counts the solve then read were 271 and 431.
+
+**So the latch is the whole of the condition, and the search is entered from a
+latched state too.** A scattered count arms the hunt on a source the engine was
+holding, the divider it solved still latched, and there the search's own value
+is under the floor an unserrated vertical interval imposes: measured on `vga`,
+the RISC PC at 800x600@60 with `SYNC 1` passed through to 1920x1080, one reading
+of 171 lines took the threshold from 99 to 16 with `PLLAD_MD` 2038 against
+`STATUS_SYNC_PROC_HTOTAL` 2038, and the counts from there were 512, 558, 559,
+824, 1069 and 1185 against the source's 622 for the remaining 35 s of the
+window. `the-engine-makes-the-composite-count-unmeasurable.md`.
 
 ## What the engine does now
 
@@ -88,9 +96,13 @@ present, both of which are latched states.
 2040 reference and 70 at 1446, and every pulse ignored for a source carrying its
 own vertical sync. Every entry point that writes the field takes the divider:
 `applyForSyncType()`, `prepare()` and the `Dynamic` pass on a present source.
-`applyForSearch()` writes the search's own 16. `VideoPath::writePulseIgnore()`
-re-places the fraction beside the retime origin when the solve installs its
-divider, and a reference install leaves the search's value alone.
+
+`applyForSearch()` takes the latch as well, from `Dynamic`, which
+`VideoPath::samplingClockLatched()` supplies: the divider's fraction where the
+block is counting that divider's line, and the search's own 16 where it is not.
+`VideoPath::writePulseIgnore()` re-places the fraction beside the retime origin
+when the solve installs its divider, and a reference install leaves whatever the
+hunt chose.
 
 ## What it is not
 

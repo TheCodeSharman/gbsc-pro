@@ -10,39 +10,39 @@ regardless of which step is in flight.
 
 ## Reaches the picture
 
-### The search's own pulse ignore is below the floor, and the search cannot leave it
+### A composite source passed through settles at a reference clock it cannot latch and arms nothing
 
-**On the composite pass-through route the engine drops into searching and stays
-there.** `applyForSearch()` writes `SearchPulseIgnore` 16, which is under the 86
-this source can be counted through, so the count it then takes is not the
-source's -- and a count that is not the source's is what keeps it searching.
+Measured on `vga`, the RISC PC at 800x600@60 with `SYNC 1`, output 1920x1080,
+`scale-rgbhv = 0`. A single reading of 171 lines arms a full re-solve, the
+sync-type probe runs, and from there the engine measures the source on every
+pass and arms nothing: **636 identical `measured:` and `duty:` pairs over 75 s**
+with no `installing:` line, no further reference retry, and `state: absent`
+throughout.
 
-Measured on `vga`, RISC PC at 800x600@60 with `SYNC 1`, `scale-rgbhv = 0`, after
-`/sc?~`:
+| | |
+|---|---|
+| `PLLAD_MD` | 2040, the first reference |
+| `STATUS_SYNC_PROC_HTOTAL` | 988, so the PLL is not running it |
+| `STATUS_MISC_PLLAD_LOCK` | 0 |
+| `STATUS_SYNC_PROC_HLOW_LEN` | 119, 12% of the counted line |
+| the engine's own count | **627** in every `measured:` line |
+| an HTTP read of `STATUS_SYNC_PROC_VTOTAL` | **623** |
+| field rate | 60.31 Hz, correct, every pass |
 
-| | `SP_H_PULSE_IGNOR` | `PLLAD_MD` | `STATUS_SYNC_PROC_HTOTAL` | `STATUS_SYNC_PROC_VTOTAL` | state |
-|---|---|---|---|---|---|
-| t+15..25 | 99 | 2038 | 2038 | **622** | acquired |
-| **t+30..70** | **16** | 2038 | 2038 | **703** | **unlocked** |
+The two counts differ by four and which of them the steadiness run sees is not
+established. A count that never steadies is a stall this page already carries
+one exit for, and this may be another.
 
-It does not come out on its own -- 45 s with every reading identical -- and
-`/restart` clears it in about 20 s.
+**It is not the separation threshold.** `SP_H_PULSE_IGNOR` 48, the fraction of
+the 988-sample line the block is counting, written by name into the live state
+with the engine running, left every reading identical for 45 s -- state,
+`HTOTAL`, lock bit, count and rate.
 
-**THE DIVIDER IN FORCE IS THE SOURCE'S, NOT THE REFERENCE.** 16 is sized for the
-chip's reference clock, where a pulse is a third of the samples it is at the
-divider, and the state above has 2038 latched against `HTOTAL` 2038. So the
-search is counting a 2038-sample line through a threshold meant for a
-760-sample one.
+**And the state is reachable on either side of the search fix**, because the
+threshold in force there is the search's own: nothing is latched, which is the
+arm both the fixed and the unfixed engine write 16 for.
 
-What a fix needs is the floor at the REFERENCE clock, which nothing has
-measured: the settled threshold follows the divider already, and the search's
-cannot simply do the same without knowing that the value still works where
-nothing is latched. `separation_grid.py` walks it; the gate it needs is a state
-with the reference clock in force rather than a latched one.
-
-`tools/gbsc-pro-hwtest/test_acquires_every_source.py::composite-sync-passed-through`
-is the failing case, and the other five arrangements pass.
-`investigations/the-engine-makes-the-composite-count-unmeasurable.md`.
+`/restart` clears it, in about 20 s.
 
 ### Composite-sync VGA in pass-through acquires and emits nothing
 
@@ -5608,6 +5608,38 @@ loop the rate re-solve and the terminal reference-retry cycle are made of.
 
 
 ## Fixed, kept here until the next session has seen them
+
+### The search's own pulse ignore sat below the floor at a latched divider -- FIXED
+
+`applyForSearch()` wrote `SearchPulseIgnore`, 16, whenever the engine was
+hunting. That value is sized for the chip's own reference clock, where a pulse
+is a third of the samples it is at a divider -- and the search is entered from a
+latched state as well as from a cold one. Through the divider's own line 16 sits
+under the floor an unserrated vertical interval imposes, so the count the search
+then took was not the source's, and a count that is not the source's is what
+keeps the source hunted for.
+
+`Dynamic` carries whether the block is counting the line the divider describes,
+from `VideoPath::samplingClockLatched()`, and the search takes the divider's
+fraction where it is and its own value where it is not. Both halves were already
+the stated rule: the fraction is of the latched line, and `present` was standing
+in for latched.
+
+Measured on `vga`, the RISC PC at 800x600@60 with `SYNC 1` passed through to
+1920x1080, `/geometry` and the registers read together at about 4 Hz:
+
+| | before, 363 readings over 90 s | after, 622 readings over 180 s |
+|---|---|---|
+| readings latched with the threshold under the floor and the count not the source's | **114**, t+54.7 to the end of the window | **2** |
+| `SP_H_PULSE_IGNOR` in that state | 16 | 99 |
+| counts read there | 512, 558, 559, 824, 1069, 1185 | the source's 622 |
+
+The source is still not HELD on that route, for the reason in "A composite
+source passed through settles at a reference clock it cannot latch and arms
+nothing" above, which the deadlock was masking.
+
+`investigations/the-engine-makes-the-composite-count-unmeasurable.md`,
+`investigations/the-pulse-ignore-is-a-fraction-of-the-line.md`.
 
 ### The sync pad came back before the mode was set up, and the sketch set it up a second time -- FIXED
 

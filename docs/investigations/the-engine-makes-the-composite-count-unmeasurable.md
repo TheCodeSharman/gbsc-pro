@@ -231,6 +231,44 @@ threshold in force, the divider unmoved. Four interleaved controls at 99:
 The floor holds under both protocols, and **36.99 Hz is the engine's own wrong
 rate on this source** -- so the threshold the engine writes is what produces it.
 
+## The hunt reaches below the floor from a latched state
+
+The threshold the engine writes while hunting is sized for the chip's own
+reference clock, where a pulse is a third of the samples it is at a divider --
+and the hunt is armed by a count that is not the source's, which happens with
+the divider latched and the clock good. So the configuration's premise and the
+state it is applied in are different states, and through the divider's own line
+the hunt's own value is below the floor above.
+
+Caught in the act on `vga`, the RISC PC at 800x600@60 with `SYNC 1` passed
+through to 1920x1080, `/geometry` and the registers read together at about 4 Hz
+through a 90 s window the source had been held in for 54 s:
+
+```
+ 54.25  acquired  ignor   99 md  2038 ht  2038 vt   623
+ 54.48  | source UNLOCKED: 623 lines, 2034 samples against divider 2038
+ 54.48  | source absent: 171 lines, 2038 samples against divider 2038
+ 54.48  absent    ignor   16 md  2038 ht  2038 vt   622
+ 54.72  | source absent: 1698 lines, 2038 samples against divider 2038
+ 54.72  absent    ignor   16 md  2038 ht  2038 vt   512
+```
+
+**One reading of 171 lines is the whole of the arm**, and the threshold is
+already 16 by the first absent reading. From there the counts are 512, 558, 559,
+824, 1069 and 1185 against the source's 622 for the remaining 35 s, 114 readings,
+with `PLLAD_MD` 2038 against `STATUS_SYNC_PROC_HTOTAL` 2038 in every one of
+them -- a latched clock, a count that is not the source's, and the threshold
+that guarantees it.
+
+**The latch is what tells the two states apart**, and the hunt takes the
+divider's fraction where the block is counting that divider's line. Measured
+over a 180 s window on the same arrangement, 622 readings: **2** in that state
+rather than 114, and the threshold through the latched clock reads 99.
+
+The source is still not held on that route. What stops it is a different stall
+-- the engine settling at a reference clock it cannot latch and arming nothing
+-- which the deadlock was masking. `../known-issues.md`.
+
 ## The Wii's bound was the old divider, and it is gone
 
 `the-pulse-ignore-fraction-breaks-a-progressive-source.md` measured 70 marginal
