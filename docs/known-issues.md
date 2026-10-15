@@ -139,13 +139,48 @@ whole raster whatever the user has stored -- which cycling `/uc?G` cannot
 promise, the stored shape being per source. `/uc?S` is the toggle and
 `apply-aspect` is how it reads back.
 
-**THE MODE MATRIX IS NOT COVERED AND THAT IS THE STANDING RISK.**
-`test_acquires_every_source.py` asks all four of the above on ONE mode,
-800x600@60. `test_card_framing.py` asks the first on six modes and never sets
-the sync type or the output, so it answers for whatever was left in force.
-Nothing crosses modes against sync types, and the source offers 1024x768 and
-1280x720 as well. A framing judged one screen at a time is a model fitted to
-that screen.
+**THE MODE MATRIX IS COVERED NOW, AND IT SAYS THE SCREEN EVERYTHING WAS
+MEASURED ON IS THE EXCEPTION.** `test_card_framing.py` asks the first
+criterion on six modes against both sync types, at 1080p with the shape off,
+and `test_acquires_every_source.py` asks all four on 800x600@60.
+
+Measured over two full runs of the matrix, no case is flush on both axes and
+**the two sync types agree on 800x600@60 and 1600x600@60 and nowhere else**:
+
+| mode | separate | composite |
+|---|---|---|
+| 240x352@70 | one horizontal edge off, 2 rows at the top | one edge off on both axes |
+| 320x256@50 | 2 at the near edge on both axes | one horizontal edge off, vertically flush |
+| 640x480@60 | one horizontal edge off, vertically flush | **neither edge on either axis** |
+| 640x512@50 | one horizontal edge off, vertically flush | 2 at the near edge, and **29 rows at the top** |
+| 800x600@60 | 2 at the near edge, vertically flush | 2 at the near edge, vertically flush |
+| 1600x600@60 | one horizontal edge off, vertically flush | one horizontal edge off, vertically flush |
+
+800x600@60 is the mode every other measurement here has been taken on, which is
+what the matrix exists to catch. The table is the suite's standing record, so a
+case passing is the gap having closed and a case not in it failing is a
+regression.
+
+Two things the verdicts do not say, both of which bound what can be concluded
+from the table:
+
+- **A near margin of 2 fails by one pixel against `card_edges.FLUSH`**, and the
+  sink's own latch is in that margin -- the transmitted window's start is taken
+  from `VDS_DIS_HB_SP` at link-up and lands a little before it. Whether 1 is
+  the right allowance is an acceptance threshold rather than a measurement, so
+  it has not been widened to suit a reading.
+- **`one edge` carries no magnitude.** Green is found at one end only, so there
+  is no near margin to report and a one-pixel shift reads the same as a
+  hundred-pixel one. With the shape off the picture fills the raster exactly,
+  so rounding at either end puts the outermost green column off the frame --
+  which is why one case reads `one edge` in one run and `2 at the near edge` in
+  the next.
+
+**AND ONE STUCK CASE USED TO POISON EVERY CASE AFTER IT.** The first run of the
+matrix reported five consecutive composite cases as `never acquired` without
+judging any of them, which reads as five broken modes and was one state nothing
+cleared: `/sc?~` does not clear it where an input bounce does. The suite
+recovers per case now, which also cut the run from 14:25 to 6:48.
 
 ### 320x256 on composite sync flickers about every four seconds
 
