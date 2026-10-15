@@ -96,6 +96,63 @@ runs per build -- was never needed.
 **The first spin stays open**: `SP_SOG_MODE` 0 with no vertical count at all is
 a different state, with the chain below rather than this one.
 
+### What acceptance means on the VGA sources
+
+Stated here because several of the entries below are measured against it and a
+criterion carried in one session's head is the reason the same screen is fixed
+twice. On `vga`, with `PATTERN CARD` up and the animation off:
+
+1. **The green border on all four emitted edges**, with no black between it and
+   the frame's edge.
+2. **A stable acquisition** -- no shake, in any band of the picture.
+3. **The same framing on every acquisition** of the same source, both in what
+   the engine solves and in what reaches the screen.
+4. **No difference between composite and separate sync.** One source, one
+   cable, one raster.
+
+**At 1080p, with shaping OFF.** Lower output resolutions have their own open
+entries and are out of scope. The shape is turned off rather than set to 16:9:
+a declared shape narrows the room, the bars it pillarboxes with are the board's
+own blanking, and an edge read at the frame's edge then measures them instead of
+the picture. `Aspect::Fill` is the absence of a shape, so the picture takes the
+whole raster whatever the user has stored -- which cycling `/uc?G` cannot
+promise, the stored shape being per source. `/uc?S` is the toggle and
+`apply-aspect` is how it reads back.
+
+**THE MODE MATRIX IS NOT COVERED AND THAT IS THE STANDING RISK.**
+`test_acquires_every_source.py` asks all four of the above on ONE mode,
+800x600@60. `test_card_framing.py` asks the first on six modes and never sets
+the sync type or the output, so it answers for whatever was left in force.
+Nothing crosses modes against sync types, and the source offers 1024x768 and
+1280x720 as well. A framing judged one screen at a time is a model fitted to
+that screen.
+
+### 320x256 on composite sync flickers about every four seconds
+
+Seen on the bench, `vga` at 320x256@50 with `SYNC 1` into 1080p. Not
+characterised further: what flickers, whether the count moves with it, and
+whether it is the same event as the top-band shake below are all open. It is a
+second mode showing composite-sync instability, which is what makes it worth
+recording rather than one more observation of the 800x600 case.
+
+### The composite capture window runs past the end of the picture
+
+Measured at 800x600@60 into 1080p: the capture window is **1243 samples against
+a picture 1088 samples wide**, so 155 samples of the source's own blanking are
+captured and shown -- about 214 emitted columns at the right. Separate sync on
+the same source takes 1019 against 1017.
+
+**The black at the right is the SOURCE'S, not ours**, which the `VDS_Y_OFST`
+lift settles: the last 30 columns rise by 31.5 on composite and by 0 to 2 on
+separate. So blanking it would lose picture, and what is wrong is the capture.
+
+The chain is the count. `SourceTiming::matching()` keys on the frame, which is
+`STATUS_SYNC_PROC_VTOTAL + 1`: separate's 627 gives 628, which is DMT's total
+for the mode, and the capture is derived from the raster's stated 800 active
+pixels. Composite's 623 gives 624, which matches no published raster, and the
+capture falls back to the computed default.
+`investigations/the-composite-capture-window-is-too-wide.md`.
+
 ### One source on one cable emits two different pictures, one per sync type
 
 The sync type is how a source carries sync, not how many lines it has -- and the
@@ -125,7 +182,13 @@ horizontal edges inset 20 and 214 and cuts the top and bottom rows.
 `SP_PRE_COAST` 7 and `SP_POST_COAST` 6 are in circuit on the composite path and
 0/0 on the separate one, which is where four lines around the vertical interval
 could go, but neither walks the count: it reads 623 at every pre coast from 2 to
-18 and every post coast from 2 to 20.
+18 and every post coast from 2 to 20. `SP_DLT_REG` reads 192 on this path and 0
+on the other, and has not been walked.
+
+**THE COUNT IS WHAT HAS TO BE FIXED**, rather than the framing it misleads: a
+count that is four short picks the wrong raster, and a count that dithers picks
+a different one from acquisition to acquisition. Both show as a framing fault
+and neither is one.
 
 Guarded by `test_one_source_counts_the_same_on_both_sync_types` and
 `test_one_source_looks_the_same_on_both_sync_types`.
