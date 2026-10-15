@@ -10,57 +10,41 @@ regardless of which step is in flight.
 
 ## Reaches the picture
 
-### A composite source passed through settles at a reference clock it cannot latch and arms nothing
+### The composite count flaps the presence verdict, and the acceptance case is intermittent with it
 
-Measured on `vga`, the RISC PC at 800x600@60 with `SYNC 1`, output 1920x1080,
-`scale-rgbhv = 0`. A single reading of 171 lines arms a full re-solve, the
-sync-type probe runs, and from there the engine measures the source on every
-pass and arms nothing: **636 identical `measured:` and `duty:` pairs over 75 s**
-with no `installing:` line, no further reference retry, and `state: absent`
-throughout.
+The presence verdict is broken by ONE scattered count: `plausible && held` goes
+false, `sourceState_` becomes `SourceAbsent`, and the next reading takes it back
+to `SourceAcquired`. Measured on `vga`, the RISC PC at 800x600@60 with `SYNC 1`
+passed through, the console alternating every ~1.6 s with the divider latched
+throughout:
 
-| | |
-|---|---|
-| `PLLAD_MD` | 2040, the first reference |
-| `STATUS_SYNC_PROC_HTOTAL` | 988, so the PLL is not running it |
-| `STATUS_MISC_PLLAD_LOCK` | 0 |
-| `STATUS_SYNC_PROC_HLOW_LEN` | 119, 12% of the counted line |
-| the engine's own count | **627** in every `measured:` line |
-| an HTTP read of `STATUS_SYNC_PROC_VTOTAL` | **623** |
-| field rate | 60.31 Hz, correct, every pass |
+```
+ 22.43  source absent: 557 lines, 2038 samples against divider 2038
+ 22.43  source acquired: 626 lines, 2038 samples against divider 2038
+ 24.03  source absent: 175 lines, 2038 samples against divider 2038
+ 24.03  source acquired: 626 lines, 2038 samples against divider 2038
+```
 
-**THE REFERENCE CLOCK IS A ONE-WAY DOOR ON THE PASS-THROUGH ROUTE**, and the
-two halves of that are both in the code. `VideoPath::installSampling()` returns
-true on its first line when `passedThrough()`, because the channel's divider is
-`HdBypass`'s and the duty is counted against the raster it sized -- so the one
-function that would replace a clock does nothing there. And the reference retry
-lives only in the branch that takes a FAILED RATE: `measureRate()` succeeds
-here, so the pass reaches `measureDuty()`, which refuses through an unlatched
-clock, and that exit has no retry of any kind.
+`SourceMeasurement::countContradicted()` already drops the readings the input
+formatter's own frame contradicts, and these are not among them: 175, 453 and
+557 lines all reach the verdict.
 
-So a rate reading that fails once installs a reference, the reference lets the
-rate read and stops the duty reading, and nothing on the route can put the
-channel's divider back. `restartSamplingClock()` is no exit either: with a
-reference in force it installs the NEXT one.
+**The acceptance case fails on it intermittently rather than reliably.**
+`wait_for_acquisition()` needs ONE acquired reading at the source's rate inside
+60 s, which a flap at 1.6 s supplies -- so a failure means a longer excursion
+than the 4.9 s the 240 s window's worst was. Measured: 2 of 2 composite-only
+runs pass, and one full six-case run had it fail at 74 s while a `/sc?~` from
+the same arrangement acquires in 17.1 s.
 
-What a fix needs is an action that re-asserts the channel's own clock, which no
-path currently has -- cycling the references cannot be it, because none of them
-is the clock the channel's raster was sized for.
+**AND A FAILED CASE CASCADES.** The two `ypbpr` cases failed in the same run
+with `STATUS_SYNC_PROC_VTOTAL` 97 and `PLLAD_MD` 2040 -- nothing counting -- and
+the Wii on the same route acquires in **3.6 s** when asked on its own. So a case
+that leaves the unit mid-excursion is not given enough by the next case's
+`/sc?~` and 14 s settle, and a run's later failures are not independent
+evidence.
 
-**It is not the separation threshold.** `SP_H_PULSE_IGNOR` 48, the fraction of
-the 988-sample line the block is counting, written by name into the live state
-with the engine running, left every reading identical for 45 s -- state,
-`HTOTAL`, lock bit, count and rate.
-
-**And the two counts differing by four is not the mechanism either**, though it
-is unexplained: the steadiness run is not what the pass is failing on.
-
-`tools/gbsc-pro-hwtest/test_acquires_every_source.py::composite-sync-passed-through`
-is the failing case and the other five arrangements pass. Its signature is the
-source's own count beside an unlatched reference -- `STATUS_SYNC_PROC_VTOTAL`
-623, `STATUS_SYNC_PROC_HTOTAL` 992, `PLLAD_MD` 2040.
-
-`/restart` clears it, in about 20 s.
+`investigations/the-composite-sync-count-re-arms-its-own-solve.md`,
+`investigations/the-engine-makes-the-composite-count-unmeasurable.md`.
 
 ### Composite-sync VGA in pass-through acquires and emits nothing
 
@@ -5626,6 +5610,38 @@ loop the rate re-solve and the terminal reference-retry cycle are made of.
 
 
 ## Fixed, kept here until the next session has seen them
+
+### A composite source passed through could not leave a reference clock -- FIXED
+
+`measureSource()` states the rule: the clock the rate just measured asks for,
+installed BEFORE the duty is read. The pass-through route did not keep it. The
+channel's clock is `HdBypass`'s rather than a solve's, so
+`VideoPath::installSampling()` returned on its first line, and the only action
+that re-asserted the channel's clock ran from `passSourceThrough()` --
+downstream of the duty. `takeDuty()` refuses a reading through a clock the PLL
+is not running, so the two closed a loop: a reference clock installed by the
+rate-failure retry could not be replaced, because the duty needed the channel's
+clock and the channel's clock was only re-asserted after the duty succeeded.
+
+`VideoSourceAcquisition::installSamplingForMeasurement()` is the one step both
+routes take now, and `installPassThroughClock()` treats a clock the PLL is not
+running as not in force. `HdBypass::applyForSource()` splits so the raster half
+follows the duty while the clock half precedes it, and the raster is applied
+unguarded -- it writes no part of the PLL group, so a count that moved at an
+unchanged divider is no longer suppressed.
+
+Measured on `vga`, the RISC PC at 800x600@60 with `SYNC 1` passed through to
+1920x1080, `/geometry` and the registers read together at about 4 Hz:
+
+| | before | after |
+|---|---|---|
+| readings acquired | 370 of 622 across 180 s | **788 of 865** across 240 s |
+| longest unbroken absent run | **78.8 s**, running to the end of the window | **5.8 s**, the initial acquisition |
+| after the first acquisition | -- | 788 of 834, longest run **4.9 s** |
+
+`/sc?~` on that route acquires in 17.1 s, and 14.3 s after a `/uc?x` toggle. The
+Wii on `ypbpr` acquires in 3.6 s on the same route. What remains is the count
+flap under "The composite count flaps the presence verdict" above.
 
 ### The search's own pulse ignore sat below the floor at a latched divider -- FIXED
 
