@@ -585,7 +585,7 @@ TEST_CASE("the pulse-width difference threshold clears the measured floor")
 TEST_CASE("a source with its own vertical sync ignores every pulse")
 {
     Wire.reset();
-    SyncProcessor::applyPulseIgnore(false, MeasuredCsyncDivider, false);
+    SyncProcessor::applyPulseIgnore(false, MeasuredCsyncDivider);
 
     CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 0xff);
 }
@@ -600,16 +600,16 @@ TEST_CASE("a composite source's pulse ignore is a fraction of the line in ADC sa
     // the separator ignores the source; lowered by hand, it measured within
     // half a second. docs/investigations/the-pulse-ignore-is-a-fraction-of-the-line.md
     Wire.reset();
-    SyncProcessor::applyPulseIgnore(true, MeasuredCsyncDivider, false);
+    SyncProcessor::applyPulseIgnore(true, MeasuredCsyncDivider);
     CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 0x6b);
 
     SUBCASE("a shorter line in samples takes a threshold under its sync pulse") {
-        SyncProcessor::applyPulseIgnore(true, 1446, false);
+        SyncProcessor::applyPulseIgnore(true, 1446);
         CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 70);
     }
 
     SUBCASE("and the reference line likewise") {
-        SyncProcessor::applyPulseIgnore(true, 2040, false);
+        SyncProcessor::applyPulseIgnore(true, 2040);
         CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 99);
     }
 }
@@ -820,7 +820,6 @@ static SyncProcessor::Dynamic settled()
     source.present = true;
     source.csync = false;
     source.pathSource = false;
-    source.progressive = false;
     source.divider = MeasuredCsyncDivider;
     return source;
 }
@@ -907,47 +906,41 @@ TEST_CASE("a settled source on the scaling path is read, not separated for")
 }
 
 // The fraction skips the equalising pulses an interlaced vertical interval
-// carries, and a progressive source has none to skip. Measured on the Wii at
-// 480p on ypbpr through a 1446-sample line: the fraction's 70 leaves the ADC
-// PLL locked 60% of the time with the emitted picture shearing in runs of
-// frames, and 14 holds it locked with every frame identical.
-// docs/investigations/the-pulse-ignore-fraction-breaks-a-progressive-source.md
-TEST_CASE("a present progressive composite source ignores only what no pulse can be")
+// carries, and a progressive source has none to skip -- but a value BELOW the
+// fraction is what the separator makes of an unserrated vertical interval, and
+// one that low cannot count the source at all.
+//
+// Measured on `vga`, the RISC PC at 800x600@60 with `SYNC 1` through the
+// 2038-sample line the engine installs, frozen with the divider latched and the
+// separator re-locked on each value by a source mode round trip: 2, 14, 50 and
+// 70 count 1226, 213, 554 and 426 lines at 36.99 Hz, where 86 and the
+// fraction's 99 count 622 at 60.32 in every reading, across four interleaved
+// controls. 36.99 Hz is the engine's own wrong rate on this source, so the
+// threshold is what produces it.
+//
+// Below that floor the whole plateau up to the source's own 246-sample sync
+// pulse reads it: 86..236 at 100%, ascending and descending alike, at separator
+// levels 9 and 12.
+// docs/investigations/the-engine-makes-the-composite-count-unmeasurable.md
+TEST_CASE("a present composite source takes the fraction of its own line")
 {
     SyncProcessor::Dynamic source = settled();
     source.csync = true;
-    source.divider = 1446;
+    source.divider = ChannelDivider;
 
-    source.progressive = true;
-    CHECK(dynamicValue<SyncProcessor::SP_H_PULSE_IGNOR>(source)
-          == SyncProcessor::ProgressiveCsyncPulseIgnore);
-
-    source.progressive = false;
-    CHECK(dynamicValue<SyncProcessor::SP_H_PULSE_IGNOR>(source) == 70);
+    CHECK(dynamicValue<SyncProcessor::SP_H_PULSE_IGNOR>(source) == 99);
 }
 
-// AND IT FOLLOWS IT ON A PATH SOURCE TOO, which is the route with nothing else
-// to re-place it: the channel solves nothing, so what the arrangement wrote for
-// an unmeasured scan stands for the life of the route -- the interlaced fraction
-// of whatever divider was in force when the sync type was established.
-//
-// Measured on the Wii at 480p on ypbpr, one register written inside one
-// acquisition through the channel's 2038-sample line: that fraction is 99 and
-// emits mean luma 0.00 beside a steady count of 524, where the measured scan's
-// 14 emits a 1670x1028 picture.
-// docs/investigations/the-pulse-ignore-outlived-the-channels-entry.md
-TEST_CASE("a path source's threshold follows the scan as a scaled source's does")
+// AND ON A PATH SOURCE TOO, which is the route with nothing else to re-place
+// it: the channel solves nothing, so what the arrangement wrote stands for the
+// life of the route.
+TEST_CASE("a path source takes the same fraction")
 {
     SyncProcessor::Dynamic source = settled();
     source.pathSource = true;
     source.csync = true;
     source.divider = ChannelDivider;
 
-    source.progressive = true;
-    CHECK(dynamicValue<SyncProcessor::SP_H_PULSE_IGNOR>(source)
-          == SyncProcessor::ProgressiveCsyncPulseIgnore);
-
-    source.progressive = false;
     CHECK(dynamicValue<SyncProcessor::SP_H_PULSE_IGNOR>(source) == 99);
 }
 
@@ -1364,130 +1357,4 @@ TEST_CASE("the separation thresholds leave the pulse ignore alone")
     SyncProcessor::applySeparationThresholds(true);
 
     CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 0x6b);
-}
-
-// --- the separation a composite source can be counted through ----------------
-//
-// NOTHING ON THE BOARD MEASURES IT, so neither value can be calculated. The
-// slice level sets what the separator calls an edge and the pulse ignore sets
-// which of those edges reach the counter, and the two are ONE setting: measured
-// on `vga` at 800x600@60 composite in one frozen acquisition, the threshold the
-// source counts through is 44 at level 4 and 99 at level 9, and at level 12 no
-// value in the whole 8-bit field counts it.
-//
-// A constant cannot track that. ProgressiveCsyncPulseIgnore was 14, measured on
-// the Wii at 480p through a 1446-sample line, and through the RISC PC's 2038
-// it leaves the source unmeasurable -- the field rate reading 36.99 Hz against
-// 60.31 and the count 1430 against 622, both turning together on this one
-// register.
-// ../docs/investigations/the-engine-makes-the-composite-count-unmeasurable.md
-
-// The pair the search is handed, so a test can pass at one and nowhere else.
-static uint8_t g_readableLevel = 0;
-static uint8_t g_readableIgnore = 0;
-static unsigned g_probes = 0;
-static uint8_t g_levelInForce = 0;
-
-static void applyTestLevel(uint8_t level) { g_levelInForce = level; }
-
-// THE SOURCE READS THROUGH A BAND, NOT A VALUE, which is what makes a coarse
-// pass viable at all: a probe lands inside the band rather than on its centre.
-// Half-widths are per test, because a band narrower than the step is walked
-// over and that hazard is its own case below.
-static uint8_t g_bandHalf = 8;
-
-static bool readableAtChosenPair()
-{
-    ++g_probes;
-    const uint16_t at = (uint16_t)SyncProcessor::SP_H_PULSE_IGNOR::read();
-    const uint16_t low = g_readableIgnore > g_bandHalf
-                             ? (uint16_t)(g_readableIgnore - g_bandHalf) : 0;
-    const uint16_t high = (uint16_t)(g_readableIgnore + g_bandHalf);
-    return g_levelInForce == g_readableLevel && at >= low && at <= high;
-}
-
-static bool neverReadable()
-{
-    ++g_probes;
-    return false;
-}
-
-TEST_CASE("the separation search leaves the pair the source counts through")
-{
-    Wire.reset();
-    g_levelInForce = 4;
-    g_readableLevel = 4;
-    g_readableIgnore = 96;
-    g_probes = 0;
-
-    CHECK(SyncProcessor::searchSeparation(g_levelInForce, readableAtChosenPair,
-                                           applyTestLevel));
-
-    // Inside the band rather than at its centre: the coarse pass accepts the
-    // first probe the source reads at, which is wherever the step lands.
-    const uint16_t at = (uint16_t)SyncProcessor::SP_H_PULSE_IGNOR::read();
-    CHECK(at >= 96 - g_bandHalf);
-    CHECK(at <= 96 + g_bandHalf);
-    CHECK(g_levelInForce == 4);
-}
-
-TEST_CASE("a search that finds nothing leaves the threshold it started from")
-{
-    // THE STARVED END IS WHAT A FAILED WALK MUST NOT LAND ON. A threshold of 0
-    // ignores nothing and 255 ignores the source's own pulse, and a walk that
-    // ran off either end would leave the source unreadable for a reason the
-    // walk introduced rather than found.
-    Wire.reset();
-    SyncProcessor::SP_H_PULSE_IGNOR::write(99);
-    g_levelInForce = 4;
-    g_probes = 0;
-
-    CHECK_FALSE(SyncProcessor::searchSeparation(g_levelInForce, neverReadable,
-                                                 applyTestLevel));
-
-    CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 99);
-    CHECK(g_levelInForce == 4);
-}
-
-TEST_CASE("the level is stepped only when no threshold at it reads the source")
-{
-    // THE THRESHOLD WALK IS THE INNER LOOP because every level measured so far
-    // has one that works -- 44 at level 4, 220 at level 6, 99 at level 9 -- so
-    // a source readable where it sits must not pay for a level change, and
-    // moving the level costs an ADC PLL relatch the caller has to undo.
-    //
-    // The values are scattered rather than a ridge, which is why there is no
-    // formula and the walk is the whole of the answer.
-    Wire.reset();
-    g_probes = 0;
-
-    SUBCASE("a source readable at the level in force leaves the level alone") {
-        g_levelInForce = 6;
-        g_readableLevel = 6;
-        g_readableIgnore = 220;
-
-        CHECK(SyncProcessor::searchSeparation(g_levelInForce,
-                                              readableAtChosenPair,
-                                              applyTestLevel));
-
-        CHECK(g_levelInForce == 6);
-        const uint16_t at = (uint16_t)SyncProcessor::SP_H_PULSE_IGNOR::read();
-        CHECK(at >= 220 - g_bandHalf);
-        CHECK(at <= 220 + g_bandHalf);
-    }
-
-    SUBCASE("a source readable only at another level is still found") {
-        g_levelInForce = 12;
-        g_readableLevel = 4;
-        g_readableIgnore = 40;
-
-        CHECK(SyncProcessor::searchSeparation(g_levelInForce,
-                                              readableAtChosenPair,
-                                              applyTestLevel));
-
-        CHECK(g_levelInForce == 4);
-        const uint16_t at = (uint16_t)SyncProcessor::SP_H_PULSE_IGNOR::read();
-        CHECK(at >= 40 - g_bandHalf);
-        CHECK(at <= 40 + g_bandHalf);
-    }
 }

@@ -3327,15 +3327,14 @@ TEST_CASE("a csync selection does not inherit the separate-sync pulse ignore")
 }
 
 // THE SCAN IS WHAT DECIDES THE SEPARATION THRESHOLD, AND IT ARRIVES AFTER THE
-// SOURCE DOES. A serrated vertical interval needs the threshold above its
-// equalising pulse, and a progressive source's whole sync pulse is narrower
-// than such a pulse -- so the value cannot be chosen until a run of counts has
-// said which the source is, and until then it is the fraction that acquires
-// either. Measured on the Wii at 480p on ypbpr: the fraction's 70 through a
-// 1446-sample line leaves the count dipping off 524 in 8% of samples and the
-// emitted picture shearing, where 14 holds every frame identical.
-// docs/investigations/the-pulse-ignore-fraction-breaks-a-progressive-source.md
-TEST_CASE("a composite source's threshold follows the scan once the scan settles")
+// SOURCE DOES NOT. The scan used to choose between two values, and the one it
+// chose for a progressive source sat under the floor an unserrated composite
+// source imposes -- so the pass that settled the scan was the pass that made
+// the source unreadable. Measured on `vga`, the RISC PC at 800x600@60 with
+// `SYNC 1` through its 2038-sample line: that value counts 213 lines at
+// 36.99 Hz where the fraction counts 622 at 60.32.
+// docs/investigations/the-engine-makes-the-composite-count-unmeasurable.md
+TEST_CASE("a composite source's threshold does not move when the scan settles")
 {
     seedBenchSource();
     seedLineSamples(BenchDivider);
@@ -3351,12 +3350,11 @@ TEST_CASE("a composite source's threshold follows the scan once the scan settles
 
     const uint32_t beforeTheScan = SyncProcessor::SP_H_PULSE_IGNOR::read();
 
-    SUBCASE("a steady count is a progressive source and takes the noise floor") {
+    SUBCASE("a steady count settles the scan and keeps what acquired it") {
         for (uint8_t pass = 0; pass < 4 * SourceMeasurement::SteadySamples; ++pass)
             unit.poll();
 
-        CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read()
-              == SyncProcessor::ProgressiveCsyncPulseIgnore);
+        CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == beforeTheScan);
     }
 
     SUBCASE("a count alternating by one keeps what acquired it") {
@@ -3371,18 +3369,17 @@ TEST_CASE("a composite source's threshold follows the scan once the scan settles
     VideoSourceSelection::forgetSelection();
 }
 
-// THE SCAN IS MEASURED ON EVERY ROUTE, because the threshold follows it on
-// every route. The channel solves nothing, so nothing on it re-places the
-// threshold the arrangement wrote -- and that one is the interlaced fraction of
-// whatever divider was in force when the sync type was established, which on a
-// boot straight into pass-through is the channel's own.
+// AND ON THE PASSED-THROUGH ROUTE EITHER, which is the one with nothing else to
+// re-place the threshold: the channel solves nothing, so what the arrangement
+// wrote stands for the life of the route.
 //
 // Measured on the Wii at 480p on ypbpr through the channel's 2038-sample line,
-// one register written inside one acquisition with nothing else moved: 99 emits
-// mean luma 0.00 beside STATUS_SYNC_PROC_VTOTAL steady at 524 and a silent
-// console, and 14 emits a 1670x1028 picture.
-// docs/investigations/the-pulse-ignore-outlived-the-channels-entry.md
-TEST_CASE("a composite source passed through takes the threshold its scan asks for")
+// frozen with the divider latched: every threshold from 10 to 146 counts 524 at
+// 59.94 Hz with the emitted frame at mean luma 194, the source's own sync pulse
+// measuring 148 samples. The earlier reading that 99 emitted mean luma 0.00 was
+// taken at a 1446-sample line, where 99 is 93% of a 106-sample pulse.
+// docs/investigations/the-engine-makes-the-composite-count-unmeasurable.md
+TEST_CASE("a composite source passed through keeps the threshold too")
 {
     seedPassThroughSource();
     g_passThroughSwitches = 0;
@@ -3400,11 +3397,12 @@ TEST_CASE("a composite source passed through takes the threshold its scan asks f
     REQUIRE(unit.path.outputMode()->isBypass());
     REQUIRE(SyncProcessor::SP_SOG_MODE::read() == 1);
 
+    const uint32_t entered = SyncProcessor::SP_H_PULSE_IGNOR::read();
+
     for (uint8_t pass = 0; pass < 4 * SourceMeasurement::SteadySamples; ++pass)
         unit.poll();
 
-    CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read()
-          == SyncProcessor::ProgressiveCsyncPulseIgnore);
+    CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == entered);
 
     VideoSourceSelection::forgetSelection();
 }

@@ -33,7 +33,7 @@ VideoSourceAcquisition::VideoSourceAcquisition(Tv5725::SourceMeasurement &sampli
       idle_(Tv5725::SourceMeasurement::SteadySamples,
             Tv5725::SourceMeasurement::CountPairSpread),
       unusableCountArmed_(false), dynamicApplied_(false),
-      dynamicForSearch_(false), dynamicForProgressive_(false),
+      dynamicForSearch_(false),
       sourceMeasured_(false),
       sourceState_(SourceAbsent),
       solvedLinePeriod_(0), rateRun_(0), recheckPasses_(0),
@@ -1255,16 +1255,9 @@ void VideoSourceAcquisition::placeClampWindow()
     Tv5725::SyncProcessor::adoptClampPlacement();
 }
 
-bool VideoSourceAcquisition::sourceIsProgressive() const
-{
-    return sampling_.scanKnown()
-           && sampling_.scanType() == Tv5725::SourceMeasurement::ScanProgressive;
-}
-
 void VideoSourceAcquisition::followDynamicFacts()
 {
-    if (dynamicApplied_ && dynamicForSearch_ == sourceIsSearching()
-        && dynamicForProgressive_ == sourceIsProgressive())
+    if (dynamicApplied_ && dynamicForSearch_ == sourceIsSearching())
         return;
 
     applySyncProcessorDynamic();
@@ -1283,11 +1276,9 @@ void VideoSourceAcquisition::applySyncProcessorDynamic()
     source.pathSource =
         VideoSourceSelection::isRgbhv(VideoSourceSelection::selected())
         || Tv5725::VideoRoute::isHdBypassChannel();
-    source.progressive = sourceIsProgressive();
 
     dynamicApplied_ = true;
     dynamicForSearch_ = source.searching;
-    dynamicForProgressive_ = source.progressive;
 
     Tv5725::SyncProcessor::applyDynamic(source);
 }

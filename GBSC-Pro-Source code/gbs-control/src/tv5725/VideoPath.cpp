@@ -1204,23 +1204,15 @@ void VideoPath::writeRetimeOrigin()
                       : SyncProcessor::retimeOriginFor(divider, oversample));
 }
 
-// FROM THE SCAN THE ENGINE HOLDS, because an install is not a new source. The
-// threshold's two bounds cross on a progressive source, so declaring the scan
-// unknown here puts the fraction back over the value a measured scan chose --
-// and the count moves with it, which the engine then reads as the source
-// moving.
-// ../../../../docs/investigations/the-pulse-ignore-fraction-breaks-a-progressive-source.md
+// FROM THE DIVIDER NOW IN FORCE, the threshold being a fraction of the line in
+// ADC samples: an install that moves the divider moves the line the threshold
+// is counted against.
 void VideoPath::writePulseIgnore()
 {
     if (!syncTypeApplied_)
         return;
 
-    const bool progressive =
-        sampling_.scanKnown()
-        && sampling_.scanType() == SourceMeasurement::ScanProgressive;
-
-    SyncProcessor::applyPulseIgnore(syncTypeInForce_, Adc::dividerInForce(),
-                                    progressive);
+    SyncProcessor::applyPulseIgnore(syncTypeInForce_, Adc::dividerInForce());
 }
 
 

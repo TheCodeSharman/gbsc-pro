@@ -18,8 +18,6 @@ const uint16_t SyncProcessor::UndecimatedOriginSamples;
 const uint16_t SyncProcessor::InvertedPulseWidthSamples;
 const float SyncProcessor::SourceVideoDelayPixels = 4.4f;
 const float SyncProcessor::CalibratedPixelSamples = 1.12f;
-const uint8_t SyncProcessor::ProgressiveCsyncPulseIgnore;
-const bool SyncProcessor::ScanNotYetKnown;
 
 uint16_t SyncProcessor::retimeStopFor(uint16_t divider, const HsyncPulse &pulse,
                                      uint8_t oversample, float pixelSamples)
@@ -85,12 +83,10 @@ const uint16_t CsyncPulseIgnorePerThousand = 49;
 // locked: 31 samples, a 7.3% pulse at half the 27 MHz reference.
 const uint8_t SearchPulseIgnore = 16;
 
-uint8_t pulseIgnoreFor(bool csync, uint16_t divider, bool progressive)
+uint8_t pulseIgnoreFor(bool csync, uint16_t divider)
 {
     if (!csync)
         return OwnVsyncPulseIgnore;
-    if (progressive)
-        return SyncProcessor::ProgressiveCsyncPulseIgnore;
     return (uint8_t)((uint32_t)divider * CsyncPulseIgnorePerThousand / 1000u);
 }
 
@@ -189,51 +185,9 @@ uint8_t SyncProcessor::postCoastLines()
     return coastOverridden_ ? postCoastOverride_ : CompositePostCoastLines;
 }
 
-void SyncProcessor::applyPulseIgnore(bool csync, uint16_t divider, bool progressive)
+void SyncProcessor::applyPulseIgnore(bool csync, uint16_t divider)
 {
-    SP_H_PULSE_IGNOR::write(pulseIgnoreFor(csync, divider, progressive));
-}
-
-// The threshold walk, at whatever level is in force.
-static bool walkThreshold(bool (*readable)())
-{
-    for (uint16_t at = SyncProcessor::SeparationCoarseStep; at <= 0xff;
-         at = (uint16_t)(at + SyncProcessor::SeparationCoarseStep)) {
-        SyncProcessor::SP_H_PULSE_IGNOR::write((uint8_t)at);
-        if (readable())
-            return true;
-    }
-    return false;
-}
-
-bool SyncProcessor::searchSeparation(uint8_t level, bool (*readable)(),
-                                     void (*applyLevel)(uint8_t))
-{
-    // The threshold to come back to. A walk that found nothing has learnt
-    // where the source cannot be read and nothing about where it can, so
-    // leaving it wherever the last probe stopped would park the source on a
-    // value the walk introduced.
-    const uint8_t entry = (uint8_t)SP_H_PULSE_IGNOR::read();
-
-    // THE THRESHOLD IS THE INNER LOOP. Every level measured has a threshold
-    // that reads the source -- 44 at level 4, 220 at level 6, 99 at level 9 --
-    // so a source readable where it sits costs no level change, and moving the
-    // level costs the caller an ADC PLL relatch.
-    if (walkThreshold(readable))
-        return true;
-
-    for (uint8_t at = SeparationLevelMin; at <= SeparationLevelMax;
-         at = (uint8_t)(at + SeparationLevelStep)) {
-        if (at == level)
-            continue;
-        applyLevel(at);
-        if (walkThreshold(readable))
-            return true;
-    }
-
-    applyLevel(level);
-    SP_H_PULSE_IGNOR::write(entry);
-    return false;
+    SP_H_PULSE_IGNOR::write(pulseIgnoreFor(csync, divider));
 }
 
 void SyncProcessor::applyPulseWidthDifference()
@@ -276,7 +230,7 @@ void SyncProcessor::applyDynamic(const Dynamic &source)
     // source to be present because the fraction is of the LATCHED line.
     // ../../../../docs/investigations/the-pulse-ignore-outlived-the-channels-entry.md
     if (source.present)
-        applyPulseIgnore(source.csync, source.divider, source.progressive);
+        applyPulseIgnore(source.csync, source.divider);
 }
 
 void SyncProcessor::applyForOffsetCalibration()
@@ -311,7 +265,7 @@ void SyncProcessor::prepare(bool csync, uint16_t divider)
     SP_JITTER_SYNC::write(0);
 
     applyPulseWidthDifference();
-    applyPulseIgnore(csync, divider, ScanNotYetKnown);
+    applyPulseIgnore(csync, divider);
 
     SP_H_TOTAL_EQ_THD::write(3);
 
@@ -374,7 +328,7 @@ void SyncProcessor::applyForSyncType(bool csync, uint16_t divider)
         SP_PRE_COAST::write(preCoastLines());
         SP_POST_COAST::write(postCoastLines());
         applyPulseWidthDifference();
-        applyPulseIgnore(csync, divider, ScanNotYetKnown);
+        applyPulseIgnore(csync, divider);
         SP_SYNC_BYPS::write(0);
         SP_HS_LOOP_SEL::write(0);
         SP_H_PROTECT::write(1);
@@ -386,7 +340,7 @@ void SyncProcessor::applyForSyncType(bool csync, uint16_t divider)
         SP_NO_COAST_REG::write(1);
         SP_PRE_COAST::write(0);
         SP_POST_COAST::write(0);
-        applyPulseIgnore(csync, divider, ScanNotYetKnown);
+        applyPulseIgnore(csync, divider);
         SP_SYNC_BYPS::write(0);
         SP_HS_POL_ATO::write(1);
         SP_VS_POL_ATO::write(1);
