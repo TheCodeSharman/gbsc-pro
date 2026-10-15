@@ -227,6 +227,26 @@ public:
     // is a panel that flickers under a solve that never moved.
     static const uint16_t OutputBlankPasses = MinimumSyncAwayMs / DetectionIntervalMs;
 
+    // How long the count must fail to read the source before the VERDICT turns
+    // absent. **LOSING PRESENCE TAKES A RUN, THE WAY EARNING IT DOES**: both
+    // answers come off the same register, so no single reading establishes
+    // either. Earning takes SteadySamples agreeing counts, so ONE scattered
+    // count costs that run its whole length -- and composite sync produces them
+    // on its own, 175, 453 and 557 against a held 626, each followed by the
+    // right count again.
+    //
+    // ON THE VERDICT RATHER THAN ON ONE CONSUMER, because what a flapping
+    // verdict costs is the UNBROKEN acquired run: the frame time lock arms on
+    // FrameTimeLock::ArmPasses of it and the auto gain waits
+    // SourceMaintenance::AutoGainReadyPasses, so dropping once per scattered
+    // count starves both while the picture is perfect.
+    //
+    // UnsettledArmPasses is the same figure for the same reason, the arm that
+    // question raises rather than the verdict it reaches.
+    // ../../../docs/known-issues.md
+    static const uint16_t AbsentPasses =
+        4 * Tv5725::SourceMeasurement::SteadySamples;
+
     // Where the acquired run stops counting. Every threshold keyed on it is
     // well below this, and a run that saturates says the same thing as one that
     // keeps going: the source has been good for a long time.
@@ -459,6 +479,7 @@ private:
     // Consecutive polls the source has not read acquired on, which is what the
     // output blank waits out.
     uint16_t unacquiredPasses_;
+    uint16_t absentPasses_;
 
     // Consecutive detection passes whose line count was inside the source
     // bounds and never settled. What it has to sit through is noise: one

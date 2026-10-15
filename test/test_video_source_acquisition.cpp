@@ -1414,6 +1414,67 @@ TEST_CASE("a source counted steadily and sampled at the chosen divider is acquir
     CHECK(unit.acquisition.sourceIsPresent());
 }
 
+// --- losing presence takes a run, the way earning it does --------------------
+//
+// ONE SCATTERED COUNT IS NOT A SOURCE LEAVING. Earning presence takes
+// SteadySamples agreeing counts, so a single scattered one costs that run its
+// whole length and the verdict reads absent for every pass it takes to re-earn.
+// Composite sync produces them on its own -- 175, 453 and 557 against a held
+// 626, each followed by the right count again -- and the output drop already
+// waits for the same reason. docs/known-issues.md
+
+TEST_CASE("one scattered count does not take presence away")
+{
+    seedBenchSource();
+    seedLineSamples(BenchDivider);
+    Acquiring unit;
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+    for (uint8_t i = 0; i < SourceMeasurement::SteadySamples + 2; ++i)
+        unit.poll();
+    REQUIRE(unit.acquisition.sourceState() == VideoSourceAcquisition::SourceAcquired);
+
+    seedSourceLines(557);
+    unit.poll();
+    seedSourceLines(311);
+
+    bool left = false;
+    for (uint8_t i = 0; i < SourceMeasurement::SteadySamples + 2; ++i) {
+        unit.poll();
+        left = left
+               || unit.acquisition.sourceState() != VideoSourceAcquisition::SourceAcquired;
+    }
+
+    CHECK_FALSE(left);
+}
+
+TEST_CASE("one scattered count does not break the acquired run")
+{
+    // What the flap costs, and why the run belongs on the verdict rather than
+    // on one consumer: the frame time lock arms on FrameTimeLock::ArmPasses
+    // unbroken acquired passes and the auto gain waits
+    // SourceMaintenance::AutoGainReadyPasses, so a verdict that drops on every
+    // scattered count zeroes the run both of them wait for and neither ever
+    // runs -- under a picture that is perfect throughout.
+    seedBenchSource();
+    seedLineSamples(BenchDivider);
+    Acquiring unit;
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+    for (uint8_t i = 0; i < SourceMeasurement::SteadySamples + 2; ++i)
+        unit.poll();
+    const uint16_t before = unit.acquisition.acquiredPasses();
+    REQUIRE(before > 0);
+
+    seedSourceLines(557);
+    unit.poll();
+    seedSourceLines(311);
+    unit.poll();
+
+    CHECK(unit.acquisition.acquiredPasses() == before + 2);
+}
+
+
 
 TEST_CASE("a source counted steadily at a line the ADC is not sampling is unlocked")
 {
@@ -1511,8 +1572,10 @@ TEST_CASE("a count no source runs is absent whatever the sampling says")
     unit.start();
     REQUIRE(unit.pollUntilSolved());
 
+    // Held past AbsentPasses, because the verdict is reached over a run: a
+    // count no source runs is still only one reading until it has persisted.
     seedField(0, 0x1B, 0, 11, 97);        // the wrong sync path's count
-    for (uint8_t i = 0; i < SourceMeasurement::SteadySamples + 2; ++i)
+    for (uint16_t i = 0; i < VideoSourceAcquisition::AbsentPasses + 2; ++i)
         unit.poll();
 
     CHECK(unit.acquisition.sourceState() == VideoSourceAcquisition::SourceAbsent);
@@ -2000,8 +2063,11 @@ TEST_CASE("a source that stops counting is not present")
     REQUIRE(unit.pollUntilSolved());
     REQUIRE(unit.acquisition.sourceIsPresent());
 
+    // A count of nothing is one reading like any other -- the verdict is
+    // reached over AbsentPasses, so a source has to stay gone to read gone.
     seedSourceLines(0);
-    unit.poll();
+    for (uint16_t i = 0; i < VideoSourceAcquisition::AbsentPasses + 2; ++i)
+        unit.poll();
 
     CHECK_FALSE(unit.acquisition.sourceIsPresent());
 }
@@ -2102,13 +2168,21 @@ TEST_CASE("counts that never hold still are not a source")
     REQUIRE(unit.pollUntilSolved());
     REQUIRE(unit.acquisition.sourceIsPresent());
 
+    // NEVER HOLDING STILL IS THE POINT, so the run can never complete and the
+    // verdict is reached on the count having failed for AbsentPasses instead.
+    // Asked from there on rather than from the first reading: one scattered
+    // count is a miscount, and what tells the two apart is that these keep
+    // coming.
     static const uint16_t unlocked[] = { 216, 271, 276, 312, 305 };
-    for (uint8_t pass = 0; pass < 4; ++pass)
-        for (uint8_t i = 0; i < 5; ++i) {
-            seedSourceLines(unlocked[i]);
-            unit.poll();
-            CHECK_FALSE(unit.acquisition.sourceIsPresent());
-        }
+    bool present = false;
+    for (uint16_t pass = 0; pass < 4 * VideoSourceAcquisition::AbsentPasses; ++pass) {
+        seedSourceLines(unlocked[pass % 5]);
+        unit.poll();
+        if (pass >= VideoSourceAcquisition::AbsentPasses)
+            present = present || unit.acquisition.sourceIsPresent();
+    }
+
+    CHECK_FALSE(present);
 }
 
 TEST_CASE("a source that cannot be measured is not present while a change is pending")
@@ -2370,8 +2444,11 @@ TEST_CASE("a source that has stopped counting is searching")
     unit.start();
     REQUIRE(unit.pollUntilSolved());
 
+    // Searching is the verdict's answer too -- a source is searched for once
+    // it reads absent, which takes AbsentPasses.
     seedSourceLines(0);
-    unit.poll();
+    for (uint16_t i = 0; i < VideoSourceAcquisition::AbsentPasses + 2; ++i)
+        unit.poll();
 
     CHECK(unit.acquisition.sourceIsSearching());
 }
