@@ -124,17 +124,46 @@ ALLOWANCE = FLUSH + SPREAD
 PARITY = 1
 
 
-def green_runs(clip, axis):
-    """Where the frame's green lies along `axis`, as (start, stop) runs.
-
-    Each position's greenest moment across the clip, so the phase where the
-    ring beside the frame is yellow cannot hide it.
-    """
+def greenest_along(clip, axis):
+    """Each position's greenest moment across the clip, so the phase where the
+    ring beside the frame is yellow cannot hide it."""
     greenest = np.zeros(clip.shape[1 + axis], np.float32)
     for rgb in clip:
         r, g, b = (rgb[:, :, i].astype(np.float32) for i in range(3))
         greenest = np.maximum(greenest,
                               (g - np.maximum(r, b)).mean(axis=1 - axis))
+    return greenest
+
+
+# WHETHER THE OUTERMOST PIXEL IS WHOLE, which a MARGIN cannot say. The margin
+# is the first green run's index, so a border sitting wholly on row 0 and one
+# half off the frame above it both report 0 -- and the acceptance is the card's
+# frame being VISIBLE, not an index.
+#
+# The frame is one SOURCE pixel, several output pixels wide under magnification,
+# so a partly-shown one reads as a fraction of a whole one. A lit position AT
+# the frame's own edge is a border that continues past it; what it reads against
+# the profile's peak is how much of it survived.
+#
+# Measured on `vga` into 1080p with the shape off: 320x256@50 shows 43% of a row
+# at the bottom where one source pixel is 4.22 rows, and 640x512@50 shows 49%
+# where it is 2.11 -- about 0.45 output rows in both, because the solve fills
+# the raster and the last source pixel straddles the end of it.
+# docs/known-issues.md
+def edge_wholeness(greenest):
+    """How much of the border survives at each end, as a fraction of a whole
+    one. 1.0 is a border clear of the frame's edge; less is one running past
+    it; 0.0 is no green at that edge at all."""
+    peak = float(greenest.max())
+    if peak <= GREEN_HUE:
+        return (0.0, 0.0)
+    return tuple(1.0 if at <= GREEN_HUE else round(float(at) / peak, 2)
+                 for at in (greenest[0], greenest[-1]))
+
+
+def green_runs(clip, axis):
+    """Where the frame's green lies along `axis`, as (start, stop) runs."""
+    greenest = greenest_along(clip, axis)
     found = np.where(greenest > GREEN_HUE)[0]
     runs, start = [], None
     for i, at in enumerate(found):
@@ -173,7 +202,8 @@ QUARTER = 4
 #
 # None for `shown` or a `margins` entry is an edge off the frame; None for
 # `out_by` is an error no feature in the frame bounds.
-Judgement = collections.namedtuple("Judgement", "shown margins out_by why")
+Judgement = collections.namedtuple("Judgement",
+                                   "shown margins out_by why whole")
 
 ENDS = ("near", "far")
 
@@ -181,6 +211,7 @@ ENDS = ("near", "far")
 def judge(clip, axis, allowance):
     """What the green frame says about the window on this axis."""
     runs = green_runs(clip, axis)
+    whole = edge_wholeness(greenest_along(clip, axis))
     extent = clip.shape[1 + axis]
     near = [run for run in runs if run[1] < extent // QUARTER]
     far = [run for run in runs if run[0] > extent - extent // QUARTER]
@@ -189,7 +220,7 @@ def judge(clip, axis, allowance):
     if not near and not far:
         return Judgement(None, margins, None,
                          "neither edge: the picture overruns both ends, and "
-                         "nothing in the frame says by how much")
+                         "nothing in the frame says by how much", whole)
     # Each edge on its own, because the goal is per-edge: the near edge and both
     # vertical edges are flush, and only the far edge carries the parity. A span
     # test passes a picture that is short at one end and over at the other.
@@ -204,8 +235,8 @@ def judge(clip, axis, allowance):
     shown = None if None in margins else margins[0] + margins[1]
     if over:
         return Judgement(shown, margins, out_by,
-                         f"out by {out_by}: " + ", ".join(over))
-    return Judgement(shown, margins, out_by, None)
+                         f"out by {out_by}: " + ", ".join(over), whole)
+    return Judgement(shown, margins, out_by, None, whole)
 
 
 def reading(judged):
@@ -215,7 +246,8 @@ def reading(judged):
     def px(value):
         return "-" if value is None else str(value)
     return (f"{px(judged.shown)} ({px(judged.margins[0])}|"
-            f"{px(judged.margins[1])}) out by {px(judged.out_by)}")
+            f"{px(judged.margins[1])}) out by {px(judged.out_by)} "
+            f"whole {judged.whole[0]:.2f}|{judged.whole[1]:.2f}")
 
 
 def sweep_mode(host, dev, source, mode, allowance, keep_framing):
