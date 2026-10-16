@@ -449,11 +449,22 @@ family and not the count.
 It is a second mode showing composite-sync instability, which is what makes it
 worth recording rather than one more observation of the 800x600 case.
 
-**ENTERING IT IS FIXED, BY TWO ROUTES.** A `SYNC 1` on a source held as
+**ENTERING IT IS FIXED, BY THREE ROUTES.** A `SYNC 1` on a source held as
 separate re-probes from inside the measurement it opens, and a `/sc?~` on a
 source already held as composite puts the measured type in force rather than
-trusting its own record. "The reference clock list can spin until low power"
-has both measurements. What flickers once it is in is the roll, below.
+trusting its own record -- "The reference clock list can spin until low
+power" has both measurements. The third is the mode change itself, and it is
+the one this entry was written on: returning from 800x600@60 to 320x256@50 on
+composite, the sync processor counted **160** through the 1342 divider the
+previous solve left while the formatter read its own frame of 623
+half-lines, so every pass was dropped as a count the formatter contradicts
+and the 800x600 solve stood, `state: acquired`, `present`, for as long as the
+unit was left -- with nothing on the console but the frame time lock's
+`no INPUT vsync`. The same shape with the count at **0** is the silent
+post-detection state above. A contradicted run of
+`VideoSourceAcquisition::ContradictedArmPasses` arms a re-measure now, and
+the same round trip solves 320x256 in 2.3 s. What flickers once it is in is
+the roll, below.
 
 **AND `/sc?~` DOES NOT ALWAYS CLEAR IT.** Measured on 800x600@60 with `SYNC 1`,
 arriving from a settled separate-sync state: the mode was set, `/sc?~` issued,
