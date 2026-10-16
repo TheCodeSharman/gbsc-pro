@@ -164,11 +164,19 @@ Do not reinstate it without measuring that leg.
 
 ## What arms it now
 
-`VideoSourceAcquisition::sourceMoved()` counts consecutive passes on which the
-held sync type is separate and `STATUS_SYNC_PROC_VSACT` reads 0, and arms a
-re-probe at `VsyncAbsentArmPasses`. On the bench, `SYNC 1` produces
-`source moved: no source V sync`, `own V sync: no after 1001ms`, and the csync
-path with the coast in force; `SYNC 0` brings it back to separate H/V.
+`VideoSourceAcquisition::sourceStoppedDrivingVsync()` counts consecutive
+passes on which the held sync type is separate and `STATUS_SYNC_PROC_VSACT`
+reads 0, and fires at `VsyncAbsentArmPasses`. Between mode changes it arms a
+re-measure; inside a measurement that has failed a reading it forgets the type,
+so the next pass probes. The second site is what the bench actually needs: the
+mode re-apply that carries a `SYNC` change moves the count for a moment, the
+count arm opens a measurement first, and inside it nothing else asks the
+question -- measured as a 75 s spin through every reference clock on the
+separate arrangement, ending in low power. With both sites, `SYNC 1` produces
+`measure: no source V sync, re-probing the sync type`, `own V sync: no after
+1001ms`, and the csync path with the coast in force 4.1 s after the request;
+`SYNC 0` brings it back to separate H/V in about 2 s through the
+unusable-count arm.
 
 ## Refuted: the line count is the cheap discriminator
 

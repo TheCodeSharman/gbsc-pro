@@ -6,6 +6,16 @@ measurement (`isSet()`). `set()` deliberately does not mark the type as probed -
 the YPbPr fallback and the temporary flips during detection assert a type without
 measuring one, and recording those as probed would suppress the real probe.
 
+**A type the probe has just measured is put in force whatever `VideoPath`
+holds.** The probe leaves the chip on the separate arrangement and so do the
+sketch's resets, which forget the measurement directly -- so an answer equal
+to the arrangement last applied is not one already on the chip, and
+`establishSyncType()` writes it unconditionally after a probe. Gated on the
+engine's own record it wrote nothing, and a composite source re-detected after
+`/sc?~` was counted through the separate arrangement for as long as it was
+attached. `known-issues.md`, "The reference clock list can spin until low
+power".
+
 **It must never be decided by reading `STATUS_SYNC_PROC_VSACT`.** That bit
 reports the sync path already configured, not a property of the source, so the
 reading only confirms whatever the unit is already doing — and a unit that lands
@@ -247,9 +257,13 @@ line count -- 311 at 320x256@50, 524 at 640x480@60, separate or composite -- so
 neither the unusable-count arm nor the unsettled-count arm can see one. 308
 against 311 is inside the source bounds and holds still.
 
-`VideoSourceAcquisition::sourceMoved()` arms on
+`VideoSourceAcquisition::sourceStoppedDrivingVsync()` counts
 `STATUS_SYNC_PROC_VSACT` reading 0 for `VsyncAbsentArmPasses` consecutive passes
-while the held type is separate sync. **The separate-sync answer is what puts the
+while the held type is separate sync, and it is asked in two places: between
+mode changes, where it arms a re-measure, and on every failed reading INSIDE
+a measurement, where it forgets the type so the next pass probes. The second
+is what a sync-type change needs, because the mode re-apply moves the count
+for a moment and the engine is already measuring when the separator is wanted. **The separate-sync answer is what puts the
 separator out, which is the probe's own measuring configuration**, so the bit
 read there reports whether the source drives V rather than which path is
 configured. The circularity above applies to choosing the type from an arbitrary

@@ -239,10 +239,31 @@ clock still in force. **The threshold is not either one's cause**: it reads 16
 throughout the first, which is the value sized for a block counting at the
 reference.
 
-**The first has a chain, and it is a second record of what is in force.**
-`/sc?~` reaches `SyncMeasurement::forget()` directly rather than
-`VideoPath::forgetSyncType()`, so `csync_` goes false while `syncTypeApplied_`
-and `syncTypeInForce_` keep the previous answer. Then:
+**THE FIRST SPIN IS FIXED, AND IT HAD TWO ROUTES IN.** Both were caught on
+the console at 320x256@50 on `vga`, and both are closed by host tests.
+
+The first route is the chain below, reached by `/sc?~` on a source whose type
+the engine already held as composite: the probe answers composite, no `sync
+arrangement:` line follows, and the chip stays on the separate arrangement
+with `SP_SOG_MODE` 0 and `SP_H_PULSE_IGNOR` 16 while `isCsync()` answers true
+-- which also gates off the arm that re-probes a source driving no V. A type
+the probe has just measured is now put in force whatever the engine's record
+says; the record only short-circuits passes on which nothing was re-measured.
+Measured after: `/sc?~` with composite in force acquires and presents in 15 s.
+
+The second route needs no `/sc?~`: a `SYNC 1` on a source held as separate.
+The mode re-apply moves the count for a moment, the count arm opens a
+measurement, and the arm that would re-probe the type was asked only between
+mode changes -- so the measurement cycled the reference clocks through the
+separate arrangement for the whole of a 75 s window and the ladder never ran.
+The same question is asked on every failed reading inside the measurement
+now, and the same change logs `measure: no source V sync, re-probing the sync
+type` and is acquired on the composite arrangement 4.1 s after the request.
+
+**The chain as it stood, for the record.** `/sc?~` reaches
+`SyncMeasurement::forget()` directly rather than `VideoPath::forgetSyncType()`,
+so `csync_` goes false while `syncTypeApplied_` and `syncTypeInForce_` keep
+the previous answer. Then:
 
 1. `establishSyncType()` finds nothing measured and probes.
 2. `SyncMeasurement::hasOwnVsync()` measures in the separate arrangement and
@@ -286,8 +307,8 @@ without a hold check and 0 of 8 with one. Seven narrower reproductions had each
 passed for that reason, and the budgeted measurement -- several full six-case
 runs per build -- was never needed.
 
-**The first spin stays open**: `SP_SOG_MODE` 0 with no vertical count at all is
-a different state, with the chain below rather than this one.
+**The first spin is fixed too**, above: `SP_SOG_MODE` 0 with no vertical
+count is the chain, reached by either route.
 
 ### `apply-aspect` lags the engine by one toggle
 
@@ -428,6 +449,12 @@ family and not the count.
 It is a second mode showing composite-sync instability, which is what makes it
 worth recording rather than one more observation of the 800x600 case.
 
+**ENTERING IT IS FIXED, BY TWO ROUTES.** A `SYNC 1` on a source held as
+separate re-probes from inside the measurement it opens, and a `/sc?~` on a
+source already held as composite puts the measured type in force rather than
+trusting its own record. "The reference clock list can spin until low power"
+has both measurements. What flickers once it is in is the roll, below.
+
 **AND `/sc?~` DOES NOT ALWAYS CLEAR IT.** Measured on 800x600@60 with `SYNC 1`,
 arriving from a settled separate-sync state: the mode was set, `/sc?~` issued,
 and the engine held `state: absent` for 95 s with `STATUS_SYNC_PROC_VTOTAL`
@@ -544,12 +571,13 @@ horizontal bars a few times a second -- but a band count scores only the jumps
 big enough to black out a mid-picture row. In one clip of 60 frames, 5 carry a
 band and 21 are displaced.
 
-**THE COMPOSITE LEG COMES BACK WITH NO PICTURE ABOUT HALF THE TIME** after the
-`/sc?~` re-probe a sync-type change needs -- one leg read 482 of 482 frames
-with nothing to correlate. That is the acquisition family above rather than a
-stability fault, and it is why the judge voids a reading with no picture in it
-instead of passing it: a black capture is displaced in 0% of frames and reads
-as the steadiest picture there has ever been.
+**THE COMPOSITE LEG USED TO COME BACK WITH NO PICTURE ABOUT HALF THE TIME**
+after the `/sc?~` re-probe a sync-type change needs -- one leg read 482 of 482
+frames with nothing to correlate. That was the acquisition family above, both
+routes of which are fixed under "The reference clock list can spin until low
+power", and it is why the judge voids a reading with no picture in it instead
+of passing it: a black capture is displaced in 0% of frames and reads as the
+steadiest picture there has ever been.
 
 `test_picture_holds_still.py` asserts it. **The composite leg is RED on
 purpose** -- not an xfail, the defect having gone unmeasured for want of
