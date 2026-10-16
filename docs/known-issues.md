@@ -594,6 +594,30 @@ steadiest picture there has ever been.
 purpose** -- not an xfail, the defect having gone unmeasured for want of
 anything failing.
 
+**WHAT IT IS, AS FAR AS IT IS MEASURED.** An event is a run of about four
+frames one source line down, then a frame or two at half a line, then back,
+one to three times a second. It coincides, bin for bin at 50 ms, with the sync
+processor losing three or four HORIZONTAL pulses in that field --
+`STATUS_SYNC_PROC_VTOTAL` 304, 305 or 307 in about one sample in fifteen on
+the device's own sampling log -- while `VPERIOD_IF` holds 623 in 752 of 753,
+so the vertical pulse arrives on time and it is horizontal pulses that go
+missing. And it belongs to the LINE-DOUBLED scan: 800x600@60 on the same
+composite sync, undoubled, reads 0 of 514 displaced.
+
+**What does not move it**, each walked frozen against a neighbouring control:
+every separator threshold, the coast lines and the sub-coast, the SD vertical
+window, the input formatter's progressive and vertical-timing selects, and
+the mode detect's PAL-interlace value, which clears `STATUS_IF_INP_PAL_INT`
+and leaves the roll where it was. Two levers that LOOK like fixes are not:
+`SP_H_PULSE_IGNOR` 30 removes the short counts and leaves the roll, and
+`SP_H_CST_SP` at or past the 27 MHz line reads 0 of 514 displaced because the
+separator has stopped extracting horizontal sync -- `STATUS_SYNC_PROC_HLOW_LEN`
+1 against 154, and a band of unwritten memory across the frame that the row
+correlation cannot see. **A share of zero from `picture_stability` needs a
+frame looked at before it is believed.**
+`investigations/the-composite-roll-is-lost-horizontal-pulses-in-the-doubled-scan.md`,
+and `roll_ab.py` is the A/B/A that took every reading.
+
 ### A selection edge is swallowed in the pass-through cold state, so the sync type is never established
 
 Measured on `ypbpr`, the Wii at 480p, output 1920x1080, reached by leaving a
