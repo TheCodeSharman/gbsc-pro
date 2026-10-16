@@ -145,30 +145,37 @@ SYNC_TYPES = ((False, "separate"), (True, "composite"))
 # not move the picture, which `OutputWindow::solve()` states.
 # docs/investigations/the-room-is-what-the-encoder-carries.md
 #
-# **AND THE NEAR HORIZONTAL BORDER IS OFF THE FRAME ON MOST MODES, NOT ONE.**
-# One run of the matrix with the measure corrected puts it at 0.00 on seven of
-# the ten cases, with the black at the FAR end instead -- the picture sits too
-# far toward the near end. The entries below carry each case's four edges as
-# `across near|far, down near|far`, from that run.
+# **THE VERTICAL FAR EDGE IS CLOSED, AND THE NEAR HORIZONTAL ONE IS WHAT IS
+# LEFT.** Sizing the capture to the END of the last active line carries the
+# pixel on seven of the nine cases that acquire, where none did.
+#
+# What remains is a PAN: the near horizontal border is off the frame on six of
+# those nine, with black at the FAR end, which is the signature `judge()` calls
+# a shifted window -- the far margin bounds the shift, the two ends moving
+# together. 640x480@60 separate is the clearest, 12 output pixels at 3 to the
+# source pixel. The entries below carry each case's four edges as
+# `across near|far, down near|far`, from one run after the fix.
 NARROW = {
-    ("X240 Y352 C256 F70", True): "the far edge is off the frame on BOTH axes "
-                                  "-- across 0.72|0.00, down 1.00|0.00",
-    ("X320 Y256 C256 F50", False): "every edge short -- across 0.70|0.58, "
-                                   "down 0.91|0.11. The vertical far edge is "
-                                   "the worst reading in the matrix",
+    ("X240 Y352 C256 F70", True): "the far edge across is off the frame -- "
+                                  "across 0.69|0.09, down 1.00|0.66",
+    ("X320 Y256 C256 F50", False): "the far edge across is short -- across "
+                                   "0.80|0.41, down 0.92|0.91. The vertical "
+                                   "carries the pixel at both ends now",
     # NOT THE FIT, and not this axis's rounding: the near horizontal border is
     # absent from the emitted frame on BOTH sync types and on both sides of the
     # fit A/B, with the vertical reading 0.50 to 0.54 at one end throughout. A
     # deficit that survives a byte-identical register set is downstream of the
     # board. docs/known-issues.md
     ("X800 Y600 C256 F60", False): "the near edge across is off the frame -- "
-                                   "across 0.00|0.72, down 0.86|0.51",
-    ("X800 Y600 C256 F60", True): "the near edge across is off the frame -- "
-                                  "across 0.00|0.79, down 0.53|0.88",
+                                   "across 0.00|0.73, down 0.85|0.80",
+    ("X800 Y600 C256 F60", True): "the near edge is off the frame across and "
+                                  "short down -- across 0.00|0.89, down "
+                                  "0.53|0.92",
     ("X320 Y256 C256 F50", True): "the far edge across is off the frame -- "
-                                  "across 0.87|0.00, down 1.00|0.55",
-    ("X640 Y480 C256 F60", False): "the near edge is short on both axes -- "
-                                   "across 0.00|0.82, down 0.45|0.91",
+                                  "across 0.87|0.00, down 1.00|1.00",
+    ("X640 Y480 C256 F60", False): "PANNED toward the near end -- across "
+                                   "0.00|0.82 with 12 output pixels of black "
+                                   "at the far edge, down 0.45|0.91",
     # NOT A FRAMING DEFICIT. The mode never acquires on composite -- 90 s and
     # never acquired when probed directly, and every matrix run reads the state
     # line as PLLAD_MD 2040 against a 2041-unit capture with a frame count of
@@ -177,8 +184,8 @@ NARROW = {
     # whatever else settled. docs/known-issues.md
     ("X640 Y480 C256 F60", True): "never acquires -- an acquisition entry, not "
                                   "a framing one; both ends overrun on both axes",
-    ("X640 Y512 C256 F50", True): "the near edge is short on both axes -- "
-                                  "across 0.00|0.81, down 0.15|1.00",
+    ("X640 Y512 C256 F50", True): "the near edge across is off the frame -- "
+                                  "across 0.00|0.86, down 0.74|1.00",
     # NOT A FRAMING DEFICIT, and not a size to close: --all-modes only, and
     # its solve is 800x600@60's. The two want placements about 5 output pixels
     # apart off that one solve, so this reading moves whenever that mode's
@@ -203,12 +210,12 @@ NARROW = {
 # where the magnification is 4.5. docs/known-issues.md
 UNSTABLE = {
     ("X240 Y352 C256 F70", False):
-        "out by 10 across in one run, inside the allowance in the next; with "
-        "the wholeness corrected one run reads across 0.00|0.76, down 0.92|0.65",
+        "out by 10 across in one run, inside the allowance in the next; one "
+        "run after the capture fix reads across 0.00|0.76, down 0.92|0.98",
     ("X640 Y512 C256 F50", False):
         "7, 4 and 7 at the far edge over three runs, straddling the limit the "
-        "width parity carries; with the wholeness corrected one run reads "
-        "across 0.00|0.84, down 0.92|0.22",
+        "width parity carries; one run after the capture fix reads across "
+        "0.00|0.78, down 0.93|0.94",
 }
 
 
