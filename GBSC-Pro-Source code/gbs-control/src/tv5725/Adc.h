@@ -71,8 +71,14 @@ public:
     // The decimator's test path, which is the only instrument the analog gain
     // and offset have: the auto-gain loop reads a channel back through it.
     // ENABLE is SEL's low bit, so clearing one clears part of the other.
-    typedef UReg<0x05, 0x1F, 3, 4> DEC_TEST_SEL;
+    // RD-5725-1.1 documents these as one four-bit DEC_TEST_SEL whose bit 0 is
+    // the measurement path's enable and whose top three bits pick one of eight
+    // test logics. Split, because the two roles are written by different
+    // callers: as one field every site asking for a logic by number writes the
+    // enable with it, which selects the logic below the one asked for and
+    // switches the path off on every other number.
     typedef UReg<0x05, 0x1F, 3, 1> DEC_TEST_ENABLE;
+    typedef UReg<0x05, 0x1F, 4, 3> DEC_TEST_SEL;
 
     typedef UReg<0x05, 0x06, 0, 7> ADC_ROFCTRL;                       // Offset control for R channel of ADC
 
@@ -614,6 +620,12 @@ public:
     // AutoGainInitial for the gain, NeutralOffset for the offset, so no caller
     // writes a default before asking.
     static void holdGain(uint8_t r, uint8_t g, uint8_t b);
+
+    // The gain in force, for the auto-gain walk to step from. Held rather than
+    // read back: a register read asks the chip for a value the firmware put
+    // there, and an unmeasured channel answers with the value a caller would
+    // otherwise have to know to write.
+    static uint8_t gain();
 
     // One step of the manual control, taken from what is IN FORCE rather than
     // from the held value: the colour space writes these registers too, and

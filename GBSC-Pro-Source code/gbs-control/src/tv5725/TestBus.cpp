@@ -32,6 +32,15 @@ void TestBus::selectOutputVsync()
     select(OutputVsync);
 }
 
+void TestBus::selectLevel(Channel channel)
+{
+    select(channel == Red ? RedLevel : channel == Green ? GreenLevel : BlueLevel);
+}
+
+const uint16_t TestBus::LevelMax;
+
+uint16_t TestBus::readLevel() { return (uint16_t)(TEST_BUS::read() & LevelMax); }
+
 uint8_t TestBus::selected() { return TEST_BUS_SEL::read(); }
 
 bool TestBus::enabled() { return TEST_BUS_EN::read() == 1; }

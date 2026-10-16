@@ -1410,3 +1410,26 @@ TEST_CASE("a manual gain step moves from what is in force, and is then held")
     CHECK(Adc::ADC_GGCTRL::read() == 0x3F);
     CHECK(Adc::ADC_BGCTRL::read() == 0x3F);
 }
+
+TEST_CASE("choosing a decimator test logic does not switch the path off")
+{
+    // RD-5725-1.1 documents ONE four-bit DEC_TEST_SEL whose bit 0 is the
+    // measurement path's enable and whose top three bits pick one of eight
+    // test logics. Declared as that one field, every call site asking for a
+    // logic by number writes the enable too: asking for logic 1 selected
+    // logic 0 and asking for logic 2 switched the path OFF, so the ADC offset
+    // search read a dead bus on red, and the auto-gain loop read a counter
+    // instead of a level.
+    //
+    // Measured on the bench at TEST_BUS_SEL 0x0b with a clipping picture:
+    // logic 0 returns 0, 32, 64 ... 224 whatever the gain, and logic 1
+    // returns a level that follows it.
+    // docs/investigations/the-auto-gain-loop-read-a-selector-with-no-level.md
+    Wire.reset();
+    Adc::DEC_TEST_ENABLE::write(1);
+
+    Adc::DEC_TEST_SEL::write(2);
+
+    CHECK(Adc::DEC_TEST_SEL::read() == 2);
+    CHECK(Adc::DEC_TEST_ENABLE::read() == 1);
+}

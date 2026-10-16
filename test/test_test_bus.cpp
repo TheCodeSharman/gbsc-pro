@@ -207,3 +207,46 @@ TEST_CASE("asking puts the bus back where it was found")
     CHECK(TestBus::selected() == selector);
     CHECK(SyncProcessor::SP_TEST_MODULE::read() == stage);
 }
+
+TEST_CASE("each converter channel has its own selector")
+{
+    // RD-5725-1.1 tabulates no selector values. These were found by raising
+    // one channel's gain at a time on an RGB source and watching which
+    // selector followed it.
+    Wire.reset();
+
+    TestBus::selectLevel(TestBus::Red);
+    const uint8_t red = TestBus::selected();
+    TestBus::selectLevel(TestBus::Green);
+    const uint8_t green = TestBus::selected();
+    TestBus::selectLevel(TestBus::Blue);
+    const uint8_t blue = TestBus::selected();
+
+    CHECK(red != green);
+    CHECK(green != blue);
+    CHECK(red != blue);
+}
+
+TEST_CASE("a channel's level is driven, not merely chosen")
+{
+    Wire.reset();
+    Chip::PAD_BOUT_EN::write(0);
+
+    TestBus::selectLevel(TestBus::Green);
+
+    CHECK(TestBus::enabled());
+    CHECK(Chip::PAD_BOUT_EN::read() == 1);
+}
+
+TEST_CASE("a level is the ten bits the channel reports")
+{
+    // The bus is wider than the signal, and what the bits above it carry
+    // belongs to whatever else is selected on it.
+    Wire.reset();
+    Wire.bank[0][0x2E] = 0xFF;
+    Wire.bank[0][0x2F] = 0xFF;
+
+    TestBus::selectLevel(TestBus::Red);
+
+    CHECK(TestBus::readLevel() == 0x3FF);
+}

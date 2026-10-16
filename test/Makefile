@@ -16,7 +16,7 @@ CXXFLAGS ?= -std=c++11 -O1 -Wall -Wextra
 # embarrassingly parallel: measured 3m26s serial against 34s here.
 MAKEFLAGS += -j$(shell nproc)
 
-.PHONY: all test ir-receiver menu aspect video-signal test-bus test-bus-rate-measurement steady-run sync-on-green sampling-log axis source-key source-timing framing-table framing-text framing-file scale video-source-line capture-window output-window video-path source-measurement memory-window display-clock frame-sync frame-time-lock output-mode clock-ramp rate-agreement hold-ramp sync-search video-source-selection video-source-selector segment-select register-queue sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc video-route rgbhv-output write-trace settings settings-file line-volume oled-menu clean help
+.PHONY: all test ir-receiver menu aspect video-signal test-bus auto-gain test-bus-rate-measurement steady-run sync-on-green sampling-log axis source-key source-timing framing-table framing-text framing-file scale video-source-line capture-window output-window video-path source-measurement memory-window display-clock frame-sync frame-time-lock output-mode clock-ramp rate-agreement hold-ramp sync-search video-source-selection video-source-selector segment-select register-queue sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc video-route rgbhv-output write-trace settings settings-file line-volume oled-menu clean help
 .DEFAULT_GOAL := test
 
 ## help: list the targets
@@ -108,6 +108,19 @@ test-bus:
 	  src/tv5725/SyncProcessor.cpp src/tv5725/HsyncPulse.cpp src/tv5725/SyncMeasurement.cpp \
 	  src/tv5725/Interrupts.cpp src/tv5725/Adc.cpp
 	@"$(OUT)/test_test_bus"
+
+## auto-gain: host unit tests for Tv5725::AutoGain
+#
+# Where saturation starts, which is the whole of why the loop this replaced
+# never ran, and that a pass answers with the highest level it saw.
+auto-gain:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
+	  -o "$(OUT)/test_auto_gain" \
+	  "$(HERE)/test_auto_gain.cpp" src/tv5725/AutoGain.cpp src/tv5725/Adc.cpp \
+	  src/tv5725/TestBus.cpp src/tv5725/SyncProcessor.cpp src/tv5725/HsyncPulse.cpp \
+	  src/tv5725/SyncMeasurement.cpp src/tv5725/Interrupts.cpp
+	@"$(OUT)/test_auto_gain"
 
 ## test-bus-rate-measurement: host unit tests for Tv5725::TestBusRateMeasurement
 #
@@ -942,7 +955,7 @@ write-trace:
 	@"$(OUT)/test_write_trace"
 
 ## test: every host unit test
-test: input-scale ir-receiver osd-row osd-screens menu aspect video-signal test-bus test-bus-rate-measurement steady-run source-absence detection-entry sync-measurement colour-space colour-balance framing-save-timer sync-on-green axis source-key source-timing framing-table framing-text framing-file scale sync-processor video-processor video-source-line capture-window output-window video-path source-measurement memory-window display-clock frame-sync frame-time-lock output-mode clock-ramp rate-agreement hold-ramp sync-search video-source-selection video-source-selector segment-select register-queue sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc sampling-log video-route rgbhv-output write-trace settings settings-file line-volume oled-menu
+test: input-scale ir-receiver osd-row osd-screens menu aspect video-signal test-bus auto-gain test-bus-rate-measurement steady-run source-absence detection-entry sync-measurement colour-space colour-balance framing-save-timer sync-on-green axis source-key source-timing framing-table framing-text framing-file scale sync-processor video-processor video-source-line capture-window output-window video-path source-measurement memory-window display-clock frame-sync frame-time-lock output-mode clock-ramp rate-agreement hold-ramp sync-search video-source-selection video-source-selector segment-select register-queue sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc sampling-log video-route rgbhv-output write-trace settings settings-file line-volume oled-menu
 all: test
 
 ## clean: remove the compiled test binaries

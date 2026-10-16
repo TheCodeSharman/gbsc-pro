@@ -648,6 +648,8 @@ void Adc::holdGain(uint8_t r, uint8_t g, uint8_t b)
     applyGain(r, g, b);
 }
 
+uint8_t Adc::gain() { return gain_[0] == 0 ? AutoGainInitial : gain_[0]; }
+
 void Adc::applyHeldGain()
 {
     if (gain_[0] == 0)

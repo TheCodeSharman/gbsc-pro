@@ -130,6 +130,12 @@ public:
     // held by the class that selected the connector, so it is asked.
     void applyColourPath();
 
+    // Put the auto-gain walk back at its starting point: the gain this colour
+    // space seeds, and no pass behind it. The walk only backs off, so a restart
+    // from anywhere between the two spaces' seeds strands a source that wants
+    // more gain than the value restarted from.
+    void restartGainSearch();
+
     // The user's picture filters, which a load must not put back to default --
     // so they live here beside the colour and the framing, and the preferences
     // pass adopts them rather than owning them.

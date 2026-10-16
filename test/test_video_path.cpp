@@ -3402,3 +3402,22 @@ TEST_CASE("the sync path is configured with the separator level the input needs"
         CHECK(SyncOnGreen::level() == SyncOnGreen::DefaultLevel);
     }
 }
+
+TEST_CASE("restarting the gain search puts the colour space's seed back")
+{
+    // The walk only ever backs off, so restarting it anywhere between the two
+    // spaces' seeds strands a source that wants more gain than the value
+    // restarted from -- and the generic value it used to restart at sits
+    // between them.
+    seedBenchSource();
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+
+    Adc::holdGain(0xD0, 0xD0, 0xD0);
+
+    engine.restartGainSearch();
+
+    CHECK(Adc::ADC_GGCTRL::read() == ColourSpace::RgbGain);
+}

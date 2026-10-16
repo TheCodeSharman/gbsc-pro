@@ -19,9 +19,7 @@ void ColourSpace::applyYuv(ColourBalance &balance)
     VideoProcessor::VDS_UCOS_GAIN::write(UCosGain);
     VideoProcessor::VDS_VCOS_GAIN::write(VCosGain);
 
-    Adc::ADC_RGCTRL::write(ComponentGain);
-    Adc::ADC_GGCTRL::write(ComponentGain);
-    Adc::ADC_BGCTRL::write(ComponentGain);
+    Adc::holdGain(ComponentGain, ComponentGain, ComponentGain);
 
     balance.restFor(ColourBalance::Component);
     balance.apply();
@@ -38,9 +36,7 @@ void ColourSpace::applyRgb(ColourBalance &balance)
     VideoProcessor::VDS_UCOS_GAIN::write(UCosGain);
     VideoProcessor::VDS_VCOS_GAIN::write(VCosGain);
 
-    Adc::ADC_RGCTRL::write(RgbGain);
-    Adc::ADC_GGCTRL::write(RgbGain);
-    Adc::ADC_BGCTRL::write(RgbGain);
+    Adc::holdGain(RgbGain, RgbGain, RgbGain);
 
     balance.restFor(ColourBalance::Rgb);
     balance.apply();

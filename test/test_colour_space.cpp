@@ -143,3 +143,23 @@ TEST_CASE("a component output leaves the input's own space alone")
         ColourSpace::applyComponentOutput));
     CHECK_FALSE(wasWritten<Adc::ADC_RGCTRL>(ColourSpace::applyComponentOutput));
 }
+
+TEST_CASE("the seed becomes the gain the auto-gain walk starts from")
+{
+    // The walk only ever backs off, so a gain converged on one colour space
+    // and carried into another leaves a source that wants MORE gain with no
+    // way back to it. Seeding through the one owner of the registers is what
+    // makes each space's walk start from that space's own value.
+    ColourBalance balance;
+    Wire.reset();
+    Adc::forgetGain();
+    Adc::holdGain(0xD0, 0xD0, 0xD0);
+
+    ColourSpace::applyYuv(balance);
+
+    CHECK(Adc::gain() == ColourSpace::ComponentGain);
+
+    ColourSpace::applyRgb(balance);
+
+    CHECK(Adc::gain() == ColourSpace::RgbGain);
+}

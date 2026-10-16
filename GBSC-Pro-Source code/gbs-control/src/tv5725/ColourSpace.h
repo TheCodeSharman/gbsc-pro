@@ -22,7 +22,10 @@ class ColourSpace {
 public:
     typedef UReg<0x05, 0x1F, 2, 1> DEC_MATRIX_BYPS;
 
-    // The ADC gain each colour space wants, measured on the emitted frame.
+    // Where the auto-gain walk starts, per colour space. Hot enough that a
+    // standard source clips, because the walk only backs off -- so these are a
+    // starting point rather than the gain a source ends on, and a seed that
+    // did not clip would strand a hotter source.
     // docs/investigations/the-adc-gain-is-the-colour-spaces.md
     static const uint8_t ComponentGain = 0x33;
     static const uint8_t RgbGain = 0x7B;

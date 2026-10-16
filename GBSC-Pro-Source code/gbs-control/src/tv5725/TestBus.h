@@ -30,6 +30,23 @@ public:
     static void selectInputVsync();
     static void selectOutputVsync();
 
+    // Which converter channel a level reading is of.
+    enum Channel { Red, Green, Blue };
+
+    // The level that channel is converting, ten bits, out of the three
+    // consecutive selectors that carry them. RD-5725-1.1 tabulates no selector
+    // values, so these were found rather than read: raising one channel's gain
+    // at a time on an RGB source moves one selector each.
+    // docs/investigations/the-auto-gain-loop-read-a-selector-with-no-level.md
+    static void selectLevel(Channel channel);
+
+    // The widest a level reads.
+    static const uint16_t LevelMax = 0x3FF;
+
+    // The ten bits of it, masked out of the wider bus: what the bits above the
+    // signal carry belongs to whatever else is selected.
+    static uint16_t readLevel();
+
     // Ask the input formatter for one of its signals, without selecting it.
     // RD-5725-1.1 tabulates no values, so which signal a number is belongs to
     // the caller -- a sweep asking each in turn, or selectInputVsync().
@@ -77,6 +94,10 @@ public:
     static uint8_t readHigh();
 
 private:
+    static const uint8_t RedLevel = 14;
+    static const uint8_t GreenLevel = 15;
+    static const uint8_t BlueLevel = 16;
+
     static const uint8_t InputVsync = 0x0;
     static const uint8_t OutputVsync = 0x2;
     static const uint8_t FormatterVertical = 3;

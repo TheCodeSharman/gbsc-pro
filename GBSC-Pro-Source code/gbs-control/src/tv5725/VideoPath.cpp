@@ -10,6 +10,7 @@
 #include <stdio.h>
 
 #include "Adc.h"
+#include "AutoGain.h"
 #include "BringUp.h"
 #include "ColourSpace.h"
 #include "CaptureWindow.h"
@@ -134,6 +135,13 @@ void VideoPath::applyColourPath()
 
     if (picture_.outputComponent())
         ColourSpace::applyComponentOutput(colour_);
+}
+
+void VideoPath::restartGainSearch()
+{
+    AutoGain::forget();
+    applyColourPath();
+    Adc::armGainMeasurement(true);
 }
 
 PictureOptions &VideoPath::pictureOptions() { return picture_; }
@@ -849,6 +857,7 @@ void VideoPath::armSolveForSource()
 {
     inputTimingsChanged(Adc::OversampleAsClockAllows);
 
+    AutoGain::forget();
     Adc::armGainMeasurement(picture_.autoGain());
     Adc::applyHeldOffset();
 

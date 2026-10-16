@@ -82,6 +82,7 @@ static unsigned long Tim_Resolution = 0, Tim_Resolution_Start = 0;
 #include "src/tv5725/ColourSpace.h"
 #include "src/tv5725/SyncMeasurement.h"
 #include "src/tv5725/TestBus.h"
+#include "src/tv5725/AutoGain.h"
 #include "src/tv5725/TestBusRateMeasurement.h"
 #include "src/videosource/DetectionEntry.h"
 #include "src/videosource/SourceAbsence.h"
@@ -2570,51 +2571,6 @@ void enterHdBypass()
     inputAcquisition.acquireSamplingPhase();
 }
 
-void runAutoGain() //
-{
-    // Frozen: docs/gbs-control-debug-interface.md
-    if (AUTOMATION_FROZEN()) {
-        return;
-    }
-    static unsigned long lastTimeAutoGain = millis();
-    uint8_t limit_found = 0, greenValue = 0;
-    uint8_t loopCeiling = 0;
-    uint8_t status00reg = GBS::STATUS_00::read();
-
-    if ((millis() - lastTimeAutoGain) < 30000) {
-        loopCeiling = 61;
-    } else {
-        loopCeiling = 8;
-    }
-
-    for (uint8_t i = 0; i < loopCeiling; i++) {
-        if (i % 20 == 0) {
-            handleWiFi(0);
-            limit_found = 0;
-        }
-        greenValue = Tv5725::TestBus::readHigh();
-
-        if (greenValue == 0x7f) {
-            if (Tv5725::SyncProcessor::hsyncActive() && (GBS::STATUS_00::read() == status00reg)) {
-                limit_found++;
-            } else
-                return;
-
-            if (limit_found == 2) {
-                limit_found = 0;
-                uint8_t level = GBS::ADC_GGCTRL::read();
-                if (level < 0xfe) {
-                    Tv5725::Adc::holdGain(level + 2, level + 2, level + 2);
-
-                    printInfo();
-                    delay(2);
-                    lastTimeAutoGain = millis();
-                }
-            }
-        }
-    }
-}
-
 void enableScanlines()
 {
     Tv5725::Deinterlacer::enableScanlines(uopt->scanlineStrength);
@@ -3856,15 +3812,13 @@ void loop()
     // other drift until a count is answered twice or not at all.
     if (rto->sourceDisconnected == false && rto->syncWatcherEnabled == true
         && inputAcquisition.runAdvanced()) {
-        if (geometry.pictureOptions().autoGain() && !rto->sourceDisconnected && inputAcquisition.sourceIsPresent() && Tv5725::SyncProcessor::clampPlaced() && inputAcquisition.acquiredPasses() > 90 && Tv5725::Chip::hasPower()) {
-            if (Tv5725::Adc::dividerLatched(Tv5725::SyncProcessor::lineSamples())) {
-                const Tv5725::TestBus::Hold held;
-                Tv5725::Adc::DEC_TEST_SEL::write(1);
-                Tv5725::TestBus::select(0xb);
-                if (GBS::STATUS_INT_SOG_BAD::read() == 0) {
-                    runAutoGain();
-                }
-            }
+        if (geometry.pictureOptions().autoGain() && !AUTOMATION_FROZEN()
+            && inputAcquisition.sourceIsPresent()
+            && Tv5725::SyncProcessor::clampPlaced()
+            && inputAcquisition.acquiredPasses() > 90 && Tv5725::Chip::hasPower()
+            && Tv5725::Adc::dividerLatched(Tv5725::SyncProcessor::lineSamples())
+            && GBS::STATUS_INT_SOG_BAD::read() == 0) {
+            Tv5725::AutoGain::run(millis());
         }
     }
 
@@ -4199,8 +4153,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
 
                         // Turning it ON restarts the search, where a preset
                         // load keeps whatever the loop settled on.
-                        Tv5725::Adc::forgetGain();
-                        Tv5725::Adc::armGainMeasurement(true);
+                        geometry.restartGainSearch();
                     } else {
                         geometry.pictureOptions().setAutoGain(false);
                         Tv5725::Adc::armGainMeasurement(false);
