@@ -309,6 +309,29 @@ mirrors it into `uopt->applyAspect`, which should agree -- so what is wrong is
 between that and what `/preferences.txt` serves. Whether the engine's state is
 correct across a reboot is unmeasured, and is the thing that matters.
 
+### 800x600@60's near horizontal border never reaches the emitted frame
+
+`card_edges` finds no green run in the near quarter of the frame on this mode,
+on BOTH sync types, so the surviving fraction of the source's outermost pixel
+reads 0.00 across while the far edge reads 0.70 to 1.00.
+
+**It is not the fit and not this axis's rounding.** Measured A/B with
+`fitToRaster()` rounding to nearest against rounding up, two runs each: the near
+reading is 0.00 on every one of the four, and 800x600@60's VERTICAL solve is
+byte-identical across the pair -- `VDS_VSCALE` 569 with the aperture 41..1121 --
+while reading 0.50 to 0.54 at one end throughout. A deficit that survives an
+unchanged register set is downstream of the VDS.
+
+Measured at 1080p with the shape off and the framing reset, `PLLAD_MD` 1342,
+which is the line delay's ceiling rather than the output's.
+
+Where to look: the shown window, which is latched when the link acquires and
+takes its origin from something no output register describes. 320x256@50 on the
+same runs keeps its near edge and loses the far one, so the two modes lose
+OPPOSITE ends -- which a single displacement of the sink's window would do.
+`docs/investigations/the-shown-window-is-latched-at-lock.md`,
+`docs/investigations/the-sinks-own-window-position-is-per-raster.md`.
+
 ### What acceptance means on the VGA sources
 
 Stated here because several of the entries below are measured against it and a
