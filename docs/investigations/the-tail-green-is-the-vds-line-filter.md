@@ -1,4 +1,4 @@
-# The tail green is the VDS line filter, and it is a user option
+# The tail green is the VDS line filter, and the solve keeps it out of reach
 
 The green band at the end of the line is produced by `VDS_D_RAM_BYPS` (s3_26
 bit 6), which RD-5725-1.1 names *"line buffer one line delay data bypass"*. With
@@ -7,7 +7,18 @@ with it bypassed the whole line arrives.
 
 It is not an unconfigured block. It is the picture-quality option
 `uopt->wantVdsLineFilter` -- the OLED's Menu->Color->Line filter, `/uc?m`,
-`VideoProcessor::setLineFilter()` -- and it was defaulted **on**.
+`VideoProcessor::setLineFilter()`.
+
+**NO CONFIGURATION THE SOLVE CHOOSES REACHES THE BAND**, so what follows is a
+property of the buffer rather than an artefact to diagnose. Asking for the
+filter costs one of two things and never a green tail:
+`VideoPath::dividerCeilingForLineFilter()` holds the divider down until the
+captured line fits the delay, and where the source states more pixels than the
+delay holds, `VideoPath::applyLineFilter()` keeps the samples and leaves the
+delay out. The buffer's length looks like a hardware limit, so that trade is
+what stands until a real fix lands. A framing widened past the buffer by hand
+pays the ceiling with the delay already out, which `docs/known-issues.md`
+carries.
 
 Measured on the bench RiscPC at 320x256@50, line doubled, `PATTERN PM5544`. At
 each divider the capture window is `129 .. divider/2 - 2` and `VDS_HSCALE` is

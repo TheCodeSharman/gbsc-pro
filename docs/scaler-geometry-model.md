@@ -406,23 +406,32 @@ so **0.93 is `1 - duty`**, placing the retimed pulse on top of the incoming one.
 That is why it is the fallback when the duty cannot be measured: it is the width
 the retiming module is already configured for.
 
-### The tail: an output-side artefact, and deliberately not clipped
+### The tail: the VDS line buffer, and deliberately not clipped
 
-The green starting at 1126 is **not** the same pulse, and not the same kind of
-thing. It is ~120 units against the pulse's 91, and **no multi-bit field in
-segments 0, 1 or 5 holds 1126, 2252, 151 or 302** — it is not an input setting.
+The green at the end of the line is **not** the same pulse and not the same kind
+of thing. It is the VDS's one-line delay, `VDS_D_RAM_BYPS`, which delivers
+`VideoProcessor::LineBufferSamples` samples of the captured line and returns
+green past them.
+[`investigations/the-tail-green-is-the-vds-line-filter.md`](investigations/the-tail-green-is-the-vds-line-filter.md)
+is the measurement.
 
-The capture path stops writing video past IF 1125 and writes `Y=U=V=0`, which
-decodes to green. It is neither unwritten frame buffer — genuinely unwritten
-memory reads as random colour noise — nor anything `PB_CAP_OFFSET` places;
-[`investigations/tail-green.md`](investigations/tail-green.md) carries both of
-those as refuted, with the evidence that killed them.
+**IT IS NOT A LINE POSITION, SO THE 1126 ABOVE IS NOT THE BOUNDARY.** The onset
+is counted from the first CAPTURED sample: moving the window's head moves it
+with it, where a fixed IF position would have held it still. A window wider than
+the buffer shows the band wherever it sits on the line, and one narrower than
+the buffer never shows it at any position. The reading above is a window of 1036
+units exposing the last 16, which is a fringe rather than a band — and a
+detector wide enough to ignore the card's own green does not see a fringe.
 
-Nothing clips it, and nothing should. **A test asserts the tail reaches the last
-capturable unit**, because clipping both ends by `syncUnits` excludes
-`1186..1276` — the clean porch *after* the green rather than the green itself —
-and costs 91 units of zoom-out reach for nothing. Clipping the capture to hide an
-artefact the capture does not produce would crop picture for nothing.
+Nothing clips it, and nothing should, because the capture does not produce it.
+**A test asserts the tail reaches the last capturable unit**, because clipping
+both ends by `syncUnits` excludes `1186..1276` — the clean porch *after* the
+green rather than the green itself — and costs 91 units of zoom-out reach for
+nothing.
+
+The solve keeps the band out of reach in any case: the divider comes down until
+the captured line fits the delay, or the delay is left out and the samples kept.
+`docs/capture-limits.md`.
 
 ### Only the wrap point is not a capture stop
 
@@ -457,9 +466,10 @@ The clean capture region measures about `90 .. 1126`, which is 1036 units. The
 default capture is 1009 units centred on the IF line, so it is nearly the right
 *size* and about 30 units off in *position*.
 
-The sliver at the right of the resting picture was read as the capture overhanging
-the tail green. With the tail green now removed by the playback offset, what
-remains of it — if anything — has not been re-measured.
+The sliver at the right of the resting picture was read as the capture
+overhanging the tail green. The tail green is the line buffer and the solve
+no longer reaches it, so what remains of that sliver — if anything — has
+not been re-measured.
 
 ## What the IF counter counts
 

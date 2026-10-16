@@ -3,9 +3,19 @@
 **THERE IS NO CAPTURE BOUND.** The green band at the end of the line, which
 every version of this page was built around, is produced by the VDS's one-line
 delay -- `VDS_D_RAM_BYPS`, carried as the picture-quality option
-`uopt->wantVdsLineFilter`, and now defaulted off. It sits downstream of the
-capture, so with the delay bypassed the whole line arrives at every divider up
-to 3200.
+`uopt->wantVdsLineFilter`. It sits downstream of the capture, so with the delay
+bypassed the whole line arrives at every divider up to 3200.
+
+**AND THE BAND IS NOT REACHABLE THROUGH THE OPTION.** The solve settles it both
+ways rather than leaving it to the preference:
+`VideoPath::dividerCeilingForLineFilter()` holds the divider down until the
+captured line fits `VideoProcessor::LineBufferSamples`, and where the source
+states more pixels than the delay holds, `VideoPath::applyLineFilter()` keeps
+the samples and leaves the delay out. So turning the filter on costs sampling
+density or costs the filter, and never a green tail. The buffer's length looks
+like a hardware limit, so that trade is what stands until a real fix lands; a
+framing widened past the buffer by hand pays the ceiling with the delay already
+out, which `docs/known-issues.md` carries.
 [`investigations/the-tail-green-is-the-vds-line-filter.md`](investigations/the-tail-green-is-the-vds-line-filter.md)
 
 The constants that bounded the divider against it -- `WriteLimitUnits`,
