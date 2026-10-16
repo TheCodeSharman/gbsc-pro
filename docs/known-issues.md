@@ -1526,9 +1526,28 @@ diff between the two images on this source. `ADC_?OFCTRL` is 64/64/64 against
 128 there, with `HD_MATRIX_BYPS` 0 in both, so whether that path is in circuit
 on a scaled component source has to be established before it is ruled in.
 
-**What would settle it** is writing 123 into the three gains by name on a
-frozen acquisition and scoring the same burst; the two candidates are
-distinguishable in one pass each. The 78.1% against 98.7% is a separate thing --
+**THE GAIN IS NOT THE CANDIDATE, AND THE SWEEP THAT SETTLES IT PREDATES THIS
+ENTRY.** `investigations/the-adc-gain-is-the-colour-spaces.md` walked the
+register on this input and scored the emitted frame: **a higher value is LESS
+gain**, 0x33 is the first value that clips nothing, and the knee is between
+0x2C and 0x33. At 0x33 the peak reads 249.3 with **0.00% of any channel at or
+above 254**, so the board is not clipping at the value in force. Writing the
+vendor's 0x7B would take the peak to 232.2 and the mean from 97.4 to 82.2 --
+dimmer and lower contrast, a fourteenth of the range thrown away.
+
+The magnitudes rule it out as the explanation of the gap above as well: the
+sweep moves the mean by 15 grey levels where the vendor comparison differs by
+85. So whatever makes our image brighter and flatter than the vendor's, the
+ADC gain is not enough of it, and raising the register would cost range
+without addressing it.
+
+**What is left is downstream of the ADC, or off the board.** `VDS_Y_OFST` 14 is
+`ColourBalance`'s Component rest, a pedestal lift applied in the VDS and
+already inside the 249.3; the sink's own range handling is the other half, and
+the MS9288A's HDMI range signalling is not configurable from here.
+**The discriminator is a stepped greyscale read on the capture AND the panel at
+once**: near-white steps resolved on the capture and crushed on the panel are
+the television's range or its enhancements, not the board's levels. The 78.1% against 98.7% is a separate thing --
 the vendor pillarboxes this 4:3 source and the engine fills the raster, which is
 `aspect-ratio.md` and not a fault.
 
