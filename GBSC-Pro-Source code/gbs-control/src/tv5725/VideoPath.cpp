@@ -971,7 +971,19 @@ void VideoPath::establishSyncType(uint8_t chosenFor)
     // held value the reset had already replaced with a guess -- measured on the
     // bench as the right arrangement applied on an input change and undone five
     // seconds later when detection dropped to low power.
-    applySyncType(SyncMeasurement::syncType(syncProbe_));
+    //
+    // AND A TYPE JUST MEASURED IS PUT IN FORCE WHATEVER THIS LAYER HOLDS. The
+    // probe leaves the chip on the separate arrangement, and the reset that
+    // forgot the type left it there too, so an answer equal to the one last
+    // applied is not one already on the chip. Measured: a composite source
+    // re-detected after /sc?~ probed composite, wrote nothing, and was then
+    // measured through the separate arrangement for as long as it was attached.
+    const bool measured = !SyncMeasurement::isSet();
+    const bool csync = SyncMeasurement::syncType(syncProbe_);
+    if (measured)
+        putSyncTypeInForce(csync);
+    else
+        applySyncType(csync);
 }
 
 void VideoPath::applySyncType(bool csync)

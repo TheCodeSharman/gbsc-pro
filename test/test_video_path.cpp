@@ -25,6 +25,7 @@ FakeTwoWire Wire;
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/ColourSpace.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/FrameBuffer.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/videosource/VideoSourceAcquisition.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/videosource/VideoSourceSelection.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/VideoPath.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/InputFormatter.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/MemoryBus.h"
@@ -2431,6 +2432,43 @@ TEST_CASE("reacquiring the sync type asks the probe again")
     engine.reacquireSyncType();
 
     CHECK(g_probeCalls == 1);
+}
+
+TEST_CASE("a sync type forgotten behind the engine's back is put in force when re-probed")
+{
+    // The sketch's resets forget the measurement directly, and the chip they
+    // reset is left on the separate arrangement. A probe that then answers the
+    // type the engine last put in force must still write it: the engine's
+    // record of what is in force is not what the chip is on, and a composite
+    // source measured through the separate arrangement is never counted.
+    // docs/known-issues.md
+    seedBenchSource();
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+    VideoSourceAcquisition acquisition(sampling, engine);
+    engine.useSyncTypeProbe(probeOwnVsync);
+
+    g_hasOwnVsync = false;
+    engine.setOutputMode(benchMode());
+    engine.inputTimingsChanged(4);
+    REQUIRE(pollUntilSolved(acquisition));
+    REQUIRE(SyncMeasurement::isCsync());
+    REQUIRE(SyncProcessor::SP_SOG_MODE::read() == 1);
+
+    SyncProcessor::applyForSyncType(false, Adc::dividerInForce());
+    SyncMeasurement::forget();
+    REQUIRE(SyncProcessor::SP_SOG_MODE::read() == 0);
+    g_probeCalls = 0;
+    g_logLines.clear();
+
+    engine.establishSyncType((uint8_t)VideoSourceSelection::selected());
+
+    CHECK(g_probeCalls == 1);
+    CHECK(SyncProcessor::SP_SOG_MODE::read() == 1);
+    CHECK(SyncProcessor::SP_EXT_SYNC_SEL::read() == 1);
+    CHECK(loggedContaining("sync arrangement: composite or SOG"));
 }
 
 TEST_CASE("reacquiring the sync type reports what the source carries")
