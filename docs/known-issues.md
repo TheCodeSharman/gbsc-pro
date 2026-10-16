@@ -2042,6 +2042,59 @@ on a mode that sends 525. Its cases all read the picture overrunning both ends,
 which is the absence of a picture rather than a framing, so that case is an
 acquisition entry and not a framing one.
 
+#### The doubled mode loses the last source line at the bottom
+
+**THE BOTTOM BORDER IS OFF THE EMITTED FRAME BY ABOUT 3.6 OUTPUT ROWS, AND IT
+IS NOT THE SINK.** Measured on `vga` at 320x256@50 into 1080p, 16:9 declared,
+shaping on, framing reset, read off the USB capture as each position's greenest
+moment over 40 frames. `PATTERN CARD`'s green frame is one SOURCE pixel wide,
+which is 4.21 output rows at this magnification, so a partly-shown border is
+readable as a fraction of its full intensity:
+
+| edge | profile | reading |
+|---|---|---|
+| top | rows 0,1 at 0; row 2 at 74.3; row 3 at 177.2; rows 4,5 at 210.1 | 2.65 rows of black, then the whole border |
+| bottom | rows 1073..1078 at 0.8; row 1079 at **91.2** of 210 | 43% of one row, so **3.6 rows are off** |
+
+**THE SYNC PAD TOGGLE SPLITS IT FROM THE SINK'S LATCH.** Frozen, with every
+output register read identical either side -- `VDS_DIS_?B_SP`/`ST`,
+`VDS_?B_SP`/`ST`, both scales, `VDS_HS_ST`, both rasters:
+
+| axis | before | after | whose |
+|---|---|---|---|
+| horizontal | near 67.6, 71.4, 150.0; far 71.1, 84.5 | near 41.8, 53.2, 140.7; far 81.9, 73.8 | **the sink** -- it re-places its window |
+| vertical | top 74.3, 177.2, 210.1; bottom 91.2 | top 74.0, 177.3, 210.0; bottom 91.2 | **the board** -- pinned to a tenth |
+
+So the right border landing on a fraction of an output pixel is the dongle's
+latch and is not the board's to fix. The bottom is in the emitted frame.
+
+**IT IS THE LINE-DOUBLED PATH.** Over three full matrix runs every undoubled
+mode reads `down 0 (0|0)` -- 640x480@60, 640x512@50 and 800x600@60 on separate
+sync -- and 320x256@50, the only doubled key, reads `down 2 (2|0)` on all three.
+
+**WHAT IS NOT ESTABLISHED IS WHICH TERM OWNS IT.** Two candidates, and the
+obvious one is already a measurement:
+
+- `VideoSourceLine::DoubledFrameOriginUnits`, 10 against the undoubled 7. A
+  larger origin places the window EARLIER in the counter, which is the shape of
+  the symptom -- blanking at the top, the last lines clipped at the bottom --
+  and 2.65 output rows is 1.26 doubled units. **But 10 is measured**, three
+  doubled sources agreeing on 10.0..10.2, so a change to 9 contradicts the
+  measurement it came from rather than correcting an estimate
+- the OUTPUT side: the vertical write origin is `0.2 + 0.8 x magnification`, and
+  the display window's placement on top of it. `docs/scaler-geometry-model.md`
+
+**AND NO INTEGER SLIDE MAKES BOTH ENDS FLUSH**, which is what says a placement
+term is not the whole story: 2.65 rows of black at the top against 3.6 rows off
+at the bottom puts the picture about 1.5 output rows TALLER than the raster. One
+doubled unit of slide, 2.1 rows, improves both ends and closes neither.
+
+**THE ERROR DIRECTION IS DECIDED: KEEP THE PIXEL.** Where the choice is between
+clipping the source's outermost pixel and leaving a sub-pixel margin, leave the
+margin -- the flush-edge acceptance cannot tell a clipped border from a flush
+one, and the last source line is real content on the mode the bench runs every
+day.
+
 #### The composite column is not reproducible, and the separate one is
 
 **Four full runs of the matrix on one firmware, same output, same shape
