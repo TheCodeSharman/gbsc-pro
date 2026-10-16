@@ -1356,13 +1356,20 @@ twelve tables while they existed, which is what `BringUp` was built from.
   `VDS_HB_SP` at 9, fifty units before the pulse. Position or width, one at a
   time, is the experiment. Treat 8 as measured at one hsync setting only.
   `snapshots/hsync-tuned-no-left-corruption-2026-08-06.json`.
-- **THERE IS NO CAPTURE BOUND, AND THE GREEN TAIL IS A USER OPTION.** The band
-  at the end of the line is the VDS's one-line delay, `VDS_D_RAM_BYPS` — the
-  OLED's Menu->Color->Line filter, `uopt->wantVdsLineFilter`, `/uc?m` — which
-  sits DOWNSTREAM of the capture and is now defaulted off. Bypassed, the whole
-  line arrives at every divider to 3200; in circuit the band's edge moves with
-  the divider, which is what made it look like a capture bound for months. The
-  constants that enforced one are deleted.
+- **THERE IS NO CAPTURE BOUND, AND THE TAIL BAND IS NO LONGER REACHABLE.** The
+  band at the end of the line is the VDS's one-line delay, `VDS_D_RAM_BYPS` —
+  the OLED's Menu->Color->Line filter, `uopt->wantVdsLineFilter`, `/uc?m` —
+  which sits DOWNSTREAM of the capture and destroys the tail of every line past
+  `VideoProcessor::LineBufferSamples` captured samples. **The solve refuses that
+  state both ways**: `dividerCeilingForLineFilter()` holds the divider down
+  until the captured line fits the delay, and where the source has more pixels
+  than the delay holds `applyLineFilter()` leaves the delay out and keeps the
+  samples. So the band is a property of the buffer rather than an artefact a
+  session will see, and the constants that bounded the divider against it are
+  deleted. **The buffer's length looks like a hardware limit and a real fix is
+  pending**, so what is left is the trade: the delay costs sampling density, or
+  it is out of circuit. A framing widened past the buffer by hand still pays the
+  ceiling without the delay — `docs/known-issues.md`.
   `docs/investigations/the-tail-green-is-the-vds-line-filter.md`.
 - **THE LINE COUNTER IS ELEVEN BITS AND THE REGISTER IS TWELVE**, so 2047 kept
   samples per line is the wall on every source and both scan modes — and a
