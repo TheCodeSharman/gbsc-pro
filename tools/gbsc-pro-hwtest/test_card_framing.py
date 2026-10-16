@@ -226,9 +226,14 @@ def judged_at(request, host):
     the preferences, so it goes back on at the end rather than being restored.
     """
     where = request.config.getoption("--modeserv")
+    # THE DECLARED ASPECT IS SAVED SEPARATELY FROM THE SHAPING FLAG. Turning
+    # the shape off is Aspect::Fill, and turning it back on does not remember
+    # what was declared -- it lands on whatever /uc?G cycles to, so a run left
+    # a 4:3 bench showing 16:9 and the source stretched to fill the raster.
     original = {
         "output": gbs_unit.setting(host, "output"),
         "shaping": gbs_unit.shaping(host),
+        "aspect": gbs_unit.get_json(host, "/geometry")[1].get("aspect"),
         "sync": gbs_unit.mode_serv(where, "SYNC") if where else "",
     }
 
@@ -251,6 +256,8 @@ def judged_at(request, host):
     if original["output"]:
         gbs_unit.restore_output_mode(host, original["output"])
     gbs_unit.want_shaping(host, original["shaping"])
+    if original["aspect"]:
+        gbs_unit.choose_aspect(host, original["aspect"])
     gbs_unit.autosave(host, True)
 
 

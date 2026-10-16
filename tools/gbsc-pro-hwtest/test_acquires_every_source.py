@@ -57,6 +57,7 @@ from gbs_unit import (
     SOURCES,
     acquired_and_settled,
     autosave,
+    choose_aspect,
     choose_output,
     get,
     get_json,
@@ -308,6 +309,10 @@ def bench(request, host):
     original = {
         "scale-rgbhv": setting(host, "scale-rgbhv"),
         "shaping": shaping(host),
+        # SEPARATELY FROM THE FLAG: turning the shape off is Aspect::Fill, and
+        # turning it back on lands on whatever /uc?G cycles to rather than what
+        # was declared. docs/aspect-ratio.md
+        "aspect": get_json(host, "/geometry")[1].get("aspect"),
         "input": setting(host, "input"),
         "output": setting(host, "output"),
         "sync": mode_serv(where, "SYNC"),
@@ -357,6 +362,8 @@ def bench(request, host):
                 select_input(host, original["input"])
             want_passed_through(host, original["scale-rgbhv"] == "0")
             want_shaping(host, original["shaping"])
+            if original["aspect"]:
+                choose_aspect(host, original["aspect"])
             autosave(host, True)
             get(host, "/sc?~")
         except Exception:  # noqa: BLE001 - teardown must not mask a failure
