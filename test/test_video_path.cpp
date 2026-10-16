@@ -281,10 +281,11 @@ static void checkBenchGeometry()
     CHECK(InputFormatter::IF_LINE_SP::read() == 1165);
 
     // Both scales computed from the capture and the raster, never inherited,
-    // and rounded OUTWARD: the exact vertical fit is 485.45 and 486 would leave
-    // 2.2 black rows at the top rather than overrun a line into the porch.
-    CHECK(VideoProcessor::VDS_HSCALE::read() == 421);
-    CHECK(VideoProcessor::VDS_VSCALE::read() == 485);
+    // and rounded UP so the picture cannot produce past the room: the exact
+    // vertical fit is 485.45 and 485 would overrun a line that is not emitted
+    // at all, taking the card's border with it.
+    CHECK(VideoProcessor::VDS_HSCALE::read() == 422);
+    CHECK(VideoProcessor::VDS_VSCALE::read() == 486);
     CHECK(VideoProcessor::VDS_HSCALE_BYPS::read() == 0);
     CHECK(VideoProcessor::VDS_VSCALE_BYPS::read() == 0);
     CHECK(VideoProcessor::VDS_SYNC_EN::read() == 0);
@@ -308,11 +309,12 @@ static void checkBenchGeometry()
     // playback never walks past the written picture.
     CHECK(VideoProcessor::VDS_HB_ST::read() == VideoProcessor::VDS_DIS_HB_ST::read());
     CHECK(VideoProcessor::VDS_VB_ST::read() == VideoProcessor::VDS_DIS_VB_ST::read());
-    // On the front porch, both axes: the picture overruns the active window and
-    // the aperture closes where the encoder stops carrying it. Horizontally one
-    // unit inside it, which the width parity takes.
-    CHECK(VideoProcessor::VDS_HB_ST::read() == 1844);
-    CHECK(VideoProcessor::VDS_VB_ST::read() == 1121);
+    // Inside the active window on both axes, the fit being held to the room:
+    // the aperture closes on the write rather than on the encoder's last
+    // carried unit. Horizontally one unit further in, which the width parity
+    // takes.
+    CHECK(VideoProcessor::VDS_HB_ST::read() == 1843);
+    CHECK(VideoProcessor::VDS_VB_ST::read() == 1120);
 
     // And the horizontal window is an ODD number of units wide, which is what
     // reaches the picture: an even one shears.
@@ -329,13 +331,18 @@ static void checkBenchGeometry()
     // The memory window opens earlier still, by what the capture's leading
     // margin produces: the write has to reach the picture with the
     // interpolator already fed.
-    CHECK(VideoProcessor::VDS_HB_SP::read() == 55);
-    CHECK(VideoProcessor::VDS_VB_SP::read() == 35);
+    CHECK(VideoProcessor::VDS_HB_SP::read() == 56);
+    CHECK(VideoProcessor::VDS_VB_SP::read() == 36);
     // The aperture opens on the first unit the write FILLED: the margin before
     // the picture is the source's own blanking, and the unit the write only
     // enters shows what the last frame left in it.
-    CHECK(VideoProcessor::VDS_DIS_HB_SP::read() == 174);
-    CHECK(VideoProcessor::VDS_DIS_VB_SP::read() == 41);
+    //
+    // One unit after activeStart rather than on it, because the fit lands
+    // inside the room by under a step and placePicture() splits that between
+    // the two ends. A unit of black there is inside the acceptance's allowance
+    // and buys the whole of the source's outermost pixel at both edges.
+    CHECK(VideoProcessor::VDS_DIS_HB_SP::read() == 175);
+    CHECK(VideoProcessor::VDS_DIS_VB_SP::read() == 42);
     CHECK(VideoProcessor::VDS_DIS_VB_SP::read() > VideoProcessor::VDS_VS_SP::read());
 
     // The playback burst, sized from the capture width so the fetch rate does
@@ -1569,8 +1576,9 @@ TEST_CASE("a framed picture holds every window against the framing")
     CHECK(VideoProcessor::VDS_VB_ST::read() > 1100);
     // The near edge follows where the transmitted window opens, less the write
     // origin and the capture's leading margin, rather than resting on the
-    // floor of 8.
-    CHECK(VideoProcessor::VDS_HB_SP::read() == 44);
+    // floor of 8 -- plus the share of the fit's sub-step deficit that
+    // placePicture() puts at this end.
+    CHECK(VideoProcessor::VDS_HB_SP::read() == 46);
     CHECK(VideoProcessor::VDS_VB_SP::read() > 0);
     CHECK(VideoProcessor::VDS_DIS_HB_SP::read() > VideoProcessor::VDS_HB_SP::read());
     CHECK(VideoProcessor::VDS_DIS_VB_SP::read() > VideoProcessor::VDS_VB_SP::read());

@@ -214,13 +214,12 @@ RasterFit OutputWindow::fitToRaster(const Axis &axis, uint16_t capture,
     float produced = onFloor < behindPorch ? onFloor : behindPorch;
     if (produced > room)
         produced = room;
-    // TO NEAREST, and the two directions are not equivalent: short of the room
-    // is a black bar at the far edge, past it is picture the encoder never
-    // carries, because the aperture cannot open past the front porch. Either
-    // way the error belongs inside half a step -- about a pixel -- and biasing
-    // it costs a whole source pixel off the far edge at a magnification near 2.
-    // Measured at 800x600@60, where rounding down loses the card's frame.
-    long scale = lrintf(Scale::Unity * capture / produced);
+    // UP, never to nearest: the emitted units stop at the active region's last,
+    // so a picture produced past the room loses its far end with the source's
+    // outermost pixel in it, where a step back costs under one output unit of
+    // black that placePicture() splits between the two ends.
+    // ../../../../docs/investigations/the-room-is-what-the-encoder-carries.md
+    long scale = (long)ceilf(Scale::Unity * capture / produced);
     if (scale < (long)axis.magnificationFloor())
         scale = axis.magnificationFloor();
     if (scale > (long)axis.scaleCeiling())

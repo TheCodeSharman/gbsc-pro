@@ -126,6 +126,24 @@ static float room(const Axis &axis, uint16_t rasterTotal,
          - ((float)activeStart > floor ? (float)activeStart : floor);
 }
 
+// What one step of this axis's scale is worth in picture, which is the
+// granularity the fit can land on: produced is capture x Unity / scale, so a
+// step moves it by produced / scale.
+static float scaleStep(const OutputMapping &solved)
+{
+    return solved.produced() / (float)solved.scale().reg();
+}
+
+// The fit rounds the scale UP, so the picture lands at or below what it was
+// fitted to and within one step of it. Stating the DIRECTION is what a
+// symmetric tolerance cannot: picture past the target is not emitted, where
+// picture short of it is a fraction of an output unit of black.
+static void checkFills(const OutputMapping &solved, float target)
+{
+    CHECK(solved.produced() <= target + 0.01f);
+    CHECK(target - solved.produced() < scaleStep(solved));
+}
+
 static const OutputMapping &on(const OutputWindow &solved, const Axis &axis)
 {
     return axis.vertical() ? solved.vertical() : solved.horizontal();
@@ -430,12 +448,10 @@ TEST_CASE("the picture is made as big as the raster allows")
         // far bound, where the aperture blanks it. Stating the margin rather
         // than absorbing it in the tolerance is what makes this fail when the
         // fit stops charging it.
-        CHECK_NEAR(h.produced(),
-                   room(AxisHorizontal, Raster)
-                       - (BenchHorizontal.perMagnification
-                          + AxisHorizontal.captureMargin())
-                             * h.scale().magnification(),
-                   1.0);
+        checkFills(h, room(AxisHorizontal, Raster)
+                          - (BenchHorizontal.perMagnification
+                             + AxisHorizontal.captureMargin())
+                                * h.scale().magnification());
     }
 
     SUBCASE("a smaller capture still fills the raster") {
@@ -707,8 +723,7 @@ TEST_CASE("the active window narrows the room before the picture")
 
     CHECK_NEAR(cornerOf(behind.horizontal(), AxisHorizontal), 140.0f, 1.0);
     CHECK(behind.horizontal().produced() < whole.horizontal().produced());
-    CHECK_NEAR(behind.horizontal().produced(),
-               room(AxisHorizontal, Raster, 140), 2.0);
+    checkFills(behind.horizontal(), room(AxisHorizontal, Raster, 140));
 
     SUBCASE("an active start below the write floor changes nothing") {
         // The write floor is physical and a back porch cannot argue with it, so
@@ -783,34 +798,58 @@ TEST_CASE("the picture stops at the front porch, not at the raster edge")
     }
 }
 
-TEST_CASE("the scale is not bumped for an overshoot the window already clips")
+// THE ROOM IS EVERYTHING THE ENCODER CARRIES, SO PICTURE PAST IT IS NOT EMITTED.
+//
+// VDS_DIS_?B_ST is the LAST SHOWN unit rather than the first blanked one, and
+// the active region's 1080 emitted rows span raster 41..1120 inclusive.
+// Measured on vga at 640x480@60 into 1080p, frozen, with the memory and display
+// far ends stepped together so the fetch always covered what the aperture
+// showed: each step lit exactly one more emitted row up to 1120, and a step
+// past it lit nothing.
+//
+// Two things follow. A produced picture longer than the room loses its far end
+// outright, where a scale one step back costs a fraction of an output unit of
+// black that placePicture() then splits between the two ends. And the partially
+// written last unit IS shown -- it carried the card's border at a green
+// dominance of +60.5 against +144 for the fully written rows before it -- so
+// flooring the aperture onto it is right and there is no later unit to reach.
+// docs/investigations/the-room-is-what-the-encoder-carries.md
+TEST_CASE("the picture never produces past the room")
+{
+    // 512 captured lines into the 1080-line active region: the exact fit is
+    // 485.45, and rounding to nearest produces 1081.01 whose last 1.01 rows are
+    // outside the active region. That is 48%% of a source pixel at 640x512@50,
+    // where the framing acceptance wants three quarters of it.
+    const OutputWindow solved(688, 512, rasterOf(1916, 1125, 1845, 1121, 173, 41));
+    CHECK(solved.vertical().produced() <= 1080.0f);
+}
+
+// THE SCALE IS STEPPED FOR AN OVERSHOOT, BECAUSE NO WINDOW CAN CLIP ONE.
+//
+// A picture longer than the room loses its far end outright: the emitted units
+// stop at the active region's last and VDS_DIS_?B_ST cannot reach past them, so
+// the overshoot is not spent in the front porch. It costs the card's border --
+// 48% of a source pixel at 640x512@50, against the three quarters the framing
+// acceptance wants -- where a step of scale costs under one output unit of
+// black that placePicture() splits between the two ends.
+TEST_CASE("the scale is stepped so the picture does not overshoot the room")
 {
     // The bench 1080p vertical at the default framing: 480 captured lines into
-    // the 1080-line active region 41..1121. The ideal scale of 455.11 rounds to
-    // 455 and produces 1080.26, a quarter of a line past the far bound, which
-    // the display window closes on anyway. One unit of VDS_VSCALE is worth 2.37
-    // output lines here, so bumping the scale to clear that quarter line paints
-    // two of them black.
+    // the 1080-line active region 41..1121, where the exact fit is 455.11.
     const uint16_t Raster = 1125, ActiveStart = 41, ActiveStop = 1121;
     const OutputWindow solved(890, 480, rasterOf(1916, Raster, 1852, ActiveStop,
                                                  0, ActiveStart));
-    REQUIRE(solved.vertical().scale().reg() == 455);
-    CHECK(solved.vertical().produced() > (float)(ActiveStop - ActiveStart) - 1.0f);
-
-    SUBCASE("and the display window still closes by the front porch") {
-        CHECK(solved.vertical().display().start() <= (int32_t)ActiveStop);
-    }
+    REQUIRE(solved.vertical().scale().reg() == 456);
+    checkFills(solved.vertical(), (float)(ActiveStop - ActiveStart));
 
     // The bench Acorn framing: 512 captured lines into the same region, and 688
-    // captured units into 160..1832. The exact vertical fit is 485.45, so 485
-    // overruns by a whole line -- and a step back to 486 pays 2.2 output rows
-    // for it, where the line it saves is in the front porch. Horizontally the
-    // same step costs 4 columns.
-    SUBCASE("nor for one a WHOLE unit past the front porch") {
+    // captured units into 160..1832. Both axes are stepped, the exact vertical
+    // fit being 485.45 and the horizontal 421.5.
+    SUBCASE("and so is the bench Acorn framing, on both axes") {
         const OutputWindow bench(688, 512, rasterOf(1916, Raster, 1832, ActiveStop,
                                                     160, ActiveStart));
-        CHECK(bench.vertical().scale().reg() == 485);
-        CHECK(bench.horizontal().scale().reg() == 421);
+        CHECK(bench.vertical().scale().reg() == 486);
+        CHECK(bench.horizontal().scale().reg() == 422);
     }
 }
 
@@ -921,12 +960,12 @@ TEST_CASE("a picture too small for the raster is blanked, not left open")
 // a floored length, which can land a whole unit past it.
 TEST_CASE("blanking starts no later than the write ends")
 {
-    // The bench 1080p vertical: 584 picture lines fitting to VDS_VSCALE 535 in
-    // a 1125-line raster. The picture ends 1123.4 lines in, and a window
-    // closing at 1124 leaves the last line of the aperture unwritten.
+    // The bench 1080p vertical: 584 picture lines fitting to VDS_VSCALE 536 in
+    // a 1125-line raster. The picture ends 1121.2 lines in, and a window
+    // closing at 1122 leaves the last line of the aperture unwritten.
     const OutputWindow solved(800, 584, rasterOf(1916, 1125));
     const OutputMapping &v = solved.vertical();
-    REQUIRE(v.scale().reg() == 535);
+    REQUIRE(v.scale().reg() == 536);
     CHECK((float)v.display().start() <= writeEndOf(v, AxisVertical));
 }
 
@@ -942,10 +981,14 @@ TEST_CASE("blanking starts no later than the write ends")
 // out to the bound with the falloff keeping its shape.
 TEST_CASE("the vertical aperture closes where the write ends")
 {
-    SUBCASE("at the bench 800x600@60 framing, where the far bound is what stops it") {
+    // The far BOUND no longer stops a centred picture, the fit being held to the
+    // room and the deficit split between the ends, so this reads the write. What
+    // can still reach the bound is the magnification floor clamping the scale,
+    // which "a picture may overrun the front porch but never the raster" covers.
+    SUBCASE("at the bench 800x600@60 framing") {
         const OutputWindow solved(600, 384, rasterOf(2156, 1000, 1957, 999, 424, 39));
-        REQUIRE(solved.vertical().scale().reg() == 410);
-        CHECK(solved.vertical().display().start() == 998);
+        REQUIRE(solved.vertical().scale().reg() == 411);
+        CHECK(solved.vertical().display().start() == 996);
     }
 
     SUBCASE("and where it is the write rather than the bound") {
@@ -1057,7 +1100,7 @@ TEST_CASE("the display window is the picture, at both ends")
 {
     const OutputWindow solved(981, 512, rasterOf(1916, 1126));
     const OutputMapping &h = solved.horizontal();
-    REQUIRE(h.scale().reg() == 557);
+    REQUIRE(h.scale().reg() == 558);
 
     CHECK((float)h.display().stop() >= cornerOf(h, AxisHorizontal) - UnitSlack);
     CHECK((float)h.display().stop() < cornerOf(h, AxisHorizontal) + 1.0f);
@@ -1138,7 +1181,7 @@ TEST_CASE("the aperture opens no earlier than the captured window")
 {
     SUBCASE("horizontally, at the three crept magnifications") {
         const uint16_t captures[] = {1330, 1289, 683};
-        const uint16_t scales[] = {905, 877, 473};
+        const uint16_t scales[] = {905, 878, 473};
         for (int i = 0; i < 3; ++i) {
             const OutputWindow solved(captures[i], 512, rasterOf(1600, 1126));
             REQUIRE(solved.horizontal().scale().reg() == scales[i]);
@@ -1171,20 +1214,24 @@ TEST_CASE("the vertical aperture opens on the picture, not a capture unit later"
         const uint16_t ActiveStart = 41;
         const OutputWindow solved(800, 512, rasterOf(1916, 1125, 1852, 1121,
                                                      0, ActiveStart));
-        REQUIRE(solved.vertical().scale().reg() == 485);
-        // Within a row of it: the memory window is a whole line and the write
-        // origin is not, so the floored aperture may open one before.
+        REQUIRE(solved.vertical().scale().reg() == 486);
+        // Within a row either way: the memory window is a whole line and the
+        // write origin is not, so the floored aperture may open one before --
+        // and one after, the fit being held to the room and placePicture()
+        // splitting the sub-step deficit between the two ends. A unit of black
+        // there is inside the acceptance's allowance and buys the whole of the
+        // source's outermost pixel at BOTH edges.
         CHECK(solved.vertical().display().stop() >= ActiveStart - 1);
-        CHECK(solved.vertical().display().stop() <= ActiveStart);
+        CHECK(solved.vertical().display().stop() <= ActiveStart + 1);
     }
 
     SUBCASE("at 576p") {
         const uint16_t ActiveStart = 44;
         const OutputWindow solved(800, 256, rasterOf(2070, 625, 1943, 620,
                                                      0, ActiveStart));
-        REQUIRE(solved.vertical().scale().reg() == 455);
+        REQUIRE(solved.vertical().scale().reg() == 456);
         CHECK(solved.vertical().display().stop() >= ActiveStart - 1);
-        CHECK(solved.vertical().display().stop() <= ActiveStart);
+        CHECK(solved.vertical().display().stop() <= ActiveStart + 1);
     }
 
     SUBCASE("across the zoom range") {
