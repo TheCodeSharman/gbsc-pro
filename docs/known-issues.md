@@ -2044,58 +2044,60 @@ on a mode that sends 525. Its cases all read the picture overrunning both ends,
 which is the absence of a picture rather than a framing, so that case is an
 acquisition entry and not a framing one.
 
-#### The doubled mode loses the last source line at the bottom
+#### A flush margin does not mean the outermost pixel is whole
 
-**THE BOTTOM BORDER IS OFF THE EMITTED FRAME BY ABOUT 3.6 OUTPUT ROWS, AND IT
-IS NOT THE SINK.** Measured on `vga` at 320x256@50 into 1080p, 16:9 declared,
-shaping on, framing reset, read off the USB capture as each position's greenest
-moment over 40 frames. `PATTERN CARD`'s green frame is one SOURCE pixel wide,
-which is 4.21 output rows at this magnification, so a partly-shown border is
-readable as a fraction of its full intensity:
+**`card_edges` CANNOT TELL FLUSH FROM CLIPPED, AND THAT IS THE GAP.** The margin
+it reports is the first green run's index, so a border sitting wholly on row 0
+and one half off the frame above it both report 0. The acceptance the bench is
+judged by -- the card's green frame visible on all four edges -- is therefore
+not what the number asserts.
+
+**WHAT TELLS THEM APART IS THE BORDER'S INTENSITY AGAINST ITS OWN PEAK.** The
+frame is one SOURCE pixel, which is 4.21 output rows at 320x256@50 into 1080p,
+so a partly-shown border reads as a fraction of a whole one. Measured on `vga`
+at 320x256@50 into 1080p, 16:9 declared, framing reset, each position's greenest
+moment over 40 frames:
 
 | edge | profile | reading |
 |---|---|---|
 | top | rows 0,1 at 0; row 2 at 74.3; row 3 at 177.2; rows 4,5 at 210.1 | 2.65 rows of black, then the whole border |
 | bottom | rows 1073..1078 at 0.8; row 1079 at **91.2** of 210 | 43% of one row, so **3.6 rows are off** |
 
-**THE SYNC PAD TOGGLE SPLITS IT FROM THE SINK'S LATCH.** Frozen, with every
-output register read identical either side -- `VDS_DIS_?B_SP`/`ST`,
-`VDS_?B_SP`/`ST`, both scales, `VDS_HS_ST`, both rasters:
+**THE SINK'S LATCH IS RULED OUT ON THE VERTICAL.** Frozen, with every output
+register read identical either side of a `PAD_SYNC_OUT_ENZ` toggle -- both
+display windows, both apertures, both scales, both rasters -- the horizontal
+green ramp MOVES (near 67.6, 71.4, 150.0 to 41.8, 53.2, 140.7) while the
+vertical holds to a tenth (bottom 91.2 both times). So the right border landing
+on a fraction of a column is the dongle re-placing its window, and the bottom
+being short is in the emitted frame.
 
-| axis | before | after | whose |
-|---|---|---|---|
-| horizontal | near 67.6, 71.4, 150.0; far 71.1, 84.5 | near 41.8, 53.2, 140.7; far 81.9, 73.8 | **the sink** -- it re-places its window |
-| vertical | top 74.3, 177.2, 210.1; bottom 91.2 | top 74.0, 177.3, 210.0; bottom 91.2 | **the board** -- pinned to a tenth |
+**IT IS NOT THE LINE-DOUBLED PATH, AND IT IS NOT A PLACEMENT TERM.** Swept with
+`framing_sweep.py` over one doubled and one undoubled mode at four outputs, top
+black in output rows:
 
-So the right border landing on a fraction of an output pixel is the dongle's
-latch and is not the board's to fix. The bottom is in the emitted frame.
+| mode | 480p | 576p | 720p | 1080p |
+|---|---|---|---|---|
+| 320x256@50, doubled | 3 | 1 | 4 | 2 |
+| 640x512@50, undoubled | 35 | 3 | 2 | 0 |
 
-**IT IS THE LINE-DOUBLED PATH.** Over three full matrix runs every undoubled
-mode reads `down 0 (0|0)` -- 640x480@60, 640x512@50 and 800x600@60 on separate
-sync -- and 320x256@50, the only doubled key, reads `down 2 (2|0)` on all three.
+The 480p undoubled case is MINIFICATION -- 512 source lines into 480 rows, which
+the VDS cannot do -- and carries no weight. What is left has no ordering by
+doubling and none by magnification: at 576p the undoubled mode has the larger
+margin. So `VideoSourceLine::DoubledFrameOriginUnits` is not implicated, and
+neither is the per-magnification write origin.
 
-**WHAT IS NOT ESTABLISHED IS WHICH TERM OWNS IT.** Two candidates, and the
-obvious one is already a measurement:
-
-- `VideoSourceLine::DoubledFrameOriginUnits`, 10 against the undoubled 7. A
-  larger origin places the window EARLIER in the counter, which is the shape of
-  the symptom -- blanking at the top, the last lines clipped at the bottom --
-  and 2.65 output rows is 1.26 doubled units. **But 10 is measured**, three
-  doubled sources agreeing on 10.0..10.2, so a change to 9 contradicts the
-  measurement it came from rather than correcting an estimate
-- the OUTPUT side: the vertical write origin is `0.2 + 0.8 x magnification`, and
-  the display window's placement on top of it. `docs/scaler-geometry-model.md`
-
-**AND NO INTEGER SLIDE MAKES BOTH ENDS FLUSH**, which is what says a placement
-term is not the whole story: 2.65 rows of black at the top against 3.6 rows off
-at the bottom puts the picture about 1.5 output rows TALLER than the raster. One
-doubled unit of slide, 2.1 rows, improves both ends and closes neither.
+**WHAT IS LEFT IS THE ROUNDING, AND IT IS A TRADE RATHER THAN A DEFECT.** The
+solve fills the raster to within 0 to 4 output rows on every state measured,
+which is `card_edges.SPREAD`. At that precision the source's outermost pixel --
+several output rows wide under magnification -- necessarily lands partly off one
+end or the other. **Guaranteeing the whole border means insetting the picture by
+up to one SOURCE pixel**, which buys a black margin of that size, and
+[[bias-wider-never-narrower]] is the standing rule it would cut against.
 
 **THE ERROR DIRECTION IS DECIDED: KEEP THE PIXEL.** Where the choice is between
 clipping the source's outermost pixel and leaving a sub-pixel margin, leave the
-margin -- the flush-edge acceptance cannot tell a clipped border from a flush
-one, and the last source line is real content on the mode the bench runs every
-day.
+margin. What is NOT decided is whether to pay a whole source pixel of inset for
+it.
 
 #### The composite column is not reproducible, and the separate one is
 
