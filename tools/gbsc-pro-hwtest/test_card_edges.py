@@ -168,3 +168,16 @@ def test_three_quarters_of_the_outermost_pixel_is_enough():
                            card_edges.FLUSH, SOURCE_PX)
     assert out.whole == (card_edges.WHOLE_ENOUGH, 1.0)
     assert out.why is None
+
+
+def test_a_border_clipped_to_a_sliver_inside_the_frames_edge_reports_the_sliver():
+    """Black at the frame's edge with the border's remains just inside it. The
+    picture's last row cutting through the border leaves exactly this, and
+    reading the outermost sample alone calls it a border clear of the edge --
+    measured on `vga` at 320x256@50, a bottom row carrying 94 of the 882 a
+    whole border carries, reported as the whole pixel."""
+    clip = blocks(0, None)
+    clip[0, :, WIDTH - 2, 1] = 255
+    out = card_edges.judge(clip, ACROSS, card_edges.FLUSH, SOURCE_PX)
+    assert out.margins == (0, 1)
+    assert out.whole == (1.0, 0.25)

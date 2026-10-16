@@ -173,25 +173,23 @@ def greenest_along(clip, axis):
 # A whole border reads 0.91 to 0.98 by this, the shortfall being the ramp's
 # tails falling under GREEN_HUE, so the measure is slightly PESSIMISTIC and errs
 # toward keeping more of the pixel. docs/known-issues.md
-def edge_wholeness(greenest, amplitude, source_px):
+def edge_wholeness(greenest, amplitude, source_px, runs):
     """How much of the border survives at each end, as a fraction of a whole
-    one. 1.0 is a border entirely on the frame; less is one running past its
-    edge; 0.0 is no green at that edge at all."""
-    if greenest.max() <= GREEN_HUE or amplitude <= 0.0:
+    one. 1.0 is a border entirely on the frame; less is one the picture's edge
+    cut through; 0.0 is no green at that edge at all.
+
+    **THE MASS IS THE RUN'S, NOT WHAT LIES UNDER THE OUTERMOST SAMPLE.** A
+    border the picture's last row cuts through leaves a sliver with BLACK
+    beyond it, which is indistinguishable at that sample from a whole border
+    sitting clear of the frame's edge -- so reading inward from the edge and
+    calling black `whole` reports a pixel that is nearly all gone as entirely
+    present. The run carries where the border actually is.
+    """
+    if amplitude <= 0.0 or not runs:
         return (0.0, 0.0)
     whole = amplitude * source_px
-    surviving = []
-    for inward in (greenest, greenest[::-1]):
-        if inward[0] <= GREEN_HUE:
-            surviving.append(1.0)
-            continue
-        lit = 0.0
-        for at in inward:
-            if at <= GREEN_HUE:
-                break
-            lit += float(at)
-        surviving.append(min(1.0, round(lit / whole, 2)))
-    return tuple(surviving)
+    return tuple(min(1.0, round(float(greenest[start:stop + 1].sum()) / whole, 2))
+                 for start, stop in (runs[0], runs[-1]))
 
 
 def green_amplitude(clip):
@@ -280,7 +278,7 @@ def judge(clip, axis, allowance, source_px=1.0):
     """
     runs = green_runs(clip, axis)
     whole = edge_wholeness(greenest_along(clip, axis), green_amplitude(clip),
-                           source_px)
+                           source_px, runs)
     extent = clip.shape[1 + axis]
     near = [run for run in runs if run[1] < extent // QUARTER]
     far = [run for run in runs if run[0] > extent - extent // QUARTER]
