@@ -618,7 +618,7 @@ void SyncProcessor::selectExternalSync(uint8_t sel)
 
 void SyncProcessor::init()
 {
-    SP_SOG_P_INV::write(0x0);                    // s5_20[2:2]
+    invertSogReference(false);                   // s5_20[2:2]
     // The retime window's START. Its partner SP_RT_HS_SP is placed from the
     // source's measured sync width and belongs to SourceMeasurement.
     SP_RT_HS_ST::write(0x0);                     // s5_4a[11:0]

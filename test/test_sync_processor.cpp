@@ -1220,6 +1220,32 @@ TEST_CASE("the scaling path never leaves the SOG reference inverted")
     CHECK(SyncProcessor::SP_SOG_P_INV::read() == 0u);
 }
 
+// AND THE HELD FACT IS PART OF THE WRITE. init() cleared SP_SOG_P_INV on its
+// own, leaving sogReferenceInverted() answering for an inversion no longer in
+// circuit -- a second owner of the field the header names one owner for.
+//
+// The clamp is what consumes it: the acquisition adds
+// clampOffsetForInvertedSog() whenever the fact says inverted, so a fact left
+// true behind a cleared register puts the clamp a whole pulse late, onto
+// active picture, where the black level comes off the scene and takes the
+// whole frame's colour with it.
+//
+// Measured on the Wii at 480p on `ypbpr` into 1920x1080, reached by a
+// pass-through round trip: SP_CS_CLP_ST 78 and SP_CS_CLP_SP 82 against the 19
+// and 23 the csync component path solves at that line rate, with SP_SOG_P_INV
+// reading 0 beside them. docs/known-issues.md
+TEST_CASE("the static setup clears the held SOG inversion with the register")
+{
+    Wire.reset();
+    SyncProcessor::applyForPassThrough(true);
+    REQUIRE(SyncProcessor::sogReferenceInverted());
+
+    SyncProcessor::init();
+
+    CHECK(SyncProcessor::SP_SOG_P_INV::read() == 0u);
+    CHECK_FALSE(SyncProcessor::sogReferenceInverted());
+}
+
 // The sub coast is applyForSyncType()'s, and entering pass-through wrote it a
 // second time -- unconditionally off, which is right for separate sync and
 // wrong for every source carrying serrations. A separate-sync source wants it
