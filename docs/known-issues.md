@@ -516,6 +516,45 @@ Separate sync in the same arrangement reads 0.005 to 0.014 in every band.
 **It is not the whole-picture shake**, which is vertical, affects every band
 alike, and is a property of the boot. `investigations/the-unlocked-state-had-no-arm.md`.
 
+### The composite picture jumps vertically, several times a second
+
+Measured off the USB capture with
+`tools/gbsc-pro-hwtest/picture_stability.py`, `vga` at 320x256@50 into 1080p,
+as each frame's vertical offset against the profile the clip holds. The
+picture is displaced in **17% to 53% of frames at 6.3 to 8.6 jumps a second**,
+against a separate-sync floor of **0% -- every frame at offset 0, over six
+runs in one session**. Both legs run in one session on one source mode, one
+output and one capture, so the sync arrangement is the only thing differing.
+
+**THE JUMPS ARE WHOLE SOURCE LINES.** 1080 output rows over 256 active source
+lines is 4.22 rows a line, and the measured offsets are 2, 4 and 8 rows --
+half a line, one line, two -- with occasional jumps of 107, 197, 214 and 216,
+which are 25 to 51 lines. It rolls as a WHOLE: the top, middle and bottom
+thirds correlate to one offset, so it is not a tear.
+
+**IT IS NOT EITHER SHAKE ALREADY RECORDED HERE.** It is not the top-band shake
+above, which is horizontal and confined to the first 90 to 135 rows. And it is
+not the boot shake, which is a property of the BOOT and sub-pixel -- sd 0.126
+to 0.288 of a row -- where this is whole lines and toggles with the sync type
+six times inside one boot.
+
+**WHAT IT LOOKS LIKE IS BLACK BARS, AND COUNTING THEM MEASURES THE WRONG
+THING.** The rows the picture leaves behind go black, so the fault presents as
+horizontal bars a few times a second -- but a band count scores only the jumps
+big enough to black out a mid-picture row. In one clip of 60 frames, 5 carry a
+band and 21 are displaced.
+
+**THE COMPOSITE LEG COMES BACK WITH NO PICTURE ABOUT HALF THE TIME** after the
+`/sc?~` re-probe a sync-type change needs -- one leg read 482 of 482 frames
+with nothing to correlate. That is the acquisition family above rather than a
+stability fault, and it is why the judge voids a reading with no picture in it
+instead of passing it: a black capture is displaced in 0% of frames and reads
+as the steadiest picture there has ever been.
+
+`test_picture_holds_still.py` asserts it. **The composite leg is RED on
+purpose** -- not an xfail, the defect having gone unmeasured for want of
+anything failing.
+
 ### A selection edge is swallowed in the pass-through cold state, so the sync type is never established
 
 Measured on `ypbpr`, the Wii at 480p, output 1920x1080, reached by leaving a
