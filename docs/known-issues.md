@@ -428,6 +428,22 @@ family and not the count.
 It is a second mode showing composite-sync instability, which is what makes it
 worth recording rather than one more observation of the 800x600 case.
 
+**AND `/sc?~` DOES NOT ALWAYS CLEAR IT.** Measured on 800x600@60 with `SYNC 1`,
+arriving from a settled separate-sync state: the mode was set, `/sc?~` issued,
+and the engine held `state: absent` for 95 s with `STATUS_SYNC_PROC_VTOTAL`
+**0** and `PLLAD_MD` **2040**, which is the detection sweep's value rather than
+anything the mode wants. Entering pass-through and leaving it again did not
+move it; the source came back at once on `SYNC 0`.
+
+So the family has two signatures and they want telling apart: a count OUTSIDE
+the plausible band with a stuck divider, which `/sc?~` clears, and a count of
+**0** with the divider on the sweep's value, which it does not. The second is
+the sync processor not counting at all rather than counting the wrong thing.
+
+**The same mode acquired on composite earlier in the same session** at
+`PLLAD_MD` 1342 with a framing verdict taken off it, so this is not a mode that
+cannot work on composite -- it is one that sometimes does not start.
+
 ### One source on one cable emits two different pictures, one per sync type
 
 **THE COUNT IS NO LONGER THE DIFFERENCE, AND THE REGISTER IS NOT THE THING TO
