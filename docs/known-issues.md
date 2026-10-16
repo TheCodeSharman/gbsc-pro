@@ -10,7 +10,7 @@ regardless of which step is in flight.
 
 ## Reaches the picture
 
-### The clamp keeps an inverted-SOG offset the inversion does not justify, and lands on active picture
+### FIXED IN FIRMWARE, NOT YET RE-MEASURED: the clamp kept an inverted-SOG offset onto active picture
 
 Reached on `ypbpr`, the Wii at 480p into 1920x1080, by a pass-through round trip
 and back to the scaling path. Read by name while the fault was live:
@@ -46,11 +46,26 @@ resting row, which is the intended pedestal compensation and not a leftover.
 it** -- the black level it is compensating is itself wrong -- so the balance is
 judged again once the clamp is back in the back porch, not before.
 
-What would settle it: whether the offset is applied without the inversion on
-every entry to the scaling path or only after a pass-through round trip, and
-which writer leaves it. `acquireClampWindow()` takes the offset from its
-caller, and `SP_SOG_P_INV` is `invertSogReference()`'s -- so the two can
-disagree, and nothing reads the register back to notice.
+**THE WRITER IS `SyncProcessor::init()`, WHICH WROTE THE REGISTER WITHOUT THE
+FACT.** `sogReferenceInverted()` is the one owner of whether the inversion is
+in force, held rather than read back; `init()` cleared `SP_SOG_P_INV` directly
+and left the fact true. `configureScalingPath()` runs `BringUp::init()` without
+`applyForSyncType()`, so leaving pass-through opens a window where the two
+disagree, and a clamp placed in it takes an offset for an inversion the
+hardware no longer has. 78 is 19 plus exactly that offset, which is reachable
+no other way.
+
+`init()` goes through `invertSogReference(false)` now, so the register and the
+fact cannot part. Guarded by `the static setup clears the held SOG inversion
+with the register` in `test/test_sync_processor.cpp`.
+
+**Writing 19/23 by hand held for 30 s with nothing rewriting it**, which is
+what says the placement runs once per acquisition rather than continuously --
+so the stale window only has to be open at that one moment.
+
+What is NOT yet done: the round trip has not been repeated against the fixed
+firmware, and the colour balance has not been re-judged with the clamp back in
+the back porch.
 
 
 ### The reference clock list can spin until low power, and nothing measures through any entry
