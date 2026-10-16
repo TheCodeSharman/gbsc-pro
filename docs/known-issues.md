@@ -10,6 +10,80 @@ regardless of which step is in flight.
 
 ## Reaches the picture
 
+### The ADC gain seeds clip the top of the range on BOTH colour spaces
+
+Measured 2026-10-16 against a CALIBRATED ramp, which is what previous attempts
+lacked. `PATTERN PM5544`'s greyscale staircase draws six known levels --
+`(i*255) DIV 5`, so 0, 51, 102, 153, 204, 255 -- and the emitted frame is read
+off the USB capture. The source steps are 51 apart, so the emitted gaps say
+directly where the transfer saturates.
+
+`vga` at 640x480@60 into 1920x1080, sweeping `ADC_RGCTRL`/`GGCTRL`/`BGCTRL`
+together:
+
+| gain | 0 | 51 | 102 | 153 | 204 | 255 | top gap |
+|---|---|---|---|---|---|---|---|
+| 0x33 | 0 | 60.2 | 133.8 | 210.6 | 235.6 | 235.3 | **-0.3** |
+| 0x50 | 0 | 53.6 | 116.5 | 185.7 | 235.4 | 235.2 | **-0.2** |
+| **0x7B** (`RgbGain`) | 0 | 42.6 | 99.3 | 158.6 | 219.1 | 235.3 | **16.1** |
+| 0x98 | 0 | 38.2 | 89.9 | 143.1 | 200.3 | 235.3 | 35.1 |
+| 0xB0 | 0 | 35.6 | 83.4 | 132.3 | 185.3 | 235.3 | **50.0** |
+| 0xB8 | 0 | 34.7 | 80.8 | 129.8 | 181.2 | 234.5 | 53.3 |
+| 0xC0 | 0 | 33.8 | 78.2 | 127.1 | 177.4 | 230.0 | 52.6 |
+
+**0xB0 is the knee**: the first value whose top step is intact -- 50.0 against
+the source's 51 -- while white still reaches the 235 ceiling. Above it white
+falls away and range is thrown away for nothing. The seeded `RgbGain` 0x7B
+delivers **16 of the 51**, so everything the source puts between 204 and 255
+lands within sixteen levels.
+
+**`ypbpr` IS WORSE, AND IT IS THE SEED THAT SHIPS.** The Wii's menu at 480p
+into 1920x1080, the same sweep, scored on the share of the frame pinned at the
+ceiling:
+
+| gain | white p99.9 | frame at or above 234 |
+|---|---|---|
+| **0x33** (`ComponentGain`) | 237.9 | **52.08%** |
+| 0x50 | 237.1 | 12.30% |
+| 0x5C | 236.9 | 2.42% |
+| 0x64 | 235.5 | 1.08% |
+| **0x68** | 234.1 | **0.12%** |
+| 0x70 | 228.0 | 0.01% |
+
+**More than half the frame is pinned at one level** at the value in force.
+0x68 is the knee by the same rule. What it is worth on the picture: the Wii
+menu's disc icon against its tile went from **23.8 levels of contrast to 62.8**,
+and the tile texture, the Mii faces and the channel lettering come back.
+
+**THE EARLIER READING THAT THE REGISTER DOES NOTHING ON RGB IS REFUTED, AND THE
+REASON IS THE INSTRUMENT.** `investigations/the-adc-gain-is-the-colour-spaces.md`
+swept it on RGB and saw the mean move 0.6 of a grey level across a threefold
+range, concluding the stage was not in that path. Those are AGGREGATE
+statistics over a whole test card -- a mean, a percentile and a clipped
+fraction -- and a knee near white moves none of them, because the card's large
+flat areas dominate every one. **A calibrated ramp sees what a histogram
+cannot**: on the same path the top step goes 16.1 -> 50.0 across that sweep.
+Do not score a transfer curve on summary statistics.
+
+### Auto gain is enabled and does not correct a clipping signal
+
+`auto-gain` reads 1 in the preferences and `ADC_RGCTRL`/`GGCTRL`/`BGCTRL` sit
+at exactly their colour space's seed, so the loop has never moved them.
+
+Measured 2026-10-16 on `vga` at 640x480@60: the three gains were written to
+0x33, which the ramp above scores as clipping the top TWO steps into each other
+(top gap -0.3), and read back every twelve seconds. **They held 51 for 120
+seconds.** `runAutoGain()` raises all three by 2 once `TestBus::readHigh()`
+returns 0x7f twice in a pass, so either its gate in `loop()` never opens --
+`acquiredPasses() > 90` and `clampPlaced()` are both required -- or the test bus
+does not report saturation on a signal the emitted frame shows saturating.
+
+This is what makes the seeds above matter rather than being a starting point:
+nothing is correcting them. It is also why a seed cannot be the whole fix, since
+the right gain depends on the source's output level and only a working loop can
+follow that.
+
+
 ### FIXED: the clamp kept an inverted-SOG offset onto active picture
 
 Reached on `ypbpr`, the Wii at 480p into 1920x1080, by a pass-through round trip
