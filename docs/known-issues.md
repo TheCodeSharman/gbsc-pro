@@ -2071,6 +2071,20 @@ vertical holds to a tenth (bottom 91.2 both times). So the right border landing
 on a fraction of a column is the dongle re-placing its window, and the bottom
 being short is in the emitted frame.
 
+**BOTH MODES CLIP IT, WHICH IS THE PAIR THAT SETTLES IT.** The comparison
+belongs at 1080p -- below it an undoubled 512-line source barely magnifies, and
+at 480p it MINIFIES, which the VDS cannot do -- so both modes read there with
+the shape off and the framing reset:
+
+| mode | rows per source pixel | top | bottom |
+|---|---|---|---|
+| 320x256@50, doubled | 4.22 | rows 0,1 black, then 74, 178, 210, 210 -- whole | row 1079 at 91 of 210, **43%** |
+| 640x512@50, undoubled | 2.11 | row 0 at 85 of 187, **45%** -- clipped above | row 1079 at 91 of 187, **49%** |
+
+The undoubled mode clips BOTH ends. And what the two share is the amount in
+OUTPUT ROWS rather than in source pixels -- 0.43 of a row against 0.49 -- which
+is what says the quantity belongs to the raster's end and not to the source.
+
 **IT IS NOT THE LINE-DOUBLED PATH, AND IT IS NOT A PLACEMENT TERM.** Swept with
 `framing_sweep.py` over one doubled and one undoubled mode at four outputs, top
 black in output rows:
@@ -2094,10 +2108,17 @@ end or the other. **Guaranteeing the whole border means insetting the picture by
 up to one SOURCE pixel**, which buys a black margin of that size, and
 [[bias-wider-never-narrower]] is the standing rule it would cut against.
 
+**THE INSTRUMENT SAYS IT NOW.** `card_edges.Judgement.whole` is a fraction per
+edge -- 1.00 clear of the frame's edge, less running past it -- reported beside
+the margin and asserting nothing. `down 0 (0|0) out by 0 whole 0.45|0.49` is
+the shape of the gap: a verdict reading as perfect on an axis where both
+borders are more than half gone.
+
 **THE ERROR DIRECTION IS DECIDED: KEEP THE PIXEL.** Where the choice is between
 clipping the source's outermost pixel and leaving a sub-pixel margin, leave the
-margin. What is NOT decided is whether to pay a whole source pixel of inset for
-it.
+margin. What is NOT decided is whether to pay an inset of up to one source
+pixel for it, and that is what has to be settled before `whole` becomes an
+assertion rather than a reading.
 
 #### The composite column is not reproducible, and the separate one is
 
