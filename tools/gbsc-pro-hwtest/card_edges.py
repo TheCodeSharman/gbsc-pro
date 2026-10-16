@@ -25,13 +25,23 @@ Read off the USB capture rather than the panel, so an edge is a column index
 and not a judgement. `docs/bench-output-capture.md`.
 
 Both the span and each edge's own margin are reported. **The margin carries the
-encoder in it**: the transmitted window's start is latched from `VDS_DIS_HB_SP`
-at link-up and lands a little before it, so a correct framing still reads a few
-columns at the near edge and none at the far one. It is repeatable -- ten
-re-locks at one state give the same margins to the pixel -- but a STALE latch,
-left from before the framing moved, reads differently, so judge a margin only
-after the link has re-acquired. The span is free of both, since the two edges
-move together.
+SINK's own window placement in it**, which is latched when the link acquires and
+held until it acquires again, so a correct framing can still read a few columns
+at the near edge and none at the far one.
+
+**WHAT THE SINK KEYS ON IS NOT ESTABLISHED, AND IT IS NOT OUR BLANKING.**
+Taking its origin from `VDS_DIS_HB_SP` is REFUTED -- do not reach for it -- and
+the encoder tuning the near edge to the content it receives is PASS-THROUGH
+only. `docs/known-issues.md`, `docs/investigations/
+the-encoder-tunes-the-left-edge-in-pass-through.md`.
+
+It is repeatable to the pixel across re-locks at one state, though the
+sub-pixel landing inside the edge column does move: measured frozen, with every
+output register identical either side of a `PAD_SYNC_OUT_ENZ` toggle, the
+horizontal green ramp moved while the vertical held to a tenth. A STALE latch,
+left from before the framing moved, reads differently again, so judge a margin
+only after the link has re-acquired. The span is free of all of it, since the
+two edges move together.
 
   both edges, full span   the window is the source's active window
   both edges, short span  the window is WIDER -- the source's own blanking is
@@ -49,6 +59,7 @@ pixels off are the same fault at two sizes, and only the size says which modes
 are nearly right -- so it is reported whether the verdict passes or fails,
 which is what keeps a widened allowance from hiding a drift.
 
+The model this instrument used to assume, and the measurements that killed it:
 `docs/investigations/the-transmitted-window-is-latched-from-our-blanking.md`.
 
 **THE CARD'S OUTERMOST RING FLASHES YELLOW AND WHITE**, twice a second, and the

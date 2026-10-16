@@ -114,9 +114,10 @@ SYNC_TYPES = ((False, "separate"), (True, "composite"))
 # The allowance is `card_edges.ALLOWANCE`, the instrument's own column plus the
 # pixel or two the solve lands apart between runs: with the shape off the
 # picture fills the raster exactly, so rounding at either end moves the
-# outermost green column and can take it off the frame. The sink's own latch is
-# inside that margin too -- the transmitted window's start is taken from
-# VDS_DIS_HB_SP at link-up and lands a little before it.
+# outermost green column and can take it off the frame. The sink's own window
+# placement is inside that margin too -- latched when the link acquires, and
+# NOT taken from our blanking, which is refuted. What it keys on is not
+# established. docs/known-issues.md
 #
 # **THE DISPLACEMENT REVERSES SIGN WITH THE SYNC TYPE, AND THAT IS THE FINDING
 # THE SIZES CARRY.** Separate sync loses the NEAR edge off the frame and keeps
