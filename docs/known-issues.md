@@ -170,10 +170,12 @@ Two things the verdicts do not say, both of which bound what can be concluded
 from the table:
 
 - **A near margin of 2 fails by one pixel against `card_edges.FLUSH`**, and the
-  sink's own latch is in that margin -- the transmitted window's start is taken
-  from `VDS_DIS_HB_SP` at link-up and lands a little before it. Whether 1 is
-  the right allowance is an acceptance threshold rather than a measurement, so
-  it has not been widened to suit a reading.
+  sink's own window placement is in that margin -- latched when the link
+  acquires and held until it acquires again. **It is NOT taken from
+  `VDS_DIS_HB_SP`**, which is refuted below, and the encoder tuning the near
+  edge to its content is pass-through only; what it keys on is not established.
+  Whether 1 is the right allowance is an acceptance threshold rather than a
+  measurement, so it has not been widened to suit a reading.
 - **`one edge` carries no magnitude.** Green is found at one end only, so there
   is no near margin to report and a one-pixel shift reads the same as a
   hundred-pixel one. With the shape off the picture fills the raster exactly,
