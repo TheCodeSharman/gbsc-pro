@@ -2097,6 +2097,24 @@ exists to catch.
 So the composite column's size is a placement where the divider is right, and a
 reading without the divider beside it is not evidence about either.
 
+**AND A RUN HAS NOW CAUGHT THE WRONG STATE AND THE WILD READING TOGETHER**,
+which is the positive form of the same finding rather than an absence. One run
+of the reduced matrix, state line beside every verdict:
+
+| composite case | reading | state | the mode wants |
+|---|---|---|---|
+| 320x256@50 | across 230, down 53 | `MD 2200 cv 536` | `cv 624` |
+| 640x512@50 | neither edge, either axis | `MD 1746 ch 1747` | `MD 1424 ch 1425` |
+| 640x480@60 | neither edge, either axis | `MD 2040 cv 268` | never acquires |
+| 800x600@60 | far 4 | `MD 1342 ch 1343 cv 628` | all three right |
+
+The divider is on another mode's value where the reading is wild and on its own
+where the reading is a placement, in ONE run -- and 800x600@60 is mode-correct
+and reads 2, 3, 3 and 4 across four runs. So the composite column's
+irreproducibility is the acquisition, not the framing, and a verdict is worth
+reading only where the state line says the capture belongs to the mode asked
+for.
+
 
 **The measurement's own order is ruled out.** The concern was that
 `card_edges.py` changes the mode, which re-acquires, and THEN resets the framing,
