@@ -10,6 +10,49 @@ regardless of which step is in flight.
 
 ## Reaches the picture
 
+### The clamp keeps an inverted-SOG offset the inversion does not justify, and lands on active picture
+
+Reached on `ypbpr`, the Wii at 480p into 1920x1080, by a pass-through round trip
+and back to the scaling path. Read by name while the fault was live:
+
+| field | read | what the arithmetic wants |
+|---|---|---|
+| `SP_CS_CLP_ST` | **78** | 19 |
+| `SP_CS_CLP_SP` | **82** | 23 |
+| `SP_SOG_P_INV` | **0** | -- |
+| `SP_SOG_MODE` / `ADC_SOGEN` | 1 / 1 | the csync component path |
+| `PLLAD_MD` / `STATUS_SYNC_PROC_HTOTAL` | 1212 / 1212 | latched, so the divider is not the fault |
+
+`SyncProcessor::clampStartFor()` on that path takes `ClampStartCsyncComponent`
+0.089 of the quarter-count line, which at 31468 Hz is 213 -- so 19 and 23. The
+registers are **59 counts later**, and 59 is what
+`clampOffsetForInvertedSog()` returns for a sync duty of 6.9% at this line rate.
+**`SP_SOG_P_INV` reads 0**, so the inversion that offset exists for is not in
+circuit and the offset should not be there.
+
+**THE OFFSET PUTS THE CLAMP ON ACTIVE PICTURE.** The usable range measured on
+this exact source and divider is 0..66, with picture from 67, at 2.667 emitted
+columns per count -- so 78 is about eleven counts, thirty columns, inside the
+picture. That is the documented clamp fault and it has two symptoms, both
+reported here: the black bar at the left, and the black level coming off
+picture so **the whole frame changes with its content**, which in a game reads
+as the colours shifting as the scene does.
+`investigations/the-clamp-had-two-owners-and-two-units.md`.
+
+**THE COMPONENT COLOUR REST IS NOT THE CANDIDATE FOR THAT.** `VDS_Y_OFST` 14,
+`VDS_U_OFST` 3 and `VDS_V_OFST` 4 read exactly `ColourBalance`'s `Component`
+resting row, which is the intended pedestal compensation and not a leftover.
+**A colour reading taken while the clamp is on picture is not evidence about
+it** -- the black level it is compensating is itself wrong -- so the balance is
+judged again once the clamp is back in the back porch, not before.
+
+What would settle it: whether the offset is applied without the inversion on
+every entry to the scaling path or only after a pass-through round trip, and
+which writer leaves it. `acquireClampWindow()` takes the offset from its
+caller, and `SP_SOG_P_INV` is `invertSogReference()`'s -- so the two can
+disagree, and nothing reads the register back to notice.
+
+
 ### The reference clock list can spin until low power, and nothing measures through any entry
 
 Measured on `vga`, the RISC PC at 800x600@60 with `SYNC 1`, output 1920x1080,
@@ -7516,6 +7559,13 @@ picture is clean, but the top of the source is slightly cut and a black bar of
 roughly ten rows stands at the bottom. Both edges are the source's own, so the
 capture window is not involved — bypass passes the source's timing straight to
 the encoder.
+
+**IT IS NOT ONE SOURCE, AND THE SHAPE IS WRONG AS WELL AS THE MARGIN.** The Wii
+on `ypbpr` at 480p shows the same bottom bar in pass-through, and there the
+picture's **aspect ratio is wrong with it** — so the vertical extent is not
+merely offset, it is scaled, and a bar at one edge is the visible part of a
+larger error rather than the whole of it. That rules out a pure placement
+account, which a bar alone would admit.
 
 It varies between entries into bypass: one calibration frame had the card's
 outermost yellow band cut off at the top, and another taken after a bypass round
