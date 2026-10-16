@@ -77,11 +77,16 @@ COVERS = {
     "X640 Y512 C256 F50": "undoubled, 50 Hz, Acorn raster",
     # The shortest source line in the file, 300 pixels, and mixed polarity.
     "X240 Y352 C256 F70": "undoubled, 70 Hz, shortest line, mixed polarity",
-    # The widest source line, 2112 pixels, where the divider ceiling and the
-    # eleven-bit line counter bind -- and a KEY COLLISION with 800x600@60, which
-    # the engine cannot tell it apart from. docs/capture-limits.md
-    "X1600 Y600 C256 F60": "widest line, key collision with 800x600@60",
 }
+
+# **1600x600@60 IS NOT HERE: A KEY CLASH CANNOT BE OPTIMISED FOR.** It is one
+# `SourceKey` with 800x600@60 -- same field rate, same line rate, both 75.8%
+# active -- so ONE solve frames both and no framing can suit the pair better
+# than it suits either. Judging both scores that solve twice and reports
+# whichever of the two it suits as a pass and the other as a deficit, which
+# measures the clash and not the framing. 1600x600 is also an outlier of a
+# resolution, so it is not the one to weight the defaults toward. `--all-modes`
+# still reaches it. docs/capture-limits.md
 
 # Modes whose picture is NARROWER than the frame rather than misplaced, against
 # the deficit measured at 1080p. It grows with the resolution and is a scale
@@ -97,9 +102,9 @@ SYNC_TYPES = ((False, "separate"), (True, "composite"))
 # the framing reset, over two full runs of the matrix. A case listed here that
 # PASSES is the gap having closed; one not listed that fails is a regression.
 #
-# **THE TWO SYNC TYPES AGREE ON 800x600@60 AND 1600x600@60 AND NOWHERE ELSE**,
-# and 800x600@60 is the mode every other measurement has been taken on. That is
-# what this matrix exists to catch.
+# **800x600@60 IS THE ONLY MODE THE TWO SYNC TYPES AGREE ON**, and it is the
+# mode every other measurement has been taken on. That is what this matrix
+# exists to catch.
 #
 # **EVERY ENTRY CARRIES THE SIZE IT IS OUT BY**, `card_edges.Judgement.out_by`,
 # because a green column a pixel off the frame and one a hundred pixels off are
@@ -140,11 +145,13 @@ NARROW = {
                                   "a framing one; both ends overrun on both axes",
     ("X640 Y512 C256 F50", True): "out by 8 across, the near edge off the "
                                   "frame; the vertical reads 1 twice and 29 once",
-    # ONE SourceKey WITH 800x600@60 -- same field rate, same line rate, both
-    # 75.8% active -- so one solve frames both and the two want placements
-    # about 5 output pixels apart. Closing 800x600@60 opened this one, 2 to 6,
-    # and neither can be flush until something separates the key.
-    ("X1600 Y600 C256 F60", True): "out by 6 to 8 across, the near edge off the frame",
+    # NOT A FRAMING DEFICIT, and not a size to close: --all-modes only, and
+    # its solve is 800x600@60's. The two want placements about 5 output pixels
+    # apart off that one solve, so this reading moves whenever that mode's
+    # framing does -- 2 before it was flush, 6 to 8 after. The entry exists so
+    # a sweep does not read it as a regression.
+    ("X1600 Y600 C256 F60", True): "shares 800x600@60's solve -- a clash, not a "
+                                   "framing; reads 6 to 8 across",
 }
 
 # Cases whose VERDICT varies between runs on one firmware, over two full runs of
