@@ -236,6 +236,18 @@ pulse rather than its complement, so `hsyncPulseSamples()` never took a
 complement at all. What differs is that the count was taken through
 `normaliseHsyncPolarity()`'s inversion.
 
+> **THAT ATTRIBUTION IS REFUTED, AND THESE SEVEN MODES COULD NOT HAVE SETTLED
+> IT.** All seven are on the DIRECT path, where *the source is high-active* and
+> *the inversion is in circuit* are ONE condition -- `normaliseHsyncPolarity()`
+> writes `SP_HS_INV_REG` from the same bit -- so nothing here separates them.
+> A NOR composite sync is where they come apart: the source is high-active on
+> its own hsync line, the separator presents it low-active, `SP_HS_INV_REG`
+> reads 0, and the capture window still wants the term. Measured on 800x600@60
+> into 1080p, the composite leg went from 5 output columns at the near edge to
+> 2 once the correction followed the PATH rather than the bit.
+> `hsyncPulseSamples()` takes it off a high-active reading OR a separated one.
+> `../known-issues.md`
+
 **A constant count rather than a constant time**, so far as one divider can say:
 the three H-positive states sit at `PLLAD_MD` 1438 and 1444 while their sample
 rates differ by 27%, and the error reads +1.7, +1.7 and +1.8 where a fixed time
@@ -243,7 +255,8 @@ would have run +1.7 to +2.2. The H-negative side cannot arbitrate -- it spreads
 22% as a count and 21% as a time, which is the register's own wobble.
 
 `SyncProcessor::InvertedPulseWidthSamples` is **5**, taken off a high-active
-source's pulse where the reading is made. Two measurements that share no model
+source's pulse where the reading is made -- and off a SEPARATED one whatever
+its polarity reads, which these modes could not see. The refutation above. Two measurements that share no model
 choose it: the split itself, and the value minimising the seven origins'
 residual against density -- 0.64 samples at 5, against 2.53 uncorrected and 0.76
 at 6. `RetimeOriginSamples` was calibrated on H-negative states, so the direct
