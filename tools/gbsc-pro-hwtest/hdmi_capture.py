@@ -56,6 +56,29 @@ def write_png(path, frame):
                    input=frame.tobytes(), check=True)
 
 
+def incoming(dev):
+    """The size the dongle is being sent, as (width, height), or None.
+
+    The scaling path always emits the chosen output mode, so WIDTH x HEIGHT is
+    right there. PASS-THROUGH emits the SOURCE's raster, which changes with the
+    source mode -- and opening the device at the wrong size returns a frame
+    reshaped from the wrong stride, which reads as a corrupt picture rather than
+    as a wrong capture size.
+    """
+    report = subprocess.run(["ffmpeg", "-hide_banner", "-f", "v4l2", "-i", dev,
+                             "-frames:v", "1", "-f", "null", "-"],
+                            capture_output=True, text=True).stderr
+    for line in report.splitlines():
+        if "Video:" not in line:
+            continue
+        for word in line.replace(",", " ").split():
+            if "x" in word and word.replace("x", "").isdigit():
+                width, height = (int(n) for n in word.split("x"))
+                if width > 0 and height > 0:
+                    return width, height
+    return None
+
+
 def frames(count, dev, width=WIDTH, height=HEIGHT, warmup=WARMUP):
     """`count` frames after the warm-up, as (count, height, width, 3) RGB.
 

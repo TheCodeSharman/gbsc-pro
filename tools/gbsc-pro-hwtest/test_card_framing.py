@@ -130,10 +130,32 @@ SYNC_TYPES = ((False, "separate"), (True, "composite"))
 # 14 across to 2, 640x512@50 from 17 down to 1, 320x256@50 from overrunning
 # both ends to a bounded 16, and 800x600@60 from 5 to 2, which is why it is no
 # longer listed. Measured over three full runs. docs/known-issues.md
+# **THE FAR EDGE'S REMAINING SHARE IS THE WIDTH PARITY, NOT THE FIT.** Measured
+# A/B on one bench, the fit rounding to nearest against rounding up, three cases
+# each twice: the far edge's surviving pixel went 0.08 to 1.00 down and 0.15 to
+# 0.56 across at 320x256@50, 0.70 to 0.80 and 0.79 to 1.00 across at 800x600@60.
+# VERTICALLY THE FIT WAS THE WHOLE STORY; horizontally about a third of the
+# pixel is still lost, which is the parity step-back taking a unit the aperture
+# then floors onto. Replacing it needs a knob on the produced width that does
+# not move the picture, which `OutputWindow::solve()` states.
+# docs/investigations/the-room-is-what-the-encoder-carries.md
 NARROW = {
     ("X240 Y352 C256 F70", True): "out by 2 to 5, the near edge across or the "
                                   "top edge -- the 14 across closed, this is "
                                   "what it hid",
+    ("X320 Y256 C256 F50", False): "0.56 of the far edge's pixel across, and "
+                                   "the near margin 3 to 4 -- the fit closed "
+                                   "the vertical outright, the parity holds "
+                                   "the horizontal",
+    # NOT THE FIT, and not this axis's rounding: the near horizontal border is
+    # absent from the emitted frame on BOTH sync types and on both sides of the
+    # fit A/B, with the vertical reading 0.50 to 0.54 at one end throughout. A
+    # deficit that survives a byte-identical register set is downstream of the
+    # board. docs/known-issues.md
+    ("X800 Y600 C256 F60", False): "the near edge across is off the frame, and "
+                                   "0.50 of the far edge down",
+    ("X800 Y600 C256 F60", True): "the near edge across is off the frame, and "
+                                  "0.53 of the near edge down",
     ("X320 Y256 C256 F50", True): "out by 16 across, 16 at the near edge",
     ("X640 Y480 C256 F60", False): "out by 15 to 20 across, the near edge off the frame",
     # NOT A FRAMING DEFICIT. The mode never acquires on composite -- 90 s and
