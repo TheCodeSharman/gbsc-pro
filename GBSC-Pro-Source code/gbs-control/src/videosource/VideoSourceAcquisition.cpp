@@ -36,7 +36,7 @@ VideoSourceAcquisition::VideoSourceAcquisition(Tv5725::SourceMeasurement &sampli
       dynamicForSearch_(false), dynamicForCsync_(false),
       sourceMeasured_(false),
       sourceState_(SourceAbsent),
-      unlockedPasses_(0),
+      unlockedPasses_(0), contradictedPasses_(0),
       solvedLinePeriod_(0), rateRun_(0), recheckPasses_(0),
       sourceInterrupted_(false), unacquiredPasses_(0), absentPasses_(0),
       unsettledPasses_(0), unsettledArmed_(false),
@@ -598,8 +598,20 @@ bool VideoSourceAcquisition::sourceMoved()
     // reaches -- 15 correct solves in 42 s were each discarded by the next
     // such reading.
     // ../../../docs/investigations/the-composite-sync-count-re-arms-its-own-solve.md
-    if (sampling_.countContradicted(lines))
-        return false;
+    // BUT NOT FOR EVER. A source that changed mode under a divider the
+    // processor cannot count it through contradicts the formatter on every
+    // pass -- 160 through 1342 against a frame of 623 half-lines, measured --
+    // and dropping every one of them left the previous solve standing,
+    // acquired and silent, with no arm reachable. A run far longer than any
+    // lost pulse produces is the processor not counting this source, which is
+    // what a re-measure is for. It re-arms every run rather than once.
+    if (sampling_.countContradicted(lines)) {
+        if (++contradictedPasses_ < ContradictedArmPasses)
+            return false;
+        contradictedPasses_ = 0;
+        return armMove("contradicted count", lines, false);
+    }
+    contradictedPasses_ = 0;
 
     // ONE ADVANCE OF THE RUN PER POLL. countHeld() mutates it, so a second
     // caller double-advances it and the steadiness both readers depend on is

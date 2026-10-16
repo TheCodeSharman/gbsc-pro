@@ -521,6 +521,15 @@ private:
 
     uint16_t unlockedPasses_;
 
+    // Consecutive passes on which the formatter's frame contradicted the
+    // count. A composite separator loses a pulse for up to eight consecutive
+    // samples, measured, and the presence verdict forgives a run of
+    // AbsentPasses; this is well past both, so what reaches it is a processor
+    // that cannot count the source at all.
+    static const uint16_t ContradictedArmPasses = 4 * AbsentPasses;
+
+    uint16_t contradictedPasses_;
+
 
     // Consecutive passes that did not reach an acquired source.
     // The field rate pass-through was last sized for, which is what a later

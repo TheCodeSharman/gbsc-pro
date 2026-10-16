@@ -2404,6 +2404,36 @@ TEST_CASE("a count the input formatter's frame contradicts is not the source mov
     CHECK_FALSE(loggedContaining("TIMINGS change (count)"));
 }
 
+TEST_CASE("a count the formatter contradicts for long enough is re-measured")
+{
+    // A contradicted reading is dropped before the state or any arm is reached,
+    // which is right for the pulse a composite separator loses for a few
+    // samples and wrong for ever: a source that changed mode under a divider
+    // the processor cannot count it through contradicts the formatter on every
+    // pass, so the previous solve stood with the state acquired and nothing
+    // armed. Measured on `vga` returning from 800x600@60 to 320x256@50 on
+    // composite sync: STATUS_SYNC_PROC_VTOTAL 160 through the 1342 divider
+    // against VPERIOD_IF 623, acquired and silent for as long as it was left.
+    // ../docs/known-issues.md
+    seedBenchSource();
+    Acquiring unit;
+    unit.path.useSyncTypeProbe(probeOwnVsync);
+
+    g_hasOwnVsync = false;
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+    REQUIRE(unit.acquisition.sourceIsPresent());
+
+    g_logLines.clear();
+    for (uint8_t i = 0; i < 20 * SourceMeasurement::SteadySamples; ++i) {
+        seedSourceLines(160);
+        seedFrame(623);
+        unit.poll();
+    }
+
+    CHECK(loggedContaining("TIMINGS change (contradicted count)"));
+}
+
 TEST_CASE("a mode change the formatter's frame agrees with still arms one")
 {
     // The corroboration refuses a count the formatter contradicts, not a count
