@@ -537,6 +537,22 @@ bool VideoSourceAcquisition::countHeld(uint16_t lines)
     return idle_.sample(lines);
 }
 
+bool VideoSourceAcquisition::sourceStoppedDrivingVsync()
+{
+    if (Tv5725::SyncMeasurement::isCsync() || Tv5725::SyncProcessor::vsyncActive()) {
+        vsyncAbsentPasses_ = 0;
+        vsyncAbsentArmed_ = false;
+        return false;
+    }
+    if (vsyncAbsentPasses_ < VsyncAbsentArmPasses)
+        ++vsyncAbsentPasses_;
+    if (vsyncAbsentPasses_ < VsyncAbsentArmPasses || vsyncAbsentArmed_)
+        return false;
+    vsyncAbsentArmed_ = true;
+    videoPath_.forgetSyncType();
+    return true;
+}
+
 // **THIS MUST NOT USE sampling_.sampleSteady().** That call is the solve's own
 // steadiness run, and filling it while the engine is idle leaves the next mode
 // change's first poll believing a count from the mode before it.
@@ -722,18 +738,8 @@ bool VideoSourceAcquisition::sourceMoved()
     // 0 on composite, every sample, and 668 of 668 over three minutes on a live
     // separate-sync source.
     // docs/investigations/a-sync-type-change-arms-no-probe.md
-    if (!Tv5725::SyncMeasurement::isCsync() && !Tv5725::SyncProcessor::vsyncActive()) {
-        if (vsyncAbsentPasses_ < VsyncAbsentArmPasses)
-            ++vsyncAbsentPasses_;
-        if (vsyncAbsentPasses_ >= VsyncAbsentArmPasses && !vsyncAbsentArmed_) {
-            vsyncAbsentArmed_ = true;
-            videoPath_.forgetSyncType();
-            return armMove("no source V sync", lines, false);
-        }
-    } else {
-        vsyncAbsentPasses_ = 0;
-        vsyncAbsentArmed_ = false;
-    }
+    if (sourceStoppedDrivingVsync())
+        return armMove("no source V sync", lines, false);
 
     // The rate says the source moved where the count cannot: the same number of
     // lines at a different field rate, which is what 320x256 at 50, 55 and 60
@@ -1145,6 +1151,13 @@ bool VideoSourceAcquisition::runPass(uint32_t nowMs, bool &detectionPass)
     bool settling = false;
     const Tv5725::SourceMeasurement::MeasurementStatus status = sampling_.measureRate(nowMs);
     if (!reading(status, settling)) {
+        // The sync type is asked here as well as between mode changes: a
+        // source that changes its sync type moves its count for a moment, so
+        // the engine is already measuring when the separator is needed, and a
+        // measurement through the wrong arrangement cycles every reference
+        // clock without reading anything until the caller drops to low power.
+        if (sourceStoppedDrivingVsync())
+            tv5725Log("measure: no source V sync, re-probing the sync type");
         if (!settling) {
             sourceState_ = SourceAbsent;
 

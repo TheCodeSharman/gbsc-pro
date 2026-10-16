@@ -1983,6 +1983,49 @@ TEST_CASE("a source held as composite sync is not re-probed for the V it cannot 
     CHECK(g_probeCalls == 1);
 }
 
+TEST_CASE("a source that stops driving V while it is being measured is re-probed")
+{
+    // The arm above is asked only between mode changes. A source that changes
+    // its sync type changes its count for a moment as the mode is re-applied,
+    // so the engine is INSIDE a measurement when the separator is needed and
+    // nothing in that loop asks the question: it cycles the reference clocks
+    // through the separate arrangement until the caller gives up and drops to
+    // low power, about seventy seconds later.
+    // docs/known-issues.md
+    seedBenchSource();
+    Acquiring unit;
+    unit.acquisition.allowMaintenance(true);
+    unit.path.useSyncTypeProbe(probeOwnVsync);
+
+    g_hasOwnVsync = true;
+    g_probeCalls = 0;
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+    REQUIRE(g_probeCalls == 1);
+    REQUIRE_FALSE(SyncMeasurement::isCsync());
+
+    // The source becomes composite: the count moves for a moment, which arms a
+    // measurement, and through the separate arrangement nothing steadies and V
+    // is not seen on its own pin.
+    g_hasOwnVsync = false;
+    seedSourceLines(307);
+    for (uint16_t i = 0; i < 4 * SourceMeasurement::SteadySamples
+                         && !unit.path.changingMode(); ++i)
+        unit.poll();
+    REQUIRE(unit.path.changingMode());
+    seedVsyncActive(false);
+
+    for (uint16_t i = 0;
+         i < 6 * (SourceMeasurement::SteadySamples
+                  + VideoSourceAcquisition::LatchSettlePasses); ++i) {
+        seedSourceLines((uint16_t)(97 + (i % 60)));
+        unit.poll();
+    }
+
+    CHECK(g_probeCalls == 2);
+    CHECK(SyncMeasurement::isCsync());
+}
+
 TEST_CASE("a field rate the line count cannot show re-solves the source")
 {
     // 320x256 at 50, 55 and 60 all count 312 lines, so the count says the

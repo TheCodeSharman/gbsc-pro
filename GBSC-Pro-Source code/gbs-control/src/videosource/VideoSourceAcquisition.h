@@ -343,6 +343,11 @@ private:
 
     bool sourceMoved();
 
+    // Whether a source held as separate sync has stopped driving V on its own
+    // pin for VsyncAbsentArmPasses, which is the one signal that the held sync
+    // type is wrong. Forgets the type on the pass it fires, once per absence.
+    bool sourceStoppedDrivingVsync();
+
     // Report a source event and spend the latched disturbance on it, whichever
     // reason is being reported.
     // `mux` says a DIFFERENT SOURCE is arriving rather than the same one
