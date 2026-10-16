@@ -155,8 +155,10 @@ bool CaptureWindow::usable() const
 uint16_t CaptureWindow::defaultWidth(const VideoSourceLine &line,
                                      const SourceTiming &timing, const Axis &axis)
 {
-    const float extent = timing.published() ? timing.activeExtent(axis)
-                                            : axis.activeExtent();
+    float extent = timing.published() ? timing.activeExtent(axis)
+                                      : axis.activeExtent();
+    if (timing.published() && axis.vertical())
+        extent += timing.lineStep();
     return (uint16_t)clampWidth(lrintf(line.units() * extent), line);
 }
 

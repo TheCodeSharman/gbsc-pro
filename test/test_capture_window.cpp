@@ -1198,3 +1198,25 @@ TEST_CASE("a source on the sync separator arrives late in the frame too")
     CHECK(videoAtOf(VideoSourceLine::frame(525, VideoSourceLine::SeparatorFrameLeadLines),
                     AxisVertical, ActiveStart) == 12);
 }
+
+// THE ACTIVE WINDOW IS A SPAN BETWEEN LINE BOUNDARIES, NOT A COUNT OF LINES.
+// A raster stating 256 active lines of 312 describes the picture from the START
+// of the first to the END of the last, which is 257 boundaries apart. Sized at
+// 256/312 the capture stops at the last line's start, so that line lands part
+// way into the counter and the outermost pixel it carries is cut.
+//
+// Measured on `vga` into 1080p, the card's bottom border as a fraction of the
+// source pixel it marks: 320x256@50 reads 0.11 at 512 units and 0.89 at 514,
+// and 240x352@70 reads 0.67 at 352 and 0.94 at 353. One SOURCE line in both --
+// two counter units on the doubled frame, one on the undoubled -- which a
+// fraction of the frame gives for free and a constant cannot.
+TEST_CASE("the default capture reaches the END of the last active line")
+{
+    SourceTiming akf = SourceTiming::matching(
+        SourceKey(311, 50.08f, 36.0f / 512.0f, SourceKey::Negative, SourceKey::Negative));
+    REQUIRE(akf.published());
+
+    // 624 counter units over 312 lines is two to the line, so 256 active lines
+    // span 512 and reaching the last one's end takes 514.
+    CHECK(CaptureWindow::defaultWidth(VideoSourceLine(624), akf, AxisVertical) == 514);
+}

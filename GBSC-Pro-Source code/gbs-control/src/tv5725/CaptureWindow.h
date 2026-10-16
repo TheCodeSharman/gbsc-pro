@@ -105,7 +105,8 @@ public:
     // WHOLE line, because that is what the VESA and CEA modes it came from
     // measure; what the line can actually hold then bounds it. A source running
     // a published raster is not assumed at all: the standard states its active
-    // window and it is taken exactly, with no over-capture to add.
+    // window, and the span taken DOWN reaches the END of that window's last
+    // line rather than its start.
     static uint16_t defaultWidth(const VideoSourceLine &line, const SourceTiming &timing,
                                  const Axis &axis);
 

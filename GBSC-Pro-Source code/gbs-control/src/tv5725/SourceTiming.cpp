@@ -219,6 +219,11 @@ float SourceTiming::activeExtent(const Axis &axis) const
         : (float)raster_->activePixels / (float)raster_->totalPixels;
 }
 
+float SourceTiming::lineStep() const
+{
+    return published() ? 1.0f / (float)raster_->totalLines : 0.0f;
+}
+
 uint16_t SourceTiming::activePixels() const
 {
     return published() ? raster_->activePixels : 0;

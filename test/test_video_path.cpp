@@ -273,7 +273,10 @@ static void checkBenchGeometry()
     CHECK(InputFormatter::IF_HB_SP2::read() == 236);
     CHECK(InputFormatter::IF_HB_ST2::read() == 926);
     CHECK(InputFormatter::IF_VB_SP::read() == 60);
-    CHECK(InputFormatter::IF_VB_ST::read() == 576);
+    // 578 rather than 576: the vertical span reaches the END of the last
+    // active line, which is one source line -- two units on this doubled
+    // frame -- past the count the raster states.
+    CHECK(InputFormatter::IF_VB_ST::read() == 578);
 
     // The progressive line window spans exactly one line from where it starts,
     // and may run past the end of the line without that being a fault.
@@ -282,10 +285,12 @@ static void checkBenchGeometry()
 
     // Both scales computed from the capture and the raster, never inherited,
     // and rounded UP so the picture cannot produce past the room: the exact
-    // vertical fit is 485.45 and 485 would overrun a line that is not emitted
-    // at all, taking the card's border with it.
+    // vertical fit is 487.35 and 487 would overrun a line that is not emitted
+    // at all, taking the card's border with it. Measured on `vga` at
+    // 320x256@50 into 1080p, 488 is what the bench solves at the capture that
+    // puts the card's bottom border on the emitted frame.
     CHECK(VideoProcessor::VDS_HSCALE::read() == 422);
-    CHECK(VideoProcessor::VDS_VSCALE::read() == 486);
+    CHECK(VideoProcessor::VDS_VSCALE::read() == 488);
     CHECK(VideoProcessor::VDS_HSCALE_BYPS::read() == 0);
     CHECK(VideoProcessor::VDS_VSCALE_BYPS::read() == 0);
     CHECK(VideoProcessor::VDS_SYNC_EN::read() == 0);
@@ -1106,7 +1111,10 @@ TEST_CASE("a reset puts the framing back without re-deriving the rest")
     CHECK(InputFormatter::IF_HB_SP2::read() == 236);
     CHECK(InputFormatter::IF_HB_ST2::read() == 926);
     CHECK(InputFormatter::IF_VB_SP::read() == 60);
-    CHECK(InputFormatter::IF_VB_ST::read() == 576);
+    // 578 rather than 576: the vertical span reaches the END of the last
+    // active line, which is one source line -- two units on this doubled
+    // frame -- past the count the raster states.
+    CHECK(InputFormatter::IF_VB_ST::read() == 578);
 
     // And leaves everything the framing does not own exactly as it was. The
     // divider, the raster and the clock are still the ones the mode change

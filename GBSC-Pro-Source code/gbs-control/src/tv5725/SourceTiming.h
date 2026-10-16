@@ -42,6 +42,13 @@ public:
     float activeStart(const Axis &axis) const;
     float activeExtent(const Axis &axis) const;
 
+    // One line as a fraction of the frame. activeExtent() states a COUNT of
+    // lines, so a span reaching the END of the last one is a line longer.
+    // Vertical only: the counter counts lines, so that boundary is real, where
+    // across the line the capture is in ADC samples of our own choosing and the
+    // raster's pixel count aligns with nothing.
+    float lineStep() const;
+
     // The shape the picture is to be shown in. Stated per row rather than
     // derived from the active counts, because 720x480p is 3:2 counted in pixels
     // and 4:3 on the screen. A source matching no raster is shown as 4:3, which
