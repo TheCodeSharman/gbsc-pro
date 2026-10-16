@@ -1600,20 +1600,20 @@ diff between the two images on this source. `ADC_?OFCTRL` is 64/64/64 against
 128 there, with `HD_MATRIX_BYPS` 0 in both, so whether that path is in circuit
 on a scaled component source has to be established before it is ruled in.
 
-**THE GAIN IS NOT THE CANDIDATE, AND THE SWEEP THAT SETTLES IT PREDATES THIS
-ENTRY.** `investigations/the-adc-gain-is-the-colour-spaces.md` walked the
-register on this input and scored the emitted frame: **a higher value is LESS
-gain**, 0x33 is the first value that clips nothing, and the knee is between
-0x2C and 0x33. At 0x33 the peak reads 249.3 with **0.00% of any channel at or
-above 254**, so the board is not clipping at the value in force. Writing the
-vendor's 0x7B would take the peak to 232.2 and the mean from 97.4 to 82.2 --
-dimmer and lower contrast, a fourteenth of the range thrown away.
+**THE GAIN IS THE CANDIDATE, AND THE VENDOR'S VALUE IS NEAR THE MEASURED
+KNEE.** Settled 2026-10-16 against PM5544's calibrated staircase -- see *The
+ADC gain seeds clip the top of the range on BOTH colour spaces* above. On this
+input the seeded 0x33 pins **52% of the frame at one level**, and the knee is
+0x68. The vendor's 0x7B is on the right side of it; ours is not, which is
+exactly the direction this comparison reported.
 
-The magnitudes rule it out as the explanation of the gap above as well: the
-sweep moves the mean by 15 grey levels where the vendor comparison differs by
-85. So whatever makes our image brighter and flatter than the vendor's, the
-ADC gain is not enough of it, and raising the register would cost range
-without addressing it.
+**AN EARLIER REFUTATION OF THAT WAS WRONG, AND THE INSTRUMENT IS WHY.**
+`investigations/the-adc-gain-is-the-colour-spaces.md` concluded 0x33 clips
+nothing, from aggregate statistics over a whole test card -- a mean, a
+percentile and a clipped fraction. A knee near white moves none of them,
+because the card's flat areas dominate every one. On a ramp the same path's top
+step reads 16.1 of 51. Do not score a transfer curve on summary statistics, and
+do not reinstate the reading that the register is inert.
 
 **What is left is downstream of the ADC, or off the board.** `VDS_Y_OFST` 14 is
 `ColourBalance`'s Component rest, a pedestal lift applied in the VDS and
