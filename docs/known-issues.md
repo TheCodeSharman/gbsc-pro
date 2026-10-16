@@ -141,7 +141,7 @@ promise, the stored shape being per source. `/uc?S` is the toggle and
 
 **THE MODE MATRIX IS COVERED NOW, AND IT SAYS THE SCREEN EVERYTHING WAS
 MEASURED ON IS THE EXCEPTION.** `test_card_framing.py` asks the first
-criterion on six modes against both sync types, at 1080p with the shape off,
+criterion on five modes against both sync types, at 1080p with the shape off,
 and `test_acquires_every_source.py` asks all four on 800x600@60.
 
 Measured over two full runs of the matrix, no case is flush on both axes and
@@ -160,6 +160,11 @@ Measured over two full runs of the matrix, no case is flush on both axes and
 what the matrix exists to catch. The table is the suite's standing record, so a
 case passing is the gap having closed and a case not in it failing is a
 regression.
+
+**It is the state BEFORE the polarity correction followed the sync path**, and
+1600x600@60 has since left the default set: its solve is 800x600@60's, one
+`SourceKey` serving both, so its reading measures the clash rather than the
+framing.
 
 Two things the verdicts do not say, both of which bound what can be concluded
 from the table:
@@ -1963,7 +1968,7 @@ the displacement `sync width - 66` where a constant delay would not -- and
 which the entry below is about.
 
 **THE SEPARATE COLUMN'S SPREAD SWAMPS A FEW PIXELS ON THE SHORT LINES, so judge
-a horizontal change on 800x600@60 or 1600x600@60.** Two runs on one firmware
+a horizontal change on 800x600@60.** Two runs on one firmware
 give 240x352@70 out by 2 and then by 10, where 320x256@50 repeats at 2 and
 800x600@60 at 1 and 2. The ordering tracks the magnification, so the quantity is
 the source's own pixel rather than the emitted frame's.
@@ -2012,11 +2017,18 @@ at the near edge.
 -- `capturableFrame()` takes no polarity. So they are the spread this matrix
 already carries rather than anything the horizontal change reached.
 
-**IT COSTS THE KEY COLLISION.** 800x600@60 and 1600x600@60 are one `SourceKey`
--- same field rate, same line rate, both 75.8% active -- so one solve frames
-both, and the two want placements about 5 output pixels apart. The move takes
-800x600@60 from 5 to 2 and 1600x600@60 from 2 to 6..8, so the pair cannot both
-be flush until something separates the key.
+**IT COSTS THE KEY COLLISION, AND THAT COST IS NOT A FRAMING DEFICIT.**
+800x600@60 and 1600x600@60 are one `SourceKey` -- same field rate, same line
+rate, both 75.8% active -- so ONE solve frames both, and the two want
+placements about 5 output pixels apart. The move takes 800x600@60 from 5 to 2
+and 1600x600@60 from 2 to 6..8.
+
+**A CLASH CANNOT BE OPTIMISED FOR**, so neither reading is a target: no framing
+suits the pair better than it suits either, and whichever of the two the solve
+is tuned for reports the other as a deficit. `test_card_framing.py` therefore
+does not carry 1600x600@60 in its default set -- it is also an outlier of a
+resolution, and not the one to weight the defaults toward. `--all-modes`
+reaches it, with an entry saying the reading is the clash.
 
 **AND THE DUTY MOVES WITH IT.** 5 samples of the divider is 0.0023 to 0.0037
 against `SourceKey::SyncWidthIdentity` of 0.002, so a composite framing stored
