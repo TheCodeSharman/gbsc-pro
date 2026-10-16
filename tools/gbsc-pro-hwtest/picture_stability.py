@@ -37,6 +37,12 @@ framing fault and `hdmi_capture.borders` reads it off a single frame.
 **NEVER A MEAN.** A few-times-a-second event averages into nothing, so what is
 reported is the share of frames displaced, the rate the offset CHANGES, and the
 worst offset.
+
+**A SHARE OF ZERO IS NOT A PICTURE.** The correlation reads a band of
+unwritten memory a hundred rows high as a still frame, because the rest of
+the frame correlates at lag 0 -- measured with the H coast stop past the
+line, 0 of 514 displaced beside a frame that was mostly magenta noise. A
+treatment that reads zero is looked at before it is believed. `roll_ab.py`.
 """
 
 import argparse
