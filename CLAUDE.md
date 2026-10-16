@@ -1661,6 +1661,17 @@ in before believing it. Nothing on this page may be read as the set hiding pictu
 discrepancy may not be explained away as overscan -- that explanation is closed,
 and reaching for it has cost several sessions and at least one wrong retraction.
 
+**AND A SET OFF FULL CAN COST AS LITTLE AS ONE PIXEL, WHICH IS WHY IT READS AS
+A BOARD FAULT.** It is not always the obvious crop above. `PATTERN CARD`'s green
+frame is one SOURCE pixel wide, so a set off FULL can show no border on any edge
+while the emitted frame carries it on all four -- measured at 320x256@50 into
+1080p with 16:9 declared, the USB capture reads 2 px of black at the near edge
+and 0 at the far, and the panel beside it showed none at all until the set went
+back to FULL. **THE TWO INSTRUMENTS DISAGREEING AT ONE PIXEL IS THE SET'S MODE**:
+ask the capture, and a border that returns when the set goes to FULL is the
+whole diagnosis. Weakening the rule above on the strength of the panel alone is
+the wrong retraction it warns about.
+
 Two consequences, both the opposite of what is easy to assume:
 
 - **The panel is a valid instrument for where the OUTPUT ends**, vertically and
