@@ -321,7 +321,8 @@ def test_the_default_framing_puts_the_card_flush_to_the_emitted_edges(
     # phase where it is yellow the green smears into it and falls under the hue
     # test, so one capture reports the edge missing.
     clip = hdmi_capture.frames(card_edges.CLIP_FRAMES, capture_device)
-    found = {name: card_edges.judge(clip, axis, card_edges.ALLOWANCE)
+    found = {name: card_edges.judge(clip, axis, card_edges.ALLOWANCE,
+                                    card_edges.source_pixel_px(mode, clip, axis))
              for name, axis in (("across", 1), ("down", 0))}
 
     whys = [f"{name}: {judged.why}" for name, judged in found.items()

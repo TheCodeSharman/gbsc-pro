@@ -9,14 +9,19 @@
 (`PROCframe` in PatLib), so it marks exactly where the source's active video
 begins and ends.
 
-**THE GOAL, WHICH IS WHAT THIS ASSERTS.** A default framing puts the source's
-outermost pixel on the emitted frame's outermost pixel:
+**THE GOAL, WHICH IS WHAT THIS ASSERTS.** A default framing SHOWS the source's
+outermost pixel on the emitted frame, and leaves as little black beside it as
+that costs. Two readings per edge, and they answer different questions:
 
-    left    the green column is flush, column 0
-    top     the green row is flush, row 0
-    bottom  the green row is flush, the last row
-    right   almost flush -- ONE pixel of slack, for the width parity the
-            HSCALE corruption workaround carries
+    whole   how much of the outermost SOURCE pixel survives, WHOLE_ENOUGH of it
+            being the acceptance. The border's captured size varies between
+            edges and modes and none of that is a deficit
+    margin  how much black is between it and the frame's edge, bounded by the
+            allowance. It is the cost, so it is kept small rather than spent
+
+A margin cannot answer the first: a border sitting wholly on row 0 and one
+half off the frame above it both read 0, which is a verdict reading as perfect
+on an axis where the pixel is nearly all gone.
 
 `docs/investigations/full-screen-framing-on-the-vesa-modes.md` is the goal and
 what has been measured against it.
@@ -123,6 +128,17 @@ ALLOWANCE = FLUSH + SPREAD
 # corruption workaround can leave a pixel of.
 PARITY = 1
 
+# How much of the source's OUTERMOST PIXEL has to survive on the emitted frame.
+# The border's captured size may vary between edges and modes -- the filter
+# spreads it and the magnification differs per axis -- and none of that is a
+# deficit. What is a deficit is the pixel being mostly invisible.
+#
+# It is the acceptance, not a tolerance to widen: an inset buys the pixel at
+# the cost of black at the edge, so it is paid only as far as this requires.
+# The measure is slightly pessimistic -- a whole border reads 0.91 to 0.98 --
+# so the bound it enforces is a little above three quarters.
+WHOLE_ENOUGH = 0.75
+
 
 def greenest_along(clip, axis):
     """Each position's greenest moment across the clip, so the phase where the
@@ -137,28 +153,75 @@ def greenest_along(clip, axis):
 
 # WHETHER THE OUTERMOST PIXEL IS WHOLE, which a MARGIN cannot say. The margin
 # is the first green run's index, so a border sitting wholly on row 0 and one
-# half off the frame above it both report 0 -- and the acceptance is the card's
-# frame being VISIBLE, not an index.
+# half off the frame above it both report 0 -- and the acceptance is how much of
+# the source's outermost PIXEL is visible, not an index.
 #
 # The frame is one SOURCE pixel, several output pixels wide under magnification,
-# so a partly-shown one reads as a fraction of a whole one. A lit position AT
-# the frame's own edge is a border that continues past it; what it reads against
-# the profile's peak is how much of it survived.
+# so the border is a BLOCK and what survives is a fraction of it. The MASS of
+# the green at the edge is what measures that -- the run's dominance summed,
+# against the mass a whole block carries, which is the border's own amplitude
+# times its width in output pixels.
 #
-# Measured on `vga` into 1080p with the shape off: 320x256@50 shows 43% of a row
-# at the bottom where one source pixel is 4.22 rows, and 640x512@50 shows 49%
-# where it is 2.11 -- about 0.45 output rows in both, because the solve fills
-# the raster and the last source pixel straddles the end of it.
-# docs/known-issues.md
-def edge_wholeness(greenest):
+# **THE AMPLITUDE IS THE CLIP'S, NOT THE PROFILE'S PEAK.** The profile is a mean
+# across the perpendicular axis and the horizontal scaler's filter is longer
+# than the border is wide, so a whole border's mean peak falls short of the
+# green it is drawn at: measured on `vga` at 320x256@50 into 1080p, 210 down and
+# 157 across against a per-pixel 223. Normalising on the profile's peak reads a
+# whole border 29% high across and 4% high down -- a bias that follows the
+# filter's length against the magnification, so it is not a constant to carry.
+#
+# A whole border reads 0.91 to 0.98 by this, the shortfall being the ramp's
+# tails falling under GREEN_HUE, so the measure is slightly PESSIMISTIC and errs
+# toward keeping more of the pixel. docs/known-issues.md
+def edge_wholeness(greenest, amplitude, source_px):
     """How much of the border survives at each end, as a fraction of a whole
-    one. 1.0 is a border clear of the frame's edge; less is one running past
-    it; 0.0 is no green at that edge at all."""
-    peak = float(greenest.max())
-    if peak <= GREEN_HUE:
+    one. 1.0 is a border entirely on the frame; less is one running past its
+    edge; 0.0 is no green at that edge at all."""
+    if greenest.max() <= GREEN_HUE or amplitude <= 0.0:
         return (0.0, 0.0)
-    return tuple(1.0 if at <= GREEN_HUE else round(float(at) / peak, 2)
-                 for at in (greenest[0], greenest[-1]))
+    whole = amplitude * source_px
+    surviving = []
+    for inward in (greenest, greenest[::-1]):
+        if inward[0] <= GREEN_HUE:
+            surviving.append(1.0)
+            continue
+        lit = 0.0
+        for at in inward:
+            if at <= GREEN_HUE:
+                break
+            lit += float(at)
+        surviving.append(min(1.0, round(lit / whole, 2)))
+    return tuple(surviving)
+
+
+def green_amplitude(clip):
+    """The green the card's border is drawn at, as a single pixel's dominance.
+    A whole border reaches it, and so does any solid green the card carries."""
+    peak = 0.0
+    for rgb in clip:
+        r, g, b = (rgb[:, :, i].astype(np.float32) for i in range(3))
+        peak = max(peak, float((g - np.maximum(r, b)).max()))
+    return peak
+
+
+# ACROSS is axis 1 and DOWN is axis 0, which is the order a MODE states them
+# in: "X320 Y256" is the across count then the down one.
+MODE_COUNT = {1: 0, 0: 1}
+
+
+def source_pixel_px(mode, clip, axis):
+    """How many output pixels one SOURCE pixel occupies on `axis`.
+
+    At a default framing the emitted frame IS the source's active area, so the
+    frame's own extent over the mode's active count is the magnification and no
+    register read can improve on it. It assumes the picture FILLS: a declared
+    shape pillarboxes, and the bars it leaves are our blanking rather than the
+    source's pixels. docs/aspect-ratio.md
+    """
+    parts = mode.split()
+    if len(parts) <= MODE_COUNT[axis]:
+        return 1.0
+    return clip.shape[1 + axis] / float(parts[MODE_COUNT[axis]][1:])
 
 
 def green_runs(clip, axis):
@@ -208,15 +271,25 @@ Judgement = collections.namedtuple("Judgement",
 ENDS = ("near", "far")
 
 
-def judge(clip, axis, allowance):
-    """What the green frame says about the window on this axis."""
+def judge(clip, axis, allowance, source_px=1.0):
+    """What the green frame says about the window on this axis.
+
+    `source_px` is how many output pixels one SOURCE pixel occupies on this
+    axis, which is what turns the border's surviving mass into a fraction of
+    the pixel it marks. 1.0 asks for the mass alone.
+    """
     runs = green_runs(clip, axis)
-    whole = edge_wholeness(greenest_along(clip, axis))
+    whole = edge_wholeness(greenest_along(clip, axis), green_amplitude(clip),
+                           source_px)
     extent = clip.shape[1 + axis]
     near = [run for run in runs if run[1] < extent // QUARTER]
     far = [run for run in runs if run[0] > extent - extent // QUARTER]
     margins = (near[0][0] if near else None,
                extent - 1 - far[-1][1] if far else None)
+    # Black at the frame's edge is a border clear of it OR one that missed the
+    # frame entirely, and the profile cannot tell them apart. The run can.
+    whole = tuple(0.0 if margin is None else was
+                  for margin, was in zip(margins, whole))
     if not near and not far:
         return Judgement(None, margins, None,
                          "neither edge: the picture overruns both ends, and "
@@ -225,13 +298,16 @@ def judge(clip, axis, allowance):
     # vertical edges are flush, and only the far edge carries the parity. A span
     # test passes a picture that is short at one end and over at the other.
     out_by, over = 0, []
-    for end, margin, limit in zip(ENDS, margins,
-                                  (allowance, allowance + PARITY)):
+    for end, margin, limit, surviving in zip(ENDS, margins,
+                                             (allowance, allowance + PARITY),
+                                             whole):
         from_flush = OFF_FRAME_LEAST if margin is None else margin
         out_by = max(out_by, from_flush)
         if from_flush > limit:
             over.append(f"the {end} edge is off the frame" if margin is None
                         else f"{margin} at the {end} edge")
+        elif surviving < WHOLE_ENOUGH:
+            over.append(f"{surviving:.2f} of the {end} edge's source pixel")
     shown = None if None in margins else margins[0] + margins[1]
     if over:
         return Judgement(shown, margins, out_by,
@@ -265,7 +341,8 @@ def sweep_mode(host, dev, source, mode, allowance, keep_framing):
     # A clip rather than a frame: the card flashes twice a second, so a single
     # capture can miss a green edge entirely. CLIP_FRAMES spans both phases.
     clip = hdmi_capture.frames(CLIP_FRAMES, dev)
-    found = {name: judge(clip, axis, allowance)
+    found = {name: judge(clip, axis, allowance,
+                         source_pixel_px(mode, clip, axis))
              for name, axis in (("across", 1), ("down", 0))}
     whys = [f"{name}: {judged.why}" for name, judged in found.items()
             if judged.why]
