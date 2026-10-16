@@ -65,23 +65,64 @@ flat areas dominate every one. **A calibrated ramp sees what a histogram
 cannot**: on the same path the top step goes 16.1 -> 50.0 across that sweep.
 Do not score a transfer curve on summary statistics.
 
-### Auto gain is enabled and does not correct a clipping signal
+### FIXED: auto gain never moved the seeds, and a field's width is why
 
-`auto-gain` reads 1 in the preferences and `ADC_RGCTRL`/`GGCTRL`/`BGCTRL` sit
-at exactly their colour space's seed, so the loop has never moved them.
+`auto-gain` read 1 while `ADC_RGCTRL`/`GGCTRL`/`BGCTRL` sat at exactly their
+colour space's seed for the life of a boot. The loop ran -- every gate in
+`loop()` opened, continuously -- and it was reading a signal that carries no
+level.
 
-Measured 2026-10-16 on `vga` at 640x480@60: the three gains were written to
-0x33, which the ramp above scores as clipping the top TWO steps into each other
-(top gap -0.3), and read back every twelve seconds. **They held 51 for 120
-seconds.** `runAutoGain()` raises all three by 2 once `TestBus::readHigh()`
-returns 0x7f twice in a pass, so either its gate in `loop()` never opens --
-`acquiredPasses() > 90` and `clampPlaced()` are both required -- or the test bus
-does not report saturation on a signal the emitted frame shows saturating.
+**The cause is a field declared one bit wider than upstream's.**
+`DEC_TEST_SEL` is `s5_1F[6:4]` upstream with `DEC_TEST_ENABLE` at `[3]`; the
+fork made it `[6:3]`, matching RD-5725-1.1's own four-bit description, which
+makes the two names OVERLAP. Every call site asking for a logic by number then
+writes the enable with it: `write(1)` selects logic 0 rather than 1, and
+`write(2)` switches the measurement path OFF. Measured at `TEST_BUS_SEL` 0x0b on
+a clipping picture, logic 0 returns `0 32 64 ... 224` whatever the gain and
+logic 1 returns a level that follows it.
 
-This is what makes the seeds above matter rather than being a starting point:
-nothing is correcting them. It is also why a seed cannot be the whole fix, since
-the right gain depends on the source's output level and only a working loop can
-follow that.
+**It hit the ADC offset calibration too**, which writes 1, 2, 3 to walk green,
+red and blue: the `2` cleared the enable, so red searched against a dead bus.
+Both fields are split again, `[6:4]` and `[3]`.
+
+`Tv5725::AutoGain` reads `TEST_BUS_SEL` **14, 15 and 16** rather than the
+decimator path -- one per channel, ten bits, no flag bit, where the decimator's
+own byte carries a seven-bit level under a flag that `== 0x7f` only matches when
+it happens to be clear. `investigations/the-auto-gain-loop-read-a-selector-with-no-level.md`
+is the whole account, including how to tell a gate fault from a measurement
+fault in one HTTP read.
+
+**What it is worth, measured on both inputs.** On `vga` at 320x256@50 with
+PM5544, whose greyscale staircase draws six known levels 51 apart:
+
+| gain | steps | top gap |
+|---|---|---|
+| 123, the shipped `RgbGain` | 25, 60, 111, 164, **236** | the top two have merged |
+| 199, the knee itself | 24, 49, 89, 132, 177, 226 | 49 |
+| 211, where the walk settles | 23, 47, 86, 128, 172, 219 | 47 |
+
+At the seed only five plateaus survive -- 204 and 255 land on each other. On
+`ypbpr`, the Wii's menu at 480p: **14.0% of the frame at one level near the top
+at the shipped 0x33 against 4.2% at the 87 the walk settles on**, and the
+busiest level drops from 237 to 204.
+
+**The walk settles on evidence and then looks rarely, rather than stopping.** A
+pass with nothing bright on it says only that nothing bright was on screen, so
+settling needs a run of passes that reached `EvidenceLevel` AND asked for no
+step -- a dark picture never settles it. Settled, it looks every `SettledMs`:
+measured, a hand-written gain of 64 under a settled walk is corrected to 211
+within 15 s. Stopping outright was tried and is wrong, because the level is
+established against whatever was on screen at the time.
+
+**A pass costs tens of milliseconds of the loop**, so the interval is what makes
+it affordable -- against a build that looked at its stepping rate for ever, the
+frame time lock reported `not armed: something keeps disturbing the lock` on a
+locked source.
+
+**The seeds stay hot on purpose.** The walk only ever backs off, because a level
+below the band says nothing about how much headroom is left. A seed that did not
+clip would strand a hotter source, so a seed is a starting point and the walk is
+what makes it one.
 
 
 ### FIXED: the clamp kept an inverted-SOG offset onto active picture
