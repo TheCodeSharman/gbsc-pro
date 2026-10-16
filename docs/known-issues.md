@@ -10,7 +10,7 @@ regardless of which step is in flight.
 
 ## Reaches the picture
 
-### FIXED IN FIRMWARE, NOT YET RE-MEASURED: the clamp kept an inverted-SOG offset onto active picture
+### FIXED: the clamp kept an inverted-SOG offset onto active picture
 
 Reached on `ypbpr`, the Wii at 480p into 1920x1080, by a pass-through round trip
 and back to the scaling path. Read by name while the fault was live:
@@ -63,8 +63,28 @@ with the register` in `test/test_sync_processor.cpp`.
 what says the placement runs once per acquisition rather than continuously --
 so the stale window only has to be open at that one moment.
 
-What is NOT yet done: the round trip has not been repeated against the fixed
-firmware, and the colour balance has not been re-judged with the clamp back in
+**MEASURED FIXED, ON THE ROUND TRIP THAT PRODUCED IT.** Wii 480p on `ypbpr`,
+`/sc?k` into pass-through and `/sc?~` back, sampled every ten seconds for 80 s
+afterwards:
+
+| stage | `SP_CS_CLP_ST`..`SP` | `SP_SOG_P_INV` | `DAC_RGBS_BYPS2DAC`/`OUT_SYNC_SEL` |
+|---|---|---|---|
+| scaling, before | 19..23 | 0 | 0/0 |
+| pass-through | **78..82** | **1** | 1/1 |
+| scaling, +10 to +80 s | 19..23 | 0 | 0/0 |
+
+**78 is CORRECT in pass-through**, where the inversion really is in force, and
+that is what names the fault precisely: the value was never wrong on its own,
+only the pairing of it with `SP_SOG_P_INV` 0 surviving the return. The two now
+move together at every stage.
+
+The path registers are what say the leg was taken -- an earlier attempt used
+`/uc?k`, which is `resetAvPicture()`, and the clamp held at 19 while the unit
+never left the scaling path, which proves nothing. Bypass is `/sc?k`, and
+`DAC_RGBS_BYPS2DAC` and `OUT_SYNC_SEL` reading 1/1 is what confirms it.
+`docs/rgbhv-bypass-trap.md`.
+
+Still open: the colour balance has not been re-judged with the clamp back in
 the back porch.
 
 
