@@ -3363,7 +3363,7 @@ void setup()
     // boot and an RTS reset are indistinguishable in the log, and they are not
     // the same test -- the failure being chased only shows up on the former.
     bootLogPrintf("BOOT: reason='%s' t=%lums\n",
-        ESP.getResetReason().c_str(), (unsigned long)millis());
+        ESP.getResetInfo().c_str(), (unsigned long)millis());
 
     const uint32_t fsBeginStart = millis();
     const bool fsUp = LittleFS.begin();
