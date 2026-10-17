@@ -81,21 +81,37 @@ uint8_t postCoastOverride_ = 0;
 // need it is displaced in under a percent of frames.
 bool longPostCoast_ = true;
 
-// 107 through a 2200-sample line is the value measured to read PAL 576i.
-const uint16_t CsyncPulseIgnorePerThousand = 49;
+// 107 through a 2200-sample line is the value measured to read PAL 576i. Below
+// 3.68% of the line the separator counts that source's serrations as lines and
+// reads 319 against a true 310.
+const uint16_t SerratedPulseIgnorePerThousand = 49;
+
+// What a source with nothing in its vertical interval can take, which is less:
+// 4.9% lands inside the dither on 640x512@50 composite, where the whole band
+// 2.75..2.81% holds the count on every unserrated source measured -- the RISC
+// PC at 320x256@50 and 640x512@50 at both of its dividers, and the Wii at
+// 480p.
+// ../../../../docs/investigations/the-composite-count-dithers-where-the-ignore-nears-the-pulse.md
+const uint16_t UnserratedPulseIgnorePerThousand = 28;
 
 // Under the narrowest sync pulse the block can be counting while the divider is
 // not the line: 31 samples, a 7.3% pulse at half the 27 MHz reference.
 const uint8_t SearchPulseIgnore = 16;
 
-uint8_t pulseIgnoreFor(uint16_t divider)
+uint8_t pulseIgnoreFor(uint16_t divider, bool serrated)
 {
-    return (uint8_t)((uint32_t)divider * CsyncPulseIgnorePerThousand / 1000u);
+    const uint16_t perThousand = serrated ? SerratedPulseIgnorePerThousand
+                                          : UnserratedPulseIgnorePerThousand;
+    return (uint8_t)((uint32_t)divider * perThousand / 1000u);
 }
 
+// THE SEARCH ASSUMES SERRATIONS, because what it is hunting has not been
+// measured and the two errors are not equal: the higher threshold costs an
+// unserrated source nothing it cannot recover once the probe has run, where
+// the lower one leaves a serrated source counting its vertical interval.
 uint8_t searchPulseIgnoreFor(bool latched, uint16_t divider)
 {
-    return latched ? pulseIgnoreFor(divider) : SearchPulseIgnore;
+    return latched ? pulseIgnoreFor(divider, true) : SearchPulseIgnore;
 }
 
 // The H timer the search asks for, measured as a don't-care across its whole
@@ -199,9 +215,9 @@ uint8_t SyncProcessor::postCoastLines()
     return longPostCoast_ ? LongPostCoastLines : ShortPostCoastLines;
 }
 
-void SyncProcessor::applyPulseIgnore(uint16_t divider)
+void SyncProcessor::applyPulseIgnore(uint16_t divider, bool serrated)
 {
-    SP_H_PULSE_IGNOR::write(pulseIgnoreFor(divider));
+    SP_H_PULSE_IGNOR::write(pulseIgnoreFor(divider, serrated));
 }
 
 void SyncProcessor::applyPulseWidthDifference()
@@ -244,7 +260,7 @@ void SyncProcessor::applyDynamic(const Dynamic &source)
     // to be present because the fraction is of the LATCHED line.
     // ../../../../docs/investigations/the-pulse-ignore-outlived-the-channels-entry.md
     if (source.present)
-        applyPulseIgnore(source.divider);
+        applyPulseIgnore(source.divider, source.serrated);
 }
 
 void SyncProcessor::applyForOffsetCalibration()
@@ -279,7 +295,9 @@ void SyncProcessor::prepare(uint16_t divider)
     SP_JITTER_SYNC::write(0);
 
     applyPulseWidthDifference();
-    applyPulseIgnore(divider);
+    // SERRATED UNTIL MEASURED OTHERWISE. Nothing has probed the arriving
+    // source yet, and the higher threshold is the recoverable error of the two.
+    applyPulseIgnore(divider, true);
 
     SP_H_TOTAL_EQ_THD::write(3);
 
@@ -333,8 +351,9 @@ void SyncProcessor::applyForSyncType(bool csync, uint16_t divider)
     referenceLeadingEdge(csync);
 
     // OUTSIDE THE BRANCH, because the separation threshold is a fraction of the
-    // line rather than a property of the arrangement.
-    applyPulseIgnore(divider);
+    // line rather than a property of the arrangement. Serrated here for the
+    // same reason prepare() is: the arrangement runs ahead of the probe.
+    applyPulseIgnore(divider, true);
 
     if (csync) {
         SP_SOG_SRC_SEL::write(0);

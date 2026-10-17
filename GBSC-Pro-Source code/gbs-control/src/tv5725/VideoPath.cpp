@@ -32,6 +32,8 @@
 
 namespace Tv5725 {
 
+static uint16_t countThroughThreshold(bool rejectsSerrations);
+
 // --- VideoPath ----------------------------------------------------------
 
 VideoPath::VideoPath(DisplayClock &displayClock, SourceMeasurement &sampling,
@@ -47,7 +49,7 @@ VideoPath::VideoPath(DisplayClock &displayClock, SourceMeasurement &sampling,
       sampling_(sampling),
       scanSolved_(false), lineDoubled_(true),
       syncTypeApplied_(false),
-      syncTypeInForce_(false), syncTypeChosenFor_(NoSelectionSeen), intervalMeasuredFor_(NoSelectionSeen), syncProbe_(0),
+      syncTypeInForce_(false), syncTypeChosenFor_(NoSelectionSeen), intervalMeasuredFor_(NoSelectionSeen), syncProbe_(0), serrationProbe_(countThroughThreshold),
       framings_(framings),
       solvePending_(false), modePending_(false), modeOversample_(4),
       heldDivider_(0), fullFraming_(false), installedRateHz_(0),
@@ -962,9 +964,15 @@ bool VideoPath::fullFramingForced() const { return fullFraming_; }
 
 void VideoPath::useSyncTypeProbe(bool (*hasOwnVsync)()) { syncProbe_ = hasOwnVsync; }
 
+void VideoPath::useSerrationProbe(SerrationMeasurement::CountAtThreshold countAt)
+{
+    serrationProbe_ = countAt;
+}
+
 void VideoPath::forgetSyncType()
 {
     SyncMeasurement::forget();
+    SerrationMeasurement::forget();
     syncTypeApplied_ = false;
     intervalMeasuredFor_ = NoSelectionSeen;
 }
@@ -972,6 +980,7 @@ void VideoPath::forgetSyncType()
 bool VideoPath::reacquireSyncType()
 {
     SyncMeasurement::forget();
+    SerrationMeasurement::forget();
     syncTypeApplied_ = false;
     intervalMeasuredFor_ = NoSelectionSeen;
     establishSyncType(syncTypeChosenFor_);
@@ -1000,6 +1009,7 @@ void VideoPath::establishSyncType(uint8_t chosenFor)
     if (chosenFor != syncTypeChosenFor_) {
         syncTypeChosenFor_ = chosenFor;
         SyncMeasurement::forget();
+        SerrationMeasurement::forget();
         syncTypeApplied_ = false;
         intervalMeasuredFor_ = NoSelectionSeen;
     }
@@ -1033,6 +1043,48 @@ void VideoPath::establishSyncType(uint8_t chosenFor)
 // write -- so these bound the probe rather than wait for anything.
 static const uint8_t IntervalSamples = 8;
 static const uint8_t IntervalSampleMs = 20;
+
+// How long the separator is given to count the line through a threshold just
+// written, before the reading taken through it is one of the source's.
+static const uint8_t SerrationSampleMs = 24;
+
+// One reading of the count through one of the two thresholds. Injected rather
+// than called directly only so a host test can script the pair.
+static uint16_t countThroughThreshold(bool rejectsSerrations)
+{
+    SyncProcessor::applyPulseIgnore(Adc::dividerInForce(), rejectsSerrations);
+    delay(SerrationSampleMs);
+    return SyncProcessor::lineCount();
+}
+
+void VideoPath::measureSerration()
+{
+    if (serrationProbe_ == 0 || SerrationMeasurement::isSet())
+        return;
+
+    // A SEPARATE-SYNC SOURCE HAS NOTHING TO MEASURE. It is indifferent across
+    // the whole range of the field, so a probe there spends two settling times
+    // to choose between values measured to be the same.
+    if (!SyncMeasurement::isCsync())
+        return;
+
+    if (!samplingClockLatched())
+        return;
+
+    const bool serrated = SerrationMeasurement::probe(serrationProbe_);
+    if (!SerrationMeasurement::isSet())
+        return;
+
+    writePulseIgnore();
+
+    char line[80];
+    snprintf(line, sizeof(line),
+             "vertical interval: %s, pulse ignore %u of %u samples",
+             serrated ? "serrated" : "carries nothing",
+             (unsigned)SyncProcessor::SP_H_PULSE_IGNOR::read(),
+             (unsigned)Adc::dividerInForce());
+    tv5725Log(line);
+}
 
 void VideoPath::measureVerticalInterval()
 {
@@ -1316,7 +1368,8 @@ void VideoPath::writePulseIgnore()
     if (!syncTypeApplied_)
         return;
 
-    SyncProcessor::applyPulseIgnore(Adc::dividerInForce());
+    SyncProcessor::applyPulseIgnore(Adc::dividerInForce(),
+                                    SerrationMeasurement::assumeSerrated());
 }
 
 

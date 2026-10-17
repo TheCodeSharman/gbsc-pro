@@ -774,6 +774,20 @@ sync-measurement:
 	  src/tv5725/SyncProcessor.cpp src/tv5725/HsyncPulse.cpp src/tv5725/Interrupts.cpp src/tv5725/TestBus.cpp src/tv5725/Adc.cpp
 	@"$(OUT)/test_sync_measurement"
 
+## serration-measurement: host unit tests for Tv5725::SerrationMeasurement
+#
+# The two bounds on SP_H_PULSE_IGNOR do not overlap across this bench's
+# sources, so the value is chosen from a measurement rather than from a
+# constant.
+# docs/investigations/the-composite-count-dithers-where-the-ignore-nears-the-pulse.md
+serration-measurement:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
+	  -o "$(OUT)/test_serration_measurement" \
+	  "$(HERE)/test_serration_measurement.cpp" src/tv5725/SerrationMeasurement.cpp \
+	  src/tv5725/VideoSignal.cpp
+	@"$(OUT)/test_serration_measurement"
+
 ## colour-balance: host unit tests for Tv5725::ColourBalance
 colour-balance:
 	@mkdir -p "$(OUT)"
@@ -955,7 +969,7 @@ write-trace:
 	@"$(OUT)/test_write_trace"
 
 ## test: every host unit test
-test: input-scale ir-receiver osd-row osd-screens menu aspect video-signal test-bus auto-gain test-bus-rate-measurement steady-run source-absence detection-entry sync-measurement colour-space colour-balance framing-save-timer sync-on-green axis source-key source-timing framing-table framing-text framing-file scale sync-processor video-processor video-source-line capture-window output-window video-path source-measurement memory-window display-clock frame-sync frame-time-lock output-mode clock-ramp rate-agreement hold-ramp sync-search video-source-selection video-source-selector segment-select register-queue sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc sampling-log video-route rgbhv-output write-trace settings settings-file line-volume oled-menu
+test: serration-measurement input-scale ir-receiver osd-row osd-screens menu aspect video-signal test-bus auto-gain test-bus-rate-measurement steady-run source-absence detection-entry sync-measurement colour-space colour-balance framing-save-timer sync-on-green axis source-key source-timing framing-table framing-text framing-file scale sync-processor video-processor video-source-line capture-window output-window video-path source-measurement memory-window display-clock frame-sync frame-time-lock output-mode clock-ramp rate-agreement hold-ramp sync-search video-source-selection video-source-selector segment-select register-queue sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc sampling-log video-route rgbhv-output write-trace settings settings-file line-volume oled-menu
 all: test
 
 ## clean: remove the compiled test binaries

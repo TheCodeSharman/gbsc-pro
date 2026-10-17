@@ -475,15 +475,19 @@ public:
     // docs/investigations/the-pulse-ignore-value-is-measured-not-chosen.md
     static void applyPulseWidthDifference();
 
-    // How short a horizontal pulse must be to be ignored: one fraction of the
-    // line in ADC samples, for every source. NEITHER THE SYNC TYPE NOR THE
-    // MEASURED SCAN CHOOSES IT. A separate-sync source is indifferent across
-    // the whole range, and a value sized for a progressive source's narrower
-    // sync pulse lands under the floor an unserrated vertical interval imposes,
-    // where the source cannot be counted at all.
+    // How short a horizontal pulse must be to be ignored: a fraction of the
+    // line in ADC samples, and WHICH fraction follows whether the source's
+    // vertical interval is serrated. THE SYNC TYPE DOES NOT CHOOSE IT -- a
+    // separate-sync source is indifferent across the whole range, and reading
+    // a forgotten type as separate wrote 255 onto a sync-on-green source and
+    // left it uncountable.
+    //
+    // The two bounds do not overlap across this bench's sources, which is why
+    // the fraction cannot be one constant: above the serrations is 3.68% of
+    // the line or more, and below the pulse is 2.81% or less.
+    // docs/investigations/the-composite-count-dithers-where-the-ignore-nears-the-pulse.md
     // docs/investigations/the-pulse-ignore-is-a-fraction-of-the-line.md
-    // docs/investigations/the-engine-makes-the-composite-count-unmeasurable.md
-    static void applyPulseIgnore(uint16_t divider);
+    static void applyPulseIgnore(uint16_t divider, bool serrated);
 
     // The block parked so the ADC can measure its own black level: nothing
     // clamped, nothing coasting, no inversion anywhere, and the clamp window
@@ -495,8 +499,8 @@ public:
     // half init() writes and the per-sync-type half applyForSyncType() writes.
     //
     // Every fact is handed in: where the source is selected and what the engine
-    // measured are not this block's to read, and `serrated` has one definition
-    // above this layer. `pathSource` is a source whose sync carries no
+    // measured are not this block's to read, `serrated` included --
+    // Tv5725::SerrationMeasurement is what measures it. `pathSource` is a source whose sync carries no
     // broadcast vertical interval -- the RGBHV connector, or a component source
     // through the channel. `latched` is whether the block is counting the line
     // the divider describes, which is what decides the threshold below.
@@ -506,6 +510,7 @@ public:
         bool csync;
         bool pathSource;
         bool latched;
+        bool serrated;
         uint16_t divider;
     };
 

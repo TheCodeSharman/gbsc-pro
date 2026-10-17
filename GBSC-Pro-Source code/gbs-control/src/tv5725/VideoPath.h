@@ -25,6 +25,7 @@
 #include "OutputWindow.h"
 #include "FramingTable.h"
 #include "SourceKey.h"
+#include "SerrationMeasurement.h"
 #include "SourceMeasurement.h"
 
 namespace Tv5725 {
@@ -262,6 +263,10 @@ public:
     // docs/sync-type-selection.md
     void useSyncTypeProbe(bool (*hasOwnVsync)());
 
+    // How the serration probe reads the source. One call applies the threshold
+    // and returns one count; SerrationMeasurement takes the median of a run.
+    void useSerrationProbe(SerrationMeasurement::CountAtThreshold countAt);
+
     // The source's timings moved, so the capture window and everything solved
     // from it are stale. The registers are not written until the source has
     // settled, and the choice does not become a resolution until the field rate
@@ -343,6 +348,17 @@ public:
     // formatter's vertical, which is the signal the rate is timed on.
     // ../../../docs/known-issues.md
     void measureVerticalInterval();
+
+    // Whether the source's vertical interval is serrated, which decides which
+    // fraction of the line SP_H_PULSE_IGNOR takes. The two bounds on that
+    // field do not overlap across this bench's sources, so the value follows a
+    // measurement rather than a constant.
+    //
+    // RUNS LATCHED. The thresholds are in ADC samples of the line the block is
+    // counting, so through a reference clock the pair describes a line the
+    // source is not sending and both readings are of nothing.
+    // ../../../docs/investigations/the-composite-count-dithers-where-the-ignore-nears-the-pulse.md
+    void measureSerration();
 
     // The hsync pulse, taken by the layer that measures and handed over. THE
     // ENGINE READS NOTHING BACK: every window it solves, now and on every
@@ -778,6 +794,7 @@ private:
     // and must not pay for the probe again.
     uint8_t intervalMeasuredFor_;
     bool (*syncProbe_)();
+    SerrationMeasurement::CountAtThreshold serrationProbe_;
     SourceKey framedKey_;
 
     // Whether the rate behind framedKey_ had been confirmed when it was taken.

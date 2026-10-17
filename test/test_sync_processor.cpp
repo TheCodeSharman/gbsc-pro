@@ -627,9 +627,26 @@ TEST_CASE("the pulse ignore does not key on the sync type")
     // separate wrote 255 onto a sync-on-green source and left it uncountable.
     // ../docs/investigations/the-pulse-ignore-is-a-fraction-of-the-line.md
     Wire.reset();
-    SyncProcessor::applyPulseIgnore(MeasuredCsyncDivider);
+    SyncProcessor::applyPulseIgnore(MeasuredCsyncDivider, true);
 
     CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 0x6b);
+}
+
+TEST_CASE("a source with no serrations takes the lower fraction")
+{
+    // The two bounds on this field do not overlap across the bench's sources.
+    // The serrated one needs 3.68% of the line or more -- below that the
+    // separator counts the vertical interval and reads 319 against a true 310
+    // -- and the unserrated ones hold their count only at 2.81% or less, the
+    // 4.9% above landing inside the dither on 640x512@50 composite.
+    //
+    // So the fraction follows a MEASUREMENT of the source rather than a
+    // constant. SerrationMeasurement is what takes it.
+    // ../docs/investigations/the-composite-count-dithers-where-the-ignore-nears-the-pulse.md
+    Wire.reset();
+    SyncProcessor::applyPulseIgnore(MeasuredCsyncDivider, false);
+
+    CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 61);
 }
 
 TEST_CASE("a composite source's pulse ignore is a fraction of the line in ADC samples")
@@ -642,16 +659,16 @@ TEST_CASE("a composite source's pulse ignore is a fraction of the line in ADC sa
     // the separator ignores the source; lowered by hand, it measured within
     // half a second. docs/investigations/the-pulse-ignore-is-a-fraction-of-the-line.md
     Wire.reset();
-    SyncProcessor::applyPulseIgnore(MeasuredCsyncDivider);
+    SyncProcessor::applyPulseIgnore(MeasuredCsyncDivider, true);
     CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 0x6b);
 
     SUBCASE("a shorter line in samples takes a threshold under its sync pulse") {
-        SyncProcessor::applyPulseIgnore(1446);
+        SyncProcessor::applyPulseIgnore(1446, true);
         CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 70);
     }
 
     SUBCASE("and the reference line likewise") {
-        SyncProcessor::applyPulseIgnore(2040);
+        SyncProcessor::applyPulseIgnore(2040, true);
         CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 99);
     }
 }
@@ -709,6 +726,8 @@ static SyncProcessor::Dynamic settled()
     source.pathSource = false;
     source.divider = MeasuredCsyncDivider;
     source.latched = true;
+    // Serrated, which is what every path writes before the probe has run.
+    source.serrated = true;
     return source;
 }
 
@@ -995,6 +1014,21 @@ TEST_CASE("a present composite source takes the fraction of its own line")
 // AND ON A PATH SOURCE TOO, which is the route with nothing else to re-place
 // it: the channel solves nothing, so what the arrangement wrote stands for the
 // life of the route.
+TEST_CASE("a present source measured unserrated takes the lower fraction")
+{
+    // 640x512@50 on composite sync is the case: 4.9% of its line lands inside
+    // the count's dither, and the band around 2.8% holds it. Measured frozen
+    // on the solve, 48 reads 530 in 23 of 25 samples where the shipped 85
+    // reads 527..530 with no dominant value.
+    // ../docs/investigations/the-composite-count-dithers-where-the-ignore-nears-the-pulse.md
+    SyncProcessor::Dynamic source = settled();
+    source.csync = true;
+    source.serrated = false;
+    source.divider = ChannelDivider;
+
+    CHECK(dynamicValue<SyncProcessor::SP_H_PULSE_IGNOR>(source) == 57);
+}
+
 TEST_CASE("a path source takes the same fraction")
 {
     SyncProcessor::Dynamic source = settled();

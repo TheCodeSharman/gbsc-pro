@@ -2808,6 +2808,16 @@ TEST_CASE("a reference install leaves the search's threshold in force")
     CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == searching);
 }
 
+// A count that does not move when the threshold does carries no serrations, so
+// the probe takes the lower fraction -- which is the whole point of measuring
+// it. The bench source is the RISC PC on composite sync, whose vertical
+// interval is a NOR with nothing in it.
+// ../docs/investigations/the-risc-pc-composite-sync-is-not-serrated.md
+static uint16_t serratedProbe(bool rejectsSerrations)
+{
+    return rejectsSerrations ? 310 : 319;
+}
+
 TEST_CASE("a solve re-places the pulse ignore for the divider it installs")
 {
     seedBenchSource();
@@ -2824,7 +2834,52 @@ TEST_CASE("a solve re-places the pulse ignore for the divider it installs")
     REQUIRE(pollUntilSolved(acquisition));
     REQUIRE(Adc::PLLAD_MD::read() == 2200);
 
+    CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 61);
+}
+
+TEST_CASE("a serrated source solves to the threshold that rejects its interval")
+{
+    // The Wii in PAL 576i through the same 2200-sample line: 319 against a
+    // true 310 below the floor, which is the vertical interval being counted.
+    // 107 is what reads it, and every smaller value was measured not to.
+    // ../docs/investigations/the-pulse-ignore-value-is-measured-not-chosen.md
+    seedBenchSource();
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+    VideoSourceAcquisition acquisition(sampling, engine);
+    engine.useSyncTypeProbe(probeOwnVsync);
+    engine.useSerrationProbe(serratedProbe);
+
+    g_hasOwnVsync = false;
+    engine.setOutputMode(benchMode());
+    engine.inputTimingsChanged(4);
+    REQUIRE(pollUntilSolved(acquisition));
+    REQUIRE(Adc::PLLAD_MD::read() == 2200);
+
     CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 107);
+}
+
+TEST_CASE("a separate-sync source is not probed at all")
+{
+    // It is indifferent across the whole range of the field, so a probe there
+    // spends two settling times choosing between values measured to be the
+    // same -- and the threshold stays at what the arrangement wrote.
+    seedBenchSource();
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+    VideoSourceAcquisition acquisition(sampling, engine);
+    engine.useSyncTypeProbe(probeOwnVsync);
+
+    g_hasOwnVsync = true;
+    engine.setOutputMode(benchMode());
+    engine.inputTimingsChanged(4);
+    REQUIRE(pollUntilSolved(acquisition));
+
+    CHECK_FALSE(SerrationMeasurement::isSet());
 }
 
 // --- what a mode change looks like when the line count cannot show it ---------
