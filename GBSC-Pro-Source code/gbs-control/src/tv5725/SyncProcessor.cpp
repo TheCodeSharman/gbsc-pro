@@ -71,6 +71,7 @@ const uint16_t PulseWidthDifference = 0xC0;
 bool coastPlaced_ = false;
 bool clampPlaced_ = false;
 bool sogInverted_ = false;
+bool leadingEdge_ = false;
 bool coastOverridden_ = false;
 uint8_t preCoastOverride_ = 0;
 uint8_t postCoastOverride_ = 0;
@@ -274,7 +275,6 @@ void SyncProcessor::prepare(uint16_t divider)
     applySdVsyncPosition();
 
     SP_CS_HS_ST::write(0x10);
-    SP_CS_HS_SP::write(0x00);
 
     SP_HS_REG::write(1);
     SP_HS_PROC_INV_REG::write(0);
@@ -302,8 +302,7 @@ void SyncProcessor::applyForPassThrough(bool syncOnGreen)
 
     SP_HS_PROC_INV_REG::write(0);
     SP_VS_PROC_INV_REG::write(0);
-    SP_CS_P_SWAP::write(0);
-    SP_HS2PLL_INV_REG::write(0);
+    referenceLeadingEdge(false);
 }
 
 void SyncProcessor::applyForSyncType(bool csync, uint16_t divider)
@@ -320,6 +319,7 @@ void SyncProcessor::applyForSyncType(bool csync, uint16_t divider)
     // No ordering constraint between these fields is established, so the two
     // branches keep their own write order.
     invertSogReference(false);
+    referenceLeadingEdge(csync);
 
     // OUTSIDE THE BRANCH, because the separation threshold is a fraction of the
     // line rather than a property of the arrangement.
@@ -416,7 +416,6 @@ void SyncProcessor::normaliseHsyncPolarity(bool found, bool positive)
     if (!found)
         return;
     SP_HS_INV_REG::write(positive ? 1 : 0);
-    SP_HS2PLL_INV_REG::write(0);
 }
 
 namespace {
@@ -495,14 +494,17 @@ uint16_t SyncProcessor::clampStopFor(uint32_t lineLength, bool csync, bool compo
 }
 
 void SyncProcessor::placeClampFor(bool csync, bool component,
-                                 uint32_t lineRateHz, uint16_t divider)
+                                 uint32_t lineRateHz, uint16_t divider,
+                                 const HsyncPulse &pulse)
 {
     const uint32_t lineLength = clampLineFor(csync, lineRateHz, divider);
     if (lineLength == 0 || lineLength > ClampLineCeiling)
         return;
 
-    SP_CS_CLP_ST::write(clampStartFor(lineLength, csync, component));
-    SP_CS_CLP_SP::write(clampStopFor(lineLength, csync, component));
+    const uint16_t offset =
+        referenceMovedByPulse() ? clampOffsetForPulse(pulse, lineRateHz) : 0;
+    SP_CS_CLP_ST::write(clampStartFor(lineLength, csync, component) + offset);
+    SP_CS_CLP_SP::write(clampStopFor(lineLength, csync, component) + offset);
 }
 
 void SyncProcessor::invertSogReference(bool inverted)
@@ -513,8 +515,22 @@ void SyncProcessor::invertSogReference(bool inverted)
 
 bool SyncProcessor::sogReferenceInverted() { return sogInverted_; }
 
-uint16_t SyncProcessor::clampOffsetForInvertedSog(const HsyncPulse &pulse,
-                                                 uint32_t lineRateHz)
+void SyncProcessor::referenceLeadingEdge(bool leading)
+{
+    leadingEdge_ = leading;
+    SP_CS_P_SWAP::write(leading ? 1 : 0);
+    SP_HS2PLL_INV_REG::write(leading ? 1 : 0);
+}
+
+bool SyncProcessor::referencesLeadingEdge() { return leadingEdge_; }
+
+bool SyncProcessor::referenceMovedByPulse()
+{
+    return sogInverted_ || leadingEdge_;
+}
+
+uint16_t SyncProcessor::clampOffsetForPulse(const HsyncPulse &pulse,
+                                           uint32_t lineRateHz)
 {
     return (uint16_t)lrintf(pulse.syncDuty() * (float)coastLineFor(lineRateHz));
 }
@@ -635,7 +651,6 @@ void SyncProcessor::init()
     SYNC_PROC_5_23::write(0x0);                  // s5_23, no documented field
     SP_H_TIMER_VAL::write(0x3A);                 // s5_33[7:0]
     SP_V_TIMER_VAL::write(0x6);                  // s5_34[7:0]
-    SP_CS_P_SWAP::write(0x0);                    // s5_3e[0:0]
     SP_HD_MODE::write(0x0);                      // s5_3e[1:1]
     SP_CS_INV_REG::write(0x0);                   // s5_3e[3:3]
     SP_RT_VS_ST::write(0x2);                     // s5_51[11:0]
@@ -659,6 +674,13 @@ void SyncProcessor::init()
     SP_TEST_EN::write(0x1);                      // s5_63[0:0]
     SP_TEST_MODULE::write(0x7);                  // s5_63[3:1]
     SP_TEST_SIGNAL_SEL::write(0x0);              // s5_63[6:4]
+}
+
+void SyncProcessor::placeSeparatorPulseEnd(uint16_t divider, const HsyncPulse &pulse)
+{
+    const uint16_t samples = leadingEdge_ && pulse.isPulse()
+        ? (uint16_t)lrintf((float)divider * pulse.syncDuty()) : 0;
+    SP_CS_HS_SP::write(samples);
 }
 
 void SyncProcessor::writeRetimeStop(uint16_t samples)

@@ -413,8 +413,11 @@ static void checkBenchGeometry()
     // sync processor counts WITHIN them, and the previous source's can be a
     // window this one is not inside, in which case STATUS_SYNC_PROC_HTOTAL does
     // not follow the divider even written and latched by hand. The solve places
-    // both properly once there is a measurement.
-    CHECK(registersWritten() == 99);
+    // both properly once there is a measurement. s5_47/48 are SP_CS_HS_SP, where the
+    // separator's regenerated pulse ends: the source's own width on the
+    // leading-edge reference and 0 on the default one, so it follows the
+    // divider the pulse was measured at.
+    CHECK(registersWritten() == 101);
     CHECK(Wire.touched[0][0x49]);   // PAD_SYNC_OUT_ENZ
 
     // Three of those are the measurement rather than the geometry: timing the

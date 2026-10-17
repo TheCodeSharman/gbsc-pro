@@ -1327,15 +1327,16 @@ void VideoSourceAcquisition::placeClampWindow()
         component && onChannel && sampling_.lowLineRate()
             ? Tv5725::SyncProcessor::ChannelComponentClampOffset : 0;
 
-    // And an inverted SOG reference moves where the processor counts from by a
-    // whole pulse. The clamp counts from that same reference, so it follows by
-    // the same distance or it lands on picture. Asked of the block that wrote
-    // the inversion rather than decided again here, so the two cannot drift.
-    // The offsets describe different things -- a sync tip and a displaced
-    // reference -- so they add; no source here carries both.
-    if (Tv5725::SyncProcessor::sogReferenceInverted())
+    // And an inverted SOG reference, or a leading-edge one, moves where the
+    // processor counts from by a whole pulse. The clamp counts from that same
+    // reference, so it follows by the same distance or it lands on the sync
+    // tip. Asked of the block that wrote the reference rather than decided
+    // again here, so the two cannot drift. The offsets describe different
+    // things -- a sync tip and a displaced reference -- so they add; no source
+    // here carries both.
+    if (Tv5725::SyncProcessor::referenceMovedByPulse())
         offset = (uint16_t)(offset
-                            + Tv5725::SyncProcessor::clampOffsetForInvertedSog(
+                            + Tv5725::SyncProcessor::clampOffsetForPulse(
                                   sampling_.hsync(), sampling_.lineRateHz()));
 
     if (!Tv5725::SyncProcessor::acquireClampWindow(

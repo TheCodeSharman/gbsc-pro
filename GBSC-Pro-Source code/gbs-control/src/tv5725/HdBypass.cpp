@@ -262,6 +262,7 @@ void HdBypass::applyPassThroughSampling(uint16_t divider, uint32_t lineRateHz,
     // a window placed from the divider alone.
     SyncProcessor::writeRetimeStop(SyncProcessor::retimeStopFor(
         divider, pulse, Adc::oversampleInForce(), 0.0f));
+    SyncProcessor::placeSeparatorPulseEnd(divider, pulse);
 
     holdHsyncPulse(ChannelSyncStart, ChannelSyncStart + SyncPulseWidth);
     holdVsyncPulse(ChannelVsyncStart, ChannelVsyncStop);

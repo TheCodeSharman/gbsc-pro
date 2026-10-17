@@ -307,8 +307,13 @@ public:
     // off the chip -- docs/sync-type-selection.md, because STATUS_SYNC_PROC_VSACT
     // only reports correctly once the type is already right.
     //
-    // `serrated` comes in for the sub coast alone -- the coast WITHIN a line,
-    // which only a source carrying serrations needs.
+    // Which edge of the pulse the separator and the ADC PLL reference is one
+    // of those consequences: composite sync takes the LEADING edge, because
+    // the chip's default rising edge is the trailing one on a negative-going
+    // sync and the PLL then loses horizontal pulses through the vertical
+    // interval. referencesLeadingEdge() is the held fact; the capture origin
+    // and the clamp both count from that edge and follow it.
+    // ../../../../docs/investigations/the-composite-roll-is-lost-horizontal-pulses-in-the-doubled-scan.md
     static void applyForSyncType(bool csync, uint16_t divider);
 
     // The per-load sync processor setup that does not follow the sync type.
@@ -344,18 +349,29 @@ public:
     // condition.
     static void applyForPassThrough(bool syncOnGreen);
 
-    // How much later the clamp sits once the SOG reference is inverted: the
-    // source's pulse, in the 27 MHz counts SP_CS_CLP_ST holds.
-    static uint16_t clampOffsetForInvertedSog(const HsyncPulse &pulse,
-                                              uint32_t lineRateHz);
+    // How much later the clamp sits once the reference it counts from has
+    // moved by a pulse: the source's pulse, in the 27 MHz counts SP_CS_CLP_ST
+    // holds. An inverted SOG reference and a leading-edge reference both move
+    // it by exactly that.
+    static uint16_t clampOffsetForPulse(const HsyncPulse &pulse,
+                                        uint32_t lineRateHz);
 
     // Whether SP_SOG_P_INV is in force. Held rather than read back, and the one
     // owner of the fact: the clamp counts from the same reference, so a second
     // site deciding it again is a condition that can drift from the write.
     static bool sogReferenceInverted();
 
+    // Whether the separator and the ADC PLL reference the leading edge of the
+    // pulse, SP_CS_P_SWAP and SP_HS2PLL_INV_REG together. Held, as above.
+    static bool referencesLeadingEdge();
+
+    // Whether the reference the clamp counts from sits a pulse away from the
+    // chip's default, for either reason above.
+    static bool referenceMovedByPulse();
+
 private:
     static void invertSogReference(bool inverted);
+    static void referenceLeadingEdge(bool leading);
 
 public:
 
@@ -592,7 +608,7 @@ public:
 
     // Invert the source's hsync ahead of the DATA PATH when it is
     // positive-going, so everything downstream sees one polarity. Writes
-    // SP_HS_INV_REG and SP_HS2PLL_INV_REG, which this class owns.
+    // SP_HS_INV_REG, which this class owns.
     //
     // **IT DOES NOT MAKE hsyncLowSamples() THE PULSE**, and relying on it to
     // did. Measured with SP_HS_INV_REG 1 and HSPOL 1, the count held the
@@ -601,12 +617,12 @@ public:
     //
     // This is the whole point: a polarity carried into the solve is an input
     // every later calculation can get wrong, and normalising it here deletes
-    // the variable rather than handling it. `found` false leaves both alone.
+    // the variable rather than handling it. `found` false leaves it alone.
     //
-    // The inversion into the ADC PLL is CLEARED rather than followed, because
-    // the normalisation above has already made the polarity one shape and a
-    // second inversion displaces the picture 94 output px. Only the bypass
-    // channel sets it from the source, because only it does not normalise.
+    // The inversion into the ADC PLL is NOT this call's: it is the edge the
+    // sync type chose, applyForSyncType()'s, and this runs after it on every
+    // rate measurement. On separate sync that edge is the default, because a
+    // second inversion there displaces the picture 94 output px.
     // ../../../../docs/investigations/leaving-bypass-leaves-the-sync-path-behind.md
     static void normaliseHsyncPolarity(bool found, bool positive);
 
@@ -697,11 +713,13 @@ public:
     static uint16_t clampStartFor(uint32_t lineLength, bool csync, bool component);
     static uint16_t clampStopFor(uint32_t lineLength, bool csync, bool component);
 
-    // Place it with no measurement, from the rate the engine solved and the
-    // divider it applied. The same window acquireClampWindow() settles on, so a
-    // schedule that follows an install finds it already where it belongs.
+    // Place it from the rate the engine solved and the divider it applied,
+    // plus the source's pulse where the reference has moved by one. The same
+    // window acquireClampWindow() settles on, so a schedule that follows an
+    // install finds it already where it belongs.
     static void placeClampFor(bool csync, bool component,
-                              uint32_t lineRateHz, uint16_t divider);
+                              uint32_t lineRateHz, uint16_t divider,
+                              const HsyncPulse &pulse);
 
     // Whether the clamp is driven from the window above or left to the block's
     // own detection. A component source clamps on its own sync tip, so it is
@@ -743,6 +761,14 @@ public:
     // Where hsync retiming stops, in ADC samples. SourceMeasurement decides the
     // value off the divider; this block is where the register lives.
     static void writeRetimeStop(uint16_t samples);
+
+    // Where the separator's regenerated pulse ends, in ADC samples after the
+    // edge it references. On the leading edge that is the source's own pulse
+    // width, so the pulse ends where the source's does and the capture counter
+    // that zeroes on it is where a trailing-edge reference put it; on the
+    // default edge it is the chip's 0. The retime stop is inert on this path,
+    // so this is the register that places the separator path's origin.
+    static void placeSeparatorPulseEnd(uint16_t divider, const HsyncPulse &pulse);
 
     // What times the clamp: the 27 MHz reference rather than the pixel clock,
     // which is what every path here asks for.

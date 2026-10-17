@@ -1095,6 +1095,7 @@ void VideoPath::applySamplingClock(uint16_t divider, uint32_t lineRateHz)
     Adc::applySampleRate(divider, lineRateHz, modeOversample_);
     installedDivider_ = divider;
     writeRetimeOrigin();
+    SyncProcessor::placeSeparatorPulseEnd(divider, reading_);
     writePulseIgnore();
 
     // The clamp is a fraction of the LINE, so it moves with the divider. Left
@@ -1103,7 +1104,7 @@ void VideoPath::applySamplingClock(uint16_t divider, uint32_t lineRateHz)
     // costs 20 grey levels. Placed from the divider just applied rather than
     // measured: STATUS_SYNC_PROC_HTOTAL only echoes it back.
     SyncProcessor::placeClampFor(syncTypeInForce_, Adc::inputIsComponent(),
-                                 lineRateHz, divider);
+                                 lineRateHz, divider, reading_);
 
     // Every install re-latches the PLL, so nothing counted in ADC samples is
     // the source's for the next few passes -- whichever route wrote it.

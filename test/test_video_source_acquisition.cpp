@@ -934,9 +934,41 @@ TEST_CASE("the clamp follows the SOG reference the entry chose")
     SyncProcessor::applyForPassThrough(false);
 
     CHECK(inverted - upright
-          == SyncProcessor::clampOffsetForInvertedSog(unit.sampling.hsync(),
+          == SyncProcessor::clampOffsetForPulse(unit.sampling.hsync(),
                                                       unit.sampling.lineRateHz()));
     CHECK(inverted > upright);
+}
+
+// AND ON THE SCALING PATH IT FOLLOWS THE EDGE THE SYNC TYPE CHOSE, by the same
+// pulse: composite sync references the leading edge, which moves the reference
+// a pulse earlier, and a clamp left where the default edge put it sits on the
+// sync tip. Measured on the Wii at 480p into 1920x1080: mean luma 143 to 162
+// and the source's black bars grey until the window moved by the pulse.
+TEST_CASE("the clamp follows the edge the sync type chose")
+{
+    seedBenchSource();
+
+    Acquiring unit;
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+
+    GBS::HPERIOD_IF::write(431);
+    seedField(0, 0x16, 1, 1, 1);          // STATUS_SYNC_PROC_HSACT
+
+    SyncProcessor::applyForSyncType(false, Adc::dividerInForce());
+    SyncProcessor::forgetPositions();
+    unit.acquisition.placeClampWindow();
+    const uint32_t trailing = SyncProcessor::SP_CS_CLP_ST::read();
+
+    SyncProcessor::applyForSyncType(true, Adc::dividerInForce());
+    SyncProcessor::forgetPositions();
+    unit.acquisition.placeClampWindow();
+    const uint32_t leading = SyncProcessor::SP_CS_CLP_ST::read();
+
+    CHECK(leading > trailing);
+    CHECK(leading - trailing
+          == SyncProcessor::clampOffsetForPulse(unit.sampling.hsync(),
+                                                unit.sampling.lineRateHz()));
 }
 
 // DETECTION TAKES THE ROUTE AWAY WITHOUT TELLING THE ENGINE. Low power

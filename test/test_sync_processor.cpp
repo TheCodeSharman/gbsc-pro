@@ -429,11 +429,14 @@ TEST_CASE("both clamp writers mean the same line on sync on green")
     steadyLine(431);
     const uint32_t lineRateHz = 31468;
     const uint16_t divider = 1212;
+    const HsyncPulse pulse(88.0f / 1212.0f);
+    SyncProcessor::applyForSyncType(true, divider);
 
-    SyncProcessor::placeClampFor(true, true, lineRateHz, divider);
+    SyncProcessor::placeClampFor(true, true, lineRateHz, divider, pulse);
     const uint16_t installed = SyncProcessor::SP_CS_CLP_ST::read();
 
-    SyncProcessor::acquireClampWindow(true, true, lineRateHz, divider, 0);
+    SyncProcessor::acquireClampWindow(true, true, lineRateHz, divider,
+                                      SyncProcessor::clampOffsetForPulse(pulse, lineRateHz));
 
     CHECK(SyncProcessor::SP_CS_CLP_ST::read() == installed);
 }
@@ -1101,17 +1104,131 @@ TEST_CASE("no horizontal sync is reported however the pulse goes")
     CHECK_FALSE(SyncProcessor::hsyncActive());
 }
 
-// A field written only by the bypass switch has no owner on the scaling path,
-// and this one displaces the picture by 94 output px when it is inherited.
-// docs/investigations/leaving-bypass-leaves-the-sync-path-behind.md
-TEST_CASE("normalising the polarity clears the inversion into the ADC PLL")
+// THE SEPARATOR'S OUTPUT IS REFERENCED TO THE LEADING EDGE OF THE PULSE, AND
+// SO IS THE ADC PLL. The chip's default is the rising edge, which on a
+// negative-going composite sync is the TRAILING edge of every pulse -- the one
+// that moves through the vertical interval -- and the PLL then loses three or
+// four horizontal pulses a field on the line-doubled scan. Measured on `vga` at
+// 320x256@50 on composite sync into 1080p, frozen: 19% to 24% of frames
+// displaced by whole lines with the default edge, 0.0% to 0.3% with both
+// references on the leading edge, and neither bit alone closes it.
+// ../docs/investigations/the-composite-roll-is-lost-horizontal-pulses-in-the-doubled-scan.md
+TEST_CASE("composite sync references the leading edge of its pulse")
+{
+    CHECK(applied<SyncProcessor::SP_CS_P_SWAP>(true) == 1u);
+    CHECK(applied<SyncProcessor::SP_HS2PLL_INV_REG>(true) == 1u);
+    CHECK(SyncProcessor::referencesLeadingEdge());
+}
+
+// A source on its own hsync pin keeps the chip's default edge: the capture
+// origin was calibrated there, and the inversion into the PLL displaces the
+// picture 94 output px on that path.
+// ../docs/investigations/leaving-bypass-leaves-the-sync-path-behind.md
+TEST_CASE("separate sync references the chip's default edge")
+{
+    CHECK(applied<SyncProcessor::SP_CS_P_SWAP>(false) == 0u);
+    CHECK(applied<SyncProcessor::SP_HS2PLL_INV_REG>(false) == 0u);
+    CHECK_FALSE(SyncProcessor::referencesLeadingEdge());
+}
+
+// The polarity normalisation runs AFTER the sync type is put in force, on every
+// rate measurement. The PLL's edge is the sync type's, so the normalisation
+// may not touch it or the composite path loses the edge it was just given.
+TEST_CASE("normalising the polarity leaves the ADC PLL's edge to the sync type")
 {
     Wire.reset();
-    SyncProcessor::SP_HS2PLL_INV_REG::write(1);
+    SyncProcessor::applyForSyncType(true, MeasuredCsyncDivider);
 
     SyncProcessor::normaliseHsyncPolarity(true, false);
 
-    CHECK(SyncProcessor::SP_HS2PLL_INV_REG::read() == 0u);
+    CHECK(SyncProcessor::SP_HS2PLL_INV_REG::read() == 1u);
+}
+
+TEST_CASE("entering pass-through returns to the chip's default edge")
+{
+    Wire.reset();
+    SyncProcessor::applyForSyncType(true, MeasuredCsyncDivider);
+
+    SyncProcessor::applyForPassThrough(false);
+
+    CHECK(SyncProcessor::SP_CS_P_SWAP::read() == 0u);
+    CHECK_FALSE(SyncProcessor::referencesLeadingEdge());
+}
+
+// The static setup runs AFTER the sync type on the re-detection route, as it
+// does for SP_SOG_MODE, so the edge is not among the static registers: written
+// there it put a composite source back on the default edge every `/sc?~`.
+// docs/investigations/sp-sog-mode-had-two-owners.md
+TEST_CASE("the static setup leaves the edge the sync type chose")
+{
+    Wire.reset();
+    SyncProcessor::applyForSyncType(true, MeasuredCsyncDivider);
+
+    SyncProcessor::init();
+
+    CHECK(SyncProcessor::SP_CS_P_SWAP::read() == 1u);
+    CHECK(SyncProcessor::SP_HS2PLL_INV_REG::read() == 1u);
+    CHECK(SyncProcessor::referencesLeadingEdge());
+}
+
+// THE CLAMP COUNTS FROM THE SAME REFERENCE, so it moves by one pulse with it or
+// it lands on the sync tip. Measured on the Wii at 480p on `ypbpr` into
+// 1920x1080, divider 1212, frozen: with the leading edge referenced and the
+// clamp left at 19..23 the frame lifts from mean luma 143 to 162 and the
+// source's own black bars read grey; moved by the 62 counts the 88-sample
+// pulse is at 27 MHz, the bars are black again.
+TEST_CASE("the clamp follows the leading edge by one pulse")
+{
+    steadyLine(431);
+    const uint32_t lineRateHz = 31468;
+    const uint16_t divider = 1212;
+    const HsyncPulse pulse(88.0f / 1212.0f);
+
+    SyncProcessor::applyForSyncType(false, divider);
+    SyncProcessor::placeClampFor(true, true, lineRateHz, divider, pulse);
+    const uint16_t trailing = SyncProcessor::SP_CS_CLP_ST::read();
+
+    SyncProcessor::applyForSyncType(true, divider);
+    SyncProcessor::placeClampFor(true, true, lineRateHz, divider, pulse);
+    const uint16_t leading = SyncProcessor::SP_CS_CLP_ST::read();
+
+    CHECK(leading - trailing == SyncProcessor::clampOffsetForPulse(pulse, lineRateHz));
+    CHECK(SyncProcessor::clampOffsetForPulse(pulse, lineRateHz) == 62u);
+}
+
+// THE SEPARATOR'S REGENERATED PULSE ENDS WHERE THE SOURCE'S DOES. Referenced
+// to the leading edge, the separator's output would otherwise end there too,
+// and the capture counter that zeroes on it moves a whole pulse earlier: the
+// picture lands one pulse right with its far edge off the window. The stop is
+// in ADC samples -- measured against a pan of known units inside one
+// acquisition, 1.00 samples a count on 320x256@50 and 1.03 on 800x600@60 --
+// and the pulse put back on the end puts the picture where separate sync
+// frames it, to within a few columns on the bench mode. On the default edge
+// the chip's own 0 is the calibrated state.
+// ../docs/investigations/the-composite-roll-is-lost-horizontal-pulses-in-the-doubled-scan.md
+TEST_CASE("the separator's pulse ends where the source's does on the leading edge")
+{
+    const HsyncPulse pulse(153.0f / 2200.0f);
+
+    Wire.reset();
+    SyncProcessor::applyForSyncType(true, MeasuredCsyncDivider);
+    SyncProcessor::placeSeparatorPulseEnd(2200, pulse);
+    CHECK(SyncProcessor::SP_CS_HS_SP::read() == 153u);
+
+    SyncProcessor::applyForSyncType(false, MeasuredCsyncDivider);
+    SyncProcessor::placeSeparatorPulseEnd(2200, pulse);
+    CHECK(SyncProcessor::SP_CS_HS_SP::read() == 0u);
+}
+
+TEST_CASE("the per-load setup leaves the separator's pulse end where the install put it")
+{
+    Wire.reset();
+    SyncProcessor::applyForSyncType(true, MeasuredCsyncDivider);
+    SyncProcessor::placeSeparatorPulseEnd(2200, HsyncPulse(153.0f / 2200.0f));
+
+    SyncProcessor::prepare(MeasuredCsyncDivider);
+
+    CHECK(SyncProcessor::SP_CS_HS_SP::read() == 153u);
 }
 
 // The per-load setup runs after applyForSyncType() on every preset load, and
@@ -1196,7 +1313,7 @@ TEST_CASE("the clamp follows an inverted SOG reference by one pulse")
 {
     const HsyncPulse pulse(152.0f / 2038.0f);
 
-    CHECK(SyncProcessor::clampOffsetForInvertedSog(pulse, 31468) == 64u);
+    CHECK(SyncProcessor::clampOffsetForPulse(pulse, 31468) == 64u);
 }
 
 // AND THE SCALING PATH HAS TO WRITE IT TOO, because nothing on the way out of
@@ -1225,7 +1342,7 @@ TEST_CASE("the scaling path never leaves the SOG reference inverted")
 // circuit -- a second owner of the field the header names one owner for.
 //
 // The clamp is what consumes it: the acquisition adds
-// clampOffsetForInvertedSog() whenever the fact says inverted, so a fact left
+// clampOffsetForPulse() whenever the fact says inverted, so a fact left
 // true behind a cleared register puts the clamp a whole pulse late, onto
 // active picture, where the black level comes off the scene and takes the
 // whole frame's colour with it.
