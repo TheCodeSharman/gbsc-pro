@@ -2474,6 +2474,154 @@ TEST_CASE("a sync type forgotten behind the engine's back is put in force when r
     CHECK(loggedContaining("sync arrangement: composite or SOG"));
 }
 
+// A formatter that no longer measures the frame, which is what a source needing
+// the hold reads with the coast taken off. Seeded rather than produced: the fake
+// bus stores bytes and has no model of the block stopping.
+static void seedNoFrameMeasured()
+{
+    seedField(0, 0x00, 0, 1, 0);            // STATUS_IF_VT_OK
+}
+
+TEST_CASE("an interval the formatter measures uncoasted takes the short coast")
+{
+    // The RISC PC's composite is indifferent to the coast: 308 lines against a
+    // 623 half-line frame with STATUS_IF_VT_OK set, in 40 readings of 40, at
+    // the engine's own pair and at 0/0 alike.
+    seedBenchSource();
+    seedSourceLines(308);
+    seedSourceHalfLines(623);
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+    engine.useSyncTypeProbe(probeOwnVsync);
+    g_hasOwnVsync = false;
+    engine.establishSyncType((uint8_t)VideoSourceSelection::selected());
+    REQUIRE(SyncMeasurement::isCsync());
+    SyncProcessor::useLongPostCoast(true);
+
+    engine.measureVerticalInterval();
+
+    CHECK_FALSE(SyncProcessor::longPostCoastInUse());
+    CHECK(SyncProcessor::SP_POST_COAST::read() == 2);
+}
+
+TEST_CASE("an interval the formatter loses uncoasted keeps the hold")
+{
+    // And the Wii's sync on green, which loses the measurement outright without
+    // it -- 0 readings of 40, the period reading debris at 1943 against a true
+    // 524. Denied the hold it emits nothing, so this is the error that costs a
+    // picture rather than a fraction of a percent of frames.
+    seedBenchSource();
+    seedSourceLines(520);
+    seedNoFrameMeasured();
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+    engine.useSyncTypeProbe(probeOwnVsync);
+    g_hasOwnVsync = false;
+    engine.establishSyncType((uint8_t)VideoSourceSelection::selected());
+    REQUIRE(SyncMeasurement::isCsync());
+    SyncProcessor::useLongPostCoast(false);
+
+    engine.measureVerticalInterval();
+
+    CHECK(SyncProcessor::longPostCoastInUse());
+    CHECK(SyncProcessor::SP_POST_COAST::read() == 6);
+}
+
+TEST_CASE("one reading short of every one keeps the hold")
+{
+    // The two errors are not equal, so the verdict is unanimous or it is the
+    // hold: a source denied one it needs emits nothing.
+    seedBenchSource();
+    seedSourceLines(308);
+    seedSourceHalfLines(623);
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+    engine.useSyncTypeProbe(probeOwnVsync);
+    g_hasOwnVsync = false;
+    engine.establishSyncType((uint8_t)VideoSourceSelection::selected());
+    SyncProcessor::useLongPostCoast(false);
+    Wire.loseFrameMeasurementOnce();
+
+    engine.measureVerticalInterval();
+
+    CHECK(SyncProcessor::longPostCoastInUse());
+}
+
+TEST_CASE("a source with its own vertical sync is asked nothing")
+{
+    // Separate sync writes 0/0 whatever this holds, and the formatter completes
+    // no vertical measurement there -- so the question has no answer and the
+    // held one must not be disturbed.
+    seedBenchSource();
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+    engine.useSyncTypeProbe(probeOwnVsync);
+    g_hasOwnVsync = true;
+    engine.establishSyncType((uint8_t)VideoSourceSelection::selected());
+    SyncProcessor::useLongPostCoast(true);
+
+    engine.measureVerticalInterval();
+
+    CHECK(SyncProcessor::longPostCoastInUse());
+}
+
+TEST_CASE("a coast held from outside is neither measured nor forgotten")
+{
+    // An override is what makes a coast measurable on a running engine, so it
+    // has to survive the mode change a measurement is judged across. The probe
+    // holds the pair itself, so without this it discards the one being tested.
+    seedBenchSource();
+    seedSourceLines(308);
+    seedSourceHalfLines(623);
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+    engine.useSyncTypeProbe(probeOwnVsync);
+    g_hasOwnVsync = false;
+    engine.establishSyncType((uint8_t)VideoSourceSelection::selected());
+    SyncProcessor::overrideCoast(12, 9);
+
+    engine.measureVerticalInterval();
+
+    CHECK(SyncProcessor::coastOverridden());
+    CHECK(SyncProcessor::preCoastLines() == 12);
+    CHECK(SyncProcessor::postCoastLines() == 9);
+
+    SyncProcessor::forgetCoastOverride();
+}
+
+TEST_CASE("the interval is measured once per selection, not once per pass")
+{
+    // The probe holds the coast at 0/0, where a source needing it drops -- so
+    // a run per pass of a mode change holds it repeatedly. Measured on the
+    // bench before this gate: nine probes in one input change.
+    seedBenchSource();
+    seedSourceLines(308);
+    seedSourceHalfLines(623);
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+    engine.useSyncTypeProbe(probeOwnVsync);
+    g_hasOwnVsync = false;
+    engine.establishSyncType((uint8_t)VideoSourceSelection::selected());
+    engine.measureVerticalInterval();
+    SyncProcessor::useLongPostCoast(true);
+
+    engine.measureVerticalInterval();
+
+    CHECK(SyncProcessor::longPostCoastInUse());
+}
+
 TEST_CASE("reacquiring the sync type reports what the source carries")
 {
     seedBenchSource();

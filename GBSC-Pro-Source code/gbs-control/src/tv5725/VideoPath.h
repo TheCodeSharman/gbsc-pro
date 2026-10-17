@@ -320,6 +320,30 @@ public:
     // watching pins the selected source does not drive.
     void establishSyncType(uint8_t chosenFor);
 
+    // Whether the source's vertical interval needs the PLL held over it, asked
+    // with the coast taken off and handed to SyncProcessor as the post coast.
+    //
+    // **0/0 IS THE ONLY STATE THE QUESTION HAS AN ANSWER IN**, and what it asks
+    // is whether the INPUT FORMATTER still completes a vertical measurement
+    // without the hold. Measured at 40 readings each: the RISC PC's composite
+    // is indifferent, reading 308 lines against a 623 half-line frame with
+    // STATUS_IF_VT_OK set in 40 of 40 either way, where the Wii's sync on green
+    // loses the measurement outright -- 0 of 40, the period reading debris.
+    // Both need the hold to be absent to say so: at the engine's own coast both
+    // measure cleanly, and the ratio that separates them there is the
+    // line-doubled scan rather than the interval.
+    //
+    // The COUNT cannot be the question. It survives 0/0 on both -- 520 against
+    // 524 on the Wii -- and SourceMeasurement::countContradicted() answers
+    // false where the formatter offers no frame at all, which is exactly the
+    // state a source needing the hold is in.
+    //
+    // Runs where the sync pad is already away, because at 0/0 the picture
+    // drops, and BEFORE the field rate is taken: the post coast gates the
+    // formatter's vertical, which is the signal the rate is timed on.
+    // ../../../docs/known-issues.md
+    void measureVerticalInterval();
+
     // The hsync pulse, taken by the layer that measures and handed over. THE
     // ENGINE READS NOTHING BACK: every window it solves, now and on every
     // framing press until the next reading arrives, comes off this.
@@ -741,6 +765,12 @@ private:
     // No selection carries this value, so the first pass always establishes.
     static const uint8_t NoSelectionSeen = 0xFF;
     uint8_t syncTypeChosenFor_;
+
+    // Which selection the interval was measured for, keyed like the sync type
+    // above and for the same reason: the property belongs to what the source
+    // puts on the connector, so a mode change on one source keeps the answer
+    // and must not pay for the probe again.
+    uint8_t intervalMeasuredFor_;
     bool (*syncProbe_)();
     SourceKey framedKey_;
 

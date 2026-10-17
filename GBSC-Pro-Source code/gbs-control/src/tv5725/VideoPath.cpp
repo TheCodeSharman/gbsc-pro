@@ -47,7 +47,7 @@ VideoPath::VideoPath(DisplayClock &displayClock, SourceMeasurement &sampling,
       sampling_(sampling),
       scanSolved_(false), lineDoubled_(true),
       syncTypeApplied_(false),
-      syncTypeInForce_(false), syncTypeChosenFor_(NoSelectionSeen), syncProbe_(0),
+      syncTypeInForce_(false), syncTypeChosenFor_(NoSelectionSeen), intervalMeasuredFor_(NoSelectionSeen), syncProbe_(0),
       framings_(framings),
       solvePending_(false), modePending_(false), modeOversample_(4),
       heldDivider_(0), fullFraming_(false), installedRateHz_(0),
@@ -927,12 +927,14 @@ void VideoPath::forgetSyncType()
 {
     SyncMeasurement::forget();
     syncTypeApplied_ = false;
+    intervalMeasuredFor_ = NoSelectionSeen;
 }
 
 bool VideoPath::reacquireSyncType()
 {
     SyncMeasurement::forget();
     syncTypeApplied_ = false;
+    intervalMeasuredFor_ = NoSelectionSeen;
     establishSyncType(syncTypeChosenFor_);
     return SyncMeasurement::isCsync();
 }
@@ -960,6 +962,7 @@ void VideoPath::establishSyncType(uint8_t chosenFor)
         syncTypeChosenFor_ = chosenFor;
         SyncMeasurement::forget();
         syncTypeApplied_ = false;
+        intervalMeasuredFor_ = NoSelectionSeen;
     }
 
     if (syncProbe_ == 0)
@@ -984,6 +987,54 @@ void VideoPath::establishSyncType(uint8_t chosenFor)
         putSyncTypeInForce(csync);
     else
         applySyncType(csync);
+}
+
+// How many readings the verdict is taken over, and how far apart. The loss is
+// immediate -- the formatter's measurement stops inside one reading of the
+// write -- so these bound the probe rather than wait for anything.
+static const uint8_t IntervalSamples = 8;
+static const uint8_t IntervalSampleMs = 20;
+
+void VideoPath::measureVerticalInterval()
+{
+    if (!SyncMeasurement::isCsync())
+        return;
+    if (intervalMeasuredFor_ == syncTypeChosenFor_)
+        return;
+
+    // A coast held from outside is the one being tested, and this holds the
+    // pair itself -- so measuring would discard it at the next mode change,
+    // which is where a coast has to be judged across.
+    if (SyncProcessor::coastOverridden())
+        return;
+
+    SyncProcessor::overrideCoast(0, 0);
+    SyncProcessor::applySeparationThresholds(true);
+
+    uint8_t measured = 0;
+    for (uint8_t taken = 0; taken < IntervalSamples; taken++) {
+        if (inputFormatter_.verticalPeriod() != 0)
+            measured++;
+        delay(IntervalSampleMs);
+    }
+
+    // EVERY reading, because the two errors are not equal: a source denied the
+    // hold it needs emits nothing, and one given a hold it does not need is
+    // displaced in under a percent of frames.
+    const bool needed = measured < IntervalSamples;
+
+    SyncProcessor::forgetCoastOverride();
+    SyncProcessor::useLongPostCoast(needed);
+    SyncProcessor::applySeparationThresholds(true);
+    intervalMeasuredFor_ = syncTypeChosenFor_;
+
+    char line[88];
+    snprintf(line, sizeof(line),
+             "vertical interval: the formatter measured it uncoasted in %u of "
+             "%u, post coast %u",
+             (unsigned)measured, (unsigned)IntervalSamples,
+             (unsigned)SyncProcessor::postCoastLines());
+    tv5725Log(line);
 }
 
 void VideoPath::applySyncType(bool csync)

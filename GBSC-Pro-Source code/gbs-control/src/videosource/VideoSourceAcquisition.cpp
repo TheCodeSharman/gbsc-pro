@@ -1155,6 +1155,13 @@ bool VideoSourceAcquisition::runPass(uint32_t nowMs, bool &detectionPass)
     videoPath_.establishSyncType((uint8_t)VideoSourceSelection::selected());
     videoPath_.prepareToMeasure(sampling_.settledSourceLines());
 
+    // Then whether the interval is serrated, which decides how long the hold
+    // after it is. AFTER the reference divider the line above applies, because
+    // a count read through the previous source's clock answers about that
+    // source; and BEFORE the rate below, because the post coast gates the input
+    // formatter's vertical and the rate is timed on it.
+    videoPath_.measureVerticalInterval();
+
     // The rate, then the output that rate can be carried at, then the clock
     // that output bounds, then the duty against that clock. The idle pass is
     // the only other writer of the state and the solve never reaches it, so

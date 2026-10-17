@@ -435,17 +435,26 @@ public:
     // away, so the output is black. And a post of 3 at IF_VB_ST 512 stops the
     // input formatter's vertical reaching DEBUG_IN_PIN, which no count can see.
     //
-    // **SO THE OPTIMUM IS ONE VALUE WIDE AND NOTHING MEASURES IT.** The hold
-    // has to cover the pulses a serrated interval carries after the vertical
-    // and no longer, and no register reports whether the interval is serrated
-    // -- the sync type stands in for it, which is wrong for any unserrated
-    // composite source. /edgetrace is the spike at measuring it directly.
+    // **THE POST COAST IS PER SOURCE, BECAUSE ONE VALUE SITS ON THE EDGE OF
+    // BOTH MEASURED BANDS.** A source that needs the hold needs at least 4 --
+    // the Wii's sync on green drops to absent at 0 and is indistinguishable at
+    // 4 and 6 -- and one that does not is displaced by 5, the RISC PC's
+    // composite reading 0 of 6406 frames at 4 and 0.7% at 5. So 4 is the
+    // boundary of each band at once, and these two sit inside their own.
     // tools/gbsc-pro-hwtest/sweep_coast.py scores a pair on the count and the
     // blanking together, which the count alone cannot.
     // docs/investigations/two-owners-of-the-coast-lengths-double-the-count.md
     // docs/investigations/the-composite-roll-is-lost-horizontal-pulses-in-the-doubled-scan.md
     static const uint8_t CompositePreCoastLines = 7;
-    static const uint8_t CompositePostCoastLines = 4;
+    static const uint8_t LongPostCoastLines = 6;
+    static const uint8_t ShortPostCoastLines = 2;
+
+    // Which of the two the source gets. HELD rather than asked per write: both
+    // writers of the pair need the answer, and the measurement that produces it
+    // costs a coast of 0/0 the picture cannot be left on.
+    // VideoPath::measureVerticalInterval() is what measures it.
+    static void useLongPostCoast(bool needed);
+    static bool longPostCoastInUse();
 
     // A coast to apply in place of the two above, wherever the pair is written.
     // The engine re-applies the pair on every solve, so a value written from

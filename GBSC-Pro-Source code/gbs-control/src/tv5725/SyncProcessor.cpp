@@ -76,6 +76,11 @@ bool coastOverridden_ = false;
 uint8_t preCoastOverride_ = 0;
 uint8_t postCoastOverride_ = 0;
 
+// Held until measured otherwise, because the two errors are not equal: a source
+// needing the hold and denied it emits nothing, where one given it that does not
+// need it is displaced in under a percent of frames.
+bool longPostCoast_ = true;
+
 // 107 through a 2200-sample line is the value measured to read PAL 576i.
 const uint16_t CsyncPulseIgnorePerThousand = 49;
 
@@ -176,6 +181,10 @@ void SyncProcessor::overrideCoast(uint8_t pre, uint8_t post)
 
 void SyncProcessor::forgetCoastOverride() { coastOverridden_ = false; }
 
+void SyncProcessor::useLongPostCoast(bool needed) { longPostCoast_ = needed; }
+
+bool SyncProcessor::longPostCoastInUse() { return longPostCoast_; }
+
 bool SyncProcessor::coastOverridden() { return coastOverridden_; }
 
 uint8_t SyncProcessor::preCoastLines()
@@ -185,7 +194,9 @@ uint8_t SyncProcessor::preCoastLines()
 
 uint8_t SyncProcessor::postCoastLines()
 {
-    return coastOverridden_ ? postCoastOverride_ : CompositePostCoastLines;
+    if (coastOverridden_)
+        return postCoastOverride_;
+    return longPostCoast_ ? LongPostCoastLines : ShortPostCoastLines;
 }
 
 void SyncProcessor::applyPulseIgnore(uint16_t divider)

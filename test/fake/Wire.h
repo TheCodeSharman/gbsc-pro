@@ -22,6 +22,8 @@ public:
 
     // Where a byte ended up: the bank the slave's pointer named at the time.
     uint8_t bank[Segments][256];
+    uint8_t frameLost_ = 0;
+    bool frameRestore_ = false;
 
     // Whether a byte was ever written since the last reset(), as opposed to
     // merely holding the value a test expected. The TV5725 keeps its registers
@@ -69,6 +71,8 @@ public:
         hsyncLagLeft_ = 0;
         hsyncInvertedSeen_ = false;
         syncProcessorLocked_ = false;
+        frameLost_ = 0;
+        frameRestore_ = false;
         trace.clear();
         tx_.clear();
         rx_.clear();
@@ -137,6 +141,13 @@ public:
     // that does not ask for the lag sees the corrected count at once.
     void hsyncInversionLag(uint8_t reads) { hsyncLag_ = reads; }
 
+    // How many reads of STATUS_IF_VT_OK report no completed frame measurement
+    // before it comes back. The block drops one and recovers, which a seeded
+    // byte cannot express: what reads it is a RUN of readings, and a verdict
+    // taken over a run has to be judged on one of them going missing.
+    void loseFrameMeasurement(uint8_t reads) { frameLost_ = reads; }
+    void loseFrameMeasurementOnce() { loseFrameMeasurement(1); }
+
     // A bus that acknowledges writes and stores none of them, which is what an
     // unpowered board looks like from this end: the segment select still lands,
     // because the code under test cannot tell a lost select from a lost write
@@ -201,6 +212,14 @@ public:
             refreshHsyncLowCount();
         if (syncProcessorLocked_)
             echoLineSamples();
+        if (frameLost_ > 0 && segment == 0 && readOffset_ == 0x00) {
+            --frameLost_;
+            bank[0][0x00] = (uint8_t)(bank[0][0x00] & ~0x01);
+            frameRestore_ = true;
+        } else if (frameRestore_) {
+            frameRestore_ = false;
+            bank[0][0x00] = (uint8_t)(bank[0][0x00] | 0x01);
+        }
         rx_.clear();
         rxNext_ = 0;
         for (uint8_t i = 0; i < size; ++i) {

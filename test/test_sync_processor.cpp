@@ -110,7 +110,7 @@ TEST_CASE("csync coasts before the vertical interval and protects the line")
     CHECK(applied<SyncProcessor::SP_SOG_MODE>(csync) == 1);
     CHECK(applied<SyncProcessor::SP_NO_COAST_REG>(csync) == 0);
     CHECK(applied<SyncProcessor::SP_PRE_COAST>(csync) == 7);
-    CHECK(applied<SyncProcessor::SP_POST_COAST>(csync) == 4);
+    CHECK(applied<SyncProcessor::SP_POST_COAST>(csync) == 6);
     CHECK(applied<SyncProcessor::SP_SYNC_BYPS>(csync) == 0);
     CHECK(applied<SyncProcessor::SP_HS_LOOP_SEL>(csync) == 0);
     CHECK(applied<SyncProcessor::SP_H_PROTECT>(csync) == 1);
@@ -492,11 +492,12 @@ TEST_CASE("a source with its own H and V is coasted over nothing and ignores not
     CHECK(SyncProcessor::SP_DLT_REG::read() == 0x00);
 }
 
-TEST_CASE("the composite coast pair counts a source's lines, not its serrations")
+TEST_CASE("an unmeasured interval keeps the hold")
 {
-    // Coasted 4 lines before the vertical interval and 7 after, a 625-line
-    // source's equalisation pulses fall inside the count and it measures 622.
-    // Coasted 7 and 3 the same source measures 314.
+    // The hold is the default, because a source denied one it needs emits
+    // nothing. Coasted 4 lines before the vertical interval and 7
+    // after, a 625-line source's equalisation pulses fall inside the count and
+    // it measures 622. Coasted 7 and 3 the same source measures 314.
     // docs/investigations/two-owners-of-the-coast-lengths-double-the-count.md
     Wire.reset();
     Wire.poison(Poisons[0]);
@@ -504,7 +505,7 @@ TEST_CASE("the composite coast pair counts a source's lines, not its serrations"
     SyncProcessor::applyForSyncType(true, MeasuredCsyncDivider);
 
     CHECK(SyncProcessor::SP_PRE_COAST::read() == 7);
-    CHECK(SyncProcessor::SP_POST_COAST::read() == 4);
+    CHECK(SyncProcessor::SP_POST_COAST::read() == 6);
 }
 
 TEST_CASE("a composite source is coasted before its vertical interval")
@@ -513,8 +514,31 @@ TEST_CASE("a composite source is coasted before its vertical interval")
     SyncProcessor::applySeparationThresholds(true);
 
     CHECK(SyncProcessor::SP_PRE_COAST::read() == 7);
-    CHECK(SyncProcessor::SP_POST_COAST::read() == 4);
+    CHECK(SyncProcessor::SP_POST_COAST::read() == 6);
     CHECK(SyncProcessor::SP_DLT_REG::read() >= 0x70);
+}
+
+TEST_CASE("an interval needing no hold is coasted for less than one that does")
+{
+    // One value sits on the edge of both measured bands at once: the Wii's sync
+    // on green drops to absent at a post coast of 0 and is indistinguishable at
+    // 4 and 6, where the RISC PC's composite is clean from 0 to 4 and displaces
+    // 0.7% of frames at 5.
+    // docs/investigations/the-composite-roll-is-lost-horizontal-pulses-in-the-doubled-scan.md
+    SyncProcessor::useLongPostCoast(true);
+
+    Wire.reset();
+    SyncProcessor::applyForSyncType(true, MeasuredCsyncDivider);
+    const uint32_t serrated = SyncProcessor::SP_POST_COAST::read();
+
+    SyncProcessor::useLongPostCoast(false);
+
+    Wire.reset();
+    SyncProcessor::applyForSyncType(true, MeasuredCsyncDivider);
+
+    CHECK(SyncProcessor::SP_POST_COAST::read() < serrated);
+
+    SyncProcessor::useLongPostCoast(true);
 }
 
 TEST_CASE("an overridden coast is what the sync type applies")
@@ -558,7 +582,7 @@ TEST_CASE("forgetting the override returns the constants")
     SyncProcessor::applyForSyncType(true, MeasuredCsyncDivider);
 
     CHECK(SyncProcessor::SP_PRE_COAST::read() == 7);
-    CHECK(SyncProcessor::SP_POST_COAST::read() == 4);
+    CHECK(SyncProcessor::SP_POST_COAST::read() == 6);
 }
 
 
@@ -921,7 +945,7 @@ TEST_CASE("a source whose sync carries no vertical interval gets the thresholds"
     SyncProcessor::applyDynamic(source);
 
     CHECK(SyncProcessor::SP_PRE_COAST::read() == 7);
-    CHECK(SyncProcessor::SP_POST_COAST::read() == 4);
+    CHECK(SyncProcessor::SP_POST_COAST::read() == 6);
     CHECK(SyncProcessor::SP_DLT_REG::read() == 0xC0);
 }
 
