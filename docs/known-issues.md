@@ -2344,11 +2344,18 @@ Four of them are not a placement at all:
 
 - **240x352@70 composite** is a span rather than a shift, 154 rows of black
   between the two borders, and the only case whose vertical reads that way.
-- **640x512@50 composite** reaches neither vertical border, because the capture
-  is sized from a count four lines low on that arrangement -- 529 against
-  separate sync's 533 -- which leaves the window narrower than the source's
-  picture. No lead places a border the window never reaches, and separate sync
-  frames the same mode at 1\|1.
+- **640x512@50 composite NEVER SETTLES, and the framing is the least of it.**
+  Over ninety seconds of a solved acquisition: five solves armed, 39 scan
+  changes, 19 engagements of the motion-adaptive deinterlacer on a progressive
+  source, and a count visiting 529, 530 and 531. The separate-sync leg of the
+  same mode and the composite leg of 320x256@50 each score zero on all four.
+  The dither is `SP_H_PULSE_IGNOR`, which `divider x 49 / 1000` puts at 79% of
+  that mode's own sync pulse -- 85 against 107 -- where 320x256@50 gets 70%;
+  dropped to 48 the count reads 530 in 23 of 25 samples. It is why the count
+  restoration latches on one acquisition in eight, and the capture is sized
+  from the short count on the other seven, which is what reaches neither
+  vertical border. Separate sync frames the same mode at 1\|1.
+  `investigations/the-composite-count-dithers-where-the-ignore-nears-the-pulse.md`
 - **640x480@60 composite ACQUIRES now**, on the count the mode sends: `PLLAD_MD`
   1272 against a 1273-unit capture and 525 lines, where it read 2040 against
   312. So it is a framing reading again rather than an acquisition one.
@@ -5924,6 +5931,33 @@ of ten csync legs at 320x256@50, five read the duty as its complement -- 93.13%,
 98.23%, 93.14%, 84.47%, 93.14%, and one leg read 148.07% -- every one refused,
 which places the capture window's head from `FallbackDuty` rather than from a
 measurement.
+
+### The pulse ignore climbs into the sync pulse and the count dithers
+
+`SP_H_PULSE_IGNOR` is `divider x 49 / 1000`, which is a fixed share of the LINE
+and therefore a varying share of the PULSE. At 640x512@50 on composite sync it
+lands at 85 against a 107-sample pulse -- 79%, where 320x256@50 gets 70% -- and
+the count then visits 527 to 531 instead of holding one value.
+
+What follows is not only a framing. Over ninety seconds of a solved
+acquisition: five solves armed, **39 scan changes**, **19 engagements of the
+motion-adaptive deinterlacer on a progressive source**, and 34 rate matches.
+The separate-sync leg of the same mode and the composite leg of 320x256@50
+score zero on all four over the same window. The dither also defeats the frame
+hold that restores the lines an unserrated vertical interval costs, so one
+acquisition in eight sizes its capture from the frame and seven from the short
+count.
+
+Frozen on the solve, dropping the one register to 48 reads 530 in 23 of 25
+samples and 16 reads it in 24 of 25; 64 dithers again, and no coast length,
+`SP_DLT_REG` or `SP_VSYNC_TGL_THD` moves the reading at all.
+
+**The fix is not simply a lower threshold.** The field rejects broadcast
+equalising pulses, and the only serrated source this board can produce comes
+through the ADV7280 on composite or S-Video, which is not on the bench -- so
+the trade a pulse-derived rule makes cannot be measured here.
+
+`investigations/the-composite-count-dithers-where-the-ignore-nears-the-pulse.md`.
 
 ### A sync-type change arms no re-probe, so the held answer outlives the source
 
