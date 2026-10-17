@@ -408,23 +408,44 @@ public:
     // this block's.
     static void reset();
 
-    // How many lines either side of the vertical interval the PLL is held over
-    // on a composite source. COAST stops the PLL tracking the reference and
-    // holds its output frequency, so the pair is load-bearing on an UNSERRATED
-    // csync too -- the vertical interval starves the PLL of edges either way,
-    // and a pair chosen as a serration skip reads as optional there and is not.
-    // Too short and the PLL resumes tracking a reference still irregular; too
-    // long and it stops tracking sync it needed.
+    // How many lines the PLL is held over BEFORE the vertical interval on a
+    // composite source, and how many after. COAST stops the PLL tracking the
+    // reference and holds its output frequency, so the pair is load-bearing on
+    // an UNSERRATED csync too -- the vertical interval starves the PLL of edges
+    // either way, and a pair chosen as a serration skip reads as optional there
+    // and is not.
     //
-    // THE POST COAST ALSO DECIDES WHETHER THE VERTICAL BLANKING REACHES THE
-    // PIN, and a post of 3 is the one value that stops it: measured on the Wii
-    // on ypbpr at IF_VB_ST 512, the input formatter's vertical is dead at 3 and
-    // live at every value from 4 to 12, against a steady count throughout. 6 is
-    // two lines clear of that edge and inside the band the RISC PC on composite
-    // sync is indifferent across.
+    // THE TWO ARE NOT ONE QUANTITY AND THEY ANSWER TO DIFFERENT SOURCES.
+    //
+    // The PRE coast holds the COUNT, and only a serrated source needs it: at 0
+    // the Wii's count dithers across 8 to 14 values in a 14 s window at every
+    // post coast and the engine drops to absent, and 0 with a post of 6
+    // displaces the RISC PC's composite picture in 16.2% of 6407 frames against
+    // 0.4..0.8% at 7.
+    //
+    // THE POST COAST IS WHAT THE PICTURE ANSWERS TO, AND 4 IS THE ONLY VALUE
+    // THE TWO SOURCES HERE SHARE. Composite `vga` at 320x256@50 into 1080p,
+    // 100 s legs alternating with controls, as the share of emitted frames
+    // displaced vertically: 0 of 6406 at 4, and 0.7% at 5 beside controls of
+    // 0.3..0.5% at 6 -- so the boundary is between 4 and 5 and the residual is
+    // the hold itself, not its length. 1, 2 and 3 are clean too.
+    //
+    // The other end is the Wii's sync on green, which needs the hold: at 0 its
+    // count collapses to 356, the engine drops to absent and the sync pad stays
+    // away, so the output is black. And a post of 3 at IF_VB_ST 512 stops the
+    // input formatter's vertical reaching DEBUG_IN_PIN, which no count can see.
+    //
+    // **SO THE OPTIMUM IS ONE VALUE WIDE AND NOTHING MEASURES IT.** The hold
+    // has to cover the pulses a serrated interval carries after the vertical
+    // and no longer, and no register reports whether the interval is serrated
+    // -- the sync type stands in for it, which is wrong for any unserrated
+    // composite source. /edgetrace is the spike at measuring it directly.
+    // tools/gbsc-pro-hwtest/sweep_coast.py scores a pair on the count and the
+    // blanking together, which the count alone cannot.
     // docs/investigations/two-owners-of-the-coast-lengths-double-the-count.md
+    // docs/investigations/the-composite-roll-is-lost-horizontal-pulses-in-the-doubled-scan.md
     static const uint8_t CompositePreCoastLines = 7;
-    static const uint8_t CompositePostCoastLines = 6;
+    static const uint8_t CompositePostCoastLines = 4;
 
     // A coast to apply in place of the two above, wherever the pair is written.
     // The engine re-applies the pair on every solve, so a value written from

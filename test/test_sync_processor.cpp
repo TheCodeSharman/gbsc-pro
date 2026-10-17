@@ -101,7 +101,7 @@ TEST_CASE("separate sync runs off the source's own H and V, uncoasted")
     CHECK(applied<SyncProcessor::SP_H_PROTECT>(csync) == 0);
 }
 
-TEST_CASE("csync coasts around the vertical interval and protects the line")
+TEST_CASE("csync coasts before the vertical interval and protects the line")
 {
     const bool csync = true;
 
@@ -110,7 +110,7 @@ TEST_CASE("csync coasts around the vertical interval and protects the line")
     CHECK(applied<SyncProcessor::SP_SOG_MODE>(csync) == 1);
     CHECK(applied<SyncProcessor::SP_NO_COAST_REG>(csync) == 0);
     CHECK(applied<SyncProcessor::SP_PRE_COAST>(csync) == 7);
-    CHECK(applied<SyncProcessor::SP_POST_COAST>(csync) == 6);
+    CHECK(applied<SyncProcessor::SP_POST_COAST>(csync) == 4);
     CHECK(applied<SyncProcessor::SP_SYNC_BYPS>(csync) == 0);
     CHECK(applied<SyncProcessor::SP_HS_LOOP_SEL>(csync) == 0);
     CHECK(applied<SyncProcessor::SP_H_PROTECT>(csync) == 1);
@@ -504,16 +504,16 @@ TEST_CASE("the composite coast pair counts a source's lines, not its serrations"
     SyncProcessor::applyForSyncType(true, MeasuredCsyncDivider);
 
     CHECK(SyncProcessor::SP_PRE_COAST::read() == 7);
-    CHECK(SyncProcessor::SP_POST_COAST::read() == 6);
+    CHECK(SyncProcessor::SP_POST_COAST::read() == 4);
 }
 
-TEST_CASE("a composite source is coasted over its vertical interval")
+TEST_CASE("a composite source is coasted before its vertical interval")
 {
     Wire.reset();
     SyncProcessor::applySeparationThresholds(true);
 
     CHECK(SyncProcessor::SP_PRE_COAST::read() == 7);
-    CHECK(SyncProcessor::SP_POST_COAST::read() == 6);
+    CHECK(SyncProcessor::SP_POST_COAST::read() == 4);
     CHECK(SyncProcessor::SP_DLT_REG::read() >= 0x70);
 }
 
@@ -558,7 +558,7 @@ TEST_CASE("forgetting the override returns the constants")
     SyncProcessor::applyForSyncType(true, MeasuredCsyncDivider);
 
     CHECK(SyncProcessor::SP_PRE_COAST::read() == 7);
-    CHECK(SyncProcessor::SP_POST_COAST::read() == 6);
+    CHECK(SyncProcessor::SP_POST_COAST::read() == 4);
 }
 
 
@@ -921,7 +921,7 @@ TEST_CASE("a source whose sync carries no vertical interval gets the thresholds"
     SyncProcessor::applyDynamic(source);
 
     CHECK(SyncProcessor::SP_PRE_COAST::read() == 7);
-    CHECK(SyncProcessor::SP_POST_COAST::read() == 6);
+    CHECK(SyncProcessor::SP_POST_COAST::read() == 4);
     CHECK(SyncProcessor::SP_DLT_REG::read() == 0xC0);
 }
 
@@ -1370,9 +1370,9 @@ TEST_CASE("the static setup clears the held SOG inversion with the register")
 // invisible on `vga`; on the Wii's sync on green it is the whole of why
 // pass-through showed no signal.
 //
-// Measured on the bench, Wii 480p on `ypbpr` in pass-through: SP_PRE_COAST 7,
-// SP_POST_COAST 6, SP_NO_COAST_REG 0, SP_SOG_MODE 1 and SP_H_PROTECT 1 all
-// carry the csync branch's values, and SP_DIS_SUB_COAST alone reads 1.
+// Measured on the bench, Wii 480p on `ypbpr` in pass-through: the coast pair,
+// SP_NO_COAST_REG, SP_SOG_MODE and SP_H_PROTECT all still carry the csync
+// branch's values, and SP_DIS_SUB_COAST alone reads 1.
 TEST_CASE("entering pass-through leaves the sub coast the sync type chose")
 {
     Wire.reset();
@@ -1447,10 +1447,9 @@ TEST_CASE("the sync type writes the pulse width difference with the coast")
 {
     // The coast lengths and the pulse width difference are ONE separation
     // configuration, and applyForSyncType() used to write only the coast.
-    // Measured on the bench across a vga -> ypbpr change that stalled:
-    // SP_PRE_COAST 7 and SP_POST_COAST 6 against SP_DLT_REG 0 -- the composite
-    // coast carrying the separate-sync pulse width left behind by the source
-    // before it. The sync processor then counted 97 lines, the ADC PLL never
+    // Measured on the bench across a vga -> ypbpr change that stalled: the
+    // composite coast pair against SP_DLT_REG 0 -- the composite coast carrying
+    // the separate-sync pulse width left behind by the source before it. The sync processor then counted 97 lines, the ADC PLL never
     // locked, and the dynamic writes that would repair it are withheld from a
     // source the engine cannot count. docs/known-issues.md
     CHECK(wasWritten<SyncProcessor::SP_DLT_REG>(true));
