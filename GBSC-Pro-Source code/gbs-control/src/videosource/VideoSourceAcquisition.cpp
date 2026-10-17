@@ -606,7 +606,20 @@ bool VideoSourceAcquisition::sourceMoved()
     // acquired and silent, with no arm reachable. A run far longer than any
     // lost pulse produces is the processor not counting this source, which is
     // what a re-measure is for. It re-arms every run rather than once.
+    //
+    // AND ONLY WHERE THE RE-MEASURE HAS SOMEWHERE TO GO. A count equal to the
+    // one already solved is what the re-measure would return, so arming on it
+    // repeats for ever -- measured on `ypbpr` with the Wii in PAL 576i, where
+    // the formatter counts a frame the processor counts a field of and no
+    // factor reconciles them: a solve every 2.5 s with the sync pad away for
+    // half of each cycle, the emitted frame black and auto gain never
+    // completing. There the raw count stands, which is what refusing the
+    // reading was always meant to leave.
     if (sampling_.countContradicted(lines)) {
+        if (lines == solvedLines_) {
+            contradictedPasses_ = 0;
+            return false;
+        }
         if (++contradictedPasses_ < ContradictedArmPasses)
             return false;
         contradictedPasses_ = 0;

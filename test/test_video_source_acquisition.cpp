@@ -2466,6 +2466,40 @@ TEST_CASE("a count the formatter contradicts for long enough is re-measured")
     CHECK(loggedContaining("TIMINGS change (contradicted count)"));
 }
 
+TEST_CASE("a contradiction at the count already solved does not arm for ever")
+{
+    // The arm above exists to escape a solve the processor cannot count
+    // through, which shows as a count far from the solved one. A count that
+    // EQUALS the solved one has nothing to escape to: the re-measure returns
+    // the same reading, contradicts again, and arms again.
+    //
+    // Measured on `ypbpr`, the Wii in PAL 576i: VPERIOD_IF 624 against a count
+    // of 310, where reconciledFrame() refuses 625 whole lines as 314 above the
+    // count and skips halving it because 625 is odd. The console printed
+    // `contradicted count), 310 lines, solved 310` every 2.5 s for as long as
+    // it was left, dropping the sync pad for about 1.2 s of each cycle -- the
+    // emitted frame pure black, and auto gain never completing, which is the
+    // magenta. ../docs/known-issues.md
+    seedBenchSource();
+    Acquiring unit;
+    unit.path.useSyncTypeProbe(probeOwnVsync);
+
+    g_hasOwnVsync = false;
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+    REQUIRE(unit.acquisition.sourceIsPresent());
+    const uint16_t solved = unit.sampling.sourceLines();
+
+    g_logLines.clear();
+    for (uint8_t i = 0; i < 20 * SourceMeasurement::SteadySamples; ++i) {
+        seedSourceLines(solved);
+        seedFrame(1249);
+        unit.poll();
+    }
+
+    CHECK_FALSE(loggedContaining("TIMINGS change (contradicted count)"));
+}
+
 TEST_CASE("a mode change the formatter's frame agrees with still arms one")
 {
     // The corroboration refuses a count the formatter contradicts, not a count
