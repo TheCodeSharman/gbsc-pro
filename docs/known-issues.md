@@ -554,7 +554,7 @@ Separate sync in the same arrangement reads 0.005 to 0.014 in every band.
 **It is not the whole-picture shake**, which is vertical, affects every band
 alike, and is a property of the boot. `investigations/the-unlocked-state-had-no-arm.md`.
 
-### The composite picture jumped vertically, several times a second -- closed, with a residual
+### The composite picture jumped vertically -- the roll and the line-or-two residual are closed, a large jump remains
 
 Measured off the USB capture with
 `tools/gbsc-pro-hwtest/picture_stability.py`, `vga` at 320x256@50 into 1080p,
@@ -572,15 +572,97 @@ the clamp and the separator's regenerated pulse end follow the edge by one
 pulse, and `test_picture_holds_still.py` reads 0 of 514 on both legs.
 `investigations/the-composite-roll-is-lost-horizontal-pulses-in-the-doubled-scan.md`.
 
-**WHAT REMAINS OPEN IS ABOUT ONE FRAME IN A HUNDRED**: engine-solved 20 s clips
-read 6 and 13 of 1283 frames displaced, two to 25 rows with an occasional
-100..230-row jump, and controls inside one acquisition drift between 0.0% and
-1.6%. `SP_PRE_COAST` 0 with `SP_POST_COAST` 0 reads **0.0% on four legs**
-against controls of 0.3% to 1.4% beside them, and is the lead. It is the
-vertical-interval coast the csync branch writes for every separator source,
-so the Wii's sync on green has to be judged with it before it is the fix;
-`SP_DLT_REG` 300 reads 1.0% and is not. `roll_ab.py --seconds 20` is what took
-every reading, because at this rate an 8 s clip holds two events.
+**THE ONE-FRAME-IN-A-HUNDRED RESIDUAL WAS THE POST COAST, and the roll of a
+line or two is closed with it.** `SP_POST_COAST` is 4, where it was 6.
+Composite `vga` at 320x256@50 into 1080p, frozen, 100 s legs alternating with
+controls, as the share of emitted frames displaced vertically:
+
+| `SP_POST_COAST` | share | note |
+|---|---|---|
+| 1, 2, 3 | 0 of 3844..3845 each | 60 s legs |
+| **4** | **0 of 6406** | 100 s |
+| 5 | 0.7%, 45 of 6407 | 100 s |
+| 6, the old value | 0.3, 0.4, 0.5, 0.8, 0.9% | five controls |
+
+So the boundary is between 4 and 5, and the residual is the LENGTH of the hold
+rather than the hold itself. `SP_PRE_COAST` is untouched at 7: 0 there reads
+**16.2% of 6407** against 0.4..0.8% beside it, twenty times worse than the
+default, so the pair is not one quantity and walking them together hid which
+half carried it.
+
+**4 IS THE ONLY VALUE THE TWO SOURCES SHARE, so the optimum is one value wide.**
+The Wii needs the hold: at post 0 its count collapses to 356, the engine drops
+to `absent`, `PAD_SYNC_OUT_ENZ` stays 1 and the output is black -- reproduced
+twice over 60 s clips, with a clean picture at 6 in between. At 4 it is
+indistinguishable from 6: count 524, divider 1212, the same capture, the
+vertical live at the pin at 18 transitions against a control of 18, and 0 of
+3845 frames displaced over 60 s.
+
+**AND THE POST COAST MOVES THE MEASURED FIELD RATE, because it gates the very
+signal the rate is timed on.** Every engine caller of
+`TestBusRateMeasurement::sourceFieldRateHz()` passes `false`, which selects the
+input formatter's vertical. Measured on the Wii: 59.71 Hz at post 0 against
+60.05 at post 6, a true 59.94 -- and the 0.57% difference crosses a divider
+decision, 1446 against 1212. The sync-processor branch of that call exists and
+is live (`sp=7` carries a field-rate signal at 4% duty), but only
+`SamplingLog::rates()` ever passes `true`, so the engine never takes it.
+Moving the rate there would make it immune to the coast.
+
+`roll_ab.py --seconds 100` took every frozen reading and `coast_legs.py` the
+unfrozen ones; at this rate a 60 s leg reads 0.0% by chance about one control
+in five, so no single zero leg is a verdict.
+
+**WHAT IS STILL OPEN IS THE LARGE JUMP, and it is a different fault.** On the
+shipped build unfrozen, two 100 s legs read 4 and 7 of ~6407 displaced -- 0.10%
+against 0.55% measured unfrozen at post 6, so five to nine times fewer -- but
+the offsets are `{1: 4}` on one leg and `{-153: 3, 84: 1, 159: 2, 252: 1}` on
+the other. The line-or-two roll is gone; what remains is the occasional
+100..250-row jump, and it appears only UNFROZEN where frozen post 4 reads 0 of
+6406 twice. So it belongs to the engine or the sink rather than to the
+separator, and the frame time lock is the obvious candidate.
+
+**THE COAST CANNOT BE DERIVED FROM ANYTHING MEASURED YET, AND THAT IS THE
+ROUTE OUT.** The hold has to cover the pulses a serrated vertical interval
+carries after the vertical pulse and no longer, and no register reports whether
+an interval is serrated -- the sync type stands in for it, which is wrong for
+any unserrated composite source. A 15 kHz console with csync on the sync pin is
+broadcast-serrated and wants a long post coast where the RISC PC on the same
+input with the same `SP_SOG_MODE` wants a short one, so no proxy separates them.
+
+**The measurement to make is a comparison in a KNOWN state**, the move
+`/refclock` already makes for the divider: hold the coast at 0/0, then read
+`STATUS_SYNC_PROC_VTOTAL` against `VPERIOD_IF`. At 0/0 the Wii's count
+collapses and dithers across 8 to 14 values while the formatter's period stays
+within five counts of the truth, and the RISC PC reads 308 at every one of 121
+pairs -- so the disagreement IS the serration.
+`investigations/two-owners-of-the-coast-lengths-double-the-count.md` establishes
+the property that makes it sound: `VPERIOD_IF` is disturbed by a bad coast but
+never once reported a doubled value in 363 samples, so it cannot make the error
+that matters. `SourceMeasurement::countIsSerrations()` was that comparison and
+was deleted once the doubling stopped being reachable at the ENGINE's coast; at
+0/0 it is reachable deliberately.
+
+Three constraints it has to be designed against. The probe costs a steadiness
+run per step, so a walk from 0 upward is ~12 s against a 10 s input-change
+budget -- a two-point test first, walking only where it says serrated. It has
+to run inside the acquisition window where the arm has already taken the sync
+pad away, because at 0/0 the picture drops. And the field rate has to be
+trusted after it rather than before, or moved to the sync-processor bus, for the
+reason above.
+
+**REFUTED AS THE ROUTE: timestamping edges off the test bus.** `/edgetrace`
+records every rising edge's period from an IRAM ISR and it works, but no signal
+it can reach carries the source's own sync. Measured on `vga` composite at
+320x256@50: all 32 sync-processor stage/signal pairs on selector 10 are a
+~150 kHz clock at 50% duty, a stuck level, or the field-rate vertical at 4%
+duty. The input formatter's `if=0` is a pulse train at 16% duty, but its median
+period is 30.5 us -- the DOUBLED line, downstream of the doubler -- and on the
+Wii the same selector reads a 5.19 us median with periods from 2.9 to 98.7 us,
+so the selector does not mean the same thing on two sources. RD-5725-1.1
+tabulates no values for `IF_TEST_SEL` or the stage signal selects, and every
+signal the bus offers is downstream of the processor the coast configures, so
+the measurement is circular there in the way `sync-type-selection.md` records
+for the sync type.
 
 **IT IS NOT ANYTHING THE FIRMWARE DOES ON A SCHEDULE.** Over 100 s of
 timestamped console alongside the clip the engine printed no solve, no

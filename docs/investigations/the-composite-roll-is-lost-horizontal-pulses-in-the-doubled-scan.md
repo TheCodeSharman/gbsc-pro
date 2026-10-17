@@ -3,9 +3,10 @@
 `vga` on composite sync at 320x256@50 into 1080p rolls vertically; the same
 source on separate sync does not, and the same sync arrangement at 800x600@60
 does not. This records what the roll coincides with, which scan it belongs to,
-and every register that was walked against it without moving it, and then
-what closed it: the separator and the ADC PLL referencing the trailing edge of
-the pulse.
+and every register that was walked against it without moving it, and then the
+two things that closed it: the separator and the ADC PLL referencing the
+trailing edge of the pulse, and the vertical-interval hold being six lines long
+after it.
 
 Every reading is `tools/gbsc-pro-hwtest/picture_stability.py`'s share of
 displaced frames over an 8 s clip, taken frozen, with a control clip between
@@ -106,7 +107,14 @@ rest of the frame correlates at lag 0.
 
 ## Walked without effect
 
-Each at 6 or 8 s, frozen, against a neighbouring control, share in percent:
+Each at 6 or 8 s, frozen, against a neighbouring control, share in percent.
+
+**THESE WERE TAKEN BEFORE THE EDGE CHANGED, AGAINST A CONTROL OF 12% TO 29%,
+so a treatment is only cleared here of the ROLL.** A residual of half a percent
+is invisible at that floor and an 8 s leg holds one event of it -- which is why
+`SP_PRE_COAST` and `SP_POST_COAST` appear below as moving nothing while the post
+coast turns out to carry the residual. Nothing in this table is evidence about a
+fault smaller than its own controls.
 
 | register | value | share | controls |
 |---|---|---|---|
@@ -236,15 +244,52 @@ came back from `/sc?~` on the default edge every time while a boot landed on
 the leading one. The pair has one owner, the sync-type application, and the
 static setup leaves it alone.
 
+## The residual was the POST coast, and the pair is not one quantity
+
+`SP_POST_COAST` is 4, where it was 6. Every reading frozen, 100 s legs
+alternating with a control, on `vga` composite at 320x256@50 into 1080p:
+
+| treatment | share | control beside it |
+|---|---|---|
+| `SP_POST_COAST` 4 | **0 of 6406** | 0.5%, 0.3% |
+| `SP_POST_COAST` 5 | 0.7%, 45 of 6407 | 0.3%, 0.8% |
+| `SP_PRE_COAST` 0 | **16.2%, 1040 of 6407** | 0.8%, 0.5% |
+| both 0 | 0 of 6407, twice | 1.1%, 0.6%, 0.4% |
+
+So the boundary is between 4 and 5, and the pre coast walked alone is twenty
+times WORSE than the default. Walking the pair together reads as "0/0 is the
+fix" and hides which half carries it -- which is how 0/0 came to be the lead,
+and 0/0 is the one value the Wii cannot have.
+
+**A 60 s leg is not long enough to clear a value.** At this rate one control in
+five reads 0.0% by chance: the walk of 1, 2, 3 and 4 at 60 s gave four zeroes
+beside controls of 0.9, 0.6, **0.0** and 0.4%. The 100 s legs above are what
+separate the treatments from the floor.
+
+## Why 4 and not shorter: the other source needs the hold
+
+The post coast is the csync branch's for every separator source, so the Wii's
+sync on green decides the floor. At post 0 its count collapses to 356, the
+engine drops to `absent`, `PAD_SYNC_OUT_ENZ` stays 1 and the emitted frame is
+black -- two 60 s clips, 3844 and 3845 frames with nothing to correlate, with a
+clean picture at 6 taken between them. At 4 it is indistinguishable from 6:
+count 524, divider 1212, the same capture, the formatter's vertical live at the
+pin at 18 transitions against a control of 18, and 0 of 3845 frames displaced.
+
+**So the optimum is one value wide**, and nothing measures it. `../known-issues.md`
+carries what the measurement would be and why timestamping test-bus edges is
+not it.
+
 ## What is open
 
-**A residual of about one frame in a hundred**, two to 25 rows and an
-occasional 100..230-row jump: 13 of 1283 over 20 s, controls between 0.0% and
-1.6% inside one acquisition. `SP_PRE_COAST` 0 with `SP_POST_COAST` 0 read 0.0%
-on the first two legs, against controls of 1.4% and 0.3% beside them, and is
-the lead; it is the coast the csync branch writes for every separator source
-and the Wii's sync on green has not been checked with it. `SP_DLT_REG` 300
-reads 1.0% and is not.
+**The large jump is a different fault and it survives.** On the shipped build
+UNFROZEN, two 100 s legs read 4 and 7 of ~6407 displaced, against 0.55%
+measured unfrozen at post 6. But the offsets separate into two populations:
+`{1: 4}` on one leg, which is sub-line, and
+`{-153: 3, 84: 1, 159: 2, 252: 1}` on the other. The roll of a line or two is
+gone; the 100..250-row jump is not, it appears only unfrozen, and frozen post 4
+reads 0 of 6406 twice over 200 s. That points at the engine or the sink rather
+than the separator.
 
 And 640x480@60 on SEPARATE sync emits a black frame on an acquired source --
 524 lines, `PLLAD_MD` 1272 against the 1444 composite solves for the same
