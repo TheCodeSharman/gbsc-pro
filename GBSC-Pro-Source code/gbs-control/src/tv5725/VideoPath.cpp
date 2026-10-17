@@ -579,9 +579,39 @@ bool VideoPath::setOutputMode(const OutputMode *mode)
 
 void VideoPath::sourceMeasured(const HsyncPulse &reading)
 {
+    // THE DUTY ARRIVES AFTER THE CLOCK IS INSTALLED, and the two registers
+    // below are sized from it. takeDuty() refuses a reading taken through an
+    // unlatched clock and only an install latches one, so the install that
+    // places them is always one pass short of the duty they want -- and a solve
+    // that runs afterwards does not touch them. Measured on the bench at
+    // 320x256@50 on composite: SP_CS_HS_SP left at 0 against the 149 the pulse
+    // asks for, which moves the capture origin by a whole pulse and put 231
+    // output columns of black at the near edge.
+    const bool arrived = reading.isPulse() && !reading_.isPulse();
+
     reading_ = reading;
     timing_ = SourceTiming::matching(arrivingKey());
     activeStartLine_ = timing_.activeStartLine(sampling_.sourceLines() + 1);
+
+    if (arrived && installedDivider_ != 0)
+        placeSyncForDuty();
+}
+
+void VideoPath::placeSyncForDuty()
+{
+    // WHERE THE SEPARATOR'S REGENERATED PULSE ENDS, which on the leading-edge
+    // reference is the capture counter's origin: the source's own pulse width,
+    // so the pulse ends where the source's does.
+    SyncProcessor::placeSeparatorPulseEnd(installedDivider_, reading_);
+
+    // The clamp is a fraction of the LINE, so it moves with the divider. Left
+    // where a previous one put it, the stop reaches past the back porch and the
+    // black level is taken off picture -- measured, a stop 18 samples late
+    // costs 20 grey levels. Placed from the divider applied rather than
+    // measured: STATUS_SYNC_PROC_HTOTAL only echoes it back.
+    SyncProcessor::placeClampFor(syncTypeInForce_, Adc::inputIsComponent(),
+                                 sampling_.lineRateHz(), installedDivider_,
+                                 reading_);
 }
 
 void VideoPath::prepareToMeasure(uint16_t sourceLines)
@@ -1155,16 +1185,8 @@ void VideoPath::applySamplingClock(uint16_t divider, uint32_t lineRateHz)
     Adc::applySampleRate(divider, lineRateHz, modeOversample_);
     installedDivider_ = divider;
     writeRetimeOrigin();
-    SyncProcessor::placeSeparatorPulseEnd(divider, reading_);
     writePulseIgnore();
-
-    // The clamp is a fraction of the LINE, so it moves with the divider. Left
-    // where a previous one put it, the stop reaches past the back porch and the
-    // black level is taken off picture -- measured, a stop 18 samples late
-    // costs 20 grey levels. Placed from the divider just applied rather than
-    // measured: STATUS_SYNC_PROC_HTOTAL only echoes it back.
-    SyncProcessor::placeClampFor(syncTypeInForce_, Adc::inputIsComponent(),
-                                 lineRateHz, divider, reading_);
+    placeSyncForDuty();
 
     // Every install re-latches the PLL, so nothing counted in ADC samples is
     // the source's for the next few passes -- whichever route wrote it.

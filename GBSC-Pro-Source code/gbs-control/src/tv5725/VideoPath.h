@@ -374,6 +374,12 @@ public:
     enum SamplingReason { SamplingFollowsMeasurement, SamplingFollowsOutput };
     bool installSampling(SamplingReason reason);
 
+    // The sync processor's two duty-derived registers, placed from the divider
+    // installed and the pulse measured. Both the install and the pass the duty
+    // arrives on go through here, because the install is always a pass short of
+    // the duty.
+    void placeSyncForDuty();
+
     // Solve every register from the measurement the caller has just taken.
     PollOutcome solveFromMeasurement();
 

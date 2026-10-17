@@ -3702,3 +3702,45 @@ TEST_CASE("one source lands on one divider whatever mode preceded it")
     // every line, which is the state the bound exists to refuse.
     CHECK(alone == 1272);
 }
+
+// Where the separator's regenerated pulse ends, s5_47..48.
+static uint16_t separatorPulseEnd() { return (uint16_t)Wire.field(5, 0x47, 0, 12); }
+
+TEST_CASE("the separator's pulse end follows the duty once it is measured")
+{
+    // ON THE LEADING-EDGE REFERENCE THIS REGISTER IS THE CAPTURE ORIGIN. It
+    // ends the regenerated pulse where the source's own ends, so the counter
+    // that zeroes on it is where a trailing-edge reference put it -- and it is
+    // written as the source's pulse width, which the first solve of a source
+    // does not have. Written 0 there, the origin moves by a whole pulse.
+    //
+    // Measured on the bench at 320x256@50 on composite: SP_CS_HS_SP 0 against
+    // the 149 the pulse asks for, 231 output columns of black at the near edge
+    // and the far border off the emitted frame.
+    seedSourceMeasurement();
+    // Composite, so the separator is in circuit and the leading edge with it.
+    // The probe is what establishes that -- the held flag alone is not asked
+    // for -- and V-active reads 0 on a source whose vertical arrives on the
+    // sync it shares with the horizontal.
+    seedField(0, 0x16, 3, 1, 0);
+
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+    VideoSourceAcquisition acquisition(sampling, engine);
+    engine.useSyncTypeProbe(probeOwnVsync);
+    g_hasOwnVsync = false;
+    engine.setOutputMode(benchMode());
+    engine.inputTimingsChanged(4);
+
+    Wire.lockSyncProcessor();
+    REQUIRE(pollUntilSolved(acquisition));
+    for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i)
+        pollOnce(acquisition);
+    REQUIRE(sampling.hsync().isPulse());
+
+    CHECK(separatorPulseEnd()
+          == (uint16_t)lrintf((float)dividerInForce()
+                              * sampling.hsync().syncDuty()));
+}
