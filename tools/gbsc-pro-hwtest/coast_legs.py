@@ -92,7 +92,13 @@ def apply_coast(host, leg):
         sys.exit(f"/coast?{query} answered {status}: {body}")
 
 
-def leg(host, dev, name, seconds):
+def leg(host, dev, name, seconds, reference=None):
+    """One clip, judged and reported. The row profiles, or None.
+
+    `reference` is another leg's profile, so a picture that moved and STAYED
+    moved is reported too -- the judge correlates each frame against the median
+    of its own clip, where a whole-leg displacement is the median.
+    """
     if not settled(host):
         print(f"{name:10} never settled", flush=True)
         return None
@@ -111,8 +117,12 @@ def leg(host, dev, name, seconds):
           f"{judged.per_second:5.2f} jumps/s  worst {judged.worst:4d}  "
           f"{judged.seconds:5.1f} s  {solved}  {witness}  "
           f"{roll_ab.look(dev)}", flush=True)
-    print(f"{'':10} offsets {picture_stability.histogram(rows)}", flush=True)
-    return judged
+    moved = picture_stability.displacement(
+        picture_stability.reference(rows), reference) if reference is not None \
+        else 0
+    print(f"{'':10} offsets {picture_stability.histogram(rows)}  "
+          f"against the first leg {moved}", flush=True)
+    return rows
 
 
 def main():
