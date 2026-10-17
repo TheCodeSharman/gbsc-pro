@@ -30,6 +30,22 @@ import picture_stability
 WITNESSES = ["STATUS_IF_INP_PAL_INT", "STATUS_SYNC_PROC_VTOTAL",
              "STATUS_SYNC_PROC_HLOW_LEN"]
 
+# Frames discarded before the frame every leg is looked at. The link is
+# untouched between legs, so the full warm-up is not paid per reading.
+LOOK_WARMUP = 8
+
+
+def look(dev):
+    """One frame's mean luma and black margins, so a share of zero is checked.
+
+    The judge correlates row profiles and reads a band of unwritten memory as
+    a still picture, so every leg carries a frame beside its share.
+    """
+    grey = hdmi_capture.luma(hdmi_capture.frames(1, dev, warmup=LOOK_WARMUP)[0])
+    edge = hdmi_capture.borders(grey)
+    return (f"luma {grey.mean():5.1f} margins "
+            f"{edge['left']}/{edge['right']}/{edge['top']}/{edge['bottom']}")
+
 
 def treatments(args):
     """Each argument as a list of (name, value), a comma joining a group."""
@@ -53,7 +69,7 @@ def clip(host, dev, seconds, label):
     witness = " ".join(f"{k.split('_')[-1].lower()} {v}" for k, v in seen.items())
     print(f"{label:48} share {judged.share * 100:5.1f}%  jumps/s "
           f"{judged.per_second:5.2f}  worst {judged.worst:4d}  lost "
-          f"{judged.lost:3d}/{judged.frames}  {witness}", flush=True)
+          f"{judged.lost:3d}/{judged.frames}  {witness}  {look(dev)}", flush=True)
     return judged
 
 

@@ -131,6 +131,18 @@ def displacements(rows, maxlag=MAXLAG, contrast=CONTRAST):
     return [displacement(profile, ref, maxlag, contrast) for profile in rows]
 
 
+def histogram(rows, maxlag=MAXLAG, contrast=CONTRAST):
+    """How many frames sat at each non-zero offset, smallest offset first.
+
+    A share says how often the picture moved and not how far. One line and
+    fifty are the same share and different faults -- the measured events are
+    one or two source lines with an occasional jump of twenty-five to fifty.
+    """
+    seen = collections.Counter(
+        lag for lag in displacements(rows, maxlag, contrast) if lag)
+    return dict(sorted(seen.items()))
+
+
 def judge(rows, seconds, maxlag=MAXLAG, contrast=CONTRAST, limit=STEADY_SHARE):
     """What a clip's row profiles say about the picture holding still.
 
