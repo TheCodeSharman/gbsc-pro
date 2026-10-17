@@ -2311,22 +2311,35 @@ One run at 1080p, 16:9, each case's framing reset, as `across near|far` and
 
 | mode | sync | `PLLAD_MD` | across | down |
 |---|---|---|---|---|
-| 240x352@70 | separate | 1272 | 0.00\|0.72, far 12 | 0.91\|0.96, 2\|2 |
-| 320x256@50 | separate | 2200 | 0.80\|0.41, near 4 | 0.92\|0.91, 3\|1 |
-| 640x480@60 | separate | 1272 | no green anywhere | no green anywhere |
-| 640x512@50 | separate | 1424 | 0.00\|0.77, far 7 | 0.92\|0.93, 1\|1 |
-| 800x600@60 | separate | 1342 | 0.23\|0.48, near 2 | 0.87\|0.82, 0\|1 |
-| 240x352@70 | composite | 1314 | 0.61\|0.52, near 32 | 1.00\|0.64, 84\|66 |
-| 320x256@50 | composite | 2200 | 0.85\|0.00, near 24 | 0.89\|0.89, 3\|1 |
-| 640x480@60 | composite | 1272 | 0.00\|0.84, far 12 | 0.93\|0.55, 3\|1 |
-| 640x512@50 | composite | 1746 | 0.66\|0.70, 162\|168 | 0.00\|0.57, far 3 |
-| 800x600@60 | composite | 1342 | 0.64\|0.00, near 4 | 0.97\|0.96, 0\|0 |
+| 240x352@70 | separate | 1272 | 0.00\|0.74, far 12 | 0.93\|0.98, 2\|2 |
+| 320x256@50 | separate | 2200 | 0.79\|0.46, near 4 | 0.90\|0.90, 3\|1 |
+| 640x480@60 | separate | 1272 | 0.00\|0.81, far 14 | 0.45\|0.90, 1\|4 |
+| 640x512@50 | separate | 1424 | 0.00\|0.77, far 7 | 0.93\|0.93, 1\|1 |
+| 800x600@60 | separate | 1342 | 0.24\|0.48, near 2 | 0.87\|0.82, 0\|1 |
+| 240x352@70 | composite | 1272 | 0.76\|0.00, near 18 | 0.94\|0.00, near 8 |
+| 320x256@50 | composite | 2200 | 0.86\|0.00, near 26 | 0.89\|0.89, 3\|1 |
+| 640x480@60 | composite | **1446** | 0.00\|0.90, **far 152** | 0.79\|0.79, **9\|10** |
+| 640x512@50 | composite | 1746 | 0.64\|0.71, 162\|168 | overruns both ends |
+| 800x600@60 | composite | 1342 | 0.68\|0.00, near 4 | 0.98\|0.98, **0\|0** |
 
-**640x480@60 SEPARATE READS NO GREEN ON EITHER AXIS, AND THAT IS THE BLACK FRAME
-RATHER THAN A FRAMING.** Its state line is identical to the composite leg beside
-it -- `PLLAD_MD` 1272, capture 1273 x 525 -- and that leg reads four edges, so
-nothing about the geometry can explain an empty frame. It is the entry below on
-that mode emitting black from an acquired source, which comes and goes.
+**WHAT MOVED SINCE THE PULSE IGNORE FOLLOWED A MEASUREMENT.** Seven cases are
+unchanged or better and one is clearly worse:
+
+- **240x352@70 composite** went from 84\|66 rows of black between its borders
+  to 8 at the near edge, which was the largest vertical deficit in the set.
+- **640x480@60 separate** reads four edges where it read no green anywhere.
+  That case was the black frame rather than a framing, and it is reading again.
+- **640x480@60 composite REGRESSED**: the far margin went 12 to 152 and the
+  vertical 3\|1 to 9\|10, with the divider moving 1272 to 1446. The capture
+  is 523 against the 525 it took before -- the frame hold racing the sizing,
+  which the entry below carries -- and the divider follows the count it is
+  sized from.
+
+**640x480@60 SEPARATE USED TO READ NO GREEN ON EITHER AXIS**, which was the
+black frame rather than a framing -- its state line was identical to the
+composite leg beside it and that leg read four edges. It reads again in the
+run above; the entry below on that mode emitting black from an acquired source
+comes and goes, so one reading does not close it.
 
 **THE DIVIDER NO LONGER DEPENDS ON THE ROUTE**, which is what the column above
 is for: 640x480@60 and 800x600@60 each land on one divider across both sync
