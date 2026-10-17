@@ -83,11 +83,19 @@ public:
     static const uint16_t SeparatorPulseEndLeadSamples = 66;
 
     // The same delay on the vertical, where it is a COUNT of the source's own
-    // lines rather than a fraction of the frame -- measured 15.2 lines of a
-    // 525-line frame and 16.6 of a 312-line one, where a fraction fitted to
-    // either is 80% wrong on the other.
+    // lines rather than a fraction of the frame -- a fraction fitted to one
+    // scan mode is 80% wrong on the other.
+    //
+    // **IT IS MEASURED AGAINST THE LEADING-EDGE REFERENCE THE SEPARATOR NOW
+    // USES, AND IT IS HALF A LINE RATHER THAN A WHOLE ONE.** The reference edge
+    // moves this origin: at one window value the trailing edge lands the
+    // picture where the leading edge lands it four units earlier, so a lead
+    // measured on one edge frames nothing on the other. 17.5 lines is what
+    // frames both scan modes -- 45 units on the doubled 320x256@50 and 25 on
+    // the undoubled 800x600@60, each inside half a unit -- where a whole count
+    // reaches one and leaves the other a unit short.
     // ../../../../docs/investigations/the-separator-moves-the-counters-origin.md
-    static const uint16_t SeparatorFrameLeadLines = 16;
+    static const uint16_t SeparatorFrameLeadHalfLines = 35;
 
     // WHERE THE FRAME COUNTER'S OWN ORIGIN SITS, in units after the vsync
     // pulse's leading edge, with the source sending its own vertical sync.

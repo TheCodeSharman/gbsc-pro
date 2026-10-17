@@ -638,12 +638,26 @@ TEST_CASE("the block states the counters a capture window sits in")
         block.applyScan(2000, false, false);
         CHECK(block.capturableFrame(627, true).originLeadUnits()
               == VideoSourceLine::FrameOriginUnits
-                 + VideoSourceLine::SeparatorFrameLeadLines);
+                 + (VideoSourceLine::SeparatorFrameLeadHalfLines + 1) / 2);
 
         block.applyScan(2000, true, false);
         CHECK(block.capturableFrame(311, true).originLeadUnits()
               == VideoSourceLine::DoubledFrameOriginUnits
-                 + 2 * VideoSourceLine::SeparatorFrameLeadLines);
+                 + VideoSourceLine::SeparatorFrameLeadHalfLines);
+    }
+
+    // The two measured modes, in the units the register takes. A whole count of
+    // the source's lines reaches one of them and not the other: 17 leaves the
+    // undoubled mode a unit short and 18 costs the doubled one most of its
+    // border.
+    SUBCASE("the separator's delay lands on a half line") {
+        InputFormatter block;
+
+        block.applyScan(2000, true, false);
+        CHECK(block.capturableFrame(311, true).originLeadUnits() == 45);
+
+        block.applyScan(2000, false, false);
+        CHECK(block.capturableFrame(627, true).originLeadUnits() == 25);
     }
 
     // The counter's own origin sits after the vsync pulse's leading edge, and

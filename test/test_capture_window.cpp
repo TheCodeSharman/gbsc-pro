@@ -1195,8 +1195,9 @@ TEST_CASE("a source on the sync separator arrives late in the frame too")
     const float ActiveStart = 28.0f / 525.0f;
 
     CHECK(videoAtOf(VideoSourceLine::frame(525), AxisVertical, ActiveStart) == 28);
-    CHECK(videoAtOf(VideoSourceLine::frame(525, VideoSourceLine::SeparatorFrameLeadLines),
-                    AxisVertical, ActiveStart) == 12);
+    CHECK(videoAtOf(VideoSourceLine::frame(
+                        525, (VideoSourceLine::SeparatorFrameLeadHalfLines + 1) / 2),
+                    AxisVertical, ActiveStart) == 10);
 }
 
 // THE ACTIVE WINDOW IS A SPAN BETWEEN LINE BOUNDARIES, NOT A COUNT OF LINES.

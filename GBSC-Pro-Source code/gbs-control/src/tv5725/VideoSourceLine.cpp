@@ -6,7 +6,7 @@ namespace Tv5725 {
 
 const uint16_t VideoSourceLine::DoubledHeadBlankingUnits;
 const uint16_t VideoSourceLine::SeparatorPulseEndLeadSamples;
-const uint16_t VideoSourceLine::SeparatorFrameLeadLines;
+const uint16_t VideoSourceLine::SeparatorFrameLeadHalfLines;
 const uint16_t VideoSourceLine::FrameOriginUnits;
 const uint16_t VideoSourceLine::DoubledFrameOriginUnits;
 
