@@ -2297,6 +2297,91 @@ RiscPC puts none, and `STATUS_SYNC_PROC_HSACT` reads **0** with
 and CLAUDE.md both record for the same signature; a `/restart` cleared it at
 once and the source came back in about twelve seconds.
 
+### What each case of the framing matrix gets wrong
+
+`test_card_framing.py` asserts the GOAL -- green on all four edges with no black
+between it and the frame's own edge -- so it fails until the goal is met, and
+these are the sizes it fails by. They used to live in the test as entries that
+granted an xfail, which is what let the composite vertical fall from whole at
+both ends to a tenth of its top border without a case turning red: a size
+recorded as prose beside a pass is a size nothing compares against.
+
+One run at 1080p, 16:9, each case's framing reset, as `across near|far` and
+`down near|far` wholeness with the black margins beside them:
+
+| mode | sync | across | down |
+|---|---|---|---|
+| 240x352@70 | separate | 0.00\|0.79, far 4 | 0.89\|0.95, 2\|2 |
+| 320x256@50 | separate | 0.83\|0.42, near 4 | 0.90\|0.90, 3\|1 |
+| 640x480@60 | separate | 0.00\|0.78, far 17 | 0.45\|0.90, 1\|4 |
+| 640x512@50 | separate | 0.00\|0.82, far 6 | 0.93\|0.93, 1\|1 |
+| 800x600@60 | separate | 0.00\|0.77, far 0 | 0.87\|0.82, 0\|1 |
+| 240x352@70 | composite | 0.63\|0.48, near 34 | 1.00\|0.64, 88\|66 |
+| 320x256@50 | composite | 0.84\|0.00, near 42 | 0.88\|0.88, 3\|1 |
+| 640x480@60 | composite | 0.00\|0.80, far 11 | 0.99\|0.56, 3\|1 |
+| 640x512@50 | composite | 0.59\|0.72, 163\|168 | neither edge |
+| 800x600@60 | composite | 0.65\|0.00, near 4 | 0.96\|0.93, 0\|0 |
+
+**EVERY REMAINING FAILURE IS ACROSS, AND THE VERTICAL PASSES ON SIX OF THE
+TEN.** The horizontal signature is a PAN: the near border off the frame with
+black at the FAR end on six cases, which is a shifted window -- the far margin
+bounds the shift, the two ends moving together. 640x480@60 separate is the
+clearest, 17 output pixels at 3 to the source pixel.
+
+Four of them are not a placement at all:
+
+- **240x352@70 composite** is a span rather than a shift, 154 rows of black
+  between the two borders, and the only case whose vertical reads that way.
+- **640x512@50 composite** reaches neither vertical border, because the capture
+  is sized from a count four lines low on that arrangement -- 529 against
+  separate sync's 533 -- which leaves the window narrower than the source's
+  picture. No lead places a border the window never reaches, and separate sync
+  frames the same mode at 1\|1.
+- **640x480@60 composite ACQUIRES now**, on the count the mode sends: `PLLAD_MD`
+  1272 against a 1273-unit capture and 525 lines, where it read 2040 against
+  312. So it is a framing reading again rather than an acquisition one.
+- **1600x600@60** is `--all-modes` only and shares 800x600@60's solve. The two
+  want placements about 5 output pixels apart off that one solve, so its reading
+  moves whenever that mode's framing does: 2 before it was flush, 6 to 8 after.
+  A clash cannot be optimised for.
+
+**TWO COMPOSITE CASES VARY BY A WHOLE DIVIDER BETWEEN ACQUISITIONS**, so their
+row above is one run rather than a reading to compare against. 640x480@60
+composite solved `PLLAD_MD` 1272 in one run and 1444 in the next, reading
+`across 0.00|0.80 down 0.99|0.56` and then `across 0.76|0.85 with margins 87|52,
+down 0.79|0.79 with 9|10`; 240x352@70 composite reached neither edge on either
+axis in the second. A verdict is worth nothing on a case whose divider moves,
+and the divider is the thing to settle first.
+
+**TWO CASES VARY BETWEEN RUNS, AND THE SPREAD IS NOT IN OUTPUT PIXELS**, which
+is why no allowance covers it: about 6 output pixels on the 240-pixel source
+line, 3 on the 640-pixel one, 2 on the 800-pixel one and under 1 on the
+1600-pixel one -- an ordering that tracks the magnification, so the quantity is
+the source's own pixel or the capture's unit rather than the emitted frame's.
+Which of the two is open, and the green frame's captured width is too noisy to
+settle it: 4 columns at one edge against 8 at the other on one clip where the
+magnification is 4.5. 240x352@70 separate read out by 10 across in one run and
+inside the allowance in the next; 640x512@50 separate read 7, 4 and 7 at its far
+edge over three runs.
+
+**THE COMPOSITE VERTICAL WAS THE SEPARATOR'S FRAME LEAD.** The lead was measured
+against the trailing reference edge and composite sync references the leading
+one, so the window sat a line and a half late. 320x256@50 composite now reads
+separate sync's own vertical and 800x600@60 composite is flush at both ends.
+`docs/investigations/the-separator-moves-the-counters-origin.md`
+
+**THE COMPOSITE LEG'S EARLIER SHARE OF THE HORIZONTAL WAS THE POLARITY
+CORRECTION**, which follows the sync path now rather than the measured bit:
+240x352@70 went from 14 across to 2, 640x512@50 from 17 down to 1, 320x256@50
+from overrunning both ends to a bounded 16, and 800x600@60 from 5 to 2. Measured
+over three full runs.
+
+**THE WIDTH PARITY CANNOT CARRY THE VERTICAL** -- the step-back in
+`OutputWindow::solve()` is guarded `!axis.vertical()` and never runs there. What
+the parity does hold is the horizontal, where replacing it needs a knob on the
+produced width that does not move the picture.
+`docs/investigations/the-room-is-what-the-encoder-carries.md`
+
 ### The default framing loses the source's outermost COLUMN on every mode
 
 **`PATTERN CARD`'s one-pixel green frame does not reach the emitted frame at the
