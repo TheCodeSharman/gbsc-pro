@@ -3,8 +3,9 @@
 `vga` on composite sync at 320x256@50 into 1080p rolls vertically; the same
 source on separate sync does not, and the same sync arrangement at 800x600@60
 does not. This records what the roll coincides with, which scan it belongs to,
-and every register that was walked against it without moving it. The fault is
-open.
+and every register that was walked against it without moving it, and then
+what closed it: the separator and the ADC PLL referencing the trailing edge of
+the pulse.
 
 Every reading is `tools/gbsc-pro-hwtest/picture_stability.py`'s share of
 displaced frames over an 8 s clip, taken frozen, with a control clip between
@@ -142,12 +143,111 @@ And with the short-count share as the instrument, frozen, 8 s each, controls
 `SP_PRD_EQ_THD` 1, `SP_H_TOTAL_EQ_THD` 255, `SP_HS_EP_DLY_SEL` 1,
 `SP_HS2PLL_INV_REG` 1 -- each inside the band.
 
+## What it was: the PLL locked to the trailing edge
+
+The chip's default edge reference for the separator and for the hsync into the
+ADC PLL is the rising edge -- `SP_CS_P_SWAP` 0 and `SP_HS2PLL_INV_REG` 0. The
+RISC PC's composite sync is negative-going, so the rising edge is the TRAILING
+edge of every pulse, which is the edge that moves through the vertical
+interval. On the leading edge both ways -- `SP_CS_P_SWAP` 1 and
+`SP_HS2PLL_INV_REG` 1 -- the roll stops. Frozen, in the engine's own
+composite configuration, 8 s clips:
+
+| `SP_CS_P_SWAP` | `SP_HS2PLL_INV_REG` | displaced |
+|---|---|---|
+| 0 | 0 | 19% to 24%, whole lines and 190..260-row jumps |
+| 0 | 1 | 24% |
+| 1 | 0 | 12% to 21%, half lines only |
+| **1** | **1** | **0.0% to 2.5%** |
+
+Neither bit alone closes it. The swap alone halves the share and turns the
+whole-line events into half-line ones, which is what pointed at the edge. The
+vendor firmware writes the same pair, with `SP_HS_PROC_INV_REG`, for a 15 kHz
+composite source on its bypass path; the decimator invert adds nothing here.
+
+Engine-solved, unfrozen, 20 s clips on the bench mode: **6 and 13 of 1283
+frames displaced** against a fifth of them before, and
+`test_picture_holds_still.py`'s composite leg reads 0 of 514.
+
+The Wii at 480p on `ypbpr`, sync on green, undoubled, holds still at 0 of 514
+with either edge, so the pair is keyed on the csync path -- the separator in
+circuit -- rather than on a measured polarity, which on that path reports the
+separator and not the source.
+
+## The edge moves the clamp and the capture origin by one pulse
+
+Both count from the edge the separator references, so moving it moves them.
+Measured on the Wii at 480p into 1920x1080, divider 1212, frozen, with the
+pair written by hand:
+
+| state | left border | top / bottom | mean luma |
+|---|---|---|---|
+| default edge, engine's clamp 19..23 | 259 | 35 / 22 | 143 |
+| leading edge, clamp 19..23 | 240 | 1 / 1 | 162 |
+| leading edge, clamp 81..85 | 383 | 30 / 26 | 135 |
+
+With the clamp left where the trailing edge put it, the window sits on the
+sync tip: the frame lifts and the Wii's own black bars read grey, which is
+the row of ones. Moved by the pulse -- 88 samples of 1212 on a 858-count line
+is 62 of the clamp's 27 MHz counts -- the bars are black again, and what is
+left is the picture 124 columns to the right, which at 1.41 columns a sample
+is the 88-sample pulse exactly. `SP_CS_P_SWAP` alone does all of this; the
+PLL invert alone changes nothing visible on the Wii.
+
+The firmware adds the pulse to the clamp on the leading-edge path through
+the same offset an inverted SOG reference already took, since both move the
+reference by one pulse.
+
+## The retime stop is inert on the separator path; the separator's own stop is the origin
+
+With the pair in and the clamp right, the bench mode sits 171 columns to the
+right of where separate sync frames it, 414 against 243 at the left border.
+`SP_RT_HS_SP` does not reach it: written 2128 and 77 frozen, and written 77 by
+the engine, the picture is where it was. `SP_CS_HS_SP`, the separator's
+regenerated pulse end, moves it one for one:
+
+| `SP_CS_HS_SP` | 0 | 40 | 80 | 120 | 160 | 170 |
+|---|---|---|---|---|---|---|
+| left border | 414 | 372 | 330 | 288 | 246 | 241 |
+
+**It counts ADC samples.** Against a pan of 20 capture units inside the same
+acquisition -- 42 columns on the doubled bench mode, 30 on 800x600@60 -- the
+register moves the picture 1.00 and 1.03 samples a count. `SP_CS_HS_ST` moves
+nothing between 16 and 120.
+
+So on the leading edge the regenerated pulse would end at the leading edge,
+and the capture counter that zeroes on it moves a whole pulse earlier. The
+firmware writes the stop as the measured pulse width in ADC samples on that
+path, 151 of 2200 on the bench mode, which puts the pulse's end where the
+source's is and leaves every register downstream of it -- the separator lead
+the capture window carries included -- meaning what it meant on the trailing
+edge. The bench mode then frames at 257 against separate sync's 242, where
+the trailing edge framed it at 252: the per-sync residual of about ten
+columns is older than this change.
+
+The vendor sketch has a hand shift of `SP_CS_HS_ST` and `SP_CS_HS_SP` modulo
+the line, which is consistent with the unit.
+
+## The static setup must not write the edge
+
+`SyncProcessor::init()` runs after the sync type on the re-detection route,
+as it does for `SP_SOG_MODE`: with the pair written there, a composite source
+came back from `/sc?~` on the default edge every time while a boot landed on
+the leading one. The pair has one owner, the sync-type application, and the
+static setup leaves it alone.
+
 ## What is open
 
-What loses three or four horizontal pulses in one field in fifteen on the
-doubled scan and none on the undoubled one, on a composite sync that is a NOR
-of H and V and carries no serrations. The two scans differ in the divider --
-2200 against 1342 -- the decimation, the line-double FIFO and the coast lines
-against a three-line vertical pulse, and none of those has been isolated. The
-sampling log's short-count share is the cheap instrument for the next walk; the
-capture is the one that decides.
+**A residual of about one frame in a hundred**, two to 25 rows and an
+occasional 100..230-row jump: 13 of 1283 over 20 s, controls between 0.0% and
+1.6% inside one acquisition. `SP_PRE_COAST` 0 with `SP_POST_COAST` 0 read 0.0%
+on the first two legs, against controls of 1.4% and 0.3% beside them, and is
+the lead; it is the coast the csync branch writes for every separator source
+and the Wii's sync on green has not been checked with it. `SP_DLT_REG` 300
+reads 1.0% and is not.
+
+And 640x480@60 on SEPARATE sync emits a black frame on an acquired source --
+524 lines, `PLLAD_MD` 1272 against the 1444 composite solves for the same
+mode -- on two attempts, which is what stopped the stop's unit being read on
+that mode. 640x240@60 on separate sync does the same. Filed in
+`docs/known-issues.md`.

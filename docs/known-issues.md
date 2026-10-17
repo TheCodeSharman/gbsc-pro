@@ -554,69 +554,50 @@ Separate sync in the same arrangement reads 0.005 to 0.014 in every band.
 **It is not the whole-picture shake**, which is vertical, affects every band
 alike, and is a property of the boot. `investigations/the-unlocked-state-had-no-arm.md`.
 
-### The composite picture jumps vertically, several times a second
+### The composite picture jumped vertically, several times a second -- closed, with a residual
 
 Measured off the USB capture with
 `tools/gbsc-pro-hwtest/picture_stability.py`, `vga` at 320x256@50 into 1080p,
-as each frame's vertical offset against the profile the clip holds. The
-picture is displaced in **17% to 53% of frames at 6.3 to 8.6 jumps a second**,
-against a separate-sync floor of **0% -- every frame at offset 0, over six
-runs in one session**. Both legs run in one session on one source mode, one
-output and one capture, so the sync arrangement is the only thing differing.
+as each frame's vertical offset against the profile the clip holds: the
+picture was displaced in **17% to 53% of frames at 6.3 to 8.6 jumps a second**,
+whole source lines at a time, against a separate-sync floor of 0%.
 
-**THE JUMPS ARE WHOLE SOURCE LINES.** 1080 output rows over 256 active source
-lines is 4.22 rows a line, and the measured offsets are 2, 4 and 8 rows --
-half a line, one line, two -- with occasional jumps of 107, 197, 214 and 216,
-which are 25 to 51 lines. It rolls as a WHOLE: the top, middle and bottom
-thirds correlate to one offset, so it is not a tear.
+**It was the separator and the ADC PLL referencing the TRAILING edge of the
+pulse.** The chip's default edge is the rising one, which on a negative-going
+composite sync is the trailing edge, the one that moves through the vertical
+interval; the PLL then lost three or four horizontal pulses a field on the
+line-doubled scan. The csync path now references the leading edge
+(`SP_CS_P_SWAP` 1 and `SP_HS2PLL_INV_REG` 1, neither bit sufficient alone),
+the clamp and the separator's regenerated pulse end follow the edge by one
+pulse, and `test_picture_holds_still.py` reads 0 of 514 on both legs.
+`investigations/the-composite-roll-is-lost-horizontal-pulses-in-the-doubled-scan.md`.
 
-**IT IS NOT EITHER SHAKE ALREADY RECORDED HERE.** It is not the top-band shake
-above, which is horizontal and confined to the first 90 to 135 rows. And it is
-not the boot shake, which is a property of the BOOT and sub-pixel -- sd 0.126
-to 0.288 of a row -- where this is whole lines and toggles with the sync type
-six times inside one boot.
+**WHAT REMAINS OPEN IS ABOUT ONE FRAME IN A HUNDRED**: engine-solved 20 s clips
+read 6 and 13 of 1283 frames displaced, two to 25 rows with an occasional
+100..230-row jump, and controls inside one acquisition drift between 0.0% and
+1.6%. `SP_PRE_COAST` 0 with `SP_POST_COAST` 0 reads **0.0% on four legs**
+against controls of 0.3% to 1.4% beside them, and is the lead. It is the
+vertical-interval coast the csync branch writes for every separator source,
+so the Wii's sync on green has to be judged with it before it is the fix;
+`SP_DLT_REG` 300 reads 1.0% and is not. `roll_ab.py --seconds 20` is what took
+every reading, because at this rate an 8 s clip holds two events.
 
-**WHAT IT LOOKS LIKE IS BLACK BARS, AND COUNTING THEM MEASURES THE WRONG
-THING.** The rows the picture leaves behind go black, so the fault presents as
-horizontal bars a few times a second -- but a band count scores only the jumps
-big enough to black out a mid-picture row. In one clip of 60 frames, 5 carry a
-band and 21 are displaced.
+**The composite framing sits about ten columns right of separate sync's on the
+bench mode, and it did before the edge changed**: 257 against 242 now, 252
+before. The vertical is a few rows the other way. Older than this change and
+not touched by it.
 
-**THE COMPOSITE LEG USED TO COME BACK WITH NO PICTURE ABOUT HALF THE TIME**
-after the `/sc?~` re-probe a sync-type change needs -- one leg read 482 of 482
-frames with nothing to correlate. That was the acquisition family above, both
-routes of which are fixed under "The reference clock list can spin until low
-power", and it is why the judge voids a reading with no picture in it instead
-of passing it: a black capture is displaced in 0% of frames and reads as the
-steadiest picture there has ever been.
+### 640x480@60 and 640x240@60 on SEPARATE sync emit a black frame from an acquired source
 
-`test_picture_holds_still.py` asserts it. **The composite leg is RED on
-purpose** -- not an xfail, the defect having gone unmeasured for want of
-anything failing.
-
-**WHAT IT IS, AS FAR AS IT IS MEASURED.** An event is a run of about four
-frames one source line down, then a frame or two at half a line, then back,
-one to three times a second. It coincides, bin for bin at 50 ms, with the sync
-processor losing three or four HORIZONTAL pulses in that field --
-`STATUS_SYNC_PROC_VTOTAL` 304, 305 or 307 in about one sample in fifteen on
-the device's own sampling log -- while `VPERIOD_IF` holds 623 in 752 of 753,
-so the vertical pulse arrives on time and it is horizontal pulses that go
-missing. And it belongs to the LINE-DOUBLED scan: 800x600@60 on the same
-composite sync, undoubled, reads 0 of 514 displaced.
-
-**What does not move it**, each walked frozen against a neighbouring control:
-every separator threshold, the coast lines and the sub-coast, the SD vertical
-window, the input formatter's progressive and vertical-timing selects, and
-the mode detect's PAL-interlace value, which clears `STATUS_IF_INP_PAL_INT`
-and leaves the roll where it was. Two levers that LOOK like fixes are not:
-`SP_H_PULSE_IGNOR` 30 removes the short counts and leaves the roll, and
-`SP_H_CST_SP` at or past the 27 MHz line reads 0 of 514 displaced because the
-separator has stopped extracting horizontal sync -- `STATUS_SYNC_PROC_HLOW_LEN`
-1 against 154, and a band of unwritten memory across the frame that the row
-correlation cannot see. **A share of zero from `picture_stability` needs a
-frame looked at before it is believed.**
-`investigations/the-composite-roll-is-lost-horizontal-pulses-in-the-doubled-scan.md`,
-and `roll_ab.py` is the A/B/A that took every reading.
+`vga`, RISC PC, `SYNC 0`, output 1920x1080. 640x480@60 acquires -- 524 lines,
+`state: acquired` -- with `PLLAD_MD` 1272 where composite sync solves the same
+mode at 1444, and the capture reads all black, mean 0.0, on two attempts
+either side of a `/sc?~`. 640x240@60 does the same: H negative, V negative,
+262 lines, doubled, acquired at 2200 with the pad driven, every reset released,
+the DACs on and a solved raster, and a black frame before and after a
+`PAD_SYNC_OUT_ENZ` toggle. Both are negative-sync modes; 640x200@60, H
+positive, shows a picture on the same input in the same session, and the two
+negative modes show one on composite sync. Not diagnosed.
 
 ### A selection edge is swallowed in the pass-through cold state, so the sync type is never established
 
