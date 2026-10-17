@@ -3626,3 +3626,79 @@ TEST_CASE("restarting the gain search puts the colour space's seed back")
 
     CHECK(Adc::ADC_GGCTRL::read() == ColourSpace::RgbGain);
 }
+
+// A 640x480@60 source, the mode whose published raster the line filter's bound
+// is read off: 96 samples of sync in 800, negative-going, 524 counted lines.
+static void seedVesa640x480(void)
+{
+    Tv5725::SyncMeasurement::set(false);
+    Wire.sourceHsync(96, 800, false);
+    seedField(0, 0x1B, 0, 11, 524);    // STATUS_SYNC_PROC_VTOTAL
+    seedField(0, 0x16, 0, 1, 0);       // STATUS_SYNC_PROC_HSPOL, negative-going
+    seedField(0, 0x16, 2, 1, 0);       // STATUS_SYNC_PROC_VSPOL
+    seedField(0, 0x16, 3, 1, 1);       // STATUS_SYNC_PROC_VSACT, V on its own pin
+    g_fieldRate = 60.0f;
+}
+
+// Drive one engine to a settled solve of the 640x480@60 source, optionally
+// through another mode first, and report the divider it lands on.
+//
+// The line filter is ON, because the bound under test is its one-line delay's:
+// with the delay out of circuit nothing reads the published raster and every
+// route lands on the output's own ceiling.
+static uint16_t dividerFor640x480(bool throughAnotherMode)
+{
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+    VideoSourceAcquisition acquisition(sampling, engine);
+    engine.setOutputMode(benchMode());
+    engine.setLineFilter(true);
+    Wire.lockSyncProcessor();
+
+    if (throughAnotherMode) {
+        seedSourceMeasurement();
+        engine.inputTimingsChanged(4);
+        REQUIRE(pollUntilSolved(acquisition));
+        for (uint8_t i = 0; i < 2 * SourceMeasurement::SteadySamples; ++i)
+            pollOnce(acquisition);
+        REQUIRE(sampling.hsync().isPulse());
+    }
+
+    seedVesa640x480();
+    engine.inputTimingsChanged(4);
+    REQUIRE(pollUntilSolved(acquisition));
+    for (uint8_t i = 0; i < 2 * SourceMeasurement::SteadySamples; ++i)
+        pollOnce(acquisition);
+    return dividerInForce();
+}
+
+TEST_CASE("one source lands on one divider whatever mode preceded it")
+{
+    // THE SOURCE IS NOT MEASURED WHEN THE DIVIDER IS CHOSEN, AND THE CHOICE
+    // NEEDS THE MEASUREMENT. The line filter's bound is read off the published
+    // raster the key matches, and the key matches it BY THE DUTY -- which
+    // takeDuty() rightly refuses to take from an unlatched pass, so the first
+    // solve of a source has none. What it used instead was the duty of the
+    // source that LEFT, because modeChanged() cleared the flag and left the
+    // pulse, and every consumer asks for the pulse.
+    //
+    // Measured on the bench at 640x480@60 on vga with the output and the shape
+    // held: reached by a source mode change from 320x256@50 the divider lands
+    // 1212 four times of four, and by a re-detection -- which holds this
+    // source's own duty legitimately -- it lands 1272 six times of six. 5% of
+    // the sampling density, and a different framing either side of it.
+    // ../docs/investigations/the-divider-is-an-actuator-in-its-own-sensor.md
+    const uint16_t alone = dividerFor640x480(false);
+    const uint16_t afterAnotherMode = dividerFor640x480(true);
+
+    CHECK(afterAnotherMode == alone);
+
+    // AND IT IS THE BOUND, not merely agreement: both land on what the one-line
+    // delay can carry for this raster, 1018 units of buffer over the 0.800 of
+    // the line DMT gives 640x480@60 its active video in. Agreeing on the
+    // output's own ceiling instead would be the delay destroying the tail of
+    // every line, which is the state the bound exists to refuse.
+    CHECK(alone == 1272);
+}

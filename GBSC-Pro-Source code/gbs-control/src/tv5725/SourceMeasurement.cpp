@@ -194,7 +194,19 @@ void SourceMeasurement::modeChanged()
     scanSteady_.reset();
     agreedRateHz_ = 0.0f;
     rateAttempts_ = 0;
+    // THE PULSE GOES WITH THE FLAG. Clearing only the flag leaves hsync()
+    // handing out the duty of the source that just left, and every consumer
+    // asks hsync() rather than the flag -- so the divider's bound was read off
+    // whichever published raster the OLD duty matched. Measured at 640x480@60:
+    // 1212 arriving as a mode change against 1272 arriving as a re-detection,
+    // which holds its own duty legitimately.
+    // THE PULSE GOES WITH THE FLAG. Clearing only the flag leaves hsync()
+    // handing out the duty of the source that just left, and every consumer
+    // asks hsync() rather than the flag -- so the divider's bound was read off
+    // whichever published raster the OLD duty matched. Measured at 640x480@60:
+    // 1212 arriving from 320x256@50 against 1272 arriving on its own.
     dutyMeasured_ = false;
+    hsync_ = HsyncPulse();
     offeredHsync_ = HsyncPulse();
     dutyAttempts_ = 0;
     heldFrame_ = 0;

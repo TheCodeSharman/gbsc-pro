@@ -458,6 +458,15 @@ void VideoPath::inputTimingsChanged(uint8_t oversample)
     // nothing.
     sampling_.modeChanged();
 
+    // AND THE PULSE THIS SOLVE WOULD BE KEYED BY, which belongs to the source
+    // that is leaving. The key matches a published raster by the duty, and the
+    // divider's bound is read off that raster -- so a pulse carried across a
+    // mode change sizes the arriving source's sampling from the outgoing one's
+    // key. There is no duty until a latched pass measures one, and that is what
+    // the key must carry.
+    reading_ = HsyncPulse();
+    timing_ = SourceTiming(sampling_.fieldRateHz());
+
     // The sampling clock, BEFORE anything tries to measure. A load leaves the
     // ADC PLL on the bring-up's crossover row, and the sync processor counts in
     // ADC clocks -- so every measurement is garbage until this runs, the
