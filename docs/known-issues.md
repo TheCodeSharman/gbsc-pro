@@ -2309,18 +2309,30 @@ recorded as prose beside a pass is a size nothing compares against.
 One run at 1080p, 16:9, each case's framing reset, as `across near|far` and
 `down near|far` wholeness with the black margins beside them:
 
-| mode | sync | across | down |
-|---|---|---|---|
-| 240x352@70 | separate | 0.00\|0.79, far 4 | 0.89\|0.95, 2\|2 |
-| 320x256@50 | separate | 0.83\|0.42, near 4 | 0.90\|0.90, 3\|1 |
-| 640x480@60 | separate | 0.00\|0.78, far 17 | 0.45\|0.90, 1\|4 |
-| 640x512@50 | separate | 0.00\|0.82, far 6 | 0.93\|0.93, 1\|1 |
-| 800x600@60 | separate | 0.00\|0.77, far 0 | 0.87\|0.82, 0\|1 |
-| 240x352@70 | composite | 0.63\|0.48, near 34 | 1.00\|0.64, 88\|66 |
-| 320x256@50 | composite | 0.84\|0.00, near 42 | 0.88\|0.88, 3\|1 |
-| 640x480@60 | composite | 0.00\|0.80, far 11 | 0.99\|0.56, 3\|1 |
-| 640x512@50 | composite | 0.59\|0.72, 163\|168 | neither edge |
-| 800x600@60 | composite | 0.65\|0.00, near 4 | 0.96\|0.93, 0\|0 |
+| mode | sync | `PLLAD_MD` | across | down |
+|---|---|---|---|---|
+| 240x352@70 | separate | 1272 | 0.00\|0.72, far 12 | 0.91\|0.96, 2\|2 |
+| 320x256@50 | separate | 2200 | 0.80\|0.41, near 4 | 0.92\|0.91, 3\|1 |
+| 640x480@60 | separate | 1272 | no green anywhere | no green anywhere |
+| 640x512@50 | separate | 1424 | 0.00\|0.77, far 7 | 0.92\|0.93, 1\|1 |
+| 800x600@60 | separate | 1342 | 0.23\|0.48, near 2 | 0.87\|0.82, 0\|1 |
+| 240x352@70 | composite | 1314 | 0.61\|0.52, near 32 | 1.00\|0.64, 84\|66 |
+| 320x256@50 | composite | 2200 | 0.85\|0.00, near 24 | 0.89\|0.89, 3\|1 |
+| 640x480@60 | composite | 1272 | 0.00\|0.84, far 12 | 0.93\|0.55, 3\|1 |
+| 640x512@50 | composite | 1746 | 0.66\|0.70, 162\|168 | 0.00\|0.57, far 3 |
+| 800x600@60 | composite | 1342 | 0.64\|0.00, near 4 | 0.97\|0.96, 0\|0 |
+
+**640x480@60 SEPARATE READS NO GREEN ON EITHER AXIS, AND THAT IS THE BLACK FRAME
+RATHER THAN A FRAMING.** Its state line is identical to the composite leg beside
+it -- `PLLAD_MD` 1272, capture 1273 x 525 -- and that leg reads four edges, so
+nothing about the geometry can explain an empty frame. It is the entry below on
+that mode emitting black from an acquired source, which comes and goes.
+
+**THE DIVIDER NO LONGER DEPENDS ON THE ROUTE**, which is what the column above
+is for: 640x480@60 and 800x600@60 each land on one divider across both sync
+types, where they used to land on 1272 or 1444 and 1342 or 1436 depending on
+whether the source arrived as a mode change or a re-detection.
+`docs/investigations/the-divider-is-an-actuator-in-its-own-sensor.md`
 
 **EVERY REMAINING FAILURE IS ACROSS, AND THE VERTICAL PASSES ON SIX OF THE
 TEN.** The horizontal signature is a PAN: the near border off the frame with
@@ -2344,14 +2356,6 @@ Four of them are not a placement at all:
   want placements about 5 output pixels apart off that one solve, so its reading
   moves whenever that mode's framing does: 2 before it was flush, 6 to 8 after.
   A clash cannot be optimised for.
-
-**TWO COMPOSITE CASES VARY BY A WHOLE DIVIDER BETWEEN ACQUISITIONS**, so their
-row above is one run rather than a reading to compare against. 640x480@60
-composite solved `PLLAD_MD` 1272 in one run and 1444 in the next, reading
-`across 0.00|0.80 down 0.99|0.56` and then `across 0.76|0.85 with margins 87|52,
-down 0.79|0.79 with 9|10`; 240x352@70 composite reached neither edge on either
-axis in the second. A verdict is worth nothing on a case whose divider moves,
-and the divider is the thing to settle first.
 
 **TWO CASES VARY BETWEEN RUNS, AND THE SPREAD IS NOT IN OUTPUT PIXELS**, which
 is why no allowance covers it: about 6 output pixels on the 240-pixel source
