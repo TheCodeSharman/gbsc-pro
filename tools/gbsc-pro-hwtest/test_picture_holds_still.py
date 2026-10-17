@@ -7,12 +7,13 @@ greenest moment across the frames so the card's flashing ring cannot hide a
 border, which erases a transient before anything sees it. Nothing asserted that
 the picture holds still until this.
 
-**THE COMPOSITE LEG IS RED, AND IT IS MEANT TO BE.** It is not an xfail: the
-instability is an open defect with nothing driving it out, and a suite that is
-green with nothing passing is how it stayed unmeasured. Measured on `vga` at
-320x256@50 into 1080p, the picture jumps vertically in 17% to 53% of frames at
-up to 7 jumps a second, against a separate-sync floor of 0% -- every frame at
-offset 0, over six runs. docs/known-issues.md
+**BOTH LEGS ARE GREEN, AND THE COMPOSITE ONE WAS RED UNTIL THE SEPARATOR AND
+THE ADC PLL REFERENCED THE LEADING EDGE OF THE PULSE.** It was never an xfail:
+an open defect with nothing driving it out, measured on `vga` at 320x256@50
+into 1080p as the picture jumping vertically in 17% to 53% of frames at up to
+7 jumps a second, against a separate-sync floor of 0%. The floor is what this
+still asserts on both legs, so the roll cannot come back unmeasured.
+docs/investigations/the-composite-roll-is-lost-horizontal-pulses-in-the-doubled-scan.md
 
 **THE SEPARATE LEG IS THE CONTROL AND THE RUN IS WORTHLESS WITHOUT IT.** The
 dongle is itself a sink and can drop or tear frames, so a jump count with no
