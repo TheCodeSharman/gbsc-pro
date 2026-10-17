@@ -282,14 +282,23 @@ not it.
 
 ## What is open
 
-**The large jump is a different fault and it survives.** On the shipped build
-UNFROZEN, two 100 s legs read 4 and 7 of ~6407 displaced, against 0.55%
-measured unfrozen at post 6. But the offsets separate into two populations:
-`{1: 4}` on one leg, which is sub-line, and
-`{-153: 3, 84: 1, 159: 2, 252: 1}` on the other. The roll of a line or two is
-gone; the 100..250-row jump is not, it appears only unfrozen, and frozen post 4
-reads 0 of 6406 twice over 200 s. That points at the engine or the sink rather
-than the separator.
+**The large jump is a different fault and it is the read/write crossover.** It
+is set by `FrameSync`'s target phase, which places where the read pointer
+crosses the write pointer: 0 and 90 degrees read 0 of ~7688 frames displaced,
+180 reads 7 with a worst of 162 rows and 270 reads 10 with a worst of 134. One
+setting provokes it and cures it, which rules out the separator and the encoder.
+
+It is intermittent because the lock steers the phase without placing it: the
+parked error is the measured field rate's bias over the loop gain, four raster
+lines at the 13 ppm this bench reads and about 147 at the 500 ppm the rate
+agreement admits. `the-frame-time-lock-saturates.md` carries the sweep and the
+arithmetic.
+
+The POST COAST is settled separately and is not this. Unfrozen on the shipped
+build two 100 s legs read 4 and 7 of ~6407, and four further 120 s legs on a
+later acquisition read 0, 4, 0 and 0 of ~7688 with the lock on and off alike --
+so a lock A/B separates nothing at this rate and the coast is judged on the roll
+it does move.
 
 And 640x480@60 on SEPARATE sync emits a black frame on an acquired source --
 524 lines, `PLLAD_MD` 1272 against the 1444 composite solves for the same

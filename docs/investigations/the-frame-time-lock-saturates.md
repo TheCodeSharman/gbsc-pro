@@ -385,11 +385,36 @@ measured line rate.
   stored per `SourceKey` with a tolerance, and the raster is already solved once
   per source identity. It is a repeatability question and NOT established as
   reaching the phase noise, which is timed on the ESP.
-- **`targetPhase` is 90 degrees and nothing has measured that it is right.** The
-  crossover shows as a stationary tear at `targetPhase/360` down the screen and
-  belongs in vertical blanking; 90 degrees puts it a quarter of the way into
-  live video. Only the picture can judge it, and `/framesync?phase=` sets it.
+- **`targetPhase` 90 IS measured right, and the half of the frame past it is
+  not.** Four 120 s clips on `vga` composite at 320x256@50 into 1080p, unfrozen,
+  as the share of emitted frames displaced vertically:
+
+  | target phase | displaced | worst | offsets |
+  |---|---|---|---|
+  | 0 | 0 of 7688 | 0 | none |
+  | **90** | 0 of 7688, and 0 of 7686 and 0 of 7688 on two further clips | 0 | none |
+  | 180 | 7 of 7688 | 162 rows | `-80 x2, 1 x2, 80 x2, 162` |
+  | 270 | 10 of 7687 | 134 rows | `-2 x5, 134 x5` |
+
+  So the clean half is 0..90 and the dirty half is 180..270, which is where a
+  read pointer trailing the write pointer by half a frame or more puts the
+  crossing. **This is the 100..250 row jump**, provoked and cured by one
+  setting, which rules out the separator and the encoder for it.
 - **A steady-state error of about 6100 ticks remains on a converged boot**,
   which is 0.23% of a frame. That is what proportional control on an integrator
   does: holding an output rate one milli-hertz off the source's needs a non-zero
   correction, which needs a non-zero error. It is not a fault.
+
+  **It is `bias / gain`, and the arithmetic closes.** Measured again on `vga`
+  composite at 50.08 Hz: 11270 ticks held to +-17 over 20 s, against
+
+      error = bias x ticksPerSecond / (CorrectionPerFrame x rate)
+            = 13.4e-6 x 160e6 / (0.0038 x 50.08) = 11266
+
+  so the parked phase is the target plus whatever the measured field rate is
+  biased by, divided by the loop gain. 13 ppm costs four raster lines of 1126
+  and is harmless; `Clock::RateAgreement::RelativeTolerance` admits 500 ppm,
+  which costs about 147 -- a seventh of a frame, in the direction of the dirty
+  half above. **The lock steers the phase, it does not place it**, and a target
+  moved 90 degrees converged over eleven corrections at a ratio of 0.62..0.67
+  per step against the 0.68 the gain predicts.

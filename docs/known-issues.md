@@ -621,34 +621,40 @@ the other. The line-or-two roll is gone; what remains is the occasional
 6406 twice. So it belongs to the engine or the sink rather than to the
 separator, and the frame time lock is the obvious candidate.
 
-**THE COAST CANNOT BE DERIVED FROM ANYTHING MEASURED YET, AND THAT IS THE
-ROUTE OUT.** The hold has to cover the pulses a serrated vertical interval
-carries after the vertical pulse and no longer, and no register reports whether
-an interval is serrated -- the sync type stands in for it, which is wrong for
-any unserrated composite source. A 15 kHz console with csync on the sync pin is
-broadcast-serrated and wants a long post coast where the RISC PC on the same
-input with the same `SP_SOG_MODE` wants a short one, so no proxy separates them.
+**THE COAST IS DERIVED NOW, AND WHAT IT ASKS IS NOT SERRATION.**
+`VideoPath::measureVerticalInterval()` takes the coast off and asks whether the
+INPUT FORMATTER still completes a vertical measurement without it, which is the
+property that decides whether the hold is needed. Forty readings per state:
 
-**The measurement to make is a comparison in a KNOWN state**, the move
-`/refclock` already makes for the divider: hold the coast at 0/0, then read
-`STATUS_SYNC_PROC_VTOTAL` against `VPERIOD_IF`. At 0/0 the Wii's count
-collapses and dithers across 8 to 14 values while the formatter's period stays
-within five counts of the truth, and the RISC PC reads 308 at every one of 121
-pairs -- so the disagreement IS the serration.
-`investigations/two-owners-of-the-coast-lengths-double-the-count.md` establishes
-the property that makes it sound: `VPERIOD_IF` is disturbed by a bad coast but
-never once reported a doubled value in 363 samples, so it cannot make the error
-that matters. `SourceMeasurement::countIsSerrations()` was that comparison and
-was deleted once the doubling stopped being reachable at the ENGINE's coast; at
-0/0 it is reachable deliberately.
+| source, 0/0 | count | `VPERIOD_IF` | `STATUS_IF_VT_OK` |
+|---|---|---|---|
+| RISC PC composite, `vga` | 308, spread 0 | 623, spread 0 | **40/40** |
+| Wii sync on green, `ypbpr` | 520, spread 4 | 1943, spread 1607 | **0/40** |
 
-Three constraints it has to be designed against. The probe costs a steadiness
-run per step, so a walk from 0 upward is ~12 s against a 10 s input-change
-budget -- a two-point test first, walking only where it says serrated. It has
-to run inside the acquisition window where the arm has already taken the sync
-pad away, because at 0/0 the picture drops. And the field rate has to be
-trusted after it rather than before, or moved to the sync-processor bus, for the
-reason above.
+The RISC PC is indifferent to the coast and reads the same pair either way; the
+Wii loses the measurement outright. The engine's own coast separates neither --
+both read a clean pair there -- and the ratio that does separate them there is
+2.02 against 1.00, which is the LINE-DOUBLED SCAN rather than the interval.
+
+**THE COUNT CANNOT BE THE QUESTION, AND THE EARLIER READING OF IT IS WITHDRAWN.**
+The count survives 0/0 on both -- 520 against a held 524 on the Wii, not the
+collapse to 356 recorded before -- and what collapses is the formatter.
+`SourceMeasurement::countContradicted()` cannot see it either way, because
+`InputFormatter::verticalPeriod()` returns 0 when `STATUS_IF_VT_OK` is clear and
+the comparison then declines to refuse: the state a source needing the hold is
+in is exactly the state it answers "cannot corroborate" in. Measured as flashed:
+the probe built on it read the Wii as needing no hold.
+
+Two constraints the probe is built against, both still live. It runs inside the
+acquisition window where the arm has already taken the sync pad away, because at
+0/0 the picture drops. And it runs BEFORE the field rate is taken, because the
+post coast gates the formatter's vertical and the rate is timed on it.
+
+It is keyed on the input selection like the sync type, because the property
+belongs to what the source puts on the connector -- measured at one probe per
+input change, against nine when it ran once per pass. A coast held from outside
+is left alone: the probe holds the pair itself, so measuring across one would
+discard the value being tested.
 
 **REFUTED AS THE ROUTE: timestamping edges off the test bus.** `/edgetrace`
 records every rising edge's period from an IRAM ISR and it works, but no signal
