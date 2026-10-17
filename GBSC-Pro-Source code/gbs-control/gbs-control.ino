@@ -190,6 +190,13 @@ volatile int16_t pendingAvFrame = -1;
 
 // What /testbus queued, for loop() to start. The route answers from a network
 // callback, which must not touch the bus.
+volatile bool pendingEdgeTrace = false;
+volatile uint16_t pendingEdgeTracePeriods = 400;
+volatile uint16_t pendingEdgeTraceMs = 120;
+volatile uint8_t pendingEdgeTraceSel = 0x0a;
+volatile uint8_t pendingEdgeTraceSp = 5;
+volatile uint8_t pendingEdgeTraceSig = 6;
+volatile uint8_t pendingEdgeTraceIf = 0xff;
 volatile bool pendingTestBusSweep = false;
 volatile uint16_t pendingTestBusMs = 25;
 volatile uint8_t pendingTestBusSp = 0xff;
@@ -2129,6 +2136,53 @@ namespace MeasurePeriod
     }
 }
 
+// EVERY EDGE RECORDED RATHER THAN COUNTED, which is what the structure of the
+// vertical interval needs: MeasurePeriod spans N periods and divides, so the
+// run of short periods a serrated interval carries is exactly what it averages
+// away. A polled reader cannot stand in -- at the 30 us periods the input
+// formatter's horizontal runs at it drops pulses, and a dropped one reads as a
+// period of exactly twice the median, which is indistinguishable from a pulse
+// the source really did not send.
+//
+// Periods are ticks between rising edges, saturating at 0xffff so an overflow
+// reads as one rather than wrapping into a plausible period. The buffer is the
+// caller's.
+namespace EdgeTrace
+{
+    volatile uint16_t *gap = NULL;
+    volatile uint16_t wanted = 0, seen = 0;
+    volatile uint32_t prev = 0;
+
+    void ICACHE_RAM_ATTR _risingEdgeISR()
+    {
+        uint32_t now;
+        __asm__ __volatile__("rsr %0,ccount"
+                             : "=a"(now));
+        if (gap == NULL || seen >= wanted)
+            return;
+        if (prev != 0) {
+            const uint32_t span = now - prev;
+            gap[seen++] = span > 0xffff ? 0xffff : (uint16_t)span;
+        }
+        prev = now;
+    }
+
+    void start(uint16_t *buffer, uint16_t periods)
+    {
+        gap = buffer;
+        wanted = periods;
+        seen = 0;
+        prev = 0;
+        attachInterrupt(DEBUG_IN_PIN, _risingEdgeISR, RISING);
+    }
+
+    void stop()
+    {
+        detachInterrupt(DEBUG_IN_PIN);
+        gap = NULL;
+    }
+}
+
 // **THE WAIT IS BOUNDED IN TIME, AND THE WATCHDOG STAYS RUNNING.** Bounding it
 // by loop passes instead, with the watchdog off, holds the CPU long enough that
 // serial, ping and HTTP all die while the picture keeps running -- the TV5725 is
@@ -2875,6 +2929,87 @@ static void sweepTestBus(uint16_t windowMs, uint8_t spModule, uint8_t spSignal,
     }
 
     debugPrintf("tb,done\n");
+}
+
+// WHETHER THE VERTICAL INTERVAL'S STRUCTURE CAN BE MEASURED, which decides
+// whether the coast lengths can be derived from the source instead of chosen
+// per sync type. Serrations and equalisation pulses run at twice line rate and
+// an unserrated interval carries no pulses at all, so a run of consecutive
+// periods says which the source sends and across how many lines.
+//
+// THE COAST IS WHAT STOPS THE PROCESSOR SEEING THOSE PULSES, so a trace taken
+// with one in force measures the coast rather than the source. Take it at 0.
+//
+// WHICH SIGNAL CARRIES THE SOURCE'S OWN SYNC IS UNSETTLED. Measured on `vga`
+// composite at 320x256@50: every one of the 32 sync-processor stage/signal
+// pairs is a ~150 kHz clock at 50% duty, a stuck level, or the field-rate
+// vertical, so none of them is a line-rate pulse train. The input formatter's
+// `if=0` is one, at 16% duty, but its median period is 30.5 us -- the DOUBLED
+// line, downstream of the doubler rather than the source's sync.
+//
+// The buffer is heap for the duration, not globals: this costs nothing when
+// idle, and a trace long enough for a 31 kHz field is 1.4 KB.
+static void traceEdges(uint16_t wanted, uint16_t windowMs, uint8_t sel,
+                       uint8_t spModule, uint8_t spSignal, uint8_t ifSel)
+{
+    uint16_t *gap = (uint16_t *)malloc((size_t)wanted * sizeof(uint16_t));
+    if (gap == NULL) {
+        debugPrintf("et,error,no heap for %u periods\n", (unsigned)wanted);
+        return;
+    }
+
+    const Tv5725::TestBus::Hold held;
+
+    if (spModule != 0xff)
+        Tv5725::SyncProcessor::driveTestBus(spModule, spSignal);
+    if (ifSel != 0xff)
+        Tv5725::TestBus::driveFormatter(ifSel);
+    Tv5725::TestBus::enable(true);
+    Tv5725::TestBus::select(sel);
+    delay(1);
+
+    // No yield() in the wait. yield() runs the WiFi stack, whose interrupts-off
+    // sections delay the edge ISR and skew the very period being recorded, and
+    // a trace is tens of milliseconds rather than the frame the lock waits for.
+    WiFi.setSleepMode(WIFI_NONE_SLEEP);
+    EdgeTrace::start(gap, wanted);
+
+    uint32_t spins = 0;
+    const uint32_t deadline = millis() + windowMs;
+    while (EdgeTrace::seen < wanted) {
+        if (++spins % 1024 == 0) {
+            if ((int32_t)(millis() - deadline) >= 0)
+                break;
+            ESP.wdtFeed();
+        }
+    }
+
+    const uint16_t seen = EdgeTrace::seen;
+    EdgeTrace::stop();
+
+    debugPrintf("et,header,periods=%u ticks=%u sel=%u sp=%d sig=%u if=%d "
+                "coast=%u/%u sogmode=%d\n",
+                (unsigned)seen, (unsigned)debugPinTicksPerSecond(),
+                (unsigned)sel, (int)(int8_t)spModule, (unsigned)spSignal,
+                (int)(int8_t)ifSel,
+                (unsigned)Tv5725::SyncProcessor::SP_PRE_COAST::read(),
+                (unsigned)Tv5725::SyncProcessor::SP_POST_COAST::read(),
+                (int)GBS::SP_SOG_MODE::read());
+
+    // Sixteen periods a line, because the console drops bursts and 700 lines
+    // of one value each is a burst.
+    for (uint16_t i = 0; i < seen; i += 16) {
+        char line[160];
+        int at = snprintf(line, sizeof(line), "et,%u", (unsigned)i);
+        for (uint16_t n = i; n < seen && n < (uint16_t)(i + 16); n++)
+            at += snprintf(line + at, sizeof(line) - at, ",%u",
+                           (unsigned)gap[n]);
+        debugPrintf("%s\n", line);
+        handleWiFi(0);
+    }
+
+    debugPrintf("et,done\n");
+    free(gap);
 }
 #endif
 
@@ -4659,6 +4794,12 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
             sweepTestBus(pendingTestBusMs, pendingTestBusSp, pendingTestBusSig,
                          pendingTestBusIf);
         }
+        if (pendingEdgeTrace) {
+            pendingEdgeTrace = false;
+            traceEdges(pendingEdgeTracePeriods, pendingEdgeTraceMs,
+                       pendingEdgeTraceSel, pendingEdgeTraceSp,
+                       pendingEdgeTraceSig, pendingEdgeTraceIf);
+        }
         if (pendingCoast) {
             pendingCoast = false;
             applyCoastOverride(pendingCoastApply, pendingCoastClear,
@@ -5702,6 +5843,29 @@ void startWebserver()
         pendingTestBusIf = (uint8_t)number("if", 0xff);
         pendingTestBusSweep = true;
         request->send(200, "application/json", "{\"queued\":\"testbus\"}");
+    });
+
+    // THE VERTICAL INTERVAL'S STRUCTURE, as the gaps between successive rising
+    // edges on one test-bus signal. Answers on the console, not in the reply.
+    // Take it with the coast at 0 (/coast?pre=0&post=0), because the coast is
+    // what stops the processor seeing the pulses being asked about.
+    //
+    //   /edgetrace                      the sync separator, 400 periods
+    //   /edgetrace?n=700&ms=200         a 31 kHz source needs a longer field
+    //   /edgetrace?sel=10&sp=4&sig=0    vs_act_det instead of the separator
+    server.on("/edgetrace", HTTP_GET, [](AsyncWebServerRequest *request) {
+        auto number = [request](const char *name, int fallback) -> int {
+            return request->hasParam(name)
+                ? request->getParam(name)->value().toInt() : fallback;
+        };
+        pendingEdgeTracePeriods = (uint16_t)number("n", 400);
+        pendingEdgeTraceMs = (uint16_t)number("ms", 120);
+        pendingEdgeTraceSel = (uint8_t)number("sel", 0x0a);
+        pendingEdgeTraceSp = (uint8_t)number("sp", 5);
+        pendingEdgeTraceSig = (uint8_t)number("sig", 6);
+        pendingEdgeTraceIf = (uint8_t)number("if", 0xff);
+        pendingEdgeTrace = true;
+        request->send(200, "application/json", "{\"queued\":\"edgetrace\"}");
     });
 
     // The ADC sampling group, in one request, the way the firmware writes it.
