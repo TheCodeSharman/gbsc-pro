@@ -138,17 +138,76 @@ indifferent across six-fold range and collapses to 97 at 7.43%, just past its
 own 7.2% pulse, so the only rule an unserrated source states is *below the
 pulse*.
 
-## What bounds it from below is the serrated source, and the gap is unmeasured
+## What bounds it from below is the serrated source, and the two do not overlap
 
-`the-pulse-ignore-value-is-measured-not-chosen.md` measures the floor on the
-Wii in PAL 576i through a 2200-sample line: 0x33, **2.32% of the line**, reads
-314/315 against a true 310 -- serrations counted as lines, steady and wrong --
-and 0x6B, **4.86%**, reads 310. Nothing was walked between the two.
+The floor is the Wii in PAL 576i on `ypbpr`, through the same 2200-sample line
+and a 161-sample sync pulse. Frozen on the solve, 24 readings of
+`STATUS_SYNC_PROC_VTOTAL` per value against a true count of 310:
 
-So the floor sits somewhere in **2.32 .. 4.86%** and the ceiling this page
-measures is **2.81%**. Whether one value serves every source turns entirely on
-where in that gap the serrations stop being counted, and the Wii in an
-interlaced mode is what answers it.
+| `SP_H_PULSE_IGNOR` | share of line | count |
+|---|---|---|
+| 22 .. 73 | 1.00 .. 3.32% | **319 x24 at every value** |
+| 77 | 3.50% | 312, 313, 314, 317, 318, 319, 320, 321 |
+| 81 .. 123 | **3.68 .. 5.59%** | **310 x24 at every value** |
+| 132 | 6.00% | 310 x12, 311 x6, 312 x6 |
+
+Nine lines, steady and wrong, everywhere below the floor: the separator is
+counting the vertical interval. The floor sits between **3.32% and 3.68%**,
+and 6.00% is where real sync pulses start being rejected.
+
+**The ceiling the unserrated sources impose is 2.81%.** The two bands do not
+touch, so **no constant serves every source** and the fraction follows a
+measurement.
+
+## What the engine does now
+
+`Tv5725::SerrationMeasurement` compares the count through the two thresholds
+and holds the verdict for the source, the way `SyncMeasurement` holds the sync
+type. The median of five readings at each, four lines of separation before an
+interval is one rather than the count's own dither, and a reading no source
+produces establishes nothing. The probe runs after the install and before the
+duty -- the thresholds being fractions of the line in ADC samples, a probe
+through a reference clock is of nothing -- and only on a composite source,
+a separate-sync one being indifferent across the whole range.
+
+**Serrated until measured otherwise.** The higher threshold costs an
+unserrated source a dithering count until the probe runs; the lower one leaves
+a serrated source counting its interval, nine lines out, which no raster
+matches and every window is then solved from.
+
+Measured on the unit, one acquisition each unless stated:
+
+| source | threshold | count | capture |
+|---|---|---|---|
+| Wii 576i, `ypbpr` | **107**, logged `serrated` | 310 | -- |
+| 320x256@50 composite | **61** | 308 x8 | 624, unchanged |
+| 800x600@60 composite | **37** | 623/624 | 628, unchanged |
+| 640x512@50 composite | 48 or 39 | steady | **534** |
+| 640x480@60 composite | 40 | 522 | 523 or 525 |
+
+**What it buys is the scan latch.** 640x512@50 composite over ninety seconds
+of a solved acquisition, twice:
+
+| | before | after, two runs |
+|---|---|---|
+| scan changes | 39 | **0, 0** |
+| motion adapt engaged on a progressive source | 19 | **0, 0** |
+| capture | 529 | **534, 534** |
+| solves armed | 5 | 11, 8 |
+
+## What it does not fix
+
+**The frame hold races the capture's sizing.** `holdVerticalSync()` adopts a
+frame only once two offers agree, and the capture is sized from whatever the
+count is when the solve reaches it -- so a restoration that arrives a pass
+late leaves the capture short by the vertical sync. Measured after the change:
+640x512@50 composite restores on 3 acquisitions of 8, and 640x480@60 composite
+lands on 525 three times and 523 three times in six. Both read `VPERIOD_IF`
+valid in the short landings, so the reading is there and the hold has not
+taken it.
+
+**And the solves armed went up rather than down**, 5 to 8 and 11. The arm is
+`countContradicted()`, which is a separate fault -- `../known-issues.md`.
 
 ## What the threshold is rejecting is open
 
