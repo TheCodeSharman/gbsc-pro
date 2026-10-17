@@ -212,9 +212,10 @@ def source_pixel_px(mode, clip, axis):
 
     At a default framing the emitted frame IS the source's active area, so the
     frame's own extent over the mode's active count is the magnification and no
-    register read can improve on it. It assumes the picture FILLS: a declared
-    shape pillarboxes, and the bars it leaves are our blanking rather than the
-    source's pixels. docs/aspect-ratio.md
+    register read can improve on it. It assumes the picture FILLS: a shape
+    narrower than the raster pillarboxes, and the bars it leaves are our
+    blanking rather than the source's pixels. 16:9 on a 1920x1080 raster narrows
+    nothing and is what the acceptance is taken in. docs/aspect-ratio.md
     """
     parts = mode.split()
     if len(parts) <= MODE_COUNT[axis]:
@@ -334,6 +335,11 @@ def sweep_mode(host, dev, source, mode, allowance, keep_framing):
     gbs_unit.mode_serv(source, "PATTERN CARD")
     if not keep_framing and gbs_unit.reset_framing(host) is None:
         return None, "the framing never reset"
+    # AFTER the reset, which puts the declared shape back to the raster's
+    # default -- 4:3 on the bench modes, whose bars are our own blanking and
+    # read as 258 columns at the near edge where 16:9 reads 26.
+    if not gbs_unit.choose_aspect(host, gbs_unit.SIXTEEN_NINE):
+        return None, "the shape never reached 16:9"
     time.sleep(2.0)
 
     # A clip rather than a frame: the card flashes twice a second, so a single

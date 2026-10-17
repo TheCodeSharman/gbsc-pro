@@ -14,19 +14,31 @@ below is one mode per behaviour the solve actually has; `--all-modes` sweeps the
 rest, for when the question is the monitor definition rather than the engine.
 
 The measurement is `card_edges`', shared with the tool that sweeps
-interactively, so there is one statement of what flush means. What is here that
-the tool has not is the standing record: a mode in `NARROW` is a known deficit
-with its measured size, so a NEW mode failing is a regression and a listed one
-passing is the gap having closed.
+interactively, so there is one statement of what flush means.
 
-**AT ONE OUTPUT AND WITH NO DECLARED SHAPE, ON BOTH SYNC TYPES.** The output
-is a variable every case has to share, or the modes are judged against
-different rasters. The shape has to be OFF rather than 16:9: a declared shape
-narrows the room, the bars it pillarboxes with are OUR blanking, and a strip
-taken at the frame's own edge then measures them instead of the picture --
-which reported all six modes' horizontal edges as missing. And the sync type is
-the dimension nothing crossed: a mode judged on one of them is a framing fitted
-to one half of the bench.
+**IT ASSERTS THE GOAL AND IT FAILS UNTIL THE GOAL IS MET.** Every edge of every
+case carries green, and no edge carries black between that green and the frame's
+own edge. A list of known deficits that granted an xfail is what let the
+composite vertical go from whole at both ends to a tenth of its top border
+without one case turning red -- the entries were prose nothing compared against,
+so a regression INSIDE a known deficit was invisible. The deficits are recorded
+in `docs/known-issues.md`, where they cannot pass a test, and every case prints
+its four edges so a drift shows up as a size rather than as a verdict.
+
+**AT ONE OUTPUT, AT 16:9, ON BOTH SYNC TYPES.** The output is a variable every
+case has to share, or the modes are judged against different rasters. And the
+sync type is a dimension of its own: a mode judged on one of them is a framing
+fitted to one half of the bench, which is why every mode runs on separate sync
+and on composite.
+
+**16:9 NARROWS NOTHING AT 1080p, SO IT IS NOT THE 4:3 TRAP.** A declared shape
+narrows the room and the bars it pillarboxes with are OUR blanking, so a strip
+taken at the frame's own edge measures them instead of the picture -- which is
+what 4:3 does, reading 258 columns at the near edge against 26. 1920/1080 IS
+16:9, so declaring it leaves the room whole: measured on one state, shape off
+and 16:9 give the same four edges to the pixel, `across 0.86|0.00 down 3|1
+0.89|0.89`, at one `oh`, `eh` and `ch`. So the shape the bench runs in is the
+shape the acceptance is taken in, and no reading here is of our own bars.
 
 Changes the SOURCE mode and its sync type and resets the framing, so it needs
 --modeserv and --source, and it puts the bench mode, the sync type, the output
@@ -88,135 +100,10 @@ COVERS = {
 # resolution, so it is not the one to weight the defaults toward. `--all-modes`
 # still reaches it. docs/capture-limits.md
 
-# Modes whose picture is NARROWER than the frame rather than misplaced, against
-# the deficit measured at 1080p. It grows with the resolution and is a scale
-# question rather than a placement one: one value of `OutputMode::HsyncStartPx`
-# brings the near edge flush on every mode here, and what is left is span.
-# Closing it needs minification, which the VDS cannot do.
-# docs/investigations/full-screen-framing-on-the-vesa-modes.md,
-# docs/scaling-down-path.md
-# How the cases read: the mode, then which sync type carried it.
+# How the cases read: the mode, then which sync type carried it. Every mode runs
+# on both, because the two place the picture differently and a mode judged on one
+# is a framing fitted to half the bench.
 SYNC_TYPES = ((False, "separate"), (True, "composite"))
-
-# What each case currently gets wrong, measured at 1080p with the shape off and
-# the framing reset, over two full runs of the matrix. A case listed here that
-# PASSES is the gap having closed; one not listed that fails is a regression.
-#
-# **800x600@60 IS THE ONLY MODE THE TWO SYNC TYPES AGREE ON**, and it is the
-# mode every other measurement has been taken on. That is what this matrix
-# exists to catch.
-#
-# **EVERY ENTRY CARRIES THE SIZE IT IS OUT BY**, `card_edges.Judgement.out_by`,
-# because a green column a pixel off the frame and one a hundred pixels off are
-# the same fault at two sizes and only the size says which modes are nearly
-# right.
-#
-# The allowance is `card_edges.ALLOWANCE`, the instrument's own column plus the
-# pixel or two the solve lands apart between runs: with the shape off the
-# picture fills the raster exactly, so rounding at either end moves the
-# outermost green column and can take it off the frame. The sink's own window
-# placement is inside that margin too -- latched when the link acquires, and
-# NOT taken from our blanking, which is refuted. What it keys on is not
-# established. docs/known-issues.md
-#
-# **THE DISPLACEMENT REVERSES SIGN WITH THE SYNC TYPE, AND THAT IS THE FINDING
-# THE SIZES CARRY.** Separate sync loses the NEAR edge off the frame and keeps
-# the margin at the far one, and composite sync did the opposite. A shift moves
-# the two ends together, so the pair is one displacement per sync type rather
-# than six modes misframed independently.
-#
-# **THE COMPOSITE LEG'S SHARE OF IT WAS THE POLARITY CORRECTION**, which
-# follows the sync path now rather than the measured bit: 240x352@70 went from
-# 14 across to 2, 640x512@50 from 17 down to 1, 320x256@50 from overrunning
-# both ends to a bounded 16, and 800x600@60 from 5 to 2, which is why it is no
-# longer listed. Measured over three full runs. docs/known-issues.md
-# **THE FIT DID NOT CLOSE THE VERTICAL, AND THE READING THAT SAID SO WAS THE
-# INSTRUMENT.** edge_wholeness() used to call black at the frame's outermost
-# sample a border clear of the edge and worth the whole pixel, so a border the
-# picture's last row cuts through -- a sliver with black beyond it -- reported
-# 1.00. Every vertical far edge whose margin is one unit or more read whole
-# whatever survived. The A/B that scored the fit 0.08 to 1.00 down at
-# 320x256@50 measured that flip and not the picture: the same frame reads 0.11.
-#
-# **SO THE FAR EDGE IS OPEN ON BOTH AXES**, and the width parity cannot carry
-# the vertical -- the step-back in `OutputWindow::solve()` is guarded
-# `!axis.vertical()` and never runs there. What the parity does hold is the
-# horizontal, where replacing it needs a knob on the produced width that does
-# not move the picture, which `OutputWindow::solve()` states.
-# docs/investigations/the-room-is-what-the-encoder-carries.md
-#
-# **THE VERTICAL FAR EDGE IS CLOSED, AND THE NEAR HORIZONTAL ONE IS WHAT IS
-# LEFT.** Sizing the capture to the END of the last active line carries the
-# pixel on seven of the nine cases that acquire, where none did.
-#
-# What remains is a PAN: the near horizontal border is off the frame on six of
-# those nine, with black at the FAR end, which is the signature `judge()` calls
-# a shifted window -- the far margin bounds the shift, the two ends moving
-# together. 640x480@60 separate is the clearest, 12 output pixels at 3 to the
-# source pixel. The entries below carry each case's four edges as
-# `across near|far, down near|far`, from one run after the fix.
-NARROW = {
-    ("X240 Y352 C256 F70", True): "the far edge across is off the frame -- "
-                                  "across 0.69|0.09, down 1.00|0.66",
-    ("X320 Y256 C256 F50", False): "the far edge across is short -- across "
-                                   "0.80|0.41, down 0.92|0.91. The vertical "
-                                   "carries the pixel at both ends now",
-    # NOT THE FIT, and not this axis's rounding: the near horizontal border is
-    # absent from the emitted frame on BOTH sync types and on both sides of the
-    # fit A/B, with the vertical reading 0.50 to 0.54 at one end throughout. A
-    # deficit that survives a byte-identical register set is downstream of the
-    # board. docs/known-issues.md
-    ("X800 Y600 C256 F60", False): "the near edge across is off the frame -- "
-                                   "across 0.00|0.73, down 0.85|0.80",
-    ("X800 Y600 C256 F60", True): "the near edge is off the frame across and "
-                                  "short down -- across 0.00|0.89, down "
-                                  "0.53|0.92",
-    ("X320 Y256 C256 F50", True): "the far edge across is off the frame -- "
-                                  "across 0.87|0.00, down 1.00|1.00",
-    ("X640 Y480 C256 F60", False): "PANNED toward the near end -- across "
-                                   "0.00|0.82 with 12 output pixels of black "
-                                   "at the far edge, down 0.45|0.91",
-    # NOT A FRAMING DEFICIT. The mode never acquires on composite -- 90 s and
-    # never acquired when probed directly, and every matrix run reads the state
-    # line as PLLAD_MD 2040 against a 2041-unit capture with a frame count of
-    # 312 on a mode that sends 525. It reaches here rather than being skipped
-    # because acquired_and_settled() cannot tell the asked-for mode from
-    # whatever else settled. docs/known-issues.md
-    ("X640 Y480 C256 F60", True): "never acquires -- an acquisition entry, not "
-                                  "a framing one; both ends overrun on both axes",
-    ("X640 Y512 C256 F50", True): "the near edge across is off the frame -- "
-                                  "across 0.00|0.86, down 0.74|1.00",
-    # NOT A FRAMING DEFICIT, and not a size to close: --all-modes only, and
-    # its solve is 800x600@60's. The two want placements about 5 output pixels
-    # apart off that one solve, so this reading moves whenever that mode's
-    # framing does -- 2 before it was flush, 6 to 8 after. The entry exists so
-    # a sweep does not read it as a regression.
-    ("X1600 Y600 C256 F60", True): "shares 800x600@60's solve -- a clash, not a "
-                                   "framing; reads 6 to 8 across",
-}
-
-# Cases whose VERDICT varies between runs on one firmware, over two full runs of
-# the matrix. Either outcome is accepted, because such a case is evidence
-# neither way: listed in NARROW it fails the run that lands the better reading,
-# and left out it fails the run that lands the worse one.
-#
-# **THE SPREAD IS NOT IN OUTPUT PIXELS**, which is why no allowance covers it.
-# Measured run against run it is about 6 output pixels on the 240-pixel source
-# line, 3 on the 640-pixel one, 2 on the 800-pixel one and under 1 on the
-# 1600-pixel one -- an ordering that tracks the magnification, so the quantity
-# is the source's own pixel or the capture's unit rather than the emitted frame's
-# pixel. Which of the two is open, and the green frame's captured width is too
-# noisy to settle it: 4 columns at one edge against 8 at the other on one clip
-# where the magnification is 4.5. docs/known-issues.md
-UNSTABLE = {
-    ("X240 Y352 C256 F70", False):
-        "out by 10 across in one run, inside the allowance in the next; one "
-        "run after the capture fix reads across 0.00|0.76, down 0.92|0.98",
-    ("X640 Y512 C256 F50", False):
-        "7, 4 and 7 at the far edge over three runs, straddling the limit the "
-        "width parity carries; one run after the capture fix reads across "
-        "0.00|0.78, down 0.93|0.94",
-}
 
 
 def pytest_generate_tests(metafunc):
@@ -256,7 +143,7 @@ def capture_device():
 
 @pytest.fixture(scope="module")
 def judged_at(request, host):
-    """One output and no declared shape for every case, and the bench put back.
+    """One output and one declared shape for every case, and the bench put back.
 
     The modes are judged in whatever order the monitor definition lists them,
     so the last one is nobody's choice -- and neither is the output, the shape
@@ -283,9 +170,9 @@ def judged_at(request, host):
     assert gbs_unit.choose_output(host, OUTPUT), (
         f"the output never reached {OUTPUT}, so the modes would be judged "
         f"against different rasters")
-    assert gbs_unit.want_shaping(host, False), (
-        "the shape is still being applied, so every edge read would measure "
-        "the bars it pillarboxes with")
+    assert gbs_unit.want_shaping(host, True), (
+        "the shape is not being applied, so a case would be judged in a shape "
+        "the bench does not run in")
     assert gbs_unit.autosave(host, False), (
         "the framing table would not stop autosaving")
 
@@ -358,6 +245,12 @@ def test_the_default_framing_puts_the_card_flush_to_the_emitted_edges(
     # with the animation off so one clip is evidence.
     assert gbs_unit.show_card(where), "the source would not draw the card"
     assert gbs_unit.reset_framing(host) is not None, "the framing never reset"
+    # AFTER the reset, which puts the declared shape back to the raster's
+    # default along with the framing -- 4:3 on every mode here, whose bars are
+    # our own blanking and read as 258 columns at the near edge.
+    assert gbs_unit.choose_aspect(host, gbs_unit.SIXTEEN_NINE), (
+        "the shape never reached 16:9, so the edges read would be the bars a "
+        "4:3 declaration pillarboxes with")
 
     # A clip rather than a frame: the card's outermost ring flashes, and in the
     # phase where it is yellow the green smears into it and falls under the hue
@@ -380,11 +273,7 @@ def test_the_default_framing_puts_the_card_flush_to_the_emitted_edges(
     # run can be compared against, and the size is the whole point of out_by:
     # a case that passes at 2 and one that passes at 0 are a drift in progress.
     print(f"\n{mode} {'composite' if csync else 'separate'}: {read}")
-    unstable = UNSTABLE.get((mode, csync))
-    if unstable is not None:
-        pytest.xfail(f"varies between runs -- {unstable}   [{read}]")
-    known = NARROW.get((mode, csync))
-    if known is not None:
-        assert whys, f"known deficit {known} has closed -- take it out of NARROW"
-        pytest.xfail(f"{known}: {'; '.join(whys)}   [{read}]")
+    # THE GOAL, asserted. No list of known deficits grants a pass here: one is
+    # what let a case keep its xfail while an edge of it got worse.
+    # docs/known-issues.md carries each case's sizes.
     assert not whys, f"{'; '.join(whys)}   [{read}]"
