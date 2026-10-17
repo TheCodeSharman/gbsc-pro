@@ -582,6 +582,14 @@ so the Wii's sync on green has to be judged with it before it is the fix;
 `SP_DLT_REG` 300 reads 1.0% and is not. `roll_ab.py --seconds 20` is what took
 every reading, because at this rate an 8 s clip holds two events.
 
+**IT IS NOT ANYTHING THE FIRMWARE DOES ON A SCHEDULE.** Over 100 s of
+timestamped console alongside the clip the engine printed no solve, no
+measurement and no sync change -- only the frame time lock, every one to two
+seconds, stepping the display clock 8 to 24 Hz -- and with the lock switched
+off (`/sc?W`) the clip reads 48 of 6408 displaced against 35 with it on. The
+events come every 5 to 12 s, four frames long, under freeze as well, so the
+residual is in the chip's sync path.
+
 **The composite framing sits about ten columns right of separate sync's on the
 bench mode, and it did before the edge changed**: 257 against 242 now, 252
 before. The vertical is a few rows the other way. Older than this change and
