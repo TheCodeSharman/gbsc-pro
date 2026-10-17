@@ -84,7 +84,7 @@ counter on the separator's path, and it reads later.
 
 ## The vertical carries the same delay, as a count of lines
 
-`VideoSourceLine::SeparatorFrameLeadLines` is 16, and the counter counts
+`VideoSourceLine::SeparatorFrameLeadHalfLines` is 35, and the counter counts
 half-lines with the line doubler in, so the lead doubles with the scan.
 
 Measured as the displacement of the card's bottom green line between the two
@@ -103,6 +103,61 @@ whatever counts lines.
 Solved at 640x480@60 the emitted frame's black margins are top 5 / bottom 5 on
 composite against top 0..3 / bottom 5..6 on separate, where composite sat 34
 rows up before.
+
+### THE REFERENCE EDGE MOVES THIS ORIGIN, SO THE LEAD BELONGS TO AN EDGE
+
+The two readings above were taken while the separator referenced the TRAILING
+edge of the pulse. Composite sync references the LEADING edge now, and the frame
+counter's origin moves with it -- so a lead measured on one edge frames nothing
+on the other, which is how 16 lines came to leave the bench mode with its top
+border off the emitted frame and seven rows of the source's own blanking at the
+bottom.
+
+Measured frozen at 320x256@50 into 1080p, writing `SP_CS_P_SWAP` and
+`SP_HS2PLL_INV_REG` by hand with one vertical capture window in force, and
+reading the row profile with the picture lifted so the source's blanking reads
+grey where ours reads black:
+
+| reference | top of the frame | bottom of the frame |
+|---|---|---|
+| leading, 1/1 | `0 177 234 234 234` -- inside the picture | `128 102 51 30 30 30 30 30 30 0` |
+| trailing, 0/0 | `0 30 30 30 30 56 102 119` -- blanking, then the border | `216 216 210 157 119 119 0` |
+
+Four units apart, repeated and reproduced across three writes. `SP_CS_P_SWAP`
+alone carries about half of it, so both bits move the origin.
+
+**THE POST COAST IS NOT IT.** The same four edges read margins `1|7` and
+wholeness `0.10|0.68` at a post coast of 2, 4 and 6, with `IF_VB_ST` and
+`IF_VB_SP` identical at each.
+
+### 17.5 LINES IS WHAT FRAMES BOTH SCAN MODES
+
+Measured by panning the vertical capture window a unit at a time -- both ends by
+the same delta, so the width, the scale and the parity are untouched -- and
+judging the card's border with `card_edges.judge()`. The delta is from the
+window a lead of 16 lines solved, and the figures are the two edges' wholeness:
+
+| mode | scan | -1 | -2 | -3 | -4 |
+|---|---|---|---|---|---|
+| 320x256@50 | doubled | 0.60/0.89 | 0.83/0.84 | **0.86/0.86** | 0.89/0.61 |
+| 800x600@60 | undoubled | 0.52/0.91 | **0.87/0.83** | off the frame | off the frame |
+
+The doubled mode's optimum sits between -2 and -3 and the undoubled one's at
+-2 -- the same count of UNITS on both scan modes, and so 1.25 source lines
+against 2. As a total lead that is 44.5 units doubled and 25 undoubled, and one
+count of lines gives both to within half a unit: **17.5**.
+
+A whole count cannot. 17 lands the doubled mode and leaves the undoubled one a
+unit short at 0.52 of its border; 18 lands the undoubled one and costs the
+doubled mode most of its far border, at 0.61. So the lead is held in half lines
+and rounds up on an undoubled source, where the counter has no half to land on.
+
+**IT IS THE RISC PC ON COMPOSITE THAT MEASURES THIS, AND NOTHING ELSE HERE
+CAN.** The Wii's sync on green takes the leading edge too, but its 480p carries
+fourteen rows of its own black at the top of the emitted frame and thirteen at
+the bottom, so a shift of a line or two is invisible there -- the capture has
+525 units for 480 active lines and the slack absorbs it.
+
 
 ## What it is not
 

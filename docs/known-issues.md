@@ -3903,10 +3903,8 @@ it reaches every source rather than only a published raster. Measured with
 `card_edges.py` afterwards, `800x600@60` and `640x480@60` are flush at both
 vertical edges and `X320 Y256 C256 F50` is two rows off at each.
 
-**What is still unmeasured is the sync arrangement.** `capturableFrame()` adds
-`SeparatorFrameLeadLines` to the origin on a separated source, which assumes the
-separator's delay is on top of the counter's own rather than replacing it.
-`SYNC 1` on the RISC PC makes that one run and nobody has taken it.
+`capturableFrame()` adds `SeparatorFrameLeadHalfLines` to the origin on a
+separated source, on top of the counter's own rather than replacing it.
 
 ### The capture window's far edge falls short of the source's last drawn pixel
 
@@ -4660,7 +4658,7 @@ sync on green both -- lands earlier in them than its published raster states.
 | axis | constant | value | shape |
 |---|---|---|---|
 | horizontal | `VideoSourceLine::SeparatorPulseEndLeadSamples` | 66 | subtracted from the sync width, in ADC SAMPLES |
-| vertical | `VideoSourceLine::SeparatorFrameLeadLines` | 16 | a count of the source's LINES |
+| vertical | `VideoSourceLine::SeparatorFrameLeadHalfLines` | 35 | a count of the source's HALF lines |
 
 Measured on one cable and one raster with the sync type the only variable:
 
