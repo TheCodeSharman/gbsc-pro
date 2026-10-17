@@ -5949,7 +5949,54 @@ change here. `an-alternating-count-latches-the-scan-type.md` is what earns the
 pair; `investigations/the-composite-count-dithers-where-the-ignore-nears-the-pulse.md`
 is the count.
 
-### The pulse ignore climbs into the sync pulse and the count dithers
+### The frame hold races the capture's sizing, so a composite capture is short
+
+`SourceMeasurement::holdVerticalSync()` adopts a restored frame only once two
+offers agree, and the capture is sized from whatever the count is when the
+solve reaches it. A restoration that arrives a pass late therefore leaves the
+capture short by the source's vertical sync, for the life of the acquisition.
+
+Measured per acquisition, each a `MODE` and a `/sc?~`:
+
+| mode | restored | short |
+|---|---|---|
+| 640x512@50 composite | 3 of 8 (cv 534) | 5 of 8 (cv 530 or 531) |
+| 640x480@60 composite | 3 of 6 (cv 525) | 3 of 6 (cv 523) |
+
+**`VPERIOD_IF` reads valid in the short landings too** -- 533 and 524, with
+`STATUS_IF_VT_BAD` 0 -- so the reading is there and the hold has not taken it.
+The divider follows the count, so the two landings also differ in `PLLAD_MD`:
+1424 against 1746, and 1272 against 1444.
+
+`investigations/the-composite-count-dithers-where-the-ignore-nears-the-pulse.md`.
+
+### The contradicted-count arm never stops on an interlaced source
+
+576i on `ypbpr` re-solves every 2.5 s for as long as it is left, dropping the
+sync pad for about 1.2 s of each cycle. The console says
+`measure: start, TIMINGS change (contradicted count), 310 lines, solved 310`
+-- a solve armed on a count that agrees with the one it solved.
+
+`countContradicted()` is true because `reconciledFrame()` refuses the pair:
+`VPERIOD_IF` reads 624, so the candidates are 625 whole lines, 314 above the
+count, and 625 halved, which the `measured % factor` guard skips because 625
+is odd. **It is a parity accident** -- at 623 or 625 the halving would land
+within the eight-line bound. The arm then re-measures, reads 310 again, and
+contradicts again.
+
+What it costs is the whole source. The sync pad is away half the time, so the
+emitted frame reads pure black on the capture (mean 0.0, min 0, max 0) and the
+television reports no signal; and **auto gain never completes** -- not one
+`auto gain:` line in 49 seconds, the three channel gains sitting at 51/51/51
+-- so the picture is magenta in the moments it does appear. Freezing
+automation stops the loop and the picture returns.
+
+`the-risc-pc-composite-sync-is-not-serrated.md` states that the restoration
+does not apply to an interlaced source, where the processor counts a field and
+the formatter counts a frame. What is missing is that refusing the reading is
+wired to an arm rather than to leaving the raw count standing.
+
+### The pulse ignore climbs into the sync pulse and the count dithers -- FIXED
 
 `SP_H_PULSE_IGNOR` is `divider x 49 / 1000`, which is a fixed share of the LINE
 and therefore a varying share of the PULSE. At 640x512@50 on composite sync it
@@ -5969,10 +6016,13 @@ Frozen on the solve, dropping the one register to 48 reads 530 in 23 of 25
 samples and 16 reads it in 24 of 25; 64 dithers again, and no coast length,
 `SP_DLT_REG` or `SP_VSYNC_TGL_THD` moves the reading at all.
 
-**The fix is not simply a lower threshold.** The field rejects broadcast
-equalising pulses, and the only serrated source this board can produce comes
-through the ADV7280 on composite or S-Video, which is not on the bench -- so
-the trade a pulse-derived rule makes cannot be measured here.
+**The floor is measured and the two bounds do not overlap.** The Wii in PAL
+576i is the serrated source -- it reads 319 against a true 310 everywhere
+below 3.68% of the line -- so no constant serves both ends.
+`Tv5725::SerrationMeasurement` probes it per source and the fraction follows
+the verdict: 107 on the Wii in 576i, 61 on 320x256@50 composite, 37 on
+800x600@60, 40 on 640x480@60. The scan changes and the motion adapt are gone,
+measured zero in two windows of ninety seconds.
 
 `investigations/the-composite-count-dithers-where-the-ignore-nears-the-pulse.md`.
 
