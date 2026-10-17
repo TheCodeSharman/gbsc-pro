@@ -5932,6 +5932,23 @@ of ten csync legs at 320x256@50, five read the duty as its complement -- 93.13%,
 which places the capture window's head from `FallbackDuty` rather than from a
 measurement.
 
+### A wandering count reads as interlace and engages the deinterlacer
+
+`CrossingsForInterlace` counts returns to a value, and a count that wanders
+returns as readily as one that alternates -- so a progressive source whose
+count is unsteady earns the pair and `Deinterlacer::steer()` weaves it.
+Measured on 640x512@50 composite: **19 engagements in 90 seconds** on a
+progressive source, with the count visiting 529, 530 and 531.
+
+Interlace alternates between exactly TWO counts. A source visiting three or
+more is jittering, which is a discriminator the run does not apply.
+
+Whether it survives a steady count is untested: the dither above is the only
+source of it seen so far, so fixing the threshold may close this without a
+change here. `an-alternating-count-latches-the-scan-type.md` is what earns the
+pair; `investigations/the-composite-count-dithers-where-the-ignore-nears-the-pulse.md`
+is the count.
+
 ### The pulse ignore climbs into the sync pulse and the count dithers
 
 `SP_H_PULSE_IGNOR` is `divider x 49 / 1000`, which is a fixed share of the LINE

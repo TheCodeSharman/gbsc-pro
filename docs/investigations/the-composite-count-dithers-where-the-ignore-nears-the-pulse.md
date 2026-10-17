@@ -110,6 +110,46 @@ the one whose threshold climbs into it.
 pulse wider than 4.9% of the line. **That bound is too loose**: 6.13% is above
 it and dithers.
 
+## The safe band, in shares of the line
+
+The register counts ADC samples, so one value is a different share of the line
+at every divider and the shares are what compare. 20 samples of
+`STATUS_SYNC_PROC_VTOTAL` per value, frozen on the solve:
+
+| source | pulse, share of line | holds the count | dead band | loses lines |
+|---|---|---|---|---|
+| Wii 480p, `ypbpr`, divider 1212 | 7.2% | **0.99 .. 5.94%** | none | 6.44% |
+| RISC PC 320x256@50 csync, 2200 | 6.95% | **2.7 .. 5.2%** | none | 5.5% |
+| RISC PC 640x512@50 csync, 1424 | 6.11% | 2.81%, **4.49 .. 5.06%** | **3.09 .. 4.21%** | 5.34% |
+| RISC PC 640x512@50 csync, 1746 | 6.13% | 0.92%, **2.75%** | -- | 3.67% |
+
+**No value above 2.81% holds all four.** The shipped `49 / 1000` is 4.9%, which
+is inside the band on three of them and outside it on the fourth -- and the
+fourth is one of the two dividers one mode lands on, which is why that mode
+alone is bistable.
+
+The 640x512@50 surface is **not monotonic**: at 1424 the count is right at
+2.81%, garbage from 3.09 to 4.21% -- 890, 1063, 1671 against a true 533 -- and
+right again from 4.49 to 5.06%. A boundary found by halving is not the
+boundary.
+
+**The unserrated sources bound it from above only.** The Wii at 480p is
+indifferent across six-fold range and collapses to 97 at 7.43%, just past its
+own 7.2% pulse, so the only rule an unserrated source states is *below the
+pulse*.
+
+## What bounds it from below is the serrated source, and the gap is unmeasured
+
+`the-pulse-ignore-value-is-measured-not-chosen.md` measures the floor on the
+Wii in PAL 576i through a 2200-sample line: 0x33, **2.32% of the line**, reads
+314/315 against a true 310 -- serrations counted as lines, steady and wrong --
+and 0x6B, **4.86%**, reads 310. Nothing was walked between the two.
+
+So the floor sits somewhere in **2.32 .. 4.86%** and the ceiling this page
+measures is **2.81%**. Whether one value serves every source turns entirely on
+where in that gap the serrations stop being counted, and the Wii in an
+interlaced mode is what answers it.
+
 ## What the threshold is rejecting is open
 
 The pulse reads 107 in 73 samples of 80 and never below it except for one
