@@ -27,7 +27,7 @@ inline uint16_t retimeStopWanted(const Tv5725::SourceMeasurement &sampling,
                                  uint16_t divider, uint8_t oversample)
 {
     const Tv5725::SourceKey key(sampling.sourceLines(), sampling.fieldRateHz(),
-                                sampling.hsync().syncDuty(),
+                                sampling.hsync().sourceDuty(),
                                 sampling.hsyncPolarity(),
                                 sampling.vsyncPolarity());
     return Tv5725::SyncProcessor::retimeStopFor(

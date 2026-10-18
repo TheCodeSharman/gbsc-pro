@@ -408,22 +408,33 @@ uint16_t SyncProcessor::hsyncLowSamples()
     return GBS::STATUS_SYNC_PROC_HLOW_LEN::read();
 }
 
-uint16_t SyncProcessor::hsyncPulseSamples(uint16_t lineSamples, bool positive,
-                                          bool separated)
+uint16_t SyncProcessor::hsyncSourceSamples(uint16_t lineSamples)
 {
     const uint16_t low = hsyncLowSamples();
     if (lineSamples <= low)
         return low;
     const uint16_t complement = (uint16_t)(lineSamples - low);
-    const uint16_t pulse = low < complement ? low : complement;
+    return low < complement ? low : complement;
+}
 
-    // A low-active source read on its own hsync line is the one reading the
-    // term does not suit: a high-active one is counted through the inversion,
-    // and a separated one is the separator's output rather than the source's.
+// A low-active source read on its own hsync line is the one reading the term
+// does not suit: a high-active one is counted through the inversion, and a
+// separated one is the separator's output rather than the source's.
+uint16_t SyncProcessor::originPulseCorrection(uint16_t pulse, bool positive,
+                                              bool separated)
+{
     const bool widened = positive || separated;
     if (!widened || pulse <= InvertedPulseWidthSamples)
-        return pulse;
-    return (uint16_t)(pulse - InvertedPulseWidthSamples);
+        return 0;
+    return InvertedPulseWidthSamples;
+}
+
+uint16_t SyncProcessor::hsyncPulseSamples(uint16_t lineSamples, bool positive,
+                                          bool separated)
+{
+    const uint16_t pulse = hsyncSourceSamples(lineSamples);
+    return (uint16_t)(pulse
+                      - originPulseCorrection(pulse, positive, separated));
 }
 
 bool SyncProcessor::hsyncPositive()

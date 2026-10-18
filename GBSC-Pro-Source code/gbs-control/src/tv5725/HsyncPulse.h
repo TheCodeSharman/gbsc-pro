@@ -25,8 +25,19 @@ class HsyncPulse {
 public:
     HsyncPulse();
     explicit HsyncPulse(float syncDuty);
+    HsyncPulse(float syncDuty, float sourceDuty);
 
+    // The pulse as the sync processor's counter reports it, which is what
+    // places things in that counter's units.
     float syncDuty() const;
+
+    // The SOURCE's own share, which is the reading with the capture origin's
+    // calibration left in it. What IDENTIFIES a source asks here: the
+    // calibration is a count of ADC samples and so a different share of the
+    // line at every divider, and the divider follows the output -- so a key
+    // taken from syncDuty() moves when the output does.
+    // ../../../docs/investigations/the-key-carried-the-origins-calibration.md
+    float sourceDuty() const;
 
     // Whether this duty is a sync pulse at all.
     //
@@ -67,6 +78,7 @@ public:
 
 private:
     float syncDuty_;
+    float sourceDuty_;
 };
 
 }  // namespace Tv5725

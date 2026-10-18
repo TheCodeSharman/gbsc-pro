@@ -592,6 +592,19 @@ public:
     static uint16_t hsyncPulseSamples(uint16_t lineSamples, bool positive,
                                       bool separated);
 
+    // The SOURCE's pulse, which is the same reading with the origin's
+    // calibration left in it -- the pulse folded to the shorter interval and
+    // nothing taken off. What identifies a source asks here, because
+    // InvertedPulseWidthSamples is a count of samples and so a different share
+    // of the line at every divider.
+    static uint16_t hsyncSourceSamples(uint16_t lineSamples);
+
+    // How much of that reading belongs to the origin's calibration rather than
+    // to the source, in ADC samples. 0 where the path does not widen the pulse,
+    // and where the pulse is narrower than the term.
+    static uint16_t originPulseCorrection(uint16_t pulse, bool positive,
+                                         bool separated);
+
     // WHAT THE INVERTED PATH ADDS TO THE COUNT, in ADC samples. The same source
     // read through the inversion measures wider than one read directly, and
     // retimeStopFor() subtracts the reading straight into the counter's origin,

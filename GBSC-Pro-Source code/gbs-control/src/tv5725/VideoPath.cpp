@@ -908,7 +908,7 @@ void VideoPath::armSolveForSource()
 SourceKey VideoPath::arrivingKey() const
 {
     return SourceKey(sampling_.sourceLines(), sampling_.fieldRateHz(),
-                     reading_.syncDuty(), sampling_.hsyncPolarity(),
+                     reading_.sourceDuty(), sampling_.hsyncPolarity(),
                      sampling_.vsyncPolarity());
 }
 

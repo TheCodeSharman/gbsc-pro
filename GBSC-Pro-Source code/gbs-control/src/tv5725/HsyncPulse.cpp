@@ -4,11 +4,17 @@
 
 namespace Tv5725 {
 
-HsyncPulse::HsyncPulse() : syncDuty_(0.0f) {}
+HsyncPulse::HsyncPulse() : syncDuty_(0.0f), sourceDuty_(0.0f) {}
 
-HsyncPulse::HsyncPulse(float syncDuty) : syncDuty_(syncDuty) {}
+HsyncPulse::HsyncPulse(float syncDuty)
+    : syncDuty_(syncDuty), sourceDuty_(syncDuty) {}
+
+HsyncPulse::HsyncPulse(float syncDuty, float sourceDuty)
+    : syncDuty_(syncDuty), sourceDuty_(sourceDuty) {}
 
 float HsyncPulse::syncDuty() const { return syncDuty_; }
+
+float HsyncPulse::sourceDuty() const { return sourceDuty_; }
 
 bool HsyncPulse::isPulse() const
 {

@@ -129,11 +129,6 @@ static void seedPassThroughSource()
 // the engine chooses, which no source does.
 static const float BenchSyncWidth = 181.0f / 2250.0f;
 
-// And what a KEY carries for it: the share above less the width the inverted
-// path adds, which is what the sync processor reports on a high-active source.
-static const float BenchKeySyncWidth =
-    BenchSyncWidth - (float)SyncProcessor::InvertedPulseWidthSamples / 2250.0f;
-
 // The bench source's sync polarities, the rest of what the key carries beyond
 // the count and the rate. `sync_pol:0` in the monitor definition, which reads 1
 // in both bits on separate sync.
@@ -1416,7 +1411,7 @@ TEST_CASE("a framing restored from the file is applied when its source arrives")
     VideoSourceAcquisition acquisition(sampling, engine);
 
     const PanAndZoom stored(0.10f, 0.60f, 0.15f, 0.55f);
-    REQUIRE(framings.remember(SourceKey(311, 50.08f, BenchKeySyncWidth, BenchPolarity, BenchPolarity), stored));
+    REQUIRE(framings.remember(SourceKey(311, 50.08f, BenchSyncWidth, BenchPolarity, BenchPolarity), stored));
 
     engine.setOutputMode(benchMode());
     engine.inputTimingsChanged(4);
@@ -1452,7 +1447,7 @@ TEST_CASE("a press stores the framing without leaving the source")
     frameAt(engine, 100, 120, 40, -15);
 
     PanAndZoom stored;
-    REQUIRE(framings.find(SourceKey(311, 50.08f, BenchKeySyncWidth, BenchPolarity, BenchPolarity), &stored));
+    REQUIRE(framings.find(SourceKey(311, 50.08f, BenchSyncWidth, BenchPolarity, BenchPolarity), &stored));
     CHECK(stored == engine.framing());
 }
 
@@ -1960,12 +1955,99 @@ TEST_CASE("the hsync duty is counted against the divider the source is left on")
     engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(acquisition));
 
-    // The SHARE the source spends on sync, which is what the fixture models and
-    // what a key carries. The count the sync processor reports moves with the
-    // divider and the share does not. The bench source is high-active, so the
-    // share is what the inverted path reported less the width it adds.
+    // The SHARE the source spends on sync, not the count: the count the sync
+    // processor reports moves with the divider and the share does not. The
+    // bench source is high-active, so what the counter reports is that share
+    // less the capture origin's calibration -- and THAT is a count of samples,
+    // so it is divided by the divider in force to become a share at all.
+    REQUIRE(dividerInForce() == 2200);
     CHECK(sampling.hsync().syncDuty()
-          == doctest::Approx(BenchKeySyncWidth).epsilon(0.001));
+          == doctest::Approx(BenchSyncWidth
+                             - (float)SyncProcessor::InvertedPulseWidthSamples
+                                   / 2200.0f).epsilon(0.001));
+}
+
+TEST_CASE("the key carries the source's own sync share, not the counter's")
+{
+    // The key identifies the SOURCE, so its sync share has to be the share the
+    // source sends. What the counter reports is that share less a correction
+    // the capture origin wants, and the correction is a count of ADC samples --
+    // a different share of the line at every divider. The divider follows the
+    // OUTPUT, so a key built from the counter's reading moves when the output
+    // does, and the framing stored against the source stops answering for it.
+    //
+    // Measured on the Wii at 480p through the three dividers 1212, 1446 and
+    // 2046, where the source's own share is CEA-861's 62 of 858: the raw
+    // reading holds 0.0723 to four ten-thousandths across all three and the
+    // corrected one walks 0.0682 to 0.0699.
+    // ../docs/investigations/the-key-carried-the-origins-calibration.md
+    seedBenchSource();
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+    VideoSourceAcquisition acquisition(sampling, engine);
+
+    engine.setOutputMode(benchMode());
+    engine.inputTimingsChanged(4);
+    REQUIRE(pollUntilSolved(acquisition));
+
+    CHECK(engine.framedKey().syncWidth()
+          == doctest::Approx(BenchSyncWidth).epsilon(0.001));
+}
+
+TEST_CASE("a source emitting a published raster is keyed at that raster's share")
+{
+    // The corroboration the key has against something independently known. A
+    // run of agreeing readings says a measurement REPEATS and can say nothing
+    // about a term wrongly taken off every one of them, so what catches a
+    // systematic offset is the published share the source is sending.
+    //
+    // Three authorities, because the tables are searched in order and a row in
+    // one must not be answered by a row in another: 720x480p and 640x480@60
+    // share a frame and a rate and differ in the duty alone.
+    struct Published {
+        const char *named;
+        uint16_t lines, syncPixels, totalPixels;
+        float rateHz;
+        bool positive;
+    };
+    static const Published rasters[] = {
+        { "CEA 720x480p",    524,  62,  858, 59.94f, false },
+        { "DMT 640x480@60",  524,  96,  800, 59.94f, false },
+        { "DMT 800x600@60",  627, 128, 1056, 60.32f, true  },
+        { "AKF50 320x256@50", 311,  36,  512, 50.08f, true  },
+    };
+
+    for (unsigned i = 0; i < sizeof(rasters) / sizeof(rasters[0]); ++i) {
+        const Published &raster = rasters[i];
+        SUBCASE(raster.named) {
+            seedBenchSource();
+            Tv5725::SyncMeasurement::set(false);
+            Wire.sourceHsync(raster.syncPixels, raster.totalPixels,
+                             raster.positive);
+            seedField(0, 0x1B, 0, 11, raster.lines);
+            seedField(0, 0x16, 0, 1, raster.positive ? 1 : 0);
+            seedField(0, 0x16, 2, 1, raster.positive ? 1 : 0);
+            seedField(0, 0x16, 3, 1, 1);
+            g_fieldRate = raster.rateHz;
+
+            DisplayClock clock;
+            SourceMeasurement sampling(inputFormatter);
+            FramingTable framings;
+            VideoPath engine(clock, sampling, framings, inputFormatter);
+            VideoSourceAcquisition acquisition(sampling, engine);
+
+            engine.setOutputMode(benchMode());
+            engine.inputTimingsChanged(4);
+            REQUIRE(pollUntilSolved(acquisition));
+
+            const float published =
+                (float)raster.syncPixels / (float)raster.totalPixels;
+            CHECK(fabsf(engine.framedKey().syncWidth() - published)
+                  <= SyncWidthIdentity);
+        }
+    }
 }
 
 TEST_CASE("an output change re-derives the divider even where the doubling holds")
@@ -2274,7 +2356,7 @@ TEST_CASE("a framing applied whole lands as the window it describes")
 
     SUBCASE("and the source is left framed that way for next time") {
         PanAndZoom remembered;
-        REQUIRE(framings.find(SourceKey(311, 50.08f, BenchKeySyncWidth, BenchPolarity, BenchPolarity), &remembered));
+        REQUIRE(framings.find(SourceKey(311, 50.08f, BenchSyncWidth, BenchPolarity, BenchPolarity), &remembered));
         CHECK(remembered == engine.framing());
     }
 }
@@ -2295,7 +2377,7 @@ TEST_CASE("the engine says which source the framing it holds is against")
     engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(acquisition));
 
-    CHECK(engine.framedKey() == SourceKey(311, 50.08f, BenchKeySyncWidth, BenchPolarity, BenchPolarity));
+    CHECK(engine.framedKey() == SourceKey(311, 50.08f, BenchSyncWidth, BenchPolarity, BenchPolarity));
 }
 
 
@@ -3575,10 +3657,10 @@ TEST_CASE("the rate being confirmed re-derives which stored framing matches")
 
     const PanAndZoom framed(0.10f, 0.60f, 0.15f, 0.55f);
     REQUIRE(framings.remember(
-        SourceKey(311, 50.61f, BenchKeySyncWidth, BenchPolarity, BenchPolarity),
+        SourceKey(311, 50.61f, BenchSyncWidth, BenchPolarity, BenchPolarity),
         framed));
     REQUIRE(framings.remember(
-        SourceKey(311, 50.45f, BenchKeySyncWidth, BenchPolarity, BenchPolarity),
+        SourceKey(311, 50.45f, BenchSyncWidth, BenchPolarity, BenchPolarity),
         framed, Aspect(Aspect::FourThree)));
 
     g_fieldRate = 50.60f;
@@ -3609,10 +3691,10 @@ TEST_CASE("a confirmed rate drifting inside tolerance keeps the framing in force
 
     const PanAndZoom framed(0.10f, 0.60f, 0.15f, 0.55f);
     REQUIRE(framings.remember(
-        SourceKey(311, 50.61f, BenchKeySyncWidth, BenchPolarity, BenchPolarity),
+        SourceKey(311, 50.61f, BenchSyncWidth, BenchPolarity, BenchPolarity),
         framed));
     REQUIRE(framings.remember(
-        SourceKey(311, 50.45f, BenchKeySyncWidth, BenchPolarity, BenchPolarity),
+        SourceKey(311, 50.45f, BenchSyncWidth, BenchPolarity, BenchPolarity),
         framed, Aspect(Aspect::FourThree)));
 
     g_fieldRate = 50.60f;

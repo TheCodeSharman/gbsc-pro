@@ -626,11 +626,14 @@ bool SourceMeasurement::readSource()
     // The duty rather than the register, because the divider this was counted
     // against is about to move. HsyncPulse.h.
     const uint16_t divider = Adc::dividerInForce();
-    const uint16_t low = SyncProcessor::hsyncPulseSamples(divider, positive,
-                                                          separated);
+    const uint16_t source = SyncProcessor::hsyncSourceSamples(divider);
+    const uint16_t low = (uint16_t)(
+        source - SyncProcessor::originPulseCorrection(source, positive,
+                                                      separated));
     const uint16_t lineSamples = SyncProcessor::lineSamples();
     const bool latched = Adc::dividerLatched(lineSamples);
     const float duty = divider > 0 ? (float)low / (float)divider : 0.0f;
+    const float sourceDuty = divider > 0 ? (float)source / (float)divider : 0.0f;
 
     // Both sides of the ratio, because the divider the samples were counted at
     // is not necessarily the one this divides by, and no reading taken
@@ -643,7 +646,7 @@ bool SourceMeasurement::readSource()
                      : ", UNLOCKED");
     tv5725Log(line);
 
-    return takeDuty(latched, HsyncPulse(duty));
+    return takeDuty(latched, HsyncPulse(duty, sourceDuty));
 }
 
 // Whether the solve has a duty it can use, taking this reading if it is one.
