@@ -154,9 +154,12 @@ says**, so nothing has regressed in how it is applied:
 | 640x480@60 | 147 / 148 | 1248 / 1170 | **78 samples** | 82 |
 | 800x600@60 | 164 / 161 | 1293 / 1202 | **91 samples** | 95 |
 
-Each is about four samples under its prediction, which is the rounding, and
-320x256@50 still opens 42 units earlier on composite against the 45 recorded
-above.
+Each is about four samples under `HLOW - 66`, and that is not the rounding:
+`hsyncPulseSamples()` takes `SyncProcessor::InvertedPulseWidthSamples` off a
+reading the path widened, which a separated one always is, so the lead is
+computed from a pulse five samples narrower than the register holds. Scored
+against what `forDuty()` computes from that pulse, four of the five modes below
+apply it to the unit.
 
 **What has moved is the residual on the emitted frame.** Differencing the two
 sync types' black margin at the SAME edge, which is the only form of the
@@ -172,14 +175,66 @@ So the two published modes are right to a sample and the doubled one
 over-compensates by about eight counter units -- it wants a constant near **82**
 rather than 66, where this page's own six-mode fit put it at 66.3.
 
-**WHICH PROPERTY OF THAT MODE IS RESPONSIBLE IS NOT SETTLED, AND THE TWO
-CANDIDATES ARE CONFOUNDED IN A THREE-MODE COMPARISON.** It is the only doubled
-mode in the set -- and this page's conclusion that the units are ADC samples
-rather than counter units rests on that mode alone -- and it is also the only
-unpublished Acorn raster of the three. Separating them needs either a doubled
-published raster or an undoubled Acorn one: 640x512@50 is the second and is in
-the matrix already, but its composite leg does not acquire, and 320x256@70 is
-an undoubled Acorn mode the monitor definition carries.
+## The doubler is what leaves it, and the raster's authority is not
+
+Measured 2026-10-18 over five modes that acquire on both sync types, the framing
+reset and 16:9 declared, each judged at the frame it emits.
+`separator_lead.py` is the probe: it reads the window's displacement between the
+two sync types and the residual the emitted frame still shows at ONE edge.
+
+| mode | lines | counter unit | raster | duty | lead applied / computed | residual |
+|---|---|---|---|---|---|---|
+| 320x256@50 | 312 | 2 samples | Acorn | 0.070 | 42 / 42 | **+14.3** |
+| 640x200@60 | 262 | 2 samples | Acorn | 0.071 | 42 / 42 | **+7.2** |
+| 320x256@70 | 449 | 1 sample | none | 0.089 | 40 / 46 | **-5.3** |
+| 640x480@60 | 525 | 1 sample | DMT | 0.116 | 78 / 78 | **0.0, +1.1** |
+| 800x600@60 | 628 | 1 sample | DMT | 0.122 | 91 / 91 | **+1.1** |
+
+Residuals are ADC samples, positive where the composite picture sits further
+into the frame than the separate one, which is the lead over-compensating.
+640x480@60 was taken twice and the pair bounds the instrument at about a sample:
+one output column of margin is 0.53 samples there.
+
+**THE DOUBLER SPLITS THE TABLE AND NOTHING ELSE IN IT DOES.** Both modes on a
+doubled counter over-compensate; all three on an undoubled one land within a few
+samples of flush.
+
+**640x200@60 IS WHAT RETIRES THE RASTER AS A CANDIDATE.** It is a published
+Acorn mode at 0.071 duty -- the same mode file and the same sync width as
+320x256@50, differing in frame and field rate -- and it over-compensates by 7.2.
+320x256@70 matches no raster at all, carries the narrow duty, and does not. So
+neither the authority that states the raster nor the sync width separates the
+two groups.
+
+**320x256@70 IS AN UNUSUAL MODE AND IS WEIGHTED AS ONE.** It exists to put 256
+lines on a VGA monitor, so it runs them at a 31.5 kHz line rate inside a
+449-line frame -- letterboxed, 106 lines of back porch and 85 of front. That is
+vertical: across the line it is an ordinary 400 pixels with 12-pixel borders,
+which is the axis this measures, and its vertical reading is 200 columns of the
+source's own letterbox at each end. It is also the one mode whose applied lead
+misses what `forDuty()` computes, by 6 units, with its window 34 units clear of
+the floor.
+
+**640x352@60 CANNOT MEASURE THE LEAD, AND THE REASON IS THE FLOOR.** Its 364
+lines are doubled -- the doubler is selected on the line COUNT, under
+`InputFormatter::DoubleBelowLines`, so at 21.9 kHz it is doubled where
+`/geometry`'s `lowLineRate` says it is not -- which gives a 1100-unit counter
+with 22 units of head blanking past a 106-unit pulse. The composite window
+opens at 129 on a floor of 131 against a computed lead of 73 units, so what the
+two sync types differ by is the floor and not the lead. Measured twice, 48 units
+both times.
+
+**WHICH REOPENS THE UNITS.** This page's conclusion that the constant is a count
+of ADC samples rather than counter units rests on the doubled mode alone, and
+the doubled modes are the two that disagree. Nor is one constant enough for
+them: zeroing the residual wants 80 samples on 320x256@50 and 73 on 640x200@60,
+against 67 on the two DMT modes.
+
+**WHAT WOULD SETTLE IT is a doubled mode whose counter the floor leaves alone,
+at a third frame and field rate.** The two in hand differ in residual by a
+factor of two -- 20 output columns against 10 -- and two points carry no shape.
+640x512@50 is still the undoubled 50 Hz case and its composite leg still does
+not acquire.
 
 **A DIFFERENCE TAKEN BETWEEN TWO DIFFERENT EDGES IS NOT A DISPLACEMENT.** Where
 one sync type leaves a margin at the near edge and the other runs off it, the

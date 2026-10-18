@@ -1653,10 +1653,21 @@ cancels in the comparison.
 them at a residual of 1.4.
 [investigations/the-separator-lead-is-not-a-fraction-of-the-line.md](investigations/the-separator-lead-is-not-a-fraction-of-the-line.md)
 read the card's frame POSITION per sync type and differenced the two; this reads
-whether any black is left beside the border. **The two instruments differ by 8
-units on this mode and agree on separate sync**, so what is needed is the
-border criterion applied across the same six modes rather than another
-constant fitted to one.
+whether any black is left beside the border.
+
+**THE BORDER CRITERION HAS NOW BEEN APPLIED ACROSS FIVE MODES, AND THE DEFECT
+BELONGS TO THE LINE DOUBLER.** `separator_lead.py` differences the two sync
+types' black margin at one edge, in ADC samples: the two doubled modes
+over-compensate, by 14.3 on 320x256@50 and 7.2 on 640x200@60, where the two DMT
+modes land within a sample of flush and the undoubled 320x256@70 reads -5.3. The
+raster's authority does not split them -- 640x200@60 is a published Acorn mode
+at the same 0.071 duty as 320x256@50 -- and the lead is applied exactly as
+`forDuty()` computes it on four of the five. So the constant is right for an
+undoubled counter and wrong for a doubled one, and the form's own conclusion
+that its units are ADC samples rests on the doubled modes that disagree with it.
+**A third doubled mode is what would give the correction a shape**, the two in
+hand differing by a factor of two; 640x352@60's composite leg cannot supply it,
+its window opening on the capture floor rather than where the lead puts it.
 
 The dongle dropped two black frames out of nine during the composite sweep,
 which the shear below accounts for; the seven that delivered are monotonic in
