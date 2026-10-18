@@ -75,7 +75,7 @@ void FrameBuffer::init()
     // rate -- so one set for every mode, pal_1920x1080's, the highest output
     // bandwidth of the twelve and the set in the glitch-free bench state. Treat
     // a change here as a bench change: PB_FETCH_NUM is the same family and tore
-    // the picture across 80 of 493 framings.
+    // the picture across a sixth of the framings swept.
     PB_MAST_FLAG_REG::write(24);
     PB_GENERAL_FLAG_REG::write(61);
     RFF_MASTER_FLAG::write(36);

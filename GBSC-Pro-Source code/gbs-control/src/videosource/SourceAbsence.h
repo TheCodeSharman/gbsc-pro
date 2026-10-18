@@ -33,9 +33,9 @@ public:
     // The input was deliberately changed. **THE RUN'S PATIENCE IS FOR A DROPPED
     // MEASUREMENT AND THIS IS NOT ONE**, so it is spent up front: the first
     // pass that then finds nothing powers the chip down rather than the fifth.
-    // Measured on the bench, the teardown is what makes the source appear after
-    // an input change -- four passes see nothing on either instrument, the run
-    // reaches its threshold, and sync is there 0.6 s after the reset.
+    // The teardown is what makes the source appear after an input change: every
+    // pass before it sees nothing on either instrument, and sync is there
+    // within a second of the reset. ../../docs/known-issues.md
     void selectionChanged();
 
     // Detection claimed nothing while a signal IS reaching it. **THE RUN MUST

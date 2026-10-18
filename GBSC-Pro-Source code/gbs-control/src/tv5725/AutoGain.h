@@ -20,15 +20,12 @@ namespace Tv5725 {
 // scene brightened.
 class AutoGain {
 public:
-    // Where a channel stops, in the ten bits TestBus::LevelMax states. The value a channel STOPS at is per channel and
-    // sits below full scale -- 0x3fc, 0x3fd and 0x3fc measured on the RGB input
-    // against 0x3ff on the component one -- so this is a band rather than the
-    // top of the range. An equality against full scale is a condition that
-    // never holds on one of the two inputs, which is the shape of the defect
-    // this replaced.
-    //
-    // The gap below it is wide: at the knee the same three channels peak at
-    // 0x3e4, 0x3d3 and 0x3e2.
+    // Where a channel stops, in the ten bits TestBus::LevelMax states. The
+    // value a channel stops at is PER CHANNEL and sits below full scale, so
+    // this is a band rather than the top of the range -- an equality against
+    // full scale is a condition that never holds on one of the two inputs,
+    // which is the shape of the defect this replaced. The gap below it is
+    // wide.
     // docs/investigations/the-auto-gain-loop-read-a-selector-with-no-level.md
     static const uint16_t Saturated = 0x3F8;
 
@@ -65,9 +62,8 @@ public:
     // edge that overshoots.
     //
     // The floor it has to clear is a read that comes back with every bit set,
-    // a few times a pass, on whichever channel's turn it falls. Measured on
-    // the RGB input: 2 to 3 of a pass's 72 samples past the knee against 7 to
-    // 25 at every gain below it, which is a gap either side of this.
+    // a few times a pass, on whichever channel's turn it falls. The counts past
+    // the knee and below it leave a gap either side of this.
     //
     // A pass that misses costs nothing, because the next one steps; a pass
     // that fires wrongly costs a step the walk can never take back.

@@ -142,8 +142,7 @@ private:
     bool solveValid_;
 
     // What the last emitted event said. A decision the branch takes again is
-    // not news, and repeating it drowns the console: measured at 37 identical
-    // lines a second on a locked source.
+    // not news, and repeating it drowns the console.
     static char lastWhat_[BranchNameMax];
     static uint16_t lastLines_;
     static bool lastValid_;

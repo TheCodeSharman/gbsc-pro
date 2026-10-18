@@ -32,8 +32,8 @@ public:
     //
     // STATUS_SYNC_PROC_HLOW_LEN counts the LOW time, so until the polarity
     // correction has reached the counter a high-active source reports the line
-    // MINUS the pulse -- measured at 800x600 as 0.878 where the mode's duty is
-    // 0.1212. Taken as a duty that complement reaches SourceTiming's match,
+    // MINUS the pulse, which is the complement of the mode's own duty. Taken as
+    // a duty that complement reaches SourceTiming's match,
     // which no published raster answers, and the capture window's placement.
     //
     // The band is what a sync pulse is across every mode this board sees, and
@@ -53,10 +53,9 @@ public:
     // an identity: a pair allowed to straddle SyncWidthIdentity settles on a
     // duty that finds a different source's framing, or none.
     //
-    // It admits the dither a healthy counter shows -- one ADC sample, 0.00083
-    // of the line at the narrowest divider the engine runs -- and refuses the
-    // excursion measured on the Wii at 480p, 100 samples of 1212 against a
-    // true 89. docs/source-identity-and-framing-lookup.md
+    // It admits the dither a healthy counter shows -- one ADC sample -- and
+    // refuses an excursion an order of magnitude wider.
+    // docs/source-identity-and-framing-lookup.md
     bool agrees(const HsyncPulse &other) const;
 
     // CVT reduced blanking fixes hsync at 32 pixels inside 160 of blanking, so

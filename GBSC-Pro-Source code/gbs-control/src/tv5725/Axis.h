@@ -41,16 +41,13 @@ public:
     // every edge -- the margin is what PAYS for that, rather than something the
     // aperture gives back.
     //
-    // Vertically 2, both measured. A window opened on the picture loses the
-    // source's first and last lines: at 800x600@60 the top frame reaches the
-    // panel from IF_VB_SP 19 and not 20, and the bottom from IF_VB_ST 621 and
-    // not 620. The second unit is measured at 1024x768@60, where the card's
-    // green frame does not reach the panel from the engine's own window and
-    // does from one unit earlier; opening early costs a line of the source's
-    // blanking and nothing else. The doubled case is NOT measured.
-    // Horizontally 1, for the partly written unit at each end. It used to be 0
-    // and the aperture was inset instead, which showed as a black column down
-    // the left of a full-screen picture and a black row across the bottom.
+    // Vertically 2, each unit measured separately: a window opened on the
+    // picture loses the source's first and last lines, and opening early costs
+    // a line of the source's own blanking and nothing else. The doubled case is
+    // NOT measured. Horizontally 1, for the partly written unit at each end;
+    // at 0 the aperture is inset instead, which shows as a black column down
+    // the left of a full-screen picture.
+    // ../../../docs/investigations/the-capture-margin-is-clamped-away-at-full-framing.md
     uint16_t captureMargin() const;
 
     // The smallest change of capture POSITION this axis's hardware acts on.
@@ -69,8 +66,7 @@ public:
     // everything behind the horizontal value was measured on VDS_HSCALE, and
     // VDS_VSCALE is a different register in a different stage. A shared
     // constant was tried and put the horizontal finding on both, which
-    // letterboxed every source too short to reach 3.0x -- 288 active lines into
-    // a 1080 row frame is 3.75x. docs/known-issues.md
+    // letterboxed every source too short to reach 3.0x. docs/known-issues.md
     uint16_t magnificationFloor() const;
 
     // The least magnification, as VDS_?SCALE. The 10-bit field's top on both

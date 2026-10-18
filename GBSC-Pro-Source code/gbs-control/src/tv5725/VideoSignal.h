@@ -39,8 +39,8 @@ public:
 
     // Whether a count is a WHOLE MULTIPLE of another, two or more. A separator
     // missing a vertical pulse leaves the counter running into the next field,
-    // so the reading lands on twice the frame or three times it -- measured on
-    // `vga` at 800x600@60 composite, a solve of 627 reading 1246 and 1870.
+    // so the reading lands on twice the frame or three times it.
+    // ../../../docs/investigations/the-composite-sync-count-re-arms-its-own-solve.md
     //
     // One is not a multiple: whether the source moved at an unchanged frame is
     // a steadiness run's question, and answering it here refuses every count.

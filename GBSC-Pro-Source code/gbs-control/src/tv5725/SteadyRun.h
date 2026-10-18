@@ -43,10 +43,9 @@ public:
     // life of the run, which leaves motion adapt weaving a progressive picture.
     //
     // It has to clear the runs a genuinely interlaced source shows, and those
-    // are measured rather than assumed: RISC PC at 800x600@60 with INTERLACE
-    // ON, 1873 samples at the engine's own 20 ms detection interval, the
-    // longest run of either value is five. This is three times that, and
-    // Deinterlacer::FilteredPasses is a second filter behind it.
+    // are measured rather than assumed -- this is three times the longest run
+    // either value held, and Deinterlacer::FilteredPasses is a second filter
+    // behind it. test_steady_run.cpp holds the measurement.
     static const uint8_t CollapseSamples = 16;
 
     // How many times the count must reach the second value before the pair

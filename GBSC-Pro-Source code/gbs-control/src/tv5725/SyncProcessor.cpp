@@ -474,9 +474,8 @@ const float ClampStartCsyncComponent = 0.089f;
 const float ClampStartSeparateComponent = 0.032f;
 // How long the clamp holds, in ADC samples. A settling time and not a fraction
 // of the line: written as a fraction it widens with the divider and reaches
-// into active video, where the black level comes off picture. Measured on the
-// bench, RiscPC 640x480@60 at divider 1566 over a back porch of about 120
-// samples -- 16..92 leaves the picture discoloured, 16..20 clears it.
+// into active video, where the black level comes off picture and the frame is
+// discoloured. test_sync_processor.cpp holds the window measured.
 const uint16_t ClampWidthSamples = 4;
 
 // Above this the reading is not a line length the twelve-bit window can hold.
@@ -499,8 +498,7 @@ uint32_t clampLineFor(bool csync, uint32_t lineRateHz, uint16_t divider)
 
 // THE SOURCE'S LINE, FROM THE RATE THE ENGINE SOLVED, never from HPERIOD_IF.
 // The register reports the same quantity and rails; this cannot, and the two
-// agree exactly where it is healthy -- measured on the bench, 15625 Hz gives
-// 1728 against a reading of 431 whose (431+1) x 4 is also 1728.
+// agree exactly where it is healthy.
 //
 // A fraction of the whole line in 27 MHz counts.
 uint32_t SyncProcessor::coastLineFor(uint32_t lineRateHz)
