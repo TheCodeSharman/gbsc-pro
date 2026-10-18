@@ -456,6 +456,50 @@ experiment only runs on a mode whose KS is 2 or more, which 640x512@50 and
 read the ratio back and refuses what KS will not carry, because counting
 presses measured x4 where it had asked for x2.
 
+## Eight modes at one output, and what they refuse
+
+Measured 2026-10-18 with `framing_sweep.py --probes none` over the 63 modes
+`RetroScaler-Acorn.mdf` offers, separate sync, 1080p asked for, 16:9 declared,
+each mode's framing reset. The signed distance from flush is the black one edge
+carries less the black the other does, converted to ADC samples -- a shift
+leaves black at one end and clips the other, so one of the two is always zero.
+
+**THREE FILTERS HAVE TO BE APPLIED OR THE SET IS NOT ABOUT THE ORIGIN.** 27 of
+the 60 records fell back to 1024p, where the clip was rescaled; a record whose
+black saturates `PROFILE_DEPTH` bounds nothing; and a mode whose key is answered
+by ANOTHER mode's raster is reading a key collision rather than a placement --
+`Dmt 640x480@60` answers four source modes and they read -13.9, -15.5, -9.5 and
+-1.5, because the chip cannot see a pixel clock and one framing serves all four.
+What is left is the modes answered by their own raster:
+
+| mode | `PLLAD_MD` | ratio | doubled | samples/px | H | rate | off |
+|---|---|---|---|---|---|---|---|
+| 320x256@50 | 2200 | 4 | yes | 4.30 | P | 50.08 | **+2.5** |
+| 896x352@60 | 2200 | 2 | yes | 2.00 | P | 59.94 | **+16.7** |
+| 640x480@60 | 1272 | 2 | no | 1.59 | N | 59.94 | **-9.5** |
+| 640x512@50 | 1424 | 4 | no | 1.59 | P | 50.16 | **-3.7** |
+| 720x480@60 | 1212 | 4 | no | 1.41 | N | 59.94 | **-0.7** |
+| 720x576@50 | 1220 | 4 | no | 1.41 | N | 50.00 | **-4.3** |
+| 800x600@60 | 1342 | 2 | no | 1.27 | P | 60.32 | **-0.7** |
+| 800x600@56 | 1302 | 2 | no | 1.27 | P | 56.25 | **-15.1** |
+
+`published_rasters.py` scores every one at `+0.0 / +0.0`, so there is no design
+offset to subtract from any of them.
+
+**TWO PAIRS DIFFER IN ONE VARIABLE AND DISAGREE BY MORE THAN THE WHOLE
+ALLOWANCE.** 800x600@60 against 800x600@56 is one source resolution, one
+polarity, one ratio and one sampling density, and they read -0.7 and -15.1 --
+so 14.4 samples sit on the field rate, which no term in the origin carries.
+640x480@60 against 720x480@60 is one field rate, one line count and one
+polarity at 1.59 against 1.41 samples per pixel, and they read -9.5 and -0.7.
+
+**SO THE SET REFUSES THE TERMS THE ORIGIN HAS.** `SourceVideoDelayPixels`
+cannot order it: the two densest modes read +2.5 and +16.7 and the two
+sparsest -0.7 and -15.1. Neither can the polarity -- the H-negative modes run
+-9.5, -0.7, -4.3 and the H-positive ones +2.5, +16.7, -3.7, -0.7, -15.1 -- nor
+the oversampling ratio, whose own measured step is 2 to 3 samples against a
+spread of 32. **A constant moved on this set would be fitted to it**, and that
+is the failure this page exists to record.
 ## Traps
 
 - **The anchor belongs in ADC samples, not in source pixels, and it is not quite
