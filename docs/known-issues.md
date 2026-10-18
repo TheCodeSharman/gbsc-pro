@@ -1657,17 +1657,24 @@ whether any black is left beside the border.
 
 **THE BORDER CRITERION HAS NOW BEEN APPLIED ACROSS FIVE MODES, AND THE DEFECT
 BELONGS TO THE LINE DOUBLER.** `separator_lead.py` differences the two sync
-types' black margin at one edge, in ADC samples: the two doubled modes
-over-compensate, by 14.3 on 320x256@50 and 7.2 on 640x200@60, where the two DMT
-modes land within a sample of flush and the undoubled 320x256@70 reads -5.3. The
-raster's authority does not split them -- 640x200@60 is a published Acorn mode
-at the same 0.071 duty as 320x256@50 -- and the lead is applied exactly as
+types' black margin at one edge, in the source's own pixels: the two doubled
+modes over-compensate by **3.33 pixels each**, where the two DMT modes land
+within two thirds of a pixel of flush and the undoubled 320x256@70 reads -1.50.
+The raster's authority does not split them -- 640x200@60 is a published Acorn
+mode at the same 0.071 duty as 320x256@50 -- and the lead is applied exactly as
 `forDuty()` computes it on four of the five. So the constant is right for an
 undoubled counter and wrong for a doubled one, and the form's own conclusion
 that its units are ADC samples rests on the doubled modes that disagree with it.
-**A third doubled mode is what would give the correction a shape**, the two in
-hand differing by a factor of two; 640x352@60's composite leg cannot supply it,
-its window opening on the capture floor rather than where the lead puts it.
+The two doubled readings are 14.3 and 7.2 samples, a factor of two apart, which
+is why the pixel is the unit the table is read in.
+
+**A THIRD DOUBLED MODE IS WHAT WOULD GIVE THE CORRECTION A SHAPE, and the one
+candidate needs a framing first.** 640x240@60 paints 640 pixels of an 858-pixel
+line where both measured modes paint 0.625 of theirs, so it separates a constant
+share of the active pixel from one that follows the source's line -- but its
+default framing crops all four edges and carries no border to read.
+640x352@60 cannot supply it either: its composite window opens on the capture
+floor rather than where the lead puts it.
 
 The dongle dropped two black frames out of nine during the composite sweep,
 which the shear below accounts for; the seven that delivered are monotonic in

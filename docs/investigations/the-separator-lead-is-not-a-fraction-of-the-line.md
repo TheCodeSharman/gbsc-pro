@@ -182,18 +182,24 @@ reset and 16:9 declared, each judged at the frame it emits.
 `separator_lead.py` is the probe: it reads the window's displacement between the
 two sync types and the residual the emitted frame still shows at ONE edge.
 
-| mode | lines | counter unit | raster | duty | lead applied / computed | residual |
-|---|---|---|---|---|---|---|
-| 320x256@50 | 312 | 2 samples | Acorn | 0.070 | 42 / 42 | **+14.3** |
-| 640x200@60 | 262 | 2 samples | Acorn | 0.071 | 42 / 42 | **+7.2** |
-| 320x256@70 | 449 | 1 sample | none | 0.089 | 40 / 46 | **-5.3** |
-| 640x480@60 | 525 | 1 sample | DMT | 0.116 | 78 / 78 | **0.0, +1.1** |
-| 800x600@60 | 628 | 1 sample | DMT | 0.122 | 91 / 91 | **+1.1** |
+| mode | lines | counter unit | raster | duty | lead applied / computed | residual, source px | in samples |
+|---|---|---|---|---|---|---|---|
+| 320x256@50 | 312 | 2 samples | Acorn | 0.070 | 42 / 42 | **+3.33** | +14.3 |
+| 640x200@60 | 262 | 2 samples | Acorn | 0.071 | 42 / 42 | **+3.33** | +7.2 |
+| 320x256@70 | 449 | 1 sample | none | 0.089 | 40 / 46 | **-1.50** | -5.3 |
+| 640x480@60 | 525 | 1 sample | DMT | 0.116 | 78 / 78 | **-0.00, +0.67** | 0.0, +1.1 |
+| 800x600@60 | 628 | 1 sample | DMT | 0.122 | 91 / 91 | **+0.83** | +1.1 |
 
-Residuals are ADC samples, positive where the composite picture sits further
-into the frame than the separate one, which is the lead over-compensating.
-640x480@60 was taken twice and the pair bounds the instrument at about a sample:
-one output column of margin is 0.53 samples there.
+Positive is the composite picture sitting further into the frame than the
+separate one, which is the lead over-compensating. 640x480@60 was taken twice
+and the pair bounds the instrument at about two thirds of a source pixel: one
+output column of margin is 0.33 pixels there.
+
+**THE SOURCE'S OWN PIXEL IS THE UNIT THAT MAKES THE MODES COMPARABLE.** An ADC
+sample is a different length on every mode -- 4.30 samples to the pixel on
+320x256@50 against 1.59 on 640x480@60 -- so a residual in samples cannot be read
+across the table without the divider beside it. The two doubled modes differ by
+a factor of two in samples and agree to 0.00 of a pixel.
 
 **THE DOUBLER SPLITS THE TABLE AND NOTHING ELSE IN IT DOES.** Both modes on a
 doubled counter over-compensate; all three on an undoubled one land within a few
@@ -230,9 +236,26 @@ the doubled modes are the two that disagree. Nor is one constant enough for
 them: zeroing the residual wants 80 samples on 320x256@50 and 73 on 640x200@60,
 against 67 on the two DMT modes.
 
-**WHAT WOULD SETTLE IT is a doubled mode whose counter the floor leaves alone,
-at a third frame and field rate.** The two in hand differ in residual by a
-factor of two -- 20 output columns against 10 -- and two points carry no shape.
+**A CONSTANT 3.33 SOURCE PIXELS IS WHAT THE TWO DOUBLED MODES READ, AND TWO
+POINTS CANNOT DISCONFIRM IT.** They agree to better than a hundredth of a pixel
+across frames of 312 and 262 lines, field rates of 50 and 60, and magnifications
+of 2.43 and 2.02 -- and that is one parameter fitted to two readings, which a
+refuted two-term fit on eleven readings is the standing warning about.
+[moving-write-origin.md](moving-write-origin.md)
+
+What would test it is a third doubled mode whose active count is a DIFFERENT
+share of its line: both modes here paint 0.625 of theirs, so a constant share of
+the active pixel and one that follows the source's line pixels predict the same
+figure for both. **640x240@60 is that mode** -- 262 lines, the other polarity
+pair, 640 pixels of an 858-pixel line -- and it predicts 10 output columns on the
+first reading against 12 on the second.
+
+**ITS DEFAULT FRAMING CROPS ALL FOUR EDGES, so it needs a framing applied to
+both legs before it can be read.** Measured on both sync types: no green on any
+edge, the capture taking 691 of 1100 counter units where the source paints 640 of
+858 pixels. The lead itself is applied there exactly as `forDuty()` computes it,
+44 units against 44, which is the fourth mode to agree.
+
 640x512@50 is still the undoubled 50 Hz case and its composite leg still does
 not acquire.
 
