@@ -63,3 +63,18 @@ reading 0 in the normal course on some sync arrangements now decides whether
 the engine can notice that its own count has died. Either the guard must not
 read "no reading" as "no movement", or the frame has to come from somewhere the
 bit does not gate.
+
+## The bit is what separates the mode that wedges from the ones that do not
+
+Four mode changes out of 320x256@50 on `vga` composite, nothing else touched,
+each given 45 s to reach a geometry that holds for 8 s:
+
+| into | settles | `STATUS_IF_VT_OK` |
+|---|---|---|
+| 800x600@60 | 0.6 s, `cv` 628, divider 1342 | 1 |
+| 640x480@60 | 1.5 s, `cv` 525, divider 1272 | 1 |
+| 240x352@70 | 4.7 s, `cv` 449, divider 1272 | 1 |
+| 640x512@50 | never -- `state: acquired` on the DEPARTING mode's `cv` 624 and divider 2200, count 308 | **0** |
+
+The mode-change path is healthy on three of four. The one that wedges is the
+one whose formatter stops reporting, and that is the same bit the guard reads.
