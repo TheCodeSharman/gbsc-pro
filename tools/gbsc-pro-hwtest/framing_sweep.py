@@ -210,9 +210,17 @@ def column_profile(dev, frames=WALK_FRAMES, warmup=WALK_WARMUP):
     return hdmi_capture.luma(hdmi_capture.frames(frames, dev, warmup=warmup)[-1])
 
 
-def judged_clip(dev):
+# AT THE EMITTED SIZE, NOT THE DONGLE'S DEFAULT. OutputMode::transmittableFor()
+# falls back to the next mode down that can carry the rate -- 1080p tops out at
+# 66.67 Hz -- and nothing records the fallback, so a mode asked for at 1080p can
+# be emitting 1066 lines. The dongle RESCALES rather than refusing, which
+# inflates every margin by the ratio: measured, 27 of 60 modes in one sweep fell
+# back to 1024p and their black counts are 1.5x what was sent.
+def judged_clip(dev, emitted=None):
     time.sleep(DONGLE_SETTLE_S)
-    return hdmi_capture.frames(CLIP_FRAMES, dev)
+    if emitted is None:
+        return hdmi_capture.frames(CLIP_FRAMES, dev)
+    return hdmi_capture.frames(CLIP_FRAMES, dev, width=emitted[0], height=emitted[1])
 
 
 def relock(where, host, mode):
@@ -234,7 +242,9 @@ def pan_probe(host, where, dev, mode, reference, magnification, slope):
     gbs_unit.freeze(host, True)
     if not relock(where, host, mode):
         return None
-    current = hdmi_capture.luma(judged_clip(dev)[0]).mean(axis=0)
+    current = hdmi_capture.luma(
+        judged_clip(dev, fd.carried_frame(gbs_unit.read_fields(host, FIELDS)))[0]
+    ).mean(axis=0)
     maxlag = int(abs(moved_units) * magnification * slope) + 12
     regions = dict(picture=slice(300, 1620), left_strip=slice(0, 48), right_strip=slice(-48, None))
     shifts = {}
@@ -326,7 +336,7 @@ def sink_probe(ctx, mode, output, geometry):
         return dict(skipped="the pan never landed")
     regs = gbs_unit.read_fields(host, FIELDS)
     pad_toggle(host, spec_map)
-    clip = judged_clip(dev)
+    clip = judged_clip(dev, fd.carried_frame(regs))
     moved = moved_fields(regs, gbs_unit.read_fields(host, FIELDS))
     if moved:
         return dict(skipped=f"registers moved during the clip: {', '.join(moved)}")
@@ -379,7 +389,11 @@ def measure_state(ctx, mode, output):
             return refused("the re-lock never settled")
         regs = gbs_unit.read_fields(host, FIELDS)
         geometry = gbs_unit.get_json(host, "/geometry")[1]
-        clip = judged_clip(dev)
+        emitted = fd.carried_frame(regs)
+        if emitted is None:
+            return refused("the registers carry no output mode this knows")
+        record["emitted"] = emitted
+        clip = judged_clip(dev, emitted)
         regs_after = gbs_unit.read_fields(host, FIELDS)
         moved = moved_fields(regs, regs_after)
         if moved:
@@ -400,7 +414,7 @@ def measure_state(ctx, mode, output):
         if ctx["probes"] == "full":
             record["zoom"] = zoom_in(host, geometry)
             if relock(where, host, mode):
-                zoomed = judged_clip(dev)
+                zoomed = judged_clip(dev, emitted)
                 record["clips"]["zoom"] = save_png(ctx, mode, output, "zoom", zoomed[0])
                 record["walk"] = walks(host, dev, regs, (analysis["slope"]["h_pred"],
                                                          analysis["slope"]["v_pred"]))
