@@ -2379,21 +2379,38 @@ recorded as prose beside a pass is a size nothing compares against.
 
 At 1080p -- 1024p for the 70 Hz mode, which cannot be carried there -- 16:9,
 each case's framing reset, as `across near|far` and `down near|far` wholeness
-with the black margins beside them. **Measured 2026-10-18, the first run taken
-at each case's own emitted frame**, so the 70 Hz rows are no longer 1.5x:
+with the black margins beside them. **Measured 2026-10-18 with the wholeness
+read against the opposite edge**, so one edge of every pair is 1.00 by
+construction and the other is the fraction of its pixel that survives:
 
 | mode | sync | `PLLAD_MD` | `eh` | across | down |
 |---|---|---|---|---|---|
-| 240x352@70 | separate | 1272 | 1018 | 0.00\|0.73, far 10 | 0.94\|0.97, 1\|3 |
-| 320x256@50 | separate | 2200 | 688 | 0.77\|0.46, near 4 | 0.88\|0.88, 3\|1 |
-| 640x480@60 | separate | 1272 | 1018 | 0.00\|0.80, far 14 | 0.45\|0.90, 1\|4 |
-| 640x512@50 | separate | 1424 | 1018 | 0.00\|0.77, far 5 | 0.91\|0.92, 1\|1 |
-| 800x600@60 | separate | 1342 | 1017 | 0.22\|0.48, near 2 | 0.86\|0.81, 0\|1 |
-| 240x352@70 | composite | 1272 | 1018 | 0.80\|0.00, near 12 | 0.99\|0.00, near 6 |
-| 320x256@50 | composite | 2200 | 688 | 0.85\|0.00, near 26 | 0.89\|0.88, 3\|1 |
-| 640x480@60 | composite | 1272 | 1018 | 0.00\|0.85, far 12 | 0.93\|0.55, 3\|1 |
-| 640x512@50 | composite | 1424 | -- | never acquired | never acquired |
-| 800x600@60 | composite | 1342 | 1017 | 0.69\|0.00, near 4 | 0.98\|0.97, 0\|0 |
+| 240x352@70 | separate | 1272 | 1018 | 0.00\|1.00, far 8 | 1.00\|0.85, 1\|2 |
+| 320x256@50 | separate | 2200 | 688 | 1.00\|0.83, 4\|0 | 1.00\|1.00, 3\|1 |
+| 640x480@60 | separate | 1272 | 1018 | 0.00\|1.00, far 12 | 0.49\|1.00, 1\|4 |
+| 640x512@50 | separate | 1424 | 1018 | 0.00\|1.00, far 8 | 0.99\|1.00, 1\|1 |
+| 800x600@60 | separate | 1342 | 1017 | 0.32\|1.00, 2\|0 | 1.00\|0.91, 0\|1 |
+| 240x352@70 | composite | 1272 | 1018 | 1.00\|0.00, near 12 | 1.00\|0.00, near 6 |
+| 320x256@50 | composite | 2200 | 688 | 1.00\|0.00, near 26 | 1.00\|1.00, 3\|1 |
+| 640x480@60 | composite | 1272 | 1018 | 0.00\|1.00, far 11 | 1.00\|0.66, 3\|0 |
+| 640x512@50 | composite | 1746 | 1763 | no picture at all | no picture at all |
+| 800x600@60 | composite | 1342 | 1017 | 1.00\|0.00, near 4 | 1.00\|0.99, 0\|0 |
+
+**THE ACROSS AXIS FAILS ON ALL TEN ON ITS MARGIN, AND ON THE PIXEL ONLY ON
+800x600@60 SEPARATE**, which reads 0.32 at a near margin of 2 -- the window
+cutting two thirds off the border and leaving our own blanking beside the
+sliver. The vertical reaches the acceptance on seven and fails on three:
+640x480@60 separate at 0.49 and composite at 0.66, and 240x352@70 composite,
+whose far border is off the frame. **Every reading above 0.90 in a pair is
+inside the instrument's own spread**, which reaches 0.76 between two borders
+neither of which can have been cut.
+`docs/investigations/the-border-is-measured-against-the-opposite-edge.md`
+
+**640x512@50 COMPOSITE EMITS NOTHING, which is not the same as not acquiring.**
+All 40 frames of the clip carry nothing to correlate, with the divider at 1746
+against the 1424 its separate-sync leg solves and a capture of 1763 units of a
+2041-unit line. It was recorded as solving its separate leg's figures in the
+run below and has gone back; one reading does not close it either way.
 
 **`eh` IS WHAT TURNS A MARGIN INTO A DISPLACEMENT**, the magnification being the
 emitted width over the window's extent in capture units, so the column is
@@ -2468,39 +2485,24 @@ reaches. What would settle it is a divider HOLD across the ratio 2/4 boundary on
 one mode -- `counter_origin.py --hold --osr` is the instrument -- and more modes
 at distinct densities.
 
-#### The wholeness measure reads attenuation as clipping
+#### FIXED: the wholeness measure read attenuation as clipping
 
-**A BORDER THAT NOTHING CAN HAVE CLIPPED READS 0.36 TO 0.68**, so the second
+**A BORDER THAT NOTHING COULD HAVE CLIPPED READ 0.36 TO 0.68**, so the second
 half of the acceptance -- three quarters of each border pixel surviving --
-currently fails borders that are entirely present, and no framing change can be
-scored against it. At full framing the window opens before the source's active
-region, so the near border cannot be cut: 320x256@50 reads `whole` 0.36 with
-242 columns of black before it, 800x600@60 reads 0.50 with 186, and 640x512@50
-reads 0.68.
+failed borders that were entirely present and no framing change could be scored
+against it. `edge_wholeness()` divided the run's mass by the card's SOLID
+green, which a one-pixel marker through the capture cannot reach, so the figure
+fell with sampling density. **The reference is the OPPOSITE EDGE of the same
+frame now**, which is the same feature through the same pipeline at the same
+density, and the three cases read 1.00.
 
-**THE CARD'S BORDER IS ONE SOURCE PIXEL AND THE CAPTURE SAMPLES IT 1.6 TO 4.3
-TIMES**, so at low density it does not reach full amplitude at all. Measured on
-640x512@50 at 1.86 emitted columns per source pixel, with the border 254 columns
-clear of the frame: its profile is `22.5 43.8 57.1 56.7 6.0 0.8`, a peak of
-**57.1 against the card's solid green at 196** -- 0.29 of it -- and a mass of
-246 against the 364 that `amplitude x source_px` expects, which is the 0.68.
+What remains is the instrument's own spread, 0.76 between two borders neither of
+which can have been cut, and `WHOLE_ENOUGH` is 0.75 -- so a reading in the high
+seventies is inside the instrument rather than a quarter of a pixel lost.
+`docs/investigations/the-border-is-measured-against-the-opposite-edge.md`
 
-`edge_wholeness()` divides the run's mass by the clip's green amplitude, and
-that amplitude is taken from the card's SOLID green, which a one-pixel marker
-through the capture cannot reach. So the figure falls with sampling density, and
-the modes it fails are the ones sampling their own pixels fewest times.
+#### The 70 Hz mode's output fallback is not recorded
 
-**IT IS NOT THE PICTURE FILTERS.** Peaking and the six-tap filter toggled off at
-one framing on 800x600@60 leave the same border at 0.41 to 0.53 against 0.50 as
-found, with the window, the divider and the scale unmoved.
-
-**WHAT CANNOT BE USED IS "BLACK BEYOND IT, THEREFORE WHOLE".** A window stopping
-INSIDE the border leaves our own blanking past the sliver it kept, which is
-indistinguishable from captured source blanking at the far end --
-`test_a_border_clipped_to_a_sliver_inside_the_frames_edge_reports_the_sliver`
-pins exactly that case, from a bottom row carrying 94 of the 882 a whole border
-carries. Separating the two needs the picture lifted off our blanking with
-`VDS_Y_OFST`.
 `OutputMode::transmittableFor()` falls back to the next mode down that can carry
 the rate, which is 1024p at 125.96 MHz, and **nothing records the fallback**:
 `setting(host, "output")` still reads 1920x1080 while the frame is 1066 lines.
@@ -2553,10 +2555,6 @@ is for: 640x480@60 and 800x600@60 each land on one divider across both sync
 types, where they used to land on 1272 or 1444 and 1342 or 1436 depending on
 whether the source arrived as a mode change or a re-detection.
 `docs/investigations/the-divider-is-an-actuator-in-its-own-sensor.md`
-
-**THE ACROSS AXIS FAILS ON ALL TEN; THE VERTICAL REACHES THE THREE-QUARTER
-ACCEPTANCE ON SIX AND FAILS ON FOUR** -- 640x480@60 on both sync types,
-240x352@70 composite and 640x512@50 composite.
 
 **THE HORIZONTAL SIGNATURE IS A PAN, AND WHICH EDGE IT LOSES FOLLOWS THE SYNC
 TYPE.** Separate sync loses the NEAR edge and leaves black at the far one on
