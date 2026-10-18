@@ -1032,6 +1032,17 @@ twelve tables while they existed, which is what `BringUp` was built from.
 
 ## Register facts that are not obvious
 
+- **THE ENGINE WORKS IN THE SOURCE'S FRAME, NOT IN WHAT `STATUS_SYNC_PROC_VTOTAL`
+  READS.** That register counts from zero, so the bench RISC PC reads 311 and
+  the Wii at 480p reads 524 where the frames are 312 and 525.
+  `SyncProcessor::frameLines()` undoes it at the boundary and nothing
+  downstream corrects again -- so the console says `measured: 312 lines`, a
+  source key is `312@50.08/695??`, and `/framing.txt` stores the figure a mode
+  file states. **A `+ 1` added to a count anywhere else is a second copy of a
+  correction already made**, and there were eight of those before it moved.
+  `docs/video-source-acquisition.md` has which other registers are zero based
+  and where each is undone; `SamplingLog` and the sketch's diagnostics
+  deliberately still print the register.
 - **`STATUS_SYNC_PROC_HTOTAL` echoes `PLLAD_MD`.** The sync processor counts in
   ADC clocks and the ADC PLL is locked to HSync with `PLLAD_MD` as divider, so it
   reports your own setting back. Never key anything on it — **except as the one
