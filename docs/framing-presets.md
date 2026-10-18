@@ -90,15 +90,49 @@ units → proportion → text → proportion → units is identity.
 The invariant is a property of any record by construction, so a stored framing
 cannot describe an invalid window whatever source it is restored into.
 
-**The table holds sixteen, and full means refused.** Dropping the oldest entry
-loses work the user did with nothing said; a refusal is visible and an entry can
-be cleared. Re-tuning a source already in the table replaces its entry, so a
-full table still takes a re-tune.
+**The table holds a hundred and twenty-eight, and the count is sized against
+what a monitor definition asks for rather than against what fits.** Counted from
+the definitions with the engine's own tolerances:
+
+| monitor definition | modes | keys on separate sync | on composite | both |
+|---|---|---|---|---|
+| AKF50 (stock) | 28 | 16 | 16 | **32** |
+| RetroScaler-Acorn | 80 | 63 | 61 | **124** |
+
+So a table of sixteen filled on the first sync type and refused everything after
+it: the stock set alone exactly fills it and overflows on the first mode of the
+second sync type.
+
+**What makes the count affordable is the stored form.** `FramingEntry` holds the
+record as what a save and a load keeps rather than as what the engine works in:
+the key's rate quantised to `RateStepsPerHz`, the sync width and the four
+framing terms in ten-thousandths, the two polarities and the two tuned axes
+packed into one byte, and the shape. An entry is **18 bytes** where the live
+`SourceKey` and `PanAndZoom` are 46, so the table's whole cost went from 740
+bytes at sixteen entries to 2308 at a hundred and twenty-eight — measured on the
+target as globals of 51360 against 52980, +1620 bytes for eight times the
+capacity, against a live free heap of 13 to 17 KB.
+
+The file's record is the same record: `FramingLine` is `FramingEntry` as text,
+and owns no unit of its own.
+
+**Full means refused, and the refusal says so.** Dropping the oldest entry loses
+work the user did with nothing said; a refusal is visible and an entry can be
+cleared. Re-tuning a source already in the table replaces its entry, so a full
+table still takes a re-tune. `VideoPath::rememberFraming()` prints
+`framing: not stored, <n> sources held` when the table would not take one —
+without it the live framing and shape still move, so the symptom is a
+declaration that works until the source is re-acquired.
+
+**Reading the file costs no stack.** `FramingFile::read()` asks whether the
+whole file arrived in a pass of its own, before a line is parsed, and then
+parses into the live table. Parsing into a scratch table and adopting it
+afterwards answers the same question and costs the table's whole size on a 4 KB
+stack — a cost that grows with every source the table can hold.
 
 **Only a framing the user touched takes a place.** Every solve seeds the framing
 from the placement it computed, so a table that stored whatever the framing held
-would fill its sixteen places with computed defaults and refuse the first real
-tuning.
+would fill with computed defaults and refuse the first real tuning.
 
 ## Slots
 
