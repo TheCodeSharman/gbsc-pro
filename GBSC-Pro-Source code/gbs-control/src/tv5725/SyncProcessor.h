@@ -206,11 +206,10 @@ public:
     // line counter taking its origin this far BEFORE the source's sync edge,
     // and every window the engine places is counted from that origin.
     //
-    // Measured, not derived: 61.0, 62.6, 63.6 and 63.5 across four states, all
-    // of them at oversampling ratio two, and all sampling about
-    // CalibratedPixelSamples ADC samples for every pixel the source sent -- so
-    // this count carries SourceVideoDelayPixels at that density and the term
-    // below is the difference.
+    // Measured, not derived, across four states at oversampling ratio two, all
+    // sampling about CalibratedPixelSamples ADC samples for every pixel the
+    // source sent -- so this count carries SourceVideoDelayPixels at that
+    // density and the term below is the difference.
     // ../../../docs/investigations/the-retime-stop-is-the-counters-origin.md
     static const uint16_t RetimeOriginSamples = 63;
 
@@ -412,29 +411,16 @@ public:
     // THE TWO ARE NOT ONE QUANTITY AND THEY ANSWER TO DIFFERENT SOURCES.
     //
     // The PRE coast holds the COUNT, and only a serrated source needs it: at 0
-    // the Wii's count dithers across 8 to 14 values in a 14 s window at every
-    // post coast and the engine drops to absent, and 0 with a post of 6
-    // displaces the RISC PC's composite picture in 16.2% of 6407 frames against
-    // 0.4..0.8% at 7.
+    // a serrated source's count dithers at every post coast and the engine
+    // drops to absent, while an unserrated one is displaced vertically.
     //
-    // THE POST COAST IS WHAT THE PICTURE ANSWERS TO, AND 4 IS THE ONLY VALUE
-    // THE TWO SOURCES HERE SHARE. Composite `vga` at 320x256@50 into 1080p,
-    // 100 s legs alternating with controls, as the share of emitted frames
-    // displaced vertically: 0 of 6406 at 4, and 0.7% at 5 beside controls of
-    // 0.3..0.5% at 6 -- so the boundary is between 4 and 5 and the residual is
-    // the hold itself, not its length. 1, 2 and 3 are clean too.
-    //
-    // The other end is the Wii's sync on green, which needs the hold: at 0 its
-    // count collapses to 356, the engine drops to absent and the sync pad stays
-    // away, so the output is black. And a post of 3 at IF_VB_ST 512 stops the
-    // input formatter's vertical reaching DEBUG_IN_PIN, which no count can see.
-    //
-    // **THE POST COAST IS PER SOURCE, BECAUSE ONE VALUE SITS ON THE EDGE OF
-    // BOTH MEASURED BANDS.** A source that needs the hold needs at least 4 --
-    // the Wii's sync on green drops to absent at 0 and is indistinguishable at
-    // 4 and 6 -- and one that does not is displaced by 5, the RISC PC's
-    // composite reading 0 of 6406 frames at 4 and 0.7% at 5. So 4 is the
-    // boundary of each band at once, and these two sit inside their own.
+    // **THE POST COAST IS WHAT THE PICTURE ANSWERS TO, AND IT IS PER SOURCE,
+    // BECAUSE ONE VALUE SITS ON THE EDGE OF BOTH MEASURED BANDS.** A source
+    // that needs the hold needs at least 4 and is indistinguishable at 4 and 6;
+    // one that does not is displaced from 5 upwards. So 4 is the boundary of
+    // each band at once, and the residual is the hold itself rather than its
+    // length. A post of 3 at IF_VB_ST 512 also stops the input formatter's
+    // vertical reaching DEBUG_IN_PIN, which no count can see.
     // tools/gbsc-pro-hwtest/sweep_coast.py scores a pair on the count and the
     // blanking together, which the count alone cannot.
     // docs/investigations/two-owners-of-the-coast-lengths-double-the-count.md
@@ -592,11 +578,10 @@ public:
     //
     // The register is the low time, so on a high-active source it is the line
     // minus the pulse. normaliseHsyncPolarity() is meant to remove that, and on
-    // this board it does not reliably reach the counter: measured with
-    // SP_HS_INV_REG 1 and HSPOL 1, the count held the complement for 30 s --
-    // 1411 of 1606 where the pulse is 196. A pulse cannot be more than half the
-    // line and still leave a raster, so the shorter interval IS the pulse, and
-    // it needs no write to have taken effect.
+    // this board it does not reliably reach the counter, which leaves the count
+    // holding the complement. A pulse cannot be more than half the line and
+    // still leave a raster, so the shorter interval IS the pulse, and it needs
+    // no write to have taken effect.
     // docs/investigations/the-duty-is-the-shorter-interval.md
     //
     // ONE READING DOES NOT WANT THE WIDTH BELOW TAKEN OFF IT: a low-active
@@ -613,20 +598,18 @@ public:
     // so uncorrected it places a high-active source five samples from where it
     // places a low-active one.
     //
-    // Seven modes in one session at oversampling ratio two, the derived pulse
-    // against the mode file: H-negative -4.4, -4.8, -2.7, -3.3 against
-    // H-positive +1.8, +1.7, +1.7 -- a split of 5.53 where the origins measured
-    // beside them step by 5.27. RetimeOriginSamples was calibrated on
-    // H-negative states, so the direct reading is the one it suits.
+    // Measured over seven modes as the derived pulse against the mode file: the
+    // two polarities split by about the step the origins beside them show.
+    // RetimeOriginSamples was calibrated on H-negative states, so the direct
+    // reading is the one it suits.
     // ../../../docs/investigations/the-capture-origin-varies-by-mode-at-one-line-rate.md
     //
     // **IT IS NOT THE INVERSION BEING IN CIRCUIT**, which those seven modes
     // could not separate from the source's polarity because on a direct path
     // the two are one condition. The separated path is where they come apart --
     // a NOR composite sync presents a high-active source low-active, so the
-    // inversion is OUT -- and the window still wants the term: measured on
-    // 800x600@60 into 1080p, separate sync frames the card flush and composite
-    // leaves 5 output columns at the near edge with the far one off the frame.
+    // inversion is OUT -- and the window still wants the term, the two sync
+    // types framing one mode differently without it.
     // ../../../docs/known-issues.md
     static const uint16_t InvertedPulseWidthSamples = 5;
 
@@ -723,9 +706,8 @@ public:
     //
     // THE RATE AND THE DIVIDER RATHER THAN A LINE: which of them the fractions
     // are of is this block's to know, and a caller allowed to choose chose the
-    // other one. Measured on the Wii at 480p into 1920x1080, divider 1212: a
-    // start of 108 against 19, 41 source pixels inside the picture, a black bar
-    // on every line and the whole frame clamped 35% dark.
+    // other one -- which starts the window inside the picture, giving a black
+    // bar on every line and a frame clamped dark.
     // ../../../../docs/investigations/the-clamp-had-two-owners-and-two-units.md
     //
     // A window already within a unit of where it belongs is left alone: this
