@@ -142,6 +142,51 @@ On 800x600@56 the head walk's slope matched the tail walk's to 0.1%, the green
 line held still to 0.0 px, and the extrapolated anchor differed from the read
 one by **0.1 capture units**. The readings stand.
 
+## The form is applied as stated, and the doubled mode has left it
+
+Re-measured 2026-10-18 against the framing matrix at 1080p, the framing reset
+and 16:9 declared. **The lead reaches the capture window exactly as the form
+says**, so nothing has regressed in how it is applied:
+
+| mode | `HLOW` sep / csync | `IF_HB_ST2` sep / csync | applied | `HLOW` - 66 |
+|---|---|---|---|---|
+| 320x256@50, doubled | 156 / 153 | 926 / 884 | 42 units = **84 samples** | 87 |
+| 640x480@60 | 147 / 148 | 1248 / 1170 | **78 samples** | 82 |
+| 800x600@60 | 164 / 161 | 1293 / 1202 | **91 samples** | 95 |
+
+Each is about four samples under its prediction, which is the rounding, and
+320x256@50 still opens 42 units earlier on composite against the 45 recorded
+above.
+
+**What has moved is the residual on the emitted frame.** Differencing the two
+sync types' black margin at the SAME edge, which is the only form of the
+comparison that measures one feature:
+
+| mode | residual after the lead | this page's fit |
+|---|---|---|
+| 640x480@60 | **+1.06 samples** | 65.8 |
+| 800x600@60 | **+1.06 samples** | 65.0 |
+| 320x256@50, doubled | **+15.7 samples** | 66.3 |
+
+So the two published modes are right to a sample and the doubled one
+over-compensates by about eight counter units -- it wants a constant near **82**
+rather than 66, where this page's own six-mode fit put it at 66.3.
+
+**WHICH PROPERTY OF THAT MODE IS RESPONSIBLE IS NOT SETTLED, AND THE TWO
+CANDIDATES ARE CONFOUNDED IN A THREE-MODE COMPARISON.** It is the only doubled
+mode in the set -- and this page's conclusion that the units are ADC samples
+rather than counter units rests on that mode alone -- and it is also the only
+unpublished Acorn raster of the three. Separating them needs either a doubled
+published raster or an undoubled Acorn one: 640x512@50 is the second and is in
+the matrix already, but its composite leg does not acquire, and 320x256@70 is
+an undoubled Acorn mode the monitor definition carries.
+
+**A DIFFERENCE TAKEN BETWEEN TWO DIFFERENT EDGES IS NOT A DISPLACEMENT.** Where
+one sync type leaves a margin at the near edge and the other runs off it, the
+two readings measure different features and differencing them gives a number
+with no meaning. 240x352@70 is in that state and carries no residual here for
+that reason.
+
 ## What is not settled
 
 **Why 66.** It is a count of ADC samples rather than a time, which suits a

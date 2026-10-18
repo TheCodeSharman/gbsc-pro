@@ -2359,22 +2359,43 @@ granted an xfail, which is what let the composite vertical fall from whole at
 both ends to a tenth of its top border without a case turning red: a size
 recorded as prose beside a pass is a size nothing compares against.
 
-Two runs at 1080p, 16:9, each case's framing reset, as `across near|far` and
-`down near|far` wholeness with the black margins beside them. The second run is
-tabulated and the spread between the two is recorded below it:
+At 1080p -- 1024p for the 70 Hz mode, which cannot be carried there -- 16:9,
+each case's framing reset, as `across near|far` and `down near|far` wholeness
+with the black margins beside them. **Measured 2026-10-18, the first run taken
+at each case's own emitted frame**, so the 70 Hz rows are no longer 1.5x:
 
-| mode | sync | `PLLAD_MD` | across | down |
-|---|---|---|---|---|
-| 240x352@70 | separate | 1272 | 0.00\|0.73, far 12 | 0.92\|0.97, 2\|2 |
-| 320x256@50 | separate | 2200 | 0.70\|0.58, near 4 | 0.91\|0.91, 3\|1 |
-| 640x480@60 | separate | 1272 | 0.00\|0.83, far 12 | 0.45\|0.91, 1\|4 |
-| 640x512@50 | separate | 1424 | 0.00\|0.79, far 5 | 0.91\|0.92, 1\|1 |
-| 800x600@60 | separate | 1342 | 0.22\|0.48, near 2 | 0.87\|0.82, 0\|1 |
-| 240x352@70 | composite | 1272 | 0.87\|0.00, near 14 | 0.95\|0.00, near 8 |
-| 320x256@50 | composite | 2200 | 0.86\|0.00, near 26 | 0.92\|0.92, 3\|1 |
-| 640x480@60 | composite | 1272 | 0.00\|0.82, far 11 | 0.93\|0.55, 3\|1 |
-| 640x512@50 | composite | 1424 | overruns both ends | overruns both ends |
-| 800x600@60 | composite | 1342 | 0.59\|0.00, near 5 | 0.97\|0.95, 0\|0 |
+| mode | sync | `PLLAD_MD` | `eh` | across | down |
+|---|---|---|---|---|---|
+| 240x352@70 | separate | 1272 | 1018 | 0.00\|0.73, far 10 | 0.94\|0.97, 1\|3 |
+| 320x256@50 | separate | 2200 | 688 | 0.77\|0.46, near 4 | 0.88\|0.88, 3\|1 |
+| 640x480@60 | separate | 1272 | 1018 | 0.00\|0.80, far 14 | 0.45\|0.90, 1\|4 |
+| 640x512@50 | separate | 1424 | 1018 | 0.00\|0.77, far 5 | 0.91\|0.92, 1\|1 |
+| 800x600@60 | separate | 1342 | 1017 | 0.22\|0.48, near 2 | 0.86\|0.81, 0\|1 |
+| 240x352@70 | composite | 1272 | 1018 | 0.80\|0.00, near 12 | 0.99\|0.00, near 6 |
+| 320x256@50 | composite | 2200 | 688 | 0.85\|0.00, near 26 | 0.89\|0.88, 3\|1 |
+| 640x480@60 | composite | 1272 | 1018 | 0.00\|0.85, far 12 | 0.93\|0.55, 3\|1 |
+| 640x512@50 | composite | 1424 | -- | never acquired | never acquired |
+| 800x600@60 | composite | 1342 | 1017 | 0.69\|0.00, near 4 | 0.98\|0.97, 0\|0 |
+
+**`eh` IS WHAT TURNS A MARGIN INTO A DISPLACEMENT**, the magnification being the
+emitted width over the window's extent in capture units, so the column is
+recorded with the reading.
+
+**AND A DIFFERENCE TAKEN BETWEEN TWO DIFFERENT EDGES IS NOT ONE.** Where one
+sync type leaves a margin at the near edge and the other runs off it, the two
+readings measure different features. Differenced at the SAME edge, the composite
+leg's residual after the separator lead is +1.06 samples on 640x480@60 and on
+800x600@60 and **+15.7 samples on 320x256@50**, which is the doubled mode and
+the one the lead's own six-mode fit put at 66.3.
+`docs/investigations/the-separator-lead-is-not-a-fraction-of-the-line.md`
+
+**THE POLARITY DOES NOT SPLIT THE CASES**, which is worth stating because it
+looks as though it should: the monitor definition gives four of the five modes
+as H+ and only 640x480@60 as H-, and the four H+ modes do not behave alike.
+What 640x480@60 and 800x600@60 give is a controlled PAIR -- DMT, 60 Hz, duty
+0.1200 against 0.1212 -- differing in little but polarity and landing on
+opposite signatures, which is as close as this bench comes to isolating
+`SyncProcessor::originPulseCorrection()`.
 
 **THE 70 Hz MODE IS JUDGED AT 1024p, NOT 1080p, AND IT CANNOT BE OTHERWISE.**
 The MS9288A's ceiling is 165 MHz and a mode costs `total_px x frame_lines` per
