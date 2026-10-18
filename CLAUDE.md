@@ -2127,12 +2127,40 @@ firmware C++.
   | a path that rots | `test/test_hold_ramp.cpp`, `snapshots/CLEAN-*.json` |
   | a count that rots | *"all 107 decode sites"* |
 
-  **What survives is what the reader cannot derive**: a measurement, a datasheet
-  contradiction, an ordering constraint, a trap with a live consequence, and a
-  "do not reinstate this" guard. A failure mode stated in the present tense is
-  not narrative — *"writing the divider after the latch leaves the PLL on the old
+  **What survives is what the reader cannot derive**: a datasheet contradiction,
+  an ordering constraint, a trap with a live consequence, and a "do not
+  reinstate this" guard. A failure mode stated in the present tense is not
+  narrative — *"writing the divider after the latch leaves the PLL on the old
   value"* is a live warning; *"we wrote it after the latch once and it took an
   evening"* is a diary.
+- **A MEASUREMENT BELONGS WITH THE TEST THAT PINS THE BEHAVIOUR, NOT IN THE
+  PRODUCTION COMMENT.** Nothing ever forces a production comment to be re-read,
+  so it diverges in silence — which is the whole complaint above, and the rule
+  that merely asks for shorter comments does not prevent it. A test comment has
+  a forcing function: the behaviour it describes stops holding and the test
+  fails, so the comment is read exactly when it is wrong, and is then revised or
+  deleted with the test. **The suite is what keeps the evidence honest.**
+
+  The codebase already proves it. `scale_step` takes no `scale` argument and a
+  test asserts the parameter does not exist, because its existence was the bug —
+  a rationale that cannot rot, because deleting it means deleting the guard.
+
+  | the context is | it belongs |
+  |---|---|
+  | the contract — what it does, its units, its absent case | the declaration |
+  | why the behaviour is required, and the measurement that decided it | **the test that pins it** |
+  | what was tried, what was refuted, the figures in full | a `docs/` page, cited by name |
+
+  So a constant carries one line of what it is and a pointer; the run counts,
+  the shares of samples and the per-mode tables go to the test, and anything
+  spanning several behaviours goes to `docs/`.
+
+  **WHERE NO TEST CAN PIN IT, THE EVIDENCE STAYS IN THE COMMENT** — a register
+  width, a datasheet contradiction, a hardware-only trap, an ordering constraint
+  the host suite cannot observe. Keep it to the line that IS the constraint, and
+  say in the commit why there is no test, exactly as an untestable fix does.
+  Moving such a fact to a test that does not exercise it is worse than leaving
+  it: it reads as covered and is not.
 - **A `docs/` page is current state; `docs/investigations/` carries the models
   that were refuted.** Even there, write for someone who was not present: what
   the code does now, why not the obvious alternative, and what going back would

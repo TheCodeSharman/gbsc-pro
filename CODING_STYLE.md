@@ -406,10 +406,20 @@ stays true however many there are.
 |---|---|
 | one class's own — what it is for, what constrains it | the top of its header, above the class. Length is fine here: a reader goes there deliberately rather than scanning past |
 | how a method works, where the code cannot say it itself | in the `.cpp`, beside it |
+| why a behaviour is required, and the measurement that decided it | **the test that pins it** |
 | two or more classes collaborating | a `docs/` page, with a pointer from the header |
 
 A collaboration written into each participant's header is n copies that diverge,
 every one authoritative to whoever finds it first, and no test checks any of them.
+
+**The measurement goes to the test because the test is what keeps it honest.**
+Nothing forces a production comment to be re-read, so it rots unobserved. A test
+comment is read at the moment the behaviour it describes stops holding, because
+that is when the test fails — and it is then revised or deleted along with the
+test. It is also where a reader needs it: a failing test is the moment someone
+asks why this was ever required. Where no test can pin the fact — a register
+width, a hardware-only trap, an ordering constraint the host suite cannot see —
+the evidence stays in the comment, cut to the line that IS the constraint.
 
 **A header states the contract, not the mechanism.** What a caller gets, and
 nothing of how. Check the signature first: `ceilingHz` already implies the
@@ -428,8 +438,10 @@ context and did not ask for it.
 Four tests, in the order they catch things:
 
 - **A blank `//` line means it is too long.** `grep -n '^\s*//$'`
-- **A measurement is evidence, and evidence lives in `docs/`.** A number that IS
-  the constraint stays: *PLLAD_MD is twelve bits*.
+- **A measurement is evidence, and evidence lives with its test.** A number that
+  IS the constraint stays: *PLLAD_MD is twelve bits*. A number that is the
+  evidence FOR the constraint goes to the test that pins it, or to `docs/` where
+  it spans several behaviours.
 - **If the sentence restates the name, delete it.** `reset()`, `pan()` and
   `zoom()` need nothing.
 - **A header comment saying how belongs in the `.cpp`, or nowhere.**
