@@ -302,11 +302,6 @@ bool VideoSourceAcquisition::installSamplingForMeasurement()
 // on a source standing still moves the next reading, which reads as a source
 // that moved, which takes another install.
 //
-// Measured on the bench at 720p: the engine solved some ten times a second and
-// reported the rate as 60.01, 60.34 and 60.99 Hz against an identity tolerance
-// of 3 per thousand, while the same rate timed with automation FROZEN read
-// 60.019 Hz in 120 of 120 samples at sd 0.000.
-//
 // **AND A CLOCK THE PLL IS NOT RUNNING IS NOT IN FORCE.** The register answers
 // for what was written and the sync processor's line total for what the ADC is
 // clocking, so on the register alone a reference clock installed by the
@@ -340,8 +335,7 @@ void VideoSourceAcquisition::installPassThroughClock()
 //
 // Unguarded, because it writes no part of the ADC PLL group -- so nothing is
 // re-latched by applying it, and a raster that must follow a changed count
-// cannot be suppressed by a divider that happens not to have moved. 524 lines
-// to 627 at 60 Hz is one count to another at one divider.
+// cannot be suppressed by a divider that happens not to have moved.
 void VideoSourceAcquisition::resizePassThrough()
 {
     Tv5725::HdBypass::applyChannelRaster(videoPath_.sourceTiming(),
@@ -596,25 +590,21 @@ bool VideoSourceAcquisition::sourceMoved()
     // advance the steadiness run, move the presence verdict or arm anything.
     // The sync processor has lost or gained a vertical pulse, and on a
     // composite source it does that in runs longer than any steadiness run
-    // reaches -- 15 correct solves in 42 s were each discarded by the next
-    // such reading.
+    // reaches.
     // ../../../docs/investigations/the-composite-sync-count-re-arms-its-own-solve.md
     // BUT NOT FOR EVER. A source that changed mode under a divider the
     // processor cannot count it through contradicts the formatter on every
-    // pass -- 160 through 1342 against a frame of 623 half-lines, measured --
-    // and dropping every one of them left the previous solve standing,
+    // pass, and dropping every one of them left the previous solve standing,
     // acquired and silent, with no arm reachable. A run far longer than any
     // lost pulse produces is the processor not counting this source, which is
     // what a re-measure is for. It re-arms every run rather than once.
     //
     // AND ONLY WHERE THE RE-MEASURE HAS SOMEWHERE TO GO. A count equal to the
     // one already solved is what the re-measure would return, so arming on it
-    // repeats for ever -- measured on `ypbpr` with the Wii in PAL 576i, where
-    // the formatter counts a frame the processor counts a field of and no
-    // factor reconciles them: a solve every 2.5 s with the sync pad away for
-    // half of each cycle, the emitted frame black and auto gain never
-    // completing. There the raw count stands, which is what refusing the
-    // reading was always meant to leave.
+    // repeats for ever -- an interlaced source whose formatter counts a frame
+    // the processor counts a field of reconciles by no factor, and cycles.
+    // There the raw count stands, which is what refusing the reading was
+    // always meant to leave. ../../../docs/known-issues.md
     if (sampling_.countContradicted(lines)) {
         if (lines == solvedLines_) {
             contradictedPasses_ = 0;
@@ -675,11 +665,11 @@ bool VideoSourceAcquisition::sourceMoved()
             videoPath_.showOutput(false);
     }
 
-    // A count no source runs is the wrong sync path's signature -- 97..137 on a
-    // 311-line source, measured -- and a mode change is the only thing that
-    // re-establishes the sync type, so the state that most needs a re-probe was
-    // the one state that could never arm one. It arms ONCE: the count stays
-    // wrong until the probe has moved the path.
+    // A count no source runs is the wrong sync path's signature, and a mode
+    // change is the only thing that re-establishes the sync type -- so the
+    // state that most needs a re-probe was the one state that could never arm
+    // one. It arms ONCE: the count stays wrong until the probe has moved the
+    // path. ../../../docs/video-source-acquisition.md
     if (!plausible) {
         if (!held || unusableCountArmed_)
             return false;
@@ -698,7 +688,7 @@ bool VideoSourceAcquisition::sourceMoved()
     // the unusable-count arm above needs the count out of range, and everything
     // below needs it held. A divider left behind by a mode change makes the
     // sync processor retime against a window sized for the wrong line, so the
-    // count wanders 191..292 -- plausible every sample, steady on none -- and
+    // count wanders -- plausible every sample, steady on none -- and
     // nothing rewrites the divider that causes it, because prepareToMeasure()
     // is only reached once this arms.
     //
@@ -753,16 +743,13 @@ bool VideoSourceAcquisition::sourceMoved()
     }
 
     // A composite-sync source held as separate-sync runs uncoasted: the count
-    // loses the lines the vertical pulse occupies -- 308 against 311 -- dithers,
-    // and the picture bounces. Every one of those counts is PLAUSIBLE, so
+    // loses the lines the vertical pulse occupies, dithers, and the picture
+    // bounces. Every one of those counts is PLAUSIBLE, so
     // neither arm above fires, and nothing else arms a re-probe because the
     // count does not move when a source changes its sync type.
     //
     // The separate-sync answer is what puts the separator out, so the V-active
-    // bit read here reports the SOURCE. Measured at two modes with the
-    // configuration held still and only the source moving: 1 on separate sync,
-    // 0 on composite, every sample, and 668 of 668 over three minutes on a live
-    // separate-sync source.
+    // bit read here reports the SOURCE rather than the path.
     // docs/investigations/a-sync-type-change-arms-no-probe.md
     if (sourceStoppedDrivingVsync())
         return armMove("no source V sync", lines, false);
@@ -771,8 +758,8 @@ bool VideoSourceAcquisition::sourceMoved()
     // lines at a different field rate, which is what 320x256 at 50, 55 and 60
     // all are. It waits behind a steadiness run rather than firing on arrival,
     // because a source measured mid-transition yields a rate that passes every
-    // check and is tens of percent out -- measured at 18806 Hz against a real
-    // 31440, held, with every register self-consistent.
+    // check and is tens of per cent out, held, with every register
+    // self-consistent.
     //
     // The latched disturbance is an event INSIDE that question rather than an
     // arm of its own, because the engine's own writes raise it too.
@@ -783,8 +770,7 @@ bool VideoSourceAcquisition::sourceMoved()
     // A COUNT THAT IS A WHOLE MULTIPLE OF THE SOLVED ONE AT AN UNCHANGED LINE
     // PERIOD IS A LOST VERTICAL PULSE, NOT A SOURCE THAT MOVED. Doubling the
     // count at an unchanged field rate doubles the line RATE, so a source that
-    // really moved there moves the period with it -- 480i to 480p, and the
-    // bench's 320x256@50 to 800x600@60, both do.
+    // really moved there moves the period with it.
     //
     // The corroboration above cannot refuse these: both halves derive from the
     // same separated vertical, so a pulse the separator loses is lost by both
@@ -843,8 +829,8 @@ bool VideoSourceAcquisition::rateMoved()
     // source stands still.
     //
     // AND THE LATCHED DISTURBANCE IS THE THIRD, which is the only thing that
-    // sees a rate change the line period missed -- measured at 449 lines in
-    // both 59.96 Hz and 70.08 Hz with the register still. It opens the
+    // sees a rate change the line period missed, one count running at two
+    // field rates with the register still. It opens the
     // expensive half rather than arming anything, because the engine's own
     // divider, clamp and coast placements switch the separator too and the chip
     // latches that about a second after they land. Read as an arm, a solve
@@ -925,12 +911,10 @@ bool VideoSourceAcquisition::rateMoved()
 
     // **A DISAGREEMENT IS ASKED AGAIN BEFORE ANYTHING IS ARMED**, whichever
     // reading found it, because an arm blanks the output for the encoder relook.
-    // One timing carries a whole source line of edge latency -- 3.2 per thousand
-    // at 311 lines, against the 2 this compares at -- and spanning DIVIDES that
-    // rather than removing it, so a spanned reading is occasionally out too.
-    // Measured on the bench: a single timing read 50.73 Hz on a source running
-    // 50.47, and one boot of ten armed on a spanned one, both giving back an
-    // identical picture.
+    // One timing carries a whole source line of edge latency, which is wider
+    // than the tolerance this compares at, and spanning DIVIDES that rather
+    // than removing it -- so a spanned reading is occasionally out too.
+    // ../../../docs/investigations/one-source-takes-many-keys.md
     //
     // The first reading stays in front of it: a span costs that many field
     // periods, and a disagreement is rare enough to pay for a second only once
@@ -1083,12 +1067,10 @@ void VideoSourceAcquisition::keepSourceComing(uint32_t nowMs)
     // standing still. docs/sync-type-selection.md
     //
     // **IT DOES NOT COVER A RATE CHANGE AT AN UNCHANGED COUNT, so it is one of
-    // two arms for that case and not the one to rely on.** Measured on the
-    // bench, 240x352 at 449 lines in both 59.96 Hz and 70.08 Hz -- a line rate
-    // of 26923 against 31428 with the count pinned at 448 -- the bit did not
-    // set, and rateMoved() is what noticed. The arm reason is chosen by
-    // priority, so the console printing `rate` rather than `interrupt` is what
-    // says so.
+    // two arms for that case and not the one to rely on.** One count running
+    // at two field rates leaves the bit clear and rateMoved() is what notices.
+    // The arm reason is chosen by priority, so the console printing `rate`
+    // rather than `interrupt` is what says so. docs/sync-type-selection.md
     const bool disturbed = Tv5725::Interrupts::takeSourceDisturbed();
     if (disturbed && Tv5725::SyncMeasurement::isCsync())
         sourceInterrupted();

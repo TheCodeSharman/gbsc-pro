@@ -9,10 +9,10 @@ namespace Tv5725 {
 // The sync processor's static half: polarity inversions, the thresholds it uses
 // to decide a sync edge is real, and its stability counters.
 //
-// IT COUNTS IN ADC SAMPLES, NOT IF UNITS: three of this block's neighbours hold
-// values well above the 1277-unit IF line, and HLOW_LEN only matches the
-// source's mode file read in ADC -- 181/2553 = 7.09% against AKF50's 36/512 =
-// 7.03%, where the IF reading gives twice the mode's sync width.
+// IT COUNTS IN ADC SAMPLES, NOT IF UNITS: several of this block's neighbours
+// hold values above the IF line, and HLOW_LEN only matches the source's mode
+// file read in ADC -- read as IF units it gives twice the mode's sync width.
+// docs/tv5725-chip.md
 //
 // WHAT init() MUST NOT WRITE is everything that moves per source: the pulse
 // width difference and pulse ignore pair, which follow the sync type and what
@@ -26,9 +26,10 @@ namespace Tv5725 {
 // solve applies the sync type -- which writes the coast again.
 // docs/investigations/two-owners-of-the-coast-lengths-double-the-count.md
 //
-// DO NOT POISON SP_RT_HS_SP TO TEST ANYTHING. Set 1110 against a 2553-sample
-// line, and again at only 100 low, SP_VTOTAL fell to a steady 97/98 through the
-// load and for minutes afterwards, needing /sc?~ to recover.
+// DO NOT POISON SP_RT_HS_SP TO TEST ANYTHING. A stop far from the source's own
+// pulse collapses SP_VTOTAL through the load and for minutes afterwards,
+// needing /sc?~ to recover.
+// docs/investigations/two-bring-ups-for-the-sync-processor.md
 class SyncProcessor {
 public:
     typedef UReg<0x05, 0x20, 0, 1> SP_SOG_SRC_SEL;                    // sog_src_sel Sog signal source select. 0: from ADC. 1:
@@ -219,15 +220,10 @@ public:
     // one costs the capture a count of ADC samples that grows with sampling
     // density, which is why one output's framing is right and another's is not.
     //
-    // **NEITHER A COUNT OF SAMPLES NOR A TIME.** Two bench modes at ONE divider
-    // settle it: 800x600@60 samples 1436 across 1056 source pixels and
-    // 320x480@60 samples 1444 across 400, and the two want 2 samples of origin
-    // and 9. The divider cannot see the pixel clock that separates them.
-    //
-    // The slope is fitted over ten anchor-free states spanning 0.68 to 4.30
-    // samples per source pixel, and four golden framings confirm it on the
-    // picture. Available only where a raster is published, because nothing on
-    // this chip can measure a pixel clock.
+    // **NEITHER A COUNT OF SAMPLES NOR A TIME.** Two bench modes at one
+    // divider and one field rate want different origins, so the divider cannot
+    // see the pixel clock that separates them. Available only where a raster is
+    // published, because nothing on this chip can measure a pixel clock.
     // ../../../docs/investigations/the-capture-origin-varies-by-mode-at-one-line-rate.md
     static const float SourceVideoDelayPixels;
 
@@ -275,8 +271,8 @@ public:
 
     // Whether ANY sync is reaching this block, counted off its own output stage
     // on the test bus rather than read off a status bit. STATUS_SYNC_PROC_HSACT
-    // reads like the answer and is not one: measured, it held 0 across a 450 ms
-    // window of some 45 samples on a YPbPr source that then acquired.
+    // reads like the answer and is not one: it stays clear across the whole
+    // wait on a source that then acquires.
     //
     // It is still downstream of this block's configuration, so it cannot report a
     // signal the block is not set up to carry.
@@ -376,11 +372,9 @@ private:
 public:
 
     // How long the sync processor counts nothing usable after its path moves.
-    // Measured: STATUS_SYNC_PROC_VTOTAL reads 305 / 330 / 425 the instant
-    // SP_EXT_SYNC_SEL is restored on a 311-line source, and is back to 311
-    // within 300 ms every time. A caller that measures underneath it reads a
-    // count that is WRONG AND STABLE -- four agreeing samples fit inside the
-    // window, so no steadiness run can tell the difference. It is the caller's
+    // A caller that measures underneath it reads a count that is WRONG AND
+    // STABLE -- four agreeing samples fit inside the window, so no steadiness
+    // run can tell the difference. It is the caller's
     // to wait out, because a caller that is not about to measure must not
     // block: applyForSyncType() also runs from the bypass switch.
     // docs/investigations/sync-type-probe-poisons-its-own-measurement.md
