@@ -330,18 +330,16 @@ public:
     //
     // **0/0 IS THE ONLY STATE THE QUESTION HAS AN ANSWER IN**, and what it asks
     // is whether the INPUT FORMATTER still completes a vertical measurement
-    // without the hold. Measured at 40 readings each: the RISC PC's composite
-    // is indifferent, reading 308 lines against a 623 half-line frame with
-    // STATUS_IF_VT_OK set in 40 of 40 either way, where the Wii's sync on green
-    // loses the measurement outright -- 0 of 40, the period reading debris.
-    // Both need the hold to be absent to say so: at the engine's own coast both
-    // measure cleanly, and the ratio that separates them there is the
-    // line-doubled scan rather than the interval.
+    // without the hold. An unserrated composite source is indifferent and reads
+    // the same pair either way; a sync-on-green source loses the measurement
+    // outright. Both need the hold to be absent to say so: at the engine's own
+    // coast both measure cleanly, and the ratio that separates them there is
+    // the line-doubled scan rather than the interval.
     //
-    // The COUNT cannot be the question. It survives 0/0 on both -- 520 against
-    // 524 on the Wii -- and SourceMeasurement::countContradicted() answers
-    // false where the formatter offers no frame at all, which is exactly the
-    // state a source needing the hold is in.
+    // The COUNT cannot be the question. It survives 0/0 on both, and
+    // SourceMeasurement::countContradicted() answers false where the formatter
+    // offers no frame at all -- which is exactly the state a source needing the
+    // hold is in.
     //
     // Runs where the sync pad is already away, because at 0/0 the picture
     // drops, and BEFORE the field rate is taken: the post coast gates the
@@ -520,16 +518,14 @@ public:
     // failed at this one. True where it moved.
     //
     // A REFERENCE STILL IN FORCE HAS ALREADY FAILED TO MEASURE THIS SOURCE, and
-    // one reference is not enough: measured on the Wii at 480i on ypbpr,
-    // nothing measures at the bring-up divider for as long as it is left --
-    // STATUS_SYNC_PROC_VTOTAL 97..156 against 525 with the ADC PLL unlocked
-    // throughout -- while a different divider measures inside 0.1 s.
+    // one reference is not enough: a source can be unmeasurable at the bring-up
+    // divider for as long as it is left there and measure at once through
+    // another.
     //
     // A DIVIDER A MEASUREMENT CHOSE CAN ITSELF BE UNMEASURABLE, so it is
-    // replaced too: measured on the Wii at 480p, the rate reads a stable 39.93
-    // Hz -- 1.5 field periods -- through the 1446 a correct reading of it
-    // chose, with the count right and the ADC locked. The caller's pass gate is
-    // what keeps this off a source that is merely settling.
+    // replaced too -- a rate can read stably at a whole-and-a-half field period
+    // with the count right and the ADC locked. The caller's pass gate is what
+    // keeps this off a source that is merely settling.
     // ../../../docs/investigations/the-reference-clock-can-deadlock-the-measurement.md
     bool tryNextReferenceClock(bool rateUnmeasurable);
 

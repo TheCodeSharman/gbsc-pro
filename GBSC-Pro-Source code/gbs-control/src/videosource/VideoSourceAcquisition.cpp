@@ -239,8 +239,8 @@ bool VideoSourceAcquisition::passSourceThrough()
         // route is already where it belongs, and VideoPath::installSampling()
         // and prepareToMeasure() both return early here because the bypass
         // divider is not theirs. Without this a mode change keeps the previous
-        // mode's divider: measured, 800x600 to 640x480 held PLLAD_MD at 2039
-        // against a 524-line source with the ADC PLL unlocked.
+        // mode's divider, leaving the ADC PLL unlocked on the arriving source.
+        // ../../../docs/video-source-acquisition.md
         //
         // It holds the divider already in force, which is what stops it
         // running on a source standing still.
@@ -1146,10 +1146,10 @@ bool VideoSourceAcquisition::runPass(uint32_t nowMs, bool &detectionPass)
     // docs/video-source-acquisition.md
     // THE SETTLED COUNT, NOT A READING. The scan mode is a property of the
     // source, and every other decision here waits for SteadySamples agreeing
-    // counts. Any count from 200 to 1300 is a source, so one reading dipping
-    // below DoubleBelowLines puts a progressive source on the doubled scan at
-    // twice the divider, which the eleven-bit line counter cannot hold.
-    // Measured on the Wii at 480p: 524 for three readings, then 390.
+    // counts. Any count inside the source bounds is a source, so one reading
+    // dipping below DoubleBelowLines puts a progressive source on the doubled
+    // scan at twice the divider, which the eleven-bit line counter cannot
+    // hold.
     //
     // The sync processor's own count rather than the latch: it counts the source
     // directly and does not care what the input formatter is doing, which is
@@ -1191,8 +1191,7 @@ bool VideoSourceAcquisition::runPass(uint32_t nowMs, bool &detectionPass)
             // **NOT ON THE FIRST FAILURES.** A count the divider correction can
             // recover is recovered by comparing it AGAINST the divider in
             // force, so moving the clock underneath that prevents any
-            // correction from completing -- measured on a 311-line source left
-            // on a progressive mode's 1124, where the count never reaches 310.
+            // correction from completing, and the count never arrives.
             // A COUNT THAT NEVER STEADIES IS ALSO A CLOCK THAT CANNOT MEASURE
             // THE SOURCE. NotSteady returns before the line rate is read, so it
             // produces no reading and prints nothing: a recovery reachable only
