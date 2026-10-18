@@ -18,25 +18,22 @@ namespace Tv5725 {
 // RateCorroborationPerThousand where the arm lives: a key that moved with no
 // re-solve behind it swaps the stored framing on drift.
 //
-// Sized by the instrument. Across 24 acquisitions -- 320x256@50, 640x480@60 and
-// 800x600@60 on `vga`, 576i on `ypbpr`, both sync types, each reached by a real
-// mode change -- the reading repeats to the digit, a spread of 0.00 per
-// thousand, and 800x600@60 lands on DMT's 60.3168 Hz. The quantisation step is
-// 0.2 per thousand at 50 Hz. What it has to SEPARATE is two rasters a RISC PC
-// emits behind one 320x256@50, 7.87 per thousand apart.
+// Sized by the instrument: the reading repeats to the digit across every
+// acquisition measured, and the quantisation step is finer still. What it has
+// to SEPARATE is two rasters a RISC PC emits behind one 320x256@50, which sit
+// about eight per thousand apart.
+// ../../../docs/investigations/two-rasters-behind-one-mode.md
 const uint16_t SourceIdentityPerThousand = 3;
 
 // What the stored rate is quantised to, in steps per hertz. The key is what
 // the output raster is generated from, so the quantisation lands in the raster
-// whole: at a whole hertz, 60.317 is stored as 60 and the raster is 0.53%
-// short, which is 11 px of a 2050 px line and went into every absolute
-// geometry measured against it.
+// whole: quantised to a whole hertz the raster comes out half a per cent
+// short, which is enough to move every absolute geometry taken against it.
 //
 // Quantised at all so the raster is SOLVED ONCE per source, rather than
 // re-solved on a reading that moved in its last digit. How fine that may be is
-// a property of the instrument: measured with SamplingLog::rates(), 250
-// samples a mode, the field rate is repeatable to 0.000% at both 311 x 50 and
-// 627 x 60, so hundredths cost nothing.
+// a property of the instrument, and the field rate is repeatable well inside
+// hundredths.
 // ../../../docs/investigations/the-rate-tolerance-answered-five-questions.md
 const uint16_t RateStepsPerHz = 100;
 

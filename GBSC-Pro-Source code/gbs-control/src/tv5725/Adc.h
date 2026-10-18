@@ -381,10 +381,9 @@ public:
     //
     // **MORE IS BETTER AND IT IS FREE.** The tap is faster and the decimators
     // undo it, so the same PLLAD_MD samples a line reach the pipeline either
-    // way, and the decimators FILTER: measured at 1600x600@60 passed through,
-    // doubling the ratio cuts the alias beat on the PM5544 wedge by 17 to 41%
-    // on the blocks where the scaler's sampling is the limit, and changes
-    // nothing on the blocks where the panel is.
+    // way, and the decimators FILTER: doubling the ratio cuts the alias beat on
+    // a frequency wedge wherever the scaler's sampling is the limit, and changes
+    // nothing where the panel is.
     // ../../../docs/investigations/the-decimators-filter.md
     static const uint8_t OversampleAsClockAllows = 8;
 
@@ -449,19 +448,13 @@ public:
     // The pair is a MEASURED WORKING POINT rather than a nominal one, and what
     // it is measured against is every source the bench carries. 2040 at
     // 15625 Hz is CKO 31.9 MHz, which the crossover table puts on post divider
-    // 4 and so a VCO of 127.5 MHz on low gain. Time to `state: acquired` from an
-    // input selection, two trials each:
-    //
-    //   ypbpr 480i, sync on green, interlaced    2.3, 2.6 s
-    //   vga 800x600@60, 37.9 kHz                 5.5, 6.3 s
-    //   vga 640x480@60, 31.5 kHz                 4.9, 4.6 s
-    //   vga 320x256@50, 15.6 kHz                 6.3, 5.7 s
+    // 4 and so a VCO of 127.5 MHz on low gain.
     //
     // **A REFERENCE THAT CANNOT BE MEASURED THROUGH IS A DEADLOCK**, because a
     // divider is installed only FROM a measurement and the sync processor counts
-    // in ADC clocks. 1400 measures three of those four and NOTHING on the
-    // interlaced sync-on-green one -- no `sampling:` line in 60 s -- so that
-    // source never acquires until the reference is replaced. That is what makes
+    // in ADC clocks. The obvious alternative measures three of the bench's four
+    // sources and nothing at all on the interlaced sync-on-green one, which
+    // then never acquires until the reference is replaced. That is what makes
     // this a correctness constant rather than a tuning one.
     //
     // **IT FITS THE LINE COUNTER UNDOUBLED**, which is what bounds it: the
@@ -474,9 +467,8 @@ public:
     // installed row: 37.9 kHz at this divider is 77.3 MHz against a /4 sized for
     // 31.9 MHz. It costs nothing measurable, because the PLL then locks to every
     // kth hsync and measureSourceLinesCorrected() recovers k up to
-    // LinesPerCountMax -- which is what the 37.9 kHz row above is taken through.
-    // Measured to 37.9 kHz and no further; nothing on this bench runs a faster
-    // line.
+    // LinesPerCountMax. Measured to 37.9 kHz and no further; nothing on this
+    // bench runs a faster line.
     //
     // The rate is the LOWEST line the part is expected to carry, so that every
     // faster source needs the PLL to divide rather than multiply.
@@ -489,11 +481,10 @@ public:
     // counter whole: the counter takes every ADC sample and the decimation says
     // so, which is one fewer state a measurement can be taken through.
     //
-    // **THE DOUBLED RATE DOES NOT FOLLOW FROM THIS EITHER WAY.** Measured on
-    // both pairs: the field rate still reads exactly twice in the window after
-    // a sync reset. What changes is that the first ACCEPTED sample is the
-    // correct one, so the engine solves one divider per selection instead of
-    // three.
+    // **THE DOUBLED RATE DOES NOT FOLLOW FROM THIS EITHER WAY.** The field rate
+    // still reads exactly twice in the window after a sync reset on both pairs.
+    // What changes is that the first ACCEPTED sample is the correct one, so the
+    // engine solves one divider per selection instead of three.
     // ../../../docs/investigations/the-field-rate-reads-exactly-double-after-a-sync-reset.md
     static const bool BringUpLineDoubled = false;
 

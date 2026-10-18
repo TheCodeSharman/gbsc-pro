@@ -101,9 +101,8 @@ public:
     //
     // The ratio is the measured quantity and nothing may clamp it. A constant
     // floor under it holds the VALUE still while the capture keeps falling,
-    // which drives the ratio off the bottom of the band -- measured at capture
-    // 456, where the rule's 114 is clean and a floor's 150 puts blocks of other
-    // content through flat colour. docs/known-issues.md
+    // which drives the ratio off the bottom of the band and puts blocks of
+    // other content through flat colour. docs/known-issues.md
     // docs/investigations/horizontal-scale-corruption.md
 
     // PB_FETCH_NUM and PB_CAP_OFFSET are ten bits each.
@@ -122,9 +121,9 @@ public:
     static const uint16_t Fetch1080p = 250;
     static const uint16_t Offset1080p = 250;
 
-    // Measured: capture/fetch was clean to 4.04 and tore from 4.28 above, and
-    // 3.56 clean against 3.26 breaking up below, so 4 sits inside the band at
-    // both ends. The one number to tune if this is wrong.
+    // 4 sits inside the measured band at both ends -- the ratio tears above it
+    // and breaks up below. The one number to tune if this is wrong, and
+    // test_memory_window.cpp holds the band.
     static const uint16_t RequestsPerLine = 4;
 
     // The burst has to cover the source pixels the line needs, and only the

@@ -70,11 +70,6 @@ public:
     // first stretch of each line, and what shows there is zeros decoding to
     // green and then stale memory as a grey comb.
     //
-    // Measured on the bench, RiscPC 320x256@50, capture 973 units:
-    //
-    //     108   MHz   raster 1920   magnification 1.84   clean
-    //     129.6 MHz   raster 2304   magnification 2.22   run-up on picture
-    //
     // **It cannot be blanked and it cannot be moved.** Blanking it means opening
     // the display window later, and with the picture panned so content reaches
     // the left edge the run-up lies ON that content, so the blanking clips
@@ -83,7 +78,7 @@ public:
     // whole picture slides by the same amount and the right-hand edge, which
     // only just reaches the panel, retreats by exactly what the left gained.
     //
-    // Nor is it escapable by framing: at a 2304 px raster even capturing the
+    // Nor is it escapable by framing: at the wider raster even capturing the
     // entire capturable region magnifies past the onset.
     //
     // **Do not raise this to WorkingCeilingHz.** That was tried, for the black
@@ -104,9 +99,9 @@ public:
     // docs/investigations/the-encoder-ceiling-is-the-raster-floor.md
     static const uint32_t EncoderCeilingHz = 165000000;
 
-    // The part wraps the line past about 2240 PRODUCED pixels: measured clean at
-    // 2225 and banded at 2250, with the window set to exactly what the scale
-    // produces so nothing is unfilled. This is the raster bound that follows,
+    // The part wraps the line past about 2240 PRODUCED pixels, measured with the
+    // window set to exactly what the scale produces so nothing is unfilled.
+    // This is the raster bound that follows,
     // taking the smallest active fraction observed across the presets (0.892).
     // A short frame at the engine ceiling asks for far more than this.
     // docs/investigations/720p-edge-corruption.md
