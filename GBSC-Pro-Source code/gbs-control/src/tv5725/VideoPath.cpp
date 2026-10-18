@@ -631,6 +631,13 @@ void VideoPath::prepareToMeasure(uint16_t sourceLines)
     // Nothing else writes these two until a solve succeeds, which is the thing
     // they are stopping.
     inputFormatter_.writeReferenceVerticalBlank();
+
+    // AND THE COAST WINDOW, for the same reason and with worse consequences: it
+    // is placed from the line rate, so a mode change that raises the rate
+    // leaves a window longer than the arriving line and the sync processor
+    // coasts over every hsync. The count then holds the departing mode's value
+    // rather than going wrong, so nothing reads it as a source that moved.
+    SyncProcessor::applyDefaultCoastWindow();
 }
 
 bool VideoPath::installSampling(SamplingReason reason)

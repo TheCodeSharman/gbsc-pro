@@ -30,7 +30,7 @@ VideoSourceAcquisition::VideoSourceAcquisition(Tv5725::SourceMeasurement &sampli
       syncAwaySeen_(false), syncAwayMs_(0), phaseSearched_(false),
       mayRun_(0), passThroughSwitch_(0), passThroughAllowed_(false), resolution_(0),
       detectedMs_(0),
-      detectedEver_(false), solvedLines_(0), solvedLineRateHz_(0),
+      detectedEver_(false), solvedLines_(0), solvedFrame_(0), solvedLineRateHz_(0),
       idle_(Tv5725::SourceMeasurement::SteadySamples,
             Tv5725::SourceMeasurement::CountPairSpread),
       unusableCountArmed_(false), dynamicApplied_(false),
@@ -501,6 +501,7 @@ void VideoSourceAcquisition::holdSolvedSource()
 {
     solvedLines_ = sampling_.sourceLines();
     solvedLineRateHz_ = sampling_.lineRateHz();
+    solvedFrame_ = sampling_.verticalPeriod();
 
     // The line period this rate was solved against, to compare later readings
     // with. Taken here rather than on an idle pass because HPERIOD_IF counts
@@ -605,8 +606,16 @@ bool VideoSourceAcquisition::sourceMoved()
     // the processor counts a field of reconciles by no factor, and cycles.
     // There the raw count stands, which is what refusing the reading was
     // always meant to leave. ../../../docs/known-issues.md
+    //
+    // UNLESS THE FORMATTER'S FRAME MOVED, which says the count is equal to the
+    // solved one because it STOPPED rather than because the source stood
+    // still. A processor that stops counting holds its last value exactly, so
+    // it equals the solve by construction and every arm here reads it as
+    // nothing happening. The source that cycles has the other shape: its
+    // formatter disagrees from the solve onward and never moves.
+    // ../../../docs/investigations/the-coast-window-blocks-a-source-it-has-lost.md
     if (sampling_.countContradicted(lines)) {
-        if (lines == solvedLines_) {
+        if (lines == solvedLines_ && !sampling_.frameMovedFrom(solvedFrame_)) {
             contradictedPasses_ = 0;
             return false;
         }

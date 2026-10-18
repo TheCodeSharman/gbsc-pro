@@ -292,6 +292,7 @@ void SyncProcessor::applyDefaultCoastWindow()
 {
     SP_H_CST_ST::write(0x10);
     SP_H_CST_SP::write(DefaultCoastStop);
+    coastPlaced_ = false;
 }
 
 void SyncProcessor::prepare(uint16_t divider)

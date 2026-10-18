@@ -615,6 +615,37 @@ TEST_CASE("the scan is not decided from a count that has not settled")
     CHECK(!engine.lineDoubled());
 }
 
+TEST_CASE("a mode change measures through the reference coast window")
+{
+    // The window is placed from the line rate, so a mode change that raises
+    // the rate leaves one sized for a line the source is not sending --
+    // measured on `vga` composite going 320x256@50 -> 640x512@50, where
+    // SP_H_CST_SP stayed at 1672 against an arriving line of about 1008 of the
+    // chip's 27 MHz counts. Measuring through it is the same defect as
+    // measuring through the departing mode's ADC clock, which is what the
+    // reference divider beside this exists to stop.
+    //
+    // **IT IS NOT KNOWN TO COST THE COUNT, AND ONE READING SAYS IT DOES NOT.**
+    // Walked across the whole register on a settled 320x256@50 composite
+    // source, 520 to 3976 against a 1728-count line, STATUS_SYNC_PROC_VTOTAL
+    // held 308 at every step -- so a window twice the line does not stop the
+    // processor counting a source it has already locked to. What that walk
+    // does not cover is the window in force while a DIFFERENT source is being
+    // measured, which is the case here.
+    // docs/investigations/the-coast-window-blocks-a-source-it-has-lost.md
+    seedBenchSource();
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+    engine.setOutputMode(benchMode());
+    SyncProcessor::SP_H_CST_SP::write(1672);
+
+    engine.prepareToMeasure(534);
+
+    CHECK(SyncProcessor::SP_H_CST_SP::read() == SyncProcessor::DefaultCoastStop);
+}
+
 TEST_CASE("installing a reference clock leaves the capture counter an origin")
 {
     // SP_RT_HS_SP is where the capture counter ZEROES, and SyncProcessor::reset()

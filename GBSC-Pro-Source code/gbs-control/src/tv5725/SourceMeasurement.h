@@ -270,6 +270,15 @@ public:
     // ../../../docs/investigations/the-composite-sync-count-re-arms-its-own-solve.md
     bool countContradicted(uint16_t lines);
 
+    // Whether the FORMATTER'S frame has moved away from the one a solve was
+    // taken with. The two instruments read one fact and only one of them can
+    // freeze: a sync processor that stops counting holds its last value
+    // exactly, which every arm keyed on the count reads as a source standing
+    // still. False where either reading is absent, so a separate-sync source
+    // -- which completes no vertical measurement -- claims nothing.
+    // ../../../docs/investigations/the-coast-window-blocks-a-source-it-has-lost.md
+    bool frameMovedFrom(uint16_t solvedFrame);
+
     // Whether the source runs the 15.7 kHz broadcast line.
     bool lowLineRate() const;
 
@@ -278,6 +287,10 @@ public:
 
     // How many consecutive agreeing samples make the source worth measuring.
     static const uint8_t SteadySamples = 4;
+
+    // How far the formatter's frame may wander and still be the frame a solve
+    // was taken with. Half-lines, so it is four lines either way.
+    static const uint16_t FrameMovedHalfLines = 8;
 
     // How far apart the two values of a MISCOUNTED source may sit and still be
     // one source standing still. The presence poll's spread alone, and wider

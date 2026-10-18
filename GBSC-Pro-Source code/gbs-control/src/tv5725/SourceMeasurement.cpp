@@ -171,6 +171,18 @@ bool SourceMeasurement::countContradicted(uint16_t lines)
     return period != 0 && reconciledFrame(period, lines) == 0;
 }
 
+bool SourceMeasurement::frameMovedFrom(uint16_t solvedFrame)
+{
+    const uint16_t frame = inputFormatter_.verticalPeriod();
+    if (frame == 0 || solvedFrame == 0)
+        return false;
+
+    const uint16_t apart =
+        frame > solvedFrame ? (uint16_t)(frame - solvedFrame)
+                            : (uint16_t)(solvedFrame - frame);
+    return apart > FrameMovedHalfLines;
+}
+
 bool SourceMeasurement::sampleSteady()
 {
     uint16_t lines = readSourceLines();

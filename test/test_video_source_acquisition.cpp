@@ -2480,7 +2480,15 @@ TEST_CASE("a contradiction at the count already solved does not arm for ever")
     // it was left, dropping the sync pad for about 1.2 s of each cycle -- the
     // emitted frame pure black, and auto gain never completing, which is the
     // magenta. ../docs/known-issues.md
+    // SEEDED BEFORE THE SOLVE, because that is where the source is. Measured
+    // on the Wii in 576i over `ypbpr`, 50 samples across 75 s: VPERIOD_IF 624,
+    // STATUS_SYNC_PROC_VTOTAL 310 and STATUS_IF_VT_OK 1, one value each with
+    // no spread, and no arm in the window. So the formatter's frame does not
+    // move here and the refusal below still holds. A fixture that moves it
+    // after the solve describes a source that changed mode, which is the
+    // opposite case and the one the test below it covers.
     seedBenchSource();
+    seedFrame(1249);
     Acquiring unit;
     unit.path.useSyncTypeProbe(probeOwnVsync);
 
@@ -2500,6 +2508,42 @@ TEST_CASE("a contradiction at the count already solved does not arm for ever")
     }
 
     CHECK_FALSE(loggedContaining("TIMINGS change (contradicted count)"));
+}
+
+TEST_CASE("a count frozen at the solved one arms when the formatter's frame moved")
+{
+    // **A SYNC PROCESSOR THAT STOPS COUNTING HOLDS ITS LAST VALUE EXACTLY**,
+    // which every arm reads as a source standing still -- they all compare
+    // against solvedLines_, and the frozen count IS solvedLines_. Measured on
+    // `vga` composite going 320x256@50 -> 640x512@50:
+    // STATUS_SYNC_PROC_VTOTAL 308 in every reading across 45 s, where the same
+    // register dithers 305..309 on a healthy source, while VPERIOD_IF read the
+    // arriving 533 with STATUS_IF_VT_OK 1. Acquired and silent, for as long as
+    // it was left.
+    //
+    // The formatter's frame is the second instrument and it is the one that
+    // followed the source, 623 to 533. That is what separates this from the
+    // 576i case above, where it never moves.
+    // docs/investigations/the-coast-window-blocks-a-source-it-has-lost.md
+    seedBenchSource();
+    seedFrame(623);
+    Acquiring unit;
+    unit.path.useSyncTypeProbe(probeOwnVsync);
+
+    g_hasOwnVsync = false;
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+    REQUIRE(unit.acquisition.sourceIsPresent());
+    const uint16_t solved = unit.sampling.sourceLines();
+
+    g_logLines.clear();
+    for (uint8_t i = 0; i < 20 * SourceMeasurement::SteadySamples; ++i) {
+        seedSourceLines((uint16_t)(solved - 1));
+        seedFrame(533);
+        unit.poll();
+    }
+
+    CHECK(loggedContaining("TIMINGS change (contradicted count)"));
 }
 
 TEST_CASE("a mode change the formatter's frame agrees with still arms one")

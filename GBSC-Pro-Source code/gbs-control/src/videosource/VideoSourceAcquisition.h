@@ -474,6 +474,10 @@ private:
     bool dynamicForCsync_;
     SourceState sourceState_;
     uint16_t solvedLinePeriod_;
+
+    // The formatter's frame when the solve was taken, so a later reading can
+    // say whether the source moved where the count cannot.
+    uint16_t solvedFrame_;
     uint8_t rateRun_;
     uint16_t recheckPasses_;
 
