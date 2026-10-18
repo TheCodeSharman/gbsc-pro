@@ -209,3 +209,18 @@ belongs to the two modes that are out of scope above.
 **The unit drops off the network.** ICMP stops while HTTP keeps answering, and
 register reads return nothing intermittently, which reads as a dead route or a
 wedged loop. `docs/known-issues.md` carries the dropout.
+
+## Widening the output hsync pulse beyond the standard buys nothing
+
+`OutputMode::HsyncStartPx` offsets the pulse and its stop is the start plus the
+standard's own duration, so the width never shortens. Whether a wider pulse
+helps was measured directly, at three widths over 120 frames each:
+
+| pulse width, units | emitted edge | spread | frames lost |
+|---|---|---|---|
+| 30 | 44.50 px | 0.1 px | none |
+| 32 | 44.50 px | 0.1 px | none |
+| 36 | 44.50 px | 0.1 px | none |
+
+So the sink neither moves its window nor drops a frame for a pulse wider than
+the standard states, and the width stays the standard's duration.

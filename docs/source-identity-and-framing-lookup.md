@@ -326,3 +326,19 @@ or none.
 
 So the tolerance sits between a single sample and an eleven-sample excursion,
 and the two are an order of magnitude apart.
+
+## What `SyncWidthIdentity` is bracketed by
+
+The tolerance is 0.002 of the line, and both bounds are measured. It has to be
+wider than the reading moves on one source and narrower than the gap between
+two sources:
+
+| | as a fraction of the line |
+|---|---|
+| repeats exactly on three of four modes, dithers one ADC count on the fourth | 0.00069 |
+| shifts when the source's sync type changes under it | 0.00187 |
+| the two rasters a RISC PC emits behind one 320x256@50 | 0.0041 apart |
+| DMT 640x480@60 against CEA 720x480p | 0.048 apart |
+
+The sync-type shift is the tight one: at 0.00187 it sits just under the
+tolerance, so a sync-type change does not by itself move the key.
