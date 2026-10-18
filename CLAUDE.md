@@ -1534,8 +1534,9 @@ twelve tables while they existed, which is what `BringUp` was built from.
   content, and moving the output hsync slides the whole picture, the encoder
   holding its sampling window fixed to that pulse — and framing cannot escape it
   either, a 2304 px raster magnifying past the onset even at the whole
-  capturable region. `src/tv5725/OutputMode.h` carries the sweep and
-  `docs/investigations/display-window-opens-early.md` the measurements.
+  capturable region. `docs/investigations/display-window-opens-early.md` carries
+  the sweep and the measurements; `src/tv5725/OutputMode.h` carries the three
+  ceilings and what each one answers.
 
   **AND THE RASTER IS NARROWER FOR A 60 Hz SOURCE THAN A 50 Hz ONE, WHICH MOVES
   THE CAPTURE BOUND WITH IT.** The horizontal total is the display clock over
