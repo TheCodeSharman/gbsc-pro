@@ -1876,6 +1876,25 @@ than a single mode.
 `SourceKey` was a fifth consumer and is fixed:
 `investigations/the-key-carried-the-origins-calibration.md`.
 
+### A full framing table refuses every new entry, and says nothing
+
+`FramingTable::remember()` ends `if (count_ >= Entries) return false;` with no
+eviction, and `Entries` is 16. Nothing surfaces the refusal: the caller does not
+report it, no console line is printed, and the live framing and shape still
+change -- so the symptom is a declaration that works until the source is
+re-acquired and then is not there.
+
+Measured on the bench with 16 entries stored, every one of them orphaned by the
+entry below: `/uc?G` moved the live shape to 16:9 and `/geometry` reported it,
+`/framing.txt` was byte-unchanged, and one `ypbpr` round trip brought the source
+back at `shape 13333` with `no framing stored`. So a unit whose table has filled
+cannot store a framing or a shape for any source at all.
+
+Two things follow. The refusal wants a voice whatever the policy. And 16 entries
+is few for a table keyed per source AND per sync type -- the RISC PC alone
+reaches that across one monitor definition's modes, before the second sync type
+doubles it.
+
 ### Every stored framing entry is orphaned by the key's sync share moving
 
 The share in a `/framing.txt` key moved up by the origin calibration's share of
