@@ -230,6 +230,11 @@ public:
     // the four states above.
     static const float CalibratedPixelSamples;
 
+    // The lag above in ADC samples at this sampling density, signed, and 0
+    // where no raster states the pixel count it needs. One owner, because both
+    // paths that place the counter's origin owe it.
+    static long originVideoLagSamples(float pixelSamples);
+
     // What the origin gains at oversampling ratio ONE, where the decimators are
     // out of circuit and the captured video lands later in the line counter.
     // Ratio four is not a further step of the same kind.
@@ -794,11 +799,14 @@ public:
 
     // Where the separator's regenerated pulse ends, in ADC samples after the
     // edge it references. On the leading edge that is the source's own pulse
-    // width, so the pulse ends where the source's does and the capture counter
-    // that zeroes on it is where a trailing-edge reference put it; on the
-    // default edge it is the chip's 0. The retime stop is inert on this path,
-    // so this is the register that places the separator path's origin.
-    static void placeSeparatorPulseEnd(uint16_t divider, const HsyncPulse &pulse);
+    // width plus the lag below, so the pulse ends where the source's video
+    // does and the capture counter that zeroes on it is where a trailing-edge
+    // reference put it; on the default edge it is the chip's 0. The retime
+    // stop is inert on this path, so this is the register that places the
+    // separator path's origin -- and the lag belongs to the SOURCE, so it is
+    // owed here as much as the retime stop owes it.
+    static void placeSeparatorPulseEnd(uint16_t divider, const HsyncPulse &pulse,
+                                       float pixelSamples);
 
     // What times the clamp: the 27 MHz reference rather than the pixel clock,
     // which is what every path here asks for.

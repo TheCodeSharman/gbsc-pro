@@ -3923,7 +3923,11 @@ TEST_CASE("the separator's pulse end follows the duty once it is measured")
         pollOnce(acquisition);
     REQUIRE(sampling.hsync().isPulse());
 
+    // THE SOURCE'S VIDEO LAG IS OWED HERE TOO, this register being the origin
+    // on this path: the composite leg lands its own lag early without it.
     CHECK(separatorPulseEnd()
-          == (uint16_t)lrintf((float)dividerInForce()
-                              * sampling.hsync().syncDuty()));
+          == (uint16_t)(lrintf((float)dividerInForce()
+                               * sampling.hsync().syncDuty())
+                        + SyncProcessor::originVideoLagSamples(
+                              engine.sourceTiming().pixelSamples(dividerInForce()))));
 }

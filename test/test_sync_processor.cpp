@@ -1270,19 +1270,62 @@ TEST_CASE("the separator's pulse ends where the source's does on the leading edg
 
     Wire.reset();
     SyncProcessor::applyForSyncType(true, MeasuredCsyncDivider);
-    SyncProcessor::placeSeparatorPulseEnd(2200, pulse);
+    SyncProcessor::placeSeparatorPulseEnd(2200, pulse, 0.0f);
     CHECK(SyncProcessor::SP_CS_HS_SP::read() == 153u);
 
     SyncProcessor::applyForSyncType(false, MeasuredCsyncDivider);
-    SyncProcessor::placeSeparatorPulseEnd(2200, pulse);
+    SyncProcessor::placeSeparatorPulseEnd(2200, pulse, 0.0f);
     CHECK(SyncProcessor::SP_CS_HS_SP::read() == 0u);
+}
+
+// THE SEPARATOR PATH'S ORIGIN CARRIES THE SOURCE'S VIDEO LAG TOO. The retime
+// stop is inert here, so this register is where the capture counter zeroes --
+// and the lag is a property of the SOURCE rather than of a sync path, so a
+// composite leg without it frames every published source its own lag early.
+//
+// Measured on `vga` at 1080p, 16:9, each mode's framing reset, as the
+// composite leg's displacement from the separate one in ADC samples against
+// the lag at that mode's sampling density: 320x256@50 -15.8 against 14.0,
+// 240x352@70 -14.3 against 13.7, 640x512@50 -3.7 against 2.1, 800x600@60
+// -1.1 against 0.7 and 640x480@60 -0.5 against 2.1.
+// ../docs/investigations/the-capture-origin-varies-by-mode-at-one-line-rate.md
+TEST_CASE("the separator's pulse end carries the source's video lag")
+{
+    const HsyncPulse pulse(153.0f / 2200.0f);
+
+    Wire.reset();
+    SyncProcessor::applyForSyncType(true, MeasuredCsyncDivider);
+
+    SUBCASE("a density above the calibrated one ends the pulse later")
+    {
+        SyncProcessor::placeSeparatorPulseEnd(2200, pulse, 4.297f);
+        CHECK(SyncProcessor::SP_CS_HS_SP::read()
+              == 153u + SyncProcessor::originVideoLagSamples(4.297f));
+    }
+
+    SUBCASE("an unpublished source ends it on the measured width alone")
+    {
+        SyncProcessor::placeSeparatorPulseEnd(2200, pulse, 0.0f);
+        CHECK(SyncProcessor::SP_CS_HS_SP::read() == 153u);
+    }
+
+    SUBCASE("the lag is the one the retime stop applies")
+    {
+        const uint16_t dense = SyncProcessor::retimeStopFor(2200, pulse, 2, 4.297f);
+        const uint16_t sparse = SyncProcessor::retimeStopFor(2200, pulse, 2, 1.271f);
+        SyncProcessor::placeSeparatorPulseEnd(2200, pulse, 4.297f);
+        const uint16_t denseEnd = SyncProcessor::SP_CS_HS_SP::read();
+        SyncProcessor::placeSeparatorPulseEnd(2200, pulse, 1.271f);
+        const uint16_t sparseEnd = SyncProcessor::SP_CS_HS_SP::read();
+        CHECK(denseEnd - sparseEnd == dense - sparse);
+    }
 }
 
 TEST_CASE("the per-load setup leaves the separator's pulse end where the install put it")
 {
     Wire.reset();
     SyncProcessor::applyForSyncType(true, MeasuredCsyncDivider);
-    SyncProcessor::placeSeparatorPulseEnd(2200, HsyncPulse(153.0f / 2200.0f));
+    SyncProcessor::placeSeparatorPulseEnd(2200, HsyncPulse(153.0f / 2200.0f), 0.0f);
 
     SyncProcessor::prepare(MeasuredCsyncDivider);
 

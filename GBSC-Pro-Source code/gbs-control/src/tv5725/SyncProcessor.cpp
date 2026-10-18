@@ -19,15 +19,20 @@ const uint16_t SyncProcessor::InvertedPulseWidthSamples;
 const float SyncProcessor::SourceVideoDelayPixels = 4.4f;
 const float SyncProcessor::CalibratedPixelSamples = 1.12f;
 
+long SyncProcessor::originVideoLagSamples(float pixelSamples)
+{
+    if (pixelSamples <= 0.0f)
+        return 0L;
+    return lrintf(SourceVideoDelayPixels * (pixelSamples - CalibratedPixelSamples));
+}
+
 uint16_t SyncProcessor::retimeStopFor(uint16_t divider, const HsyncPulse &pulse,
                                      uint8_t oversample, float pixelSamples)
 {
     if (!pulse.isPulse() || divider == 0)
         return 0;
 
-    const long lag = pixelSamples > 0.0f
-        ? lrintf(SourceVideoDelayPixels * (pixelSamples - CalibratedPixelSamples))
-        : 0L;
+    const long lag = originVideoLagSamples(pixelSamples);
     const uint16_t origin = (uint16_t)(
         (long)RetimeOriginSamples + lag
         + (oversample <= 1 ? (long)UndecimatedOriginSamples : 0L));
@@ -716,11 +721,16 @@ void SyncProcessor::init()
     SP_TEST_SIGNAL_SEL::write(0x0);              // s5_63[6:4]
 }
 
-void SyncProcessor::placeSeparatorPulseEnd(uint16_t divider, const HsyncPulse &pulse)
+void SyncProcessor::placeSeparatorPulseEnd(uint16_t divider, const HsyncPulse &pulse,
+                                           float pixelSamples)
 {
-    const uint16_t samples = leadingEdge_ && pulse.isPulse()
-        ? (uint16_t)lrintf((float)divider * pulse.syncDuty()) : 0;
-    SP_CS_HS_SP::write(samples);
+    long samples = 0L;
+    if (leadingEdge_ && pulse.isPulse())
+        samples = lrintf((float)divider * pulse.syncDuty())
+                + originVideoLagSamples(pixelSamples);
+    if (samples < 0L)
+        samples = 0L;
+    SP_CS_HS_SP::write((uint16_t)samples);
 }
 
 void SyncProcessor::writeRetimeStop(uint16_t samples)

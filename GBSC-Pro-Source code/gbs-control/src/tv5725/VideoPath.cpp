@@ -601,9 +601,9 @@ void VideoPath::sourceMeasured(const HsyncPulse &reading)
 void VideoPath::placeSyncForDuty()
 {
     // WHERE THE SEPARATOR'S REGENERATED PULSE ENDS, which on the leading-edge
-    // reference is the capture counter's origin: the source's own pulse width,
-    // so the pulse ends where the source's does.
-    SyncProcessor::placeSeparatorPulseEnd(installedDivider_, reading_);
+    // reference is the capture counter's origin.
+    SyncProcessor::placeSeparatorPulseEnd(installedDivider_, reading_,
+                                          timing_.pixelSamples(installedDivider_));
 
     // The clamp is a fraction of the LINE, so it moves with the divider. Left
     // where a previous one put it, the stop reaches past the back porch and the
