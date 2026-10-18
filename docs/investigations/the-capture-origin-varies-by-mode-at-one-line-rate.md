@@ -486,20 +486,35 @@ What is left is the modes answered by their own raster:
 `published_rasters.py` scores every one at `+0.0 / +0.0`, so there is no design
 offset to subtract from any of them.
 
-**TWO PAIRS DIFFER IN ONE VARIABLE AND DISAGREE BY MORE THAN THE WHOLE
-ALLOWANCE.** 800x600@60 against 800x600@56 is one source resolution, one
-polarity, one ratio and one sampling density, and they read -0.7 and -15.1 --
-so 14.4 samples sit on the field rate, which no term in the origin carries.
-640x480@60 against 720x480@60 is one field rate, one line count and one
-polarity at 1.59 against 1.41 samples per pixel, and they read -9.5 and -0.7.
+**NO PAIR IN IT DIFFERS IN ONE VARIABLE.** 800x600@60 against 800x600@56 is
+one source resolution, one polarity, one ratio and one sampling density, which
+reads as a controlled pair and is not one: their sync duties are 0.1212 and
+0.0703, and the duty is subtracted straight into the stop. Nothing here
+isolates the field rate.
 
 **SO THE SET REFUSES THE TERMS THE ORIGIN HAS.** `SourceVideoDelayPixels`
 cannot order it: the two densest modes read +2.5 and +16.7 and the two
 sparsest -0.7 and -15.1. Neither can the polarity -- the H-negative modes run
 -9.5, -0.7, -4.3 and the H-positive ones +2.5, +16.7, -3.7, -0.7, -15.1 -- nor
 the oversampling ratio, whose own measured step is 2 to 3 samples against a
-spread of 32. **A constant moved on this set would be fitted to it**, and that
-is the failure this page exists to record.
+spread of 32. Nor the duty, which sorts the set 0.0625 at -3.7, 0.0703 at
+-15.1 AND +2.5, 0.0723 at -0.7, 0.0741 at -4.3, 0.1073 at +16.7, 0.1200 at
+-9.5 and 0.1212 at -0.7. **A constant moved on this set would be fitted to
+it**, and that is the failure this page exists to record.
+
+**AND IT IS NOT THE OUTPUT RASTER.** One source mode judged across three of
+them -- 640x512@50 at 1080p, 960p and 720p, whose horizontal totals are 1914,
+2154 and 2154 -- leaves 7, 4 and 4 columns at the far edge, so the error does
+not follow the raster the capture is magnified into. The same probe cannot ask
+it of 800x600@60: at 960p and 720p that mode's picture does not fill the frame
+at all, every edge saturating the profile, which is the magnification floor
+rather than a placement.
+
+**THE WHOLE SET IS SEPARATE SYNC.** The separator has a lead of its own and the
+acceptance runs both legs, so nothing measured here transfers to the composite
+one -- a term fitted to these eight would still have to be judged against a
+second set the same size.
+`docs/investigations/the-separator-lead-is-not-a-fraction-of-the-line.md`
 ## Traps
 
 - **The anchor belongs in ADC samples, not in source pixels, and it is not quite
