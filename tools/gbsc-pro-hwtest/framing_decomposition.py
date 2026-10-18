@@ -86,6 +86,21 @@ def carried_output(registers):
     return None
 
 
+def carried_frame(registers):
+    """The frame size a clip has to be captured at for one capture column to be
+    one output column, for the mode the registers carry. None where they carry
+    no mode this knows.
+
+    The dongle RESCALES rather than refusing, so a clip asked for at another
+    mode's size reads as a plausible frame with every absolute figure scaled
+    and an allowance stated in capture columns scaled with it.
+    """
+    name = carried_output(registers)
+    if name is None:
+        return None
+    return MODES[name].active_px, HDMI_ACTIVE_LINES[name]
+
+
 def field_rate_of(registers, geometry):
     return geometry["lineRateHz"] / (registers["STATUS_SYNC_PROC_VTOTAL"] + 1)
 

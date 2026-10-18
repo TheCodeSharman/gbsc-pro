@@ -298,6 +298,23 @@ def test_the_carried_output_is_read_off_the_frame_lines():
     assert fd.carried_output({"VDS_VSYNC_RST": 700}) is None
 
 
+def test_the_carried_frame_is_the_modes_own_emitted_size():
+    """What a clip has to be captured at for one capture column to be one
+    output column.
+
+    THE DONGLE RESCALES RATHER THAN REFUSING, so a clip asked for at the wrong
+    size reads as a plausible frame with every absolute figure scaled. Measured
+    on a 1024p frame asked for both ways: 1280x1024 gives a 1270x1020 picture
+    with 9 black columns at the far edge, and 1920x1080 gives 1905x1076 with
+    14 -- the same frame, 1.5x, with a one-row margin smeared from 1,3 to 2,2.
+    An allowance stated in capture columns tightens by the same factor.
+    """
+    assert fd.carried_frame({"VDS_VSYNC_RST": 1124}) == (1920, 1080)
+    assert fd.carried_frame({"VDS_VSYNC_RST": 1065}) == (1280, 1024)
+    assert fd.carried_frame({"VDS_VSYNC_RST": 749}) == (1280, 720)
+    assert fd.carried_frame({"VDS_VSYNC_RST": 700}) is None
+
+
 def test_a_record_modelled_as_the_mode_asked_is_remodelled_as_the_mode_carried():
     # 640x480@73 asked for 1080p; the encoder cannot carry 1080p at 72.8 Hz and
     # the engine solved 1024p: 1066 lines, a 1392-unit line at 108 MHz.

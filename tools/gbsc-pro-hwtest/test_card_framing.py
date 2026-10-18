@@ -25,11 +25,26 @@ so a regression INSIDE a known deficit was invisible. The deficits are recorded
 in `docs/known-issues.md`, where they cannot pass a test, and every case prints
 its four edges so a drift shows up as a size rather than as a verdict.
 
-**AT ONE OUTPUT, AT 16:9, ON BOTH SYNC TYPES.** The output is a variable every
-case has to share, or the modes are judged against different rasters. And the
-sync type is a dimension of its own: a mode judged on one of them is a framing
-fitted to one half of the bench, which is why every mode runs on separate sync
-and on composite.
+**AT ONE OUTPUT ASKED FOR, AT 16:9, ON BOTH SYNC TYPES.** The output is a
+variable every case has to share, or the modes are judged against different
+rasters. And the sync type is a dimension of its own: a mode judged on one of
+them is a framing fitted to one half of the bench, which is why every mode runs
+on separate sync and on composite.
+
+**BUT THE OUTPUT ASKED FOR IS NOT ALWAYS THE ONE EMITTED, AND A CASE IS JUDGED
+AT WHAT IT EMITS.** The MS9288A cannot carry 1080p above about 66 Hz -- its
+raster at 70 Hz wants 173.25 MHz against a 165 MHz ceiling -- so a 70 Hz source
+falls back to 1024p and no preference records it: `setting(host, "output")`
+still reads 1920x1080 while the frame is 1066 lines. Each case therefore reads
+the mode off VDS_VSYNC_RST and captures at ITS emitted size, and prints that
+size beside the reading.
+
+**THE DONGLE RESCALES RATHER THAN REFUSING**, which is what makes that worth
+doing: a 1024p frame asked for at 1920x1080 comes back as a plausible 1905x1076
+picture with every absolute figure 1.5x and ALLOWANCE, stated in capture
+columns, tightened by the same factor. Measured both ways on one state, the far
+margin reads 9 natively and 14 upscaled, and a one-row margin smears from 1,3
+to 2,2. docs/investigations/the-encoder-ceiling-is-the-raster-floor.md
 
 **16:9 NARROWS NOTHING AT 1080p, SO IT IS NOT THE 4:3 TRAP.** A declared shape
 narrows the room and the bars it pillarboxes with are OUR blanking, so a strip
@@ -55,6 +70,7 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import card_edges
+import framing_decomposition
 import gbs_unit
 import hdmi_capture
 
@@ -197,8 +213,13 @@ def state_of(host):
     docs/known-issues.md"""
     _, geo = gbs_unit.get_json(host, "/geometry")
     divider = gbs_unit.read_named(host, "PLLAD_MD")
+    # The WINDOW as well as the capturable region, because a displacement read
+    # off the emitted frame is only a capture displacement once it is divided by
+    # the magnification, and the window's extent is what sets that.
     return (f"MD {divider} shaping {geo.get('shaping')} "
-            f"aspect {geo.get('aspect')} ch {geo.get('ch')} cv {geo.get('cv')}")
+            f"aspect {geo.get('aspect')} ch {geo.get('ch')} cv {geo.get('cv')} "
+            f"oh {geo.get('oh')} eh {geo.get('eh')} "
+            f"ov {geo.get('ov')} ev {geo.get('ev')}")
 
 
 def acquired_or_recovered(host):
@@ -252,10 +273,19 @@ def test_the_default_framing_puts_the_card_flush_to_the_emitted_edges(
         "the shape never reached 16:9, so the edges read would be the bars a "
         "4:3 declaration pillarboxes with")
 
+    # AT THE FRAME THE ENGINE ACTUALLY EMITS, which is not always the one the
+    # module asked for: the encoder cannot carry 1080p above about 66 Hz, so a
+    # 70 Hz source falls back to 1024p and the registers are the only record of
+    # it. docs/investigations/the-encoder-ceiling-is-the-raster-floor.md
+    emitted = framing_decomposition.carried_frame(
+        gbs_unit.read_fields(host, ["VDS_VSYNC_RST"]))
+    assert emitted is not None, "the registers carry no output mode this knows"
+
     # A clip rather than a frame: the card's outermost ring flashes, and in the
     # phase where it is yellow the green smears into it and falls under the hue
     # test, so one capture reports the edge missing.
-    clip = hdmi_capture.frames(card_edges.CLIP_FRAMES, capture_device)
+    clip = hdmi_capture.frames(card_edges.CLIP_FRAMES, capture_device,
+                               width=emitted[0], height=emitted[1])
     found = {name: card_edges.judge(clip, axis, card_edges.ALLOWANCE,
                                     card_edges.source_pixel_px(mode, clip, axis))
              for name, axis in (("across", 1), ("down", 0))}
@@ -268,7 +298,7 @@ def test_the_default_framing_puts_the_card_flush_to_the_emitted_edges(
     # columns is a SCALE rather than a placement and two things give one: a
     # divider left on another mode's value, and the declared shape coming back
     # under reset_framing(), whose bars are our own blanking.
-    read += f"   {state_of(host)}"
+    read += f"   {emitted[0]}x{emitted[1]} {state_of(host)}"
     # EVERY CASE, not only the ones that fail. A verdict records nothing a later
     # run can be compared against, and the size is the whole point of out_by:
     # a case that passes at 2 and one that passes at 0 are a drift in progress.
