@@ -562,10 +562,10 @@ bool VideoPath::setOutputMode(const OutputMode *mode)
     solveLineDoubling(sampling_.sourceLines());
 
     // The divider is bounded by the capture the RASTER can show, so the output
-    // moves it as much as the doubling does -- 480p affords 1876 ADC samples of
-    // this source's line and 576p 1952, both undoubled. Only where one of the
-    // two moved: the divider is re-DERIVED from the rate already held, never
-    // re-measured, and writing it re-latches the ADC PLL.
+    // moves it as much as the doubling does. Only where one of the two moved:
+    // the divider is re-DERIVED from the rate already held, never re-measured,
+    // and writing it re-latches the ADC PLL.
+    // ../../../../docs/investigations/the-divider-is-an-actuator-in-its-own-sensor.md
     if ((mode != previous || lineDoubled_ != wasDoubled)
         && !installSampling(SamplingFollowsOutput))
         return false;
@@ -585,10 +585,9 @@ void VideoPath::sourceMeasured(const HsyncPulse &reading)
     // below are sized from it. takeDuty() refuses a reading taken through an
     // unlatched clock and only an install latches one, so the install that
     // places them is always one pass short of the duty they want -- and a solve
-    // that runs afterwards does not touch them. Measured on the bench at
-    // 320x256@50 on composite: SP_CS_HS_SP left at 0 against the 149 the pulse
-    // asks for, which moves the capture origin by a whole pulse and put 231
-    // output columns of black at the near edge.
+    // that runs afterwards does not touch them. Left unsized, SP_CS_HS_SP is 0
+    // where the pulse asks for a placement, and on the leading-edge reference
+    // that IS the capture counter's origin -- so it moves by a whole pulse.
     const bool arrived = reading.isPulse() && !reading_.isPulse();
 
     reading_ = reading;
@@ -608,9 +607,9 @@ void VideoPath::placeSyncForDuty()
 
     // The clamp is a fraction of the LINE, so it moves with the divider. Left
     // where a previous one put it, the stop reaches past the back porch and the
-    // black level is taken off picture -- measured, a stop 18 samples late
-    // costs 20 grey levels. Placed from the divider applied rather than
-    // measured: STATUS_SYNC_PROC_HTOTAL only echoes it back.
+    // black level is taken off picture, which darkens the whole frame. Placed
+    // from the divider applied rather than measured:
+    // STATUS_SYNC_PROC_HTOTAL only echoes it back.
     SyncProcessor::placeClampFor(syncTypeInForce_, Adc::inputIsComponent(),
                                  sampling_.lineRateHz(), installedDivider_,
                                  reading_);
@@ -999,10 +998,9 @@ bool VideoPath::reapplySyncTypeInForce()
 // OPTIMISTIC, AND THE LADDER PAYS FOR BEING WRONG. A source changes its sync
 // type far more rarely than it changes mode, and measuring costs the probe's
 // settle and window -- a composite source has no V to arrive, so it spends the
-// whole window every time, measured at 1.00 s of a 2.0 s transition. So a mode
-// change reuses what is held, and a held value that turns out wrong reaches the
-// escalation ladder: the wrong path counts 97..137 on a 311-line source, which
-// arms a re-probe.
+// whole window every time. So a mode change reuses what is held, and a held
+// value that turns out wrong reaches the escalation ladder: the wrong path
+// counts a line total no source runs, which arms a re-probe.
 // ../../../../docs/investigations/own-vsync-probe-window.md
 void VideoPath::establishSyncType(uint8_t chosenFor)
 {
@@ -1020,16 +1018,13 @@ void VideoPath::establishSyncType(uint8_t chosenFor)
     // ONE RECORD OF WHETHER THE SYNC TYPE IS KNOWN, and it is
     // SyncMeasurement's. A second flag here cannot see the sketch's own
     // forget(), so a reset that says the answer is unknown left this reading a
-    // held value the reset had already replaced with a guess -- measured on the
-    // bench as the right arrangement applied on an input change and undone five
-    // seconds later when detection dropped to low power.
+    // held value the reset had already replaced with a guess.
     //
     // AND A TYPE JUST MEASURED IS PUT IN FORCE WHATEVER THIS LAYER HOLDS. The
     // probe leaves the chip on the separate arrangement, and the reset that
     // forgot the type left it there too, so an answer equal to the one last
-    // applied is not one already on the chip. Measured: a composite source
-    // re-detected after /sc?~ probed composite, wrote nothing, and was then
-    // measured through the separate arrangement for as long as it was attached.
+    // applied is not one already on the chip.
+    // ../../../../docs/sync-type-selection.md
     const bool measured = !SyncMeasurement::isSet();
     const bool csync = SyncMeasurement::syncType(syncProbe_);
     if (measured)
@@ -1187,7 +1182,7 @@ void VideoPath::solveLineDoubling(uint16_t lines)
     // SIZED FOR THE CLOCK ALREADY IN FORCE, because that is the line the block
     // is counting. A scan the clock in force cannot be represented in is
     // refused whole and carried by the install that moves the divider -- which
-    // is the reference clock's case, 2506 samples being a line no progressive
+    // is the reference clock's case, its line being longer than a progressive
     // counter can hold.
     applyScan(Adc::dividerInForce(), doubled);
 }
@@ -1593,8 +1588,6 @@ bool VideoPath::calculateInputFormatterRegisters(CaptureWindow &capture)
     // count of units of the line in force, and the framing is a proportion that
     // outlives the divider -- written back, the same bound returns as a tighter
     // crop every time the line gets shorter, and narrowTo() only ever shrinks.
-    // Measured: a solve at PLLAD_MD 2046 stored 998/2047, and at 1222 the same
-    // proportion asked for 595 units where the bound allows 998.
     // docs/investigations/the-raster-bound-is-stored-as-a-proportion.md
     PanAndZoom bounded = capture.framing();
     narrowToRaster(bounded, capture, AxisHorizontal);

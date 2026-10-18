@@ -82,9 +82,8 @@ public:
     // is why it is two calls. Both are asked on every pass.
     //
     // The count, the field rate and HPERIOD_IF all survive a divider the ADC
-    // PLL cannot lock to -- measured, the source's 311 lines and 50.08 Hz on
-    // both test buses at four such dividers -- so the rate is measured through
-    // whatever is in force. The duty is the one reading that cannot: it is a
+    // PLL cannot lock to, so the rate is measured through whatever is in force.
+    // The duty is the one reading that cannot: it is a
     // ratio of the pulse to the LINE, counted in ADC samples, so a duty taken
     // through one divider and spent on a window sized in another's units is out
     // by the ratio between them. The divider the source is left on depends on
@@ -139,10 +138,9 @@ public:
     //
     // The correction is as load bearing as the restoration: a divider far from
     // the source's line puts the PLL outside its lock range and it locks to
-    // every kth hsync instead -- measured, a 311-line source reads 155 with the
-    // divider left at another mode's 1124. The divider is sized from the rate
-    // and the rate from the count, so a count taken at face value anywhere
-    // leaves that state with no exit.
+    // every kth hsync instead, so the count comes back divided. The divider is
+    // sized from the rate and the rate from the count, so a count taken at face
+    // value anywhere leaves that state with no exit.
     uint16_t readSourceLines();
 
     // Whether the reading just taken is the formatter's frame rather than the
@@ -245,8 +243,7 @@ public:
 
     // That count, or 0 where the run has not settled on one yet. For a caller
     // deciding something from the count rather than measuring: a single reading
-    // dips -- measured on a source reading 524 whose count reaches 390 between
-    // readings -- and a decision keyed on one is taken on the dip.
+    // dips, and a decision keyed on one is taken on the dip.
     uint16_t settledSourceLines() const;
 
     // The vertical period the last reading came from, or 0 where it did not
@@ -260,12 +257,11 @@ public:
     // **TWO MEASUREMENTS OF ONE FRAME, and which of them is reliable follows
     // the sync route.** The formatter measures the frame from the separator's
     // output, so it has one exactly where a separator is in the path -- and
-    // there the sync processor's count is the unreliable half. Measured on `vga`
-    // at 800x600@60 composite in pass-through, sampled from inside `loop()`: the
-    // count takes 76 distinct values from 0 to 1937 and is wrong in 54% of
-    // samples while VPERIOD_IF reads the source's own 627.5-line frame in 52%,
-    // and a wrong count repeats for up to eight consecutive samples -- further
-    // than any steadiness run reaches.
+    // there the sync processor's count is the unreliable half. Sampled from
+    // inside `loop()` on a composite source it takes dozens of distinct values
+    // and is wrong more often than not, while VPERIOD_IF reads the source's own
+    // frame -- and a wrong count repeats for a run further than any steadiness
+    // run reaches.
     //
     // False where the formatter offers no frame at all, which is every
     // separate-sync source: the separator has nothing to extract there, so a
