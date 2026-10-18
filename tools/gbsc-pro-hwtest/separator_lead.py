@@ -293,8 +293,12 @@ def main():
         if was["output"]:
             gbs_unit.restore_output_mode(host, was["output"])
         gbs_unit.want_shaping(host, was["shaping"])
-        if was["aspect"]:
-            gbs_unit.choose_aspect(host, was["aspect"])
+        # Said rather than assumed: the shape is restored while the engine is
+        # still re-solving the mode put back above, and /uc?G cycles rather than
+        # setting, so a run that leaves the bench on another shape has to say so.
+        if was["aspect"] and not gbs_unit.choose_aspect(host, was["aspect"]):
+            print(f"\nthe shape did not go back to {was['aspect']}: it is "
+                  f"{gbs_unit.get_json(host, '/geometry')[1].get('aspect')}")
         gbs_unit.autosave(host, True)
 
 
