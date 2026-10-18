@@ -2311,29 +2311,39 @@ One run at 1080p, 16:9, each case's framing reset, as `across near|far` and
 
 | mode | sync | `PLLAD_MD` | across | down |
 |---|---|---|---|---|
-| 240x352@70 | separate | 1272 | 0.00\|0.74, far 12 | 0.93\|0.98, 2\|2 |
-| 320x256@50 | separate | 2200 | 0.79\|0.46, near 4 | 0.90\|0.90, 3\|1 |
-| 640x480@60 | separate | 1272 | 0.00\|0.81, far 14 | 0.45\|0.90, 1\|4 |
-| 640x512@50 | separate | 1424 | 0.00\|0.77, far 7 | 0.93\|0.93, 1\|1 |
-| 800x600@60 | separate | 1342 | 0.24\|0.48, near 2 | 0.87\|0.82, 0\|1 |
-| 240x352@70 | composite | 1272 | 0.76\|0.00, near 18 | 0.94\|0.00, near 8 |
-| 320x256@50 | composite | 2200 | 0.86\|0.00, near 26 | 0.89\|0.89, 3\|1 |
-| 640x480@60 | composite | **1446** | 0.00\|0.90, **far 152** | 0.79\|0.79, **9\|10** |
-| 640x512@50 | composite | 1746 | 0.64\|0.71, 162\|168 | overruns both ends |
-| 800x600@60 | composite | 1342 | 0.68\|0.00, near 4 | 0.98\|0.98, **0\|0** |
+| 240x352@70 | separate | 1272 | 0.00\|0.73, far 12 | 0.92\|0.97, 2\|2 |
+| 320x256@50 | separate | 2200 | 0.70\|0.58, near 4 | 0.91\|0.91, 3\|1 |
+| 640x480@60 | separate | 1272 | 0.00\|0.83, far 12 | 0.45\|0.91, 1\|4 |
+| 640x512@50 | separate | 1424 | 0.00\|0.79, far 5 | 0.91\|0.92, 1\|1 |
+| 800x600@60 | separate | 1342 | 0.22\|0.48, near 2 | 0.87\|0.82, 0\|1 |
+| 240x352@70 | composite | 1272 | 0.87\|0.00, near 14 | 0.95\|0.00, near 8 |
+| 320x256@50 | composite | 2200 | 0.86\|0.00, near 26 | 0.92\|0.92, 3\|1 |
+| 640x480@60 | composite | 1272 | 0.00\|0.82, far 11 | 0.93\|0.55, 3\|1 |
+| 640x512@50 | composite | 1424 | overruns both ends | overruns both ends |
+| 800x600@60 | composite | 1342 | 0.59\|0.00, near 5 | 0.97\|0.95, 0\|0 |
 
-**WHAT MOVED SINCE THE PULSE IGNORE FOLLOWED A MEASUREMENT.** Seven cases are
-unchanged or better and one is clearly worse:
+**WHAT MOVED SINCE THE ADOPTION ARMED A RE-SOLVE.** Nothing regressed; one case
+was recovered and the rest are unchanged inside the run-to-run spread recorded
+below.
+
+- **640x480@60 composite is recovered.** The far margin went 152 back to 11 and
+  the vertical 9\|10 to 3\|1, with the divider 1446 to 1272 behind a capture of
+  525 rather than 523. It had regressed when the pulse ignore started following
+  a measurement; what made the regression unrecoverable was the arm, which the
+  entry below carries.
+- **640x512@50 composite solves its separate-sync leg's divider and capture**,
+  1424 and 534 against 1746 before. It still overruns both ends, so this is not
+  its framing closed -- only the two sync types agreeing on what was measured.
+- **240x352@70 composite, 640x480@60 separate and 640x512@50 separate** each
+  read 2 to 4 output pixels better across. That is inside the spread recorded
+  below and is not attributed to the arm.
+
+**WHAT THE PULSE IGNORE FOLLOWING A MEASUREMENT BOUGHT, which stands:**
 
 - **240x352@70 composite** went from 84\|66 rows of black between its borders
   to 8 at the near edge, which was the largest vertical deficit in the set.
 - **640x480@60 separate** reads four edges where it read no green anywhere.
   That case was the black frame rather than a framing, and it is reading again.
-- **640x480@60 composite REGRESSED**: the far margin went 12 to 152 and the
-  vertical 3\|1 to 9\|10, with the divider moving 1272 to 1446. The capture
-  is 523 against the 525 it took before -- the frame hold racing the sizing,
-  which the entry below carries -- and the divider follows the count it is
-  sized from.
 
 **640x480@60 SEPARATE USED TO READ NO GREEN ON EITHER AXIS**, which was the
 black frame rather than a framing -- its state line was identical to the
@@ -5962,24 +5972,57 @@ change here. `an-alternating-count-latches-the-scan-type.md` is what earns the
 pair; `investigations/the-composite-count-dithers-where-the-ignore-nears-the-pulse.md`
 is the count.
 
-### The frame hold races the capture's sizing, so a composite capture is short
+### The frame hold raced the capture's sizing -- FIXED by arming on the adoption
 
 `SourceMeasurement::holdVerticalSync()` adopts a restored frame only once two
 offers agree, and the capture is sized from whatever the count is when the
-solve reaches it. A restoration that arrives a pass late therefore leaves the
-capture short by the source's vertical sync, for the life of the acquisition.
+solve reaches it. A restoration that arrived a pass late left the capture short
+by the source's vertical sync, for the life of the acquisition.
 
-Measured per acquisition, each a `MODE` and a `/sc?~`:
+Measured per acquisition before the fix, each a `MODE` and a `/sc?~`:
 
 | mode | restored | short |
 |---|---|---|
 | 640x512@50 composite | 3 of 8 (cv 534) | 5 of 8 (cv 530 or 531) |
 | 640x480@60 composite | 3 of 6 (cv 525) | 3 of 6 (cv 523) |
 
-**`VPERIOD_IF` reads valid in the short landings too** -- 533 and 524, with
-`STATUS_IF_VT_BAD` 0 -- so the reading is there and the hold has not taken it.
-The divider follows the count, so the two landings also differ in `PLLAD_MD`:
+**`VPERIOD_IF` read valid in the short landings too** -- 533 and 524, with
+`STATUS_IF_VT_BAD` 0 -- so the reading was there and the hold had not taken it.
+The divider follows the count, so the two landings also differed in `PLLAD_MD`:
 1424 against 1746, and 1272 against 1444.
+
+**WHAT MADE IT UNRECOVERABLE WAS THE ARM, NOT THE RACE.** A restoration is at
+most `VerticalSyncMaxLines` and `SourceMeasurement::CountPairSpread` admits 3,
+so `idle_.agrees(lines, solvedLines_)` swallowed every narrow one: the adopted
+count differed from the solved one and nothing armed a re-solve. The width is
+what decided, and the framing matrix split on it exactly:
+
+| mode | restoration width | armed? | composite `down`, before |
+|---|---|---|---|
+| 640x480@60 | 2 | no | `9\|10` |
+| 240x352@70 | 2 | no | near 8 |
+| 320x256@50 | 3 | no | `3\|1` |
+| 800x600@60 | 4 | yes | `0\|0`, flush |
+| 640x512@50 | 4 | yes | overruns |
+
+Widening the spread is not available: it is 3 to stop the Wii's 521-against-524
+miscount reading as the source leaving several times a second. So the arm asks
+instead whether the count it holds is a RESTORED one --
+`SourceMeasurement::countRestored()` -- which is corroborated arithmetic where a
+count that merely moved is not. It terminates, because the held frame rides a
+count that dithers, so the restored reading is one value and a solve on it
+leaves the two equal. The console says `TIMINGS change (restored count)`.
+
+What it bought, on the bench at 1080p and 16:9:
+
+| mode | before | after |
+|---|---|---|
+| 640x480@60 composite | `PLLAD_MD` 1446, cv 523, across far 152, down `9\|10` | **1272, cv 525, far 11, down `3\|1`** |
+| 640x512@50 composite | `PLLAD_MD` 1746 | **1424, cv 534** -- its separate-sync leg's own pair |
+
+640x512@50 composite still overruns both ends, so its framing is not closed;
+what changed is that its two sync types now solve one divider and one capture
+rather than two.
 
 `investigations/the-composite-count-dithers-where-the-ignore-nears-the-pulse.md`.
 
