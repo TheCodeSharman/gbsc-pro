@@ -85,6 +85,61 @@ TEST_CASE("adjacent sources keep their own framings")
     CHECK(found == other);
 }
 
+// --- how many it has to hold -------------------------------------------------
+//
+// Counted from the monitor definitions with the engine's own tolerances. The
+// stock AKF50's 28 modes produce 16 distinct keys on each sync type and 32
+// across both; RetroScaler-Acorn's 80 produce 63, 61 and 124. A table that
+// fills refuses the next tuning and says nothing, so the symptom is a
+// declaration that works until the source is re-acquired.
+
+TEST_CASE("the stock monitor definition's modes all fit, on both sync types")
+{
+    FramingTable table;
+
+    for (uint16_t mode = 0; mode < 16; ++mode)
+        for (int composite = 0; composite < 2; ++composite) {
+            // Composite sync states no polarity and separate sync states one,
+            // so one mode tuned on both arrives as two keys.
+            const SourceKey::Polarity polarity =
+                composite ? SourceKey::Undetermined : SourceKey::Negative;
+            CHECK(table.remember(SourceKey((uint16_t)(200 + mode), 50.0f, 0.0f,
+                                           polarity, polarity),
+                                 Framed));
+        }
+
+    CHECK(table.count() == 32);
+}
+
+// An axis nobody has framed has no proportion of its own, which is not the same
+// as one framed at zero: CaptureWindow gives the first the computed default for
+// the mode in force and the second a window sixteen units wide. The stored form
+// carries the distinction in a spare bit of the byte the polarities sit in, so
+// it costs nothing to keep.
+TEST_CASE("an axis nobody framed comes back unframed")
+{
+    FramingTable table;
+    PanAndZoom oneAxis;
+    oneAxis.seedOn(AxisHorizontal, 0.1f, 0.8f);
+    REQUIRE(table.remember(Bench, oneAxis));
+
+    PanAndZoom found;
+    REQUIRE(table.find(Bench, &found));
+    CHECK(found.tunedOn(AxisHorizontal));
+    CHECK_FALSE(found.tunedOn(AxisVertical));
+}
+
+// The table lives in the ESP8266's globals, so what the count costs is the
+// entry's size. Measured on the target by building at two counts: an entry
+// holding SourceKey's and PanAndZoom's floats is 46 bytes, where the file
+// persists neither -- the key's rate is quantised to RateStepsPerHz and every
+// proportion is stored in ten-thousandths. Narrowed to what a save and a load
+// keeps, an entry is 18.
+TEST_CASE("an entry costs what a save and a load keeps")
+{
+    CHECK(sizeof(FramingTable) / FramingTable::Entries <= 20);
+}
+
 TEST_CASE("a full table refuses rather than discarding a tuning")
 {
     // Silently dropping the oldest entry loses work the user did, with nothing

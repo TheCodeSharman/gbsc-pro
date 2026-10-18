@@ -4,11 +4,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-namespace Tv5725 {
+#include "FramingEntry.h"
 
-namespace {
-const float Whole = 10000.0f;
-}
+namespace Tv5725 {
 
 bool FramingLine::polarityFrom(char symbol, SourceKey::Polarity &into)
 {
@@ -79,14 +77,19 @@ bool FramingLine::rateFrom(const char *&at, float &into)
     return true;
 }
 
+// FramingEntry owns the unit, because the store holds the same record this
+// writes: a proportion the grammar cannot state is one the table cannot hold.
 float FramingLine::proportionOf(long tenThousandths)
 {
-    return (float)tenThousandths / Whole;
+    if (tenThousandths < 0)
+        return 0.0f;
+    return FramingEntry::proportionOf(
+        tenThousandths > 0xFFFF ? 0xFFFF : (uint16_t)tenThousandths);
 }
 
 long FramingLine::tenThousandthsOf(float proportion)
 {
-    return lrintf(proportion * Whole);
+    return (long)FramingEntry::tenThousandthsOf(proportion);
 }
 
 bool FramingLine::empty(const char *line)

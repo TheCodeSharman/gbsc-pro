@@ -753,6 +753,10 @@ private:
     // control goes dead for as many presses as it was pushed past its limit.
     bool step(const PanAndZoom &wanted);
 
+    // Says so when the table would not take it, which it does by refusing
+    // rather than by evicting.
+    void rememberFraming();
+
     DisplayClock &displayClock_;
     InputFormatter &inputFormatter_;
     PanAndZoom framing_;

@@ -11,18 +11,22 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "Aspect.h"
-#include "PanAndZoom.h"
-#include "SourceKey.h"
+#include "FramingEntry.h"
 
 namespace Tv5725 {
 
 class FramingTable {
 public:
-    // Bounded because it lives in the ESP8266's globals. Refusing when full is
-    // the stated policy: dropping the oldest entry loses work the user did with
-    // nothing said, where a refusal is visible and one can be cleared.
-    static const uint16_t Entries = 16;
+    // Bounded because it lives in the ESP8266's globals, and sized against what
+    // a monitor definition asks for rather than against what fits: the stock
+    // AKF50's modes produce 32 keys across both sync types and the bench's
+    // RetroScaler-Acorn 124, so a table of 16 filled on the first sync type and
+    // refused everything after it.
+    //
+    // Refusing when full is still the policy: dropping the oldest entry loses
+    // work the user did with nothing said, where a refusal is visible and one
+    // can be cleared. docs/framing-presets.md
+    static const uint16_t Entries = 128;
 
     FramingTable();
 
@@ -53,9 +57,10 @@ public:
     // how a write is known to be owed at all.
     uint16_t revision() const;
 
-    // For whoever writes the file out.
-    const SourceKey &keyAt(uint16_t index) const;
-    const PanAndZoom &framingAt(uint16_t index) const;
+    // For whoever writes the file out. By value because what is held is the
+    // stored form, which FramingEntry turns back into the live one.
+    SourceKey keyAt(uint16_t index) const;
+    PanAndZoom framingAt(uint16_t index) const;
     Aspect aspectAt(uint16_t index) const;
 
     void clear();
@@ -76,9 +81,7 @@ private:
 
     void moved();
 
-    SourceKey keys_[Entries];
-    PanAndZoom framings_[Entries];
-    Aspect aspects_[Entries];
+    FramingEntry entries_[Entries];
     uint16_t count_;
     uint16_t revision_;
 };

@@ -1700,6 +1700,20 @@ void VideoPath::write(const OutputWindow &solved, const CaptureWindow &capture)
         GBS::PB_CAP_OFFSET::write(offset);
 }
 
+// The table refuses rather than evicting, so a tuning can be made, shown and
+// lost on the next acquisition with nothing else saying so -- /geometry and a
+// register dump both report the live framing, which the press did move.
+void VideoPath::rememberFraming()
+{
+    if (framings_.remember(framedKey_, framing_, aspect_))
+        return;
+
+    char line[64];
+    snprintf(line, sizeof(line), "framing: not stored, %u sources held",
+             (unsigned)framings_.count());
+    tv5725Log(line);
+}
+
 bool VideoPath::step(const PanAndZoom &wanted)
 {
     if (fullFraming_)
@@ -1727,7 +1741,7 @@ bool VideoPath::step(const PanAndZoom &wanted)
     // turned off where it is used would otherwise lose every tuning. Only the
     // flash write is debounced. One that moved nothing stores nothing, which is
     // also what keeps sixteen places from filling with computed defaults.
-    framings_.remember(framedKey_, framing_, aspect_);
+    rememberFraming();
 
     // A refusal is invisible otherwise: the axis fills, which is exactly what it
     // does when no shape was asked for, so the control reads as dead on the one
@@ -1818,7 +1832,7 @@ bool VideoPath::setAspect(Aspect shape)
         return false;
     }
 
-    framings_.remember(framedKey_, framing_, aspect_);
+    rememberFraming();
 
     // A refusal is invisible otherwise: the axis fills, which is exactly what it
     // does when no shape was asked for, so the control reads as dead on the one

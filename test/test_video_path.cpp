@@ -1258,6 +1258,15 @@ TEST_CASE("a source comes back to the framing it was left at")
 
     frameAt(engine, 100, 120, 40, -15);
     const PanAndZoom tuned = engine.framing();
+    // The WINDOW is what has to come back. The table holds the framing in the
+    // ten-thousandths the file states, so the proportion that returns is the
+    // stored one rather than the float that went in -- and one input unit is at
+    // least eight ten-thousandths on any line this chip captures, so the window
+    // the two describe is the same window.
+    const uint16_t tunedOrigin[2] = { engine.originUnitsOn(AxisHorizontal),
+                                      engine.originUnitsOn(AxisVertical) };
+    const uint16_t tunedExtent[2] = { engine.extentUnitsOn(AxisHorizontal),
+                                      engine.extentUnitsOn(AxisVertical) };
 
     // Away to another source entirely, and back.
     seedSourceLines(524);
@@ -1271,7 +1280,11 @@ TEST_CASE("a source comes back to the framing it was left at")
     engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(acquisition));
 
-    CHECK(engine.framing() == tuned);
+    for (int vertical = 0; vertical < 2; ++vertical) {
+        const Axis &axis = vertical ? AxisVertical : AxisHorizontal;
+        CHECK(engine.originUnitsOn(axis) == tunedOrigin[vertical]);
+        CHECK(engine.extentUnitsOn(axis) == tunedExtent[vertical]);
+    }
 }
 
 TEST_CASE("a source nobody has framed takes no place in the table")
@@ -1427,6 +1440,33 @@ TEST_CASE("a framing restored from the file is applied when its source arrives")
     }
 }
 
+TEST_CASE("a tuning the table cannot hold is reported rather than refused in silence")
+{
+    // A refusal nothing says is a declaration that works until the source is
+    // re-acquired, and neither a register dump nor /geometry shows it: both
+    // report the live framing, which the press did move.
+    seedBenchSource();
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+    VideoSourceAcquisition acquisition(sampling, engine);
+
+    for (uint16_t i = 0; i < FramingTable::Entries; ++i)
+        REQUIRE(framings.remember(SourceKey((uint16_t)(200 + i), 120.0f, 0.0f,
+                                            SourceKey::Negative, SourceKey::Negative),
+                                  PanAndZoom(0.1f, 0.8f, 0.1f, 0.8f)));
+
+    engine.setOutputMode(benchMode());
+    engine.inputTimingsChanged(4);
+    REQUIRE(pollUntilSolved(acquisition));
+
+    g_logLines.clear();
+    frameAt(engine, 100, 120, 40, -15);
+
+    CHECK(loggedContaining("framing: not stored"));
+}
+
 TEST_CASE("a press stores the framing without leaving the source")
 {
     // Storing only on the way out loses every tuning of a unit that is turned
@@ -1448,7 +1488,13 @@ TEST_CASE("a press stores the framing without leaving the source")
 
     PanAndZoom stored;
     REQUIRE(framings.find(SourceKey(312, 50.08f, BenchSyncWidth, BenchPolarity, BenchPolarity), &stored));
-    CHECK(stored == engine.framing());
+    // The window it describes, not the float: the table holds what the file
+    // states, which is ten-thousandths of the capturable region.
+    for (int vertical = 0; vertical < 2; ++vertical) {
+        const Axis &axis = vertical ? AxisVertical : AxisHorizontal;
+        CHECK(askedOrigin(engine, stored, axis) == (long)engine.originUnitsOn(axis));
+        CHECK(askedExtent(engine, stored, axis) == (long)engine.extentUnitsOn(axis));
+    }
 }
 
 TEST_CASE("a reset forgets what the table stored for this source")

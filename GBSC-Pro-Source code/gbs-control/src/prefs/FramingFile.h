@@ -48,6 +48,9 @@ public:
     static const uint8_t LineBytes = 80;
 
 private:
+    // Whether the whole file was served, asked before a line is parsed.
+    bool whole();
+
     Tv5725::FramingTable &table_;
     const char *path_;
     bool readable_;

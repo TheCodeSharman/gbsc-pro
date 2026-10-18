@@ -17,6 +17,28 @@ FramingFile::FramingFile(Tv5725::FramingTable &table, const char *path)
 
 bool FramingFile::readable() const { return readable_; }
 
+// Bytes served against bytes claimed, which is what says the whole file
+// arrived. A pass of its own because the alternative is a scratch table to
+// parse into and adopt afterwards, and that costs the table's whole size on a
+// 4 KB stack -- a cost that grows with every source the table can hold.
+bool FramingFile::whole()
+{
+    File f = LittleFS.open(path_, "r");
+    if (!f)
+        return false;
+
+    const uint32_t claimed = f.size();
+    uint32_t consumed = 0;
+    while (f.available() > 0) {
+        if (f.read() < 0)
+            break;
+        ++consumed;
+    }
+    f.close();
+
+    return consumed >= claimed;
+}
+
 bool FramingFile::read()
 {
     readable_ = false;
@@ -26,22 +48,20 @@ bool FramingFile::read()
         return true;
     }
 
+    if (!whole())
+        return false;
+
     File f = LittleFS.open(path_, "r");
     if (!f)
         return false;
 
-    const uint32_t claimed = f.size();
-    uint32_t consumed = 0;
-
-    Tv5725::FramingTable arriving;
-    Tv5725::FramingText text(arriving);
+    Tv5725::FramingText text(table_);
     char line[LineBytes];
     uint8_t held = 0;
     while (f.available() > 0) {
         const int c = f.read();
         if (c < 0)
             break;
-        ++consumed;
         if (c != '\n' && c != '\r') {
             if (held < sizeof(line) - 1)
                 line[held++] = (char)c;
@@ -62,10 +82,6 @@ bool FramingFile::read()
 
     f.close();
 
-    if (consumed < claimed)
-        return false;
-
-    table_.adopt(arriving);
     readable_ = true;
     return true;
 }
