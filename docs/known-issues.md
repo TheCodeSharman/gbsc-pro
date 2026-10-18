@@ -2376,6 +2376,27 @@ tabulated and the spread between the two is recorded below it:
 | 640x512@50 | composite | 1424 | overruns both ends | overruns both ends |
 | 800x600@60 | composite | 1342 | 0.59\|0.00, near 5 | 0.97\|0.95, 0\|0 |
 
+**THE 70 Hz MODE IS JUDGED AT 1024p, NOT 1080p, AND IT CANNOT BE OTHERWISE.**
+The MS9288A's ceiling is 165 MHz and a mode costs `total_px x frame_lines` per
+field, so 1080p tops out at **66.67 Hz** -- 240x352@70 wants 173.25 MHz.
+`OutputMode::transmittableFor()` falls back to the next mode down that can carry
+the rate, which is 1024p at 125.96 MHz, and **nothing records the fallback**:
+`setting(host, "output")` still reads 1920x1080 while the frame is 1066 lines.
+Each mode's own ceiling is 1080p 66.67 Hz, 1024p 91.70, 960p 91.67, 720p 133.33.
+
+**EVERY 240x352@70 FIGURE TAKEN BEFORE 2026-10-18 IS INFLATED 1.5x**, because
+the matrix captured at a forced 1920x1080 and **the dongle rescales rather than
+refusing**. Measured both ways on one state: natively the far margin is 9
+columns, upscaled it is 14, and a one-row margin smears from 1,3 to 2,2. The
+`whole` fractions survive -- `source_pixel_px()` divides by the clip's own
+extent, so both scale together -- but the margins and `ALLOWANCE`, which is
+stated in capture columns, do not. Re-read at 1280x1024 the same two cases go
+from far 13 to far **8** and near 18 to near **12**, with the vertical
+un-smearing from 2|2 to **1|3** and the near pixel from 0.73 to **0.84**.
+
+`framing_decomposition.carried_frame()` reads the mode off `VDS_VSYNC_RST` and
+the matrix captures at its emitted size, printing that size beside each reading.
+
 **WHAT MOVED SINCE THE ADOPTION ARMED A RE-SOLVE.** Nothing regressed; one case
 was recovered and the rest are unchanged inside the run-to-run spread recorded
 below.
