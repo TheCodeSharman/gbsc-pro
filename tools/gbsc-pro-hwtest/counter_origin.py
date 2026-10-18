@@ -349,17 +349,35 @@ def measure(host, dev, mode, h, v, clock, label):
     return report(field, h, v, doubling, units, active_px, active_ln, found)
 
 
+def source_lead_px(crossing, head_blanking, units_px):
+    """Where the source's picture starts, in the source's own pixels, from the
+    window start the feature left the capture at.
+
+    The crossing is in the CAPTURE WINDOW's coordinates and a mode file states
+    the lead in the SOURCE's. IF_HBIN_SP is the offset between them: on a
+    doubled line it is the doubler's FIFO reset and panning it pans the whole
+    picture, and where the FIFO is bypassed it blanks the window's own head --
+    so a feature inside it has left before the window start reaches it either
+    way, and the reading understates by that many units.
+    """
+    return (crossing + head_blanking) / units_px
+
+
 def report(field, h, v, doubling, units, active_px, active_ln, found):
     near, top = found.get("IF_HB_SP2"), found.get("IF_VB_SP")
     units_px = units / float(sum(h))
     if near is not None:
-        lead = near / units_px
+        lead = source_lead_px(near, field["IF_HBIN_SP"], units_px)
         filed = h[0] + h[1] + h[2]
         samples = (lead - filed) * doubling * units_px
+        # The null in each register that places the origin, in that register's
+        # own unit: SP_RT_HS_SP counts ADC samples and IF_HBIN_SP counts the
+        # counter's units, which are two samples on a doubled line. --hbin
+        # walks the second one, which is what settles it against a prediction.
         print(f"    h lead {lead:.1f} px against {filed}  ->  {lead - filed:+.1f} px"
               f" = {samples:+.1f} ADC samples"
               f"   null at SP_RT_HS_SP {field['SP_RT_HS_SP'] + samples:.0f}"
-              f" or IF_HBIN_SP {field['IF_HBIN_SP'] + samples:.0f}"
+              f" or IF_HBIN_SP {field['IF_HBIN_SP'] + samples / doubling:.0f}"
               f" (engine writes {field['SP_RT_HS_SP']} and {field['IF_HBIN_SP']})")
     if top is not None:
         # Against the vsync pulse's LEADING edge, which is the edge a video
@@ -370,7 +388,10 @@ def report(field, h, v, doubling, units, active_px, active_ln, found):
         filed = v[0] + v[1] + v[2]
         print(f"    v lead {lines:.1f} lines against {filed} from the pulse's"
               f" leading edge  ->  the origin sits {filed - lines:.1f} lines in")
-    return None if near is None else (near / units_px - (h[0] + h[1] + h[2]))
+    if near is None:
+        return None
+    return (source_lead_px(near, field["IF_HBIN_SP"], units_px)
+            - (h[0] + h[1] + h[2]))
 
 
 def main():
@@ -399,6 +420,17 @@ def main():
     args = parser.parse_args()
 
     dev = hdmi_capture.device()
+    try:
+        walk_modes(args, dev)
+    finally:
+        # THE HOLD OUTLIVES THE RUN OTHERWISE, and a divider held from a
+        # previous one is invisible in the reading it corrupts: four modes once
+        # read back PLLAD_MD 1272 and a PLLAD_KS neither of them solves.
+        if args.hold:
+            gbs_unit.get(args.host, "/sampleclock?hold=0")
+
+
+def walk_modes(args, dev):
     for mode in [m.strip() for m in args.modes.split(",")]:
         found = full_margins.stated(mode)
         if found is None:

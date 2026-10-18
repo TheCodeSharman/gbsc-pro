@@ -114,3 +114,28 @@ def test_a_feature_that_jumps_outward_has_left_the_capture():
     assert [level for _at, level in walk][-2:] == [0.0, 0.0]
     assert all(level > 0 for _at, level in walk[:4])
     assert counter_origin.half_crossing(walk) is not None
+
+
+# WHERE THE SOURCE'S PICTURE STARTS, from the window start the feature left at.
+#
+# The crossing is in the CAPTURE WINDOW's coordinates and the mode file states
+# the lead in the SOURCE's, and IF_HBIN_SP is the offset between them: the
+# doubler's FIFO line reset on a doubled line, 160 units, which pans the whole
+# picture, and a two-unit blank on the window's own head where the FIFO is
+# bypassed. Either way a feature inside it has left the capture that many units
+# before the window start reaches it.
+# ../../docs/investigations/the-capture-origin-varies-by-mode-at-one-line-rate.md
+
+def test_the_offset_between_the_window_and_the_source_is_added_back():
+    """Measured on `vga` at 320x256@50 into 1080p, the engine's own solve: the
+    creep left IF_HB_SP2 at 76.1 units with IF_HBIN_SP 160 and 2.1504 units a
+    source pixel, where the mode file puts picture 110 px in."""
+    assert round(counter_origin.source_lead_px(76.1, 160, 1101 / 512.0)) == 110
+
+
+def test_omitting_it_understates_the_lead_by_its_own_size():
+    """Which is the reading that made the doubled modes unusable: 35.4 px
+    against the filed 110, a 320-ADC-sample error on a mode whose whole margin
+    is four emitted columns."""
+    read = counter_origin.source_lead_px(76.1, 0, 1101 / 512.0)
+    assert abs(read - 35.4) < 0.1
