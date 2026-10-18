@@ -416,6 +416,46 @@ is the Wii: its key carries a sync duty the published row cannot answer, so
 `pixelSamples()` is 0 and the origin is the constant it always was. A Wii
 framing is therefore unchanged by this and its black border is its own question.
 
+## The oversampling ratio moves the origin, and it is the size of the split
+
+Two modes sit at one sampling density -- 640x480@60 at 1.591 capture units per
+source pixel and 640x512@50 at 1.590 -- and read -3.8 and -2.0 source pixels
+against the raster their mode file states, 2.9 ADC samples apart. What differs
+between them is the oversampling ratio: 2 against 4.
+
+Measured on 640x512@50 alone, `PLLAD_MD` held at 1424 with
+`STATUS_SYNC_PROC_HTOTAL` 1424 and the measured pulse 90 at every reading, the
+ratio cycled with `counter_origin.py --hold 1424 --osr`. `/sc?o` moves
+`PLLAD_CKOS` and the decimators together, so the kept rate and the geometry the
+engine solved stay put and the ratio is the only thing that changes:
+
+| ratio | `PLLAD_CKOS` | null at `SP_RT_HS_SP` | against x4 |
+|---|---|---|---|
+| x1 | 2 | 1416, 1416 | **+17 samples** |
+| x2 | 1 | 1401, 1402 | **+2 to +3 samples** |
+| x4 | 0 | 1399, 1399 | 0 |
+
+**So ratio 2 wants the origin 2 to 3 samples later than ratio 4 does**, which is
+the 2.9 samples the two modes at one density differ by, in the right direction.
+The ratio is the term the per-mode constant is missing.
+
+**THE NULL IS THE COMPARABLE FIGURE, NOT THE DISPLACEMENT.** `SP_RT_HS_SP` is
+the capture counter's origin, so a reading of where the picture sits is only
+meaningful beside the register it was taken under -- and reaching x2 through the
+cycle sometimes leaves that register at 1420 rather than 1404. The displacement
+then reads -18.5 samples against -2.5, while the null is 1402 against 1401. The
+null is what repeats.
+
+**AND A RATIO THE POST-DIVIDER CANNOT CARRY IS A SILENT NO-OP**, which is how
+the ratio came to look like one. `PLLAD_CKOS` is `PLLAD_KS - stepsFor(ratio)`
+and cannot go negative, so `Adc::oversampleFor()` caps the ratio at what KS
+affords: at KS 1 the 1-2-4 cycle sits at x2 for ever. 640x480@60 and
+800x600@60 both solve KS 1, so neither can be asked for x4 at all -- the
+experiment only runs on a mode whose KS is 2 or more, which 640x512@50 and
+320x256@50 are. `gbs_unit.cycle_to_oversample()` presses until the decimators
+read the ratio back and refuses what KS will not carry, because counting
+presses measured x4 where it had asked for x2.
+
 ## Traps
 
 - **The anchor belongs in ADC samples, not in source pixels, and it is not quite

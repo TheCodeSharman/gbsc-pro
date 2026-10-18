@@ -2436,6 +2436,30 @@ opposite signatures, which is as close as this bench comes to isolating
 The MS9288A's ceiling is 165 MHz and a mode costs `total_px x frame_lines` per
 field, so 1080p tops out at **66.67 Hz** -- 240x352@70 wants 173.25 MHz.
 
+### A mode change on composite sync can leave the previous mode's solve standing
+
+**AND `acquired_and_settled()` CANNOT SEE IT**, because `ch`, `cv`, `eh` and the
+line rate all hold still on a solve nothing re-ran. Measured 2026-10-18,
+stepping the five matrix modes with one `/sc?~` at the start of the sync type
+rather than one per mode: 640x480@60 composite came up carrying 320x256@50's
+`PLLAD_MD` of 2200, no sync measurement at all -- `STATUS_SYNC_PROC_HLOW_LEN` 0
+-- and the previous mode's line count of 309 against the 525 the file states.
+The other four modes solved on the same pass, and the same case solves when
+each mode gets its own `/sc?~`.
+
+**ANY MEASUREMENT TAKEN THERE IS EVIDENCE ABOUT NOTHING**, and it has cost one
+oversampling-ratio experiment outright. `gbs_unit.solving_mode()` is the gate:
+the count against the mode's own total, a sync measurement being present at
+all, and `STATUS_SYNC_PROC_HTOTAL` against `PLLAD_MD` for the latch.
+
+**THE COUNT ALLOWANCE IS ONE-SIDED, AND THE SEPARATOR IS WHY.** Through
+separate sync the count is the mode file's own total exactly on all five modes;
+through the separator it runs SHORT by 2 to 4 lines -- 320x256@50 309 against
+312, 800x600@60 624 against 628, 640x512@50 530 against 534, 240x352@70 447
+against 449 -- and never over. Four short is also the most that separates
+640x512@50's composite count from the 525 640x480@60 states, which are the
+closest two totals in the set.
+
 ### The across failure is two defects, and the second one is in the instrument
 
 Measured 2026-10-18 on `vga`, separate sync, each mode's framing reset and 16:9
@@ -2464,12 +2488,23 @@ file states, at full framing where nothing is clipped:
 | 800x600@60 | 1342 | 1.271 | 1 | 216.4 / 216 | **+0.4 px** |
 | 640x512@50 | 1424 | 1.590 | 2 | 166.0 / 168 | **-2.0 px** |
 
-**SAMPLING DENSITY DOES NOT EXPLAIN IT, AND THE OVERSAMPLING RATIO IS WHY.**
+**SAMPLING DENSITY DOES NOT EXPLAIN IT, AND THE OVERSAMPLING RATIO DOES.**
 640x480@60 and 640x512@50 sit at one density -- 1.591 against 1.590 -- and read
 -3.8 and -2.0, a 2.9-sample split. What differs is the ratio: one decimator in
-circuit against two, so ratio 2 against ratio 4. **That refutes ratio four being
-a no-op**, which rests on a single held state reading 0.4 samples off the
-ratio-two line.
+circuit against two, so ratio 2 against ratio 4. **Cycled on 640x512@50 alone**,
+with `PLLAD_MD` held at 1424, `STATUS_SYNC_PROC_HTOTAL` 1424 and the measured
+pulse 90 at every reading, the origin's null sits at `SP_RT_HS_SP` 1399 at
+ratio 4, **1401 and 1402 at ratio 2** and 1416 at ratio 1 -- so ratio 2 wants
+the origin 2 to 3 samples later, which is the split, in the right direction.
+
+**RATIO 4 IS NOT A NO-OP, AND IT IS OUT OF REACH ON HALF THE MATRIX.**
+`PLLAD_CKOS` is `PLLAD_KS - stepsFor(ratio)` and cannot go negative, so
+`Adc::oversampleFor()` caps the ratio at what KS affords and the 1-2-4 cycle
+sits at x2 for ever at KS 1. 640x480@60 and 800x600@60 solve KS 1 and cannot be
+asked for x4 at all; 640x512@50 and 320x256@50 solve KS 2. **A probe counting
+presses rather than reading the decimators back measured x4 where it had asked
+for x2**, and a mode whose KS refuses a ratio reads as that ratio having no
+effect -- `gbs_unit.cycle_to_oversample()` refuses it instead.
 `docs/investigations/the-capture-origin-varies-by-mode-at-one-line-rate.md`
 
 **THE LINE FILTER'S DIVIDER CAP IS NOT THE CAUSE**, though it is what put every
