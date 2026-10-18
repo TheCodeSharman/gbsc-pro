@@ -103,7 +103,7 @@ const uint32_t SourceMeasurement::UnconfirmedRatePulses;
 
 SourceMeasurement::SourceMeasurement(InputFormatter &inputFormatter)
     : inputFormatter_(inputFormatter), lineRateHz_(0), sourceLines_(0),
-      heldFrame_(0), offeredFrame_(0), fieldRateHz_(0.0f),
+      heldFrame_(0), offeredFrame_(0), countRestored_(false), fieldRateHz_(0.0f),
       agreedRateHz_(0.0f), judgedLines_(0), judgedRateHz_(0), goodLineRateHz_(0),
       rateRejections_(0), hsyncPolarity_(SourceKey::Undetermined),
       vsyncPolarity_(SourceKey::Undetermined), verticalPeriod_(0),
@@ -211,6 +211,7 @@ void SourceMeasurement::modeChanged()
     dutyAttempts_ = 0;
     heldFrame_ = 0;
     offeredFrame_ = 0;
+    countRestored_ = false;
 }
 
 void SourceMeasurement::samplingClockLatched()
@@ -610,8 +611,12 @@ uint16_t SourceMeasurement::readSourceLines()
     const uint16_t lines = measureSourceLinesCorrected(Adc::dividerInForce());
     holdVerticalSync(lines);
 
-    return countFrom(lines);
+    const uint16_t count = countFrom(lines);
+    countRestored_ = count != lines;
+    return count;
 }
+
+bool SourceMeasurement::countRestored() const { return countRestored_; }
 
 bool SourceMeasurement::readSource()
 {

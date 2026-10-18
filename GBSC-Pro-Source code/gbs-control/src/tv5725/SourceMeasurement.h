@@ -149,6 +149,14 @@ public:
     // leaves that state with no exit.
     uint16_t readSourceLines();
 
+    // Whether the reading just taken is the formatter's frame rather than the
+    // processor's own count. A restoration is corroborated arithmetic, so an
+    // arm may trust it where it cannot trust a count that merely moved:
+    // CountPairSpread admits 3 and a restoration is at most
+    // VerticalSyncMaxLines, so every narrow one agrees with the count already
+    // solved and would arm nothing.
+    bool countRestored() const;
+
     // The input formatter's line period, settled, or 0 where the samples will
     // not agree. A REFERENCE TO COMPARE AGAINST, never a measurement: the
     // register rails to values that are wrong and steady.
@@ -457,6 +465,7 @@ private:
     uint16_t sourceLines_;
     uint16_t heldFrame_;                  // held; the source's whole frame
     uint16_t offeredFrame_;               // the reading it has to repeat
+    bool countRestored_;                  // the last reading took the frame
     float fieldRateHz_;
     float agreedRateHz_;
     // The settled pair a later reading is judged against, and the last rate

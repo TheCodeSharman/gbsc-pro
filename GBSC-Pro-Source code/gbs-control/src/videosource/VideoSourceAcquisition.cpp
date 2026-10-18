@@ -798,12 +798,27 @@ bool VideoSourceAcquisition::sourceMoved()
     const bool pulseLost = Tv5725::VideoSignal::countIsMultipleOf(lines, solvedLines_)
                            && sampling_.linePeriodHolds(solvedLinePeriod_);
 
+    // A RESTORATION IS CORROBORATED ARITHMETIC AND THE SPREAD MUST NOT SWALLOW
+    // IT. The solve does not wait for the hold's two agreeing offers, so a
+    // formatter reading that completes a pass late leaves the capture sized
+    // from the raw count -- and every restoration up to CountPairSpread agrees
+    // with the count already solved, so no arm below can recover it. The spread
+    // is there for a count the processor MISCOUNTS, which the formatter does not
+    // corroborate; this one it does.
+    //
+    // It terminates: the held frame rides a count that dithers, so the restored
+    // reading is one value, and a solve on it leaves the two equal.
+    // ../../../docs/known-issues.md
+    const bool restored = sampling_.countRestored() && lines != solvedLines_;
+
     const bool countMoved = !idle_.agrees(lines, solvedLines_) && !pulseLost;
-    if (!countMoved && !rateMoved())
+    if (!restored && !countMoved && !rateMoved())
         return false;
 
     idle_.reset();
-    return armMove(countMoved ? "count" : "rate", lines, false);
+    const char *const why = restored ? "restored count"
+                          : countMoved ? "count" : "rate";
+    return armMove(why, lines, false);
 }
 
 // The cheap half asks only whether the line period MOVED, and the expensive half

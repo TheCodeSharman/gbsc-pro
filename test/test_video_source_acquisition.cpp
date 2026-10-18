@@ -3812,3 +3812,44 @@ TEST_CASE("a boot confirmation disagreeing once is asked again before arming")
 
     g_nextSpanRateHz = 0.0f;
 }
+
+// --- a restoration that lands after the solve -------------------------------
+
+TEST_CASE("a restoration landing after the solve re-solves rather than staying short")
+{
+    // THE HOLD NEEDS TWO AGREEING OFFERS AND THE SOLVE DOES NOT WAIT FOR THEM.
+    // A formatter reading that completes a pass late leaves the capture sized
+    // from the RAW count, and the count-move arm cannot recover it: a
+    // restoration is at most VerticalSyncMaxLines and
+    // SourceMeasurement::CountPairSpread admits 3, so every width up to 3
+    // agrees with the count already solved and arms nothing.
+    //
+    // It is the width that decides, which is why the framing matrix splits on
+    // it. 640x480@60 restores by 2 and 320x256@50 by 3, and both keep a short
+    // capture -- 9|10 and 3|1 rows of black; 800x600@60 restores by 4, exceeds
+    // the spread, re-solves and is flush at both ends.
+    // ../docs/known-issues.md
+    seedBenchSource();
+    Acquiring unit;
+    unit.path.useSyncTypeProbe(probeOwnVsync);
+
+    // Composite, and the formatter has not completed a vertical measurement
+    // yet: the count stands alone and nothing can restore it.
+    g_hasOwnVsync = false;
+    seedSourceLines(308);
+    seedField(0, 0x00, 0, 1, 0);        // STATUS_IF_VT_OK
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+    const uint16_t shortCapture = unit.path.lineUnitsOn(AxisVertical);
+    REQUIRE(unit.sampling.sourceLines() == 308);
+
+    // The frame arrives. 623 half-lines is 312 whole ones against a counted
+    // 309, so the pulse the counter lost is 3 -- inside the spread.
+    for (uint8_t i = 0; i < 8 * SourceMeasurement::SteadySamples; ++i) {
+        seedSourceLines(308);
+        seedFrame(623);
+        unit.poll();
+    }
+
+    CHECK(unit.path.lineUnitsOn(AxisVertical) != shortCapture);
+}
