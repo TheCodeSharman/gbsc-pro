@@ -2181,3 +2181,55 @@ questions should share `SteadySamples`.
 at 10 ms before a preset load, with a plus or minus 3 tolerance, because a load
 is expensive and a source mid-change gives a count that is wrong AND steady for a
 few samples.
+
+## The agreement runs: two instances, one policy
+
+A second shape sits beside the steadiness runs and is not the same question. A
+steadiness run asks whether a value has held across a RUN of samples; an
+agreement run asks whether a second reading agrees with the first, and gives up
+after a bounded number that do not.
+
+| where | the tolerance it agrees at |
+|---|---|
+| `SourceMeasurement::rateSettled()` | `RateAgreementPerThousand`, a relative band |
+| `SourceMeasurement::takeDuty()` | `SourceKey::SyncWidthIdentity`, the key's own |
+
+`Tv5725::AgreementRun` holds the run; each caller keeps its own notion of
+agreeing, because the tolerances are measured per quantity and not comparable.
+
+**The budget is spent by DISAGREEMENTS.** The rate's counter used to advance on
+every call, successes included, so a source that agreed eight times and then
+began to wander was taken as it stands on its first disagreement with nothing
+held back at all.
+
+**A run rejects noise and cannot reject bias.** Two readings taken through the
+same wrong term agree with each other perfectly, so no amount of sophistication
+in the run answers whether a reading is RIGHT. What answers that is a check
+against something independently known -- `rateFollowsCount()` against the count,
+`countContradicted()` against the formatter's frame, a duty against the
+published raster its key matched.
+`investigations/the-key-carried-the-origins-calibration.md` is a measurement
+that passed every run and was wrong by a constant.
+
+## A register's encoding is corrected where it is read
+
+Several registers count from zero, so they read one short of the quantity they
+describe. The engine works in the quantity; the encoding is undone at the
+boundary, once, because the alternative is a copy of the correction at each
+consumer -- and there were eight copies of
+`STATUS_SYNC_PROC_VTOTAL`'s in six files before `SyncProcessor::frameLines()`
+took it.
+
+| register | state |
+|---|---|
+| `STATUS_SYNC_PROC_VTOTAL` | corrected in `SyncProcessor::frameLines()`, so every consumer sees the source's frame |
+| `VPERIOD_IF` | corrected in `SourceMeasurement::reconciledFrame()`, its only arithmetic reader. **Not at the boundary**, because its other readers take it as a tap value and a presence check rather than as a frame, and moving it would shift the deinterlacer's tap |
+| `HPERIOD_IF` | the question does not arise: it is read as a change detector and its value is never used |
+| `STATUS_SYNC_PROC_HTOTAL` | not zero based -- it echoes `PLLAD_MD` exactly |
+
+The write side mirrors it and already holds: `VDS_HSYNC_RST` and
+`VDS_VSYNC_RST` take `total - 1` at the one place each is written, and
+`InputFormatter` names the two forms apart -- `lineCounterFor()` is the
+register's value and `lineUnits_` the span. `FrameSync::moveRaster()` reads
+`VDS_VSYNC_RST`, adds a delta and writes it back, so it stays in the register's
+own encoding throughout and wants no correction.
