@@ -591,6 +591,39 @@ Identical to the pixel across four re-latches. **So the across residual is the
 board's and the card reading measures it**, and a pad toggle before judging
 buys nothing on the scaling path.
 
+## The null per mode, anchor-free, and the card agrees with it
+
+`counter_origin.py` reads the origin by clipping the feature out of the
+counter rather than locating it on the emitted frame, so it carries no anchor
+and no sink. Its doubled-mode reading was out by `IF_HBIN_SP` until
+2026-10-18; measured after that, separate sync, each mode's own engine solve,
+at the output the engine chose:
+
+| mode | lead measured / filed | error | null at `SP_RT_HS_SP` | engine writes |
+|---|---|---|---|---|
+| 320x256@50 | 109.8 / 110 | -0.7 samples | 2125 | 2126 |
+| 640x512@50 | 166.4 / 168 | -2.5 | 1401 | 1404 |
+| 640x480@60 | 139.9 / 144 | -6.5 | 1183 | 1190 |
+| 240x352@70 | 41.8 / 44 | -9.4 | 1259 | 1268 |
+
+**AND THE CARD ORDERS THEM THE SAME WAY**, which is what makes either reading
+usable: as the samples the window opens LATE, the anchor-free figures are 0.4,
+2.5, 6.5 and 9.4 against the card's 2.9, 2.7, 7.4 and 8.0 -- within 1.5 samples
+on three of the four and inside the anchored pedestal on the fourth. Two
+instruments, one through the counter and one through the emitted frame, and
+they do not disagree about any mode.
+
+**800x600@60 IS OUT OF THE INSTRUMENT'S REACH, not misread.** Its density is
+1.27 units a source pixel, so `PATTERN CARD`'s one-pixel border is barely over
+one unit; the walk finds a 13-unit feature and never sees it full, and reports
+that rather than a crossing.
+
+**FOUR MODES STILL CARRY NO TERM.** The engine's own stop is `divider + 63 +
+lag - pulse`, and it is 1, 3, 7 and 9 samples high on the four above. Neither
+the lag (14, 2, 2, 14), the oversampling ratio (4, 4, 2, 4), the line doubling
+(only the first), the sampling density (4.297, 1.589, 1.590, 4.240) nor the
+measured pulse's own error (+0.3, +1.0, -5.6, +1.2) sorts them.
+
 ## Traps
 
 - **The anchor belongs in ADC samples, not in source pixels, and it is not quite
