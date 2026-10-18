@@ -137,3 +137,17 @@ def test_a_single_lost_frame_does_not_void_the_reading():
     rows = held()
     rows[7] = 0.0
     assert stability.judge(rows, seconds=2.0).why is None
+
+
+def test_a_clip_whose_span_was_never_timed_reports_no_rate():
+    """A caller judging a clip it took for another purpose has no span: the
+    capture carries no timestamps and the read it came from covers the dongle's
+    warm-up as well. An invented span is a rate that reads two times slow."""
+    rows = held()
+    for frame in range(0, 60, 3):
+        rows = rolled(rows, frame=frame, by=12)
+    judged = stability.judge(rows, seconds=None)
+    assert judged.per_second is None
+    assert judged.seconds is None
+    assert "a second" not in judged.why
+    assert "12 rows" in judged.why and "20 of 60" in judged.why

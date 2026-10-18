@@ -148,7 +148,10 @@ def judge(rows, seconds, maxlag=MAXLAG, contrast=CONTRAST, limit=STEADY_SHARE):
 
     `seconds` is the clip's own measured span, which the frame count cannot
     give: the capture carries no timestamps of its own, so a rate has to be
-    timed around the read.
+    timed around the read. None is a clip taken for another purpose and never
+    timed, which carries no rate -- the share and the worst offset stand on
+    their own, and a span guessed from the frame count reads a quarter slow
+    where the read it came from paid for the dongle's warm-up too.
     """
     rows = np.asarray(rows, np.float32)
     offsets = displacements(rows, maxlag, contrast)
@@ -167,7 +170,7 @@ def judge(rows, seconds, maxlag=MAXLAG, contrast=CONTRAST, limit=STEADY_SHARE):
         if lag and lag != held:
             events += 1
         held = lag
-    span = max(seconds, 1e-6)
+    rate = None if seconds is None else round(events / max(seconds, 1e-6), 2)
     worst = max(moved, key=abs) if moved else 0
     why = None
     if not offsets or lost == len(offsets):
@@ -176,11 +179,13 @@ def judge(rows, seconds, maxlag=MAXLAG, contrast=CONTRAST, limit=STEADY_SHARE):
                f"reset emits nothing while every register reads correct")
     elif share > limit:
         absent = f" and was absent in {lost}" if lost else ""
+        pace = "" if rate is None else f"{rate:.2f} jumps a second, "
         why = (f"the picture moved in {len(moved)} of {len(offsets)} frames"
                f"{absent} ({share * 100:.0f}%, against {limit * 100:.0f}%), "
-               f"{events / span:.2f} jumps a second, worst {worst} rows")
+               f"{pace}worst {worst} rows")
     return Stability(len(offsets), len(moved), lost, round(share, 3), events,
-                     round(events / span, 2), worst, round(seconds, 2), why)
+                     rate, worst,
+                     None if seconds is None else round(seconds, 2), why)
 
 
 # Columns the frame is area-averaged to before it is read. 1920/32 is 60
@@ -251,10 +256,11 @@ def clip_over(dev, seconds, warmup=WARMUP):
 
 def reading(judged):
     """One leg's verdict as a report prints it."""
+    pace = ("untimed" if judged.per_second is None
+            else f"{judged.per_second:.2f} jumps/s over {judged.seconds:.1f} s")
     return (f"{judged.displaced} of {judged.frames} frames displaced "
-            f"({judged.share * 100:.0f}%), {judged.per_second:.2f} jumps/s, "
-            f"worst {judged.worst} rows, {judged.lost} lost, "
-            f"{judged.seconds:.1f} s")
+            f"({judged.share * 100:.0f}%), worst {judged.worst} rows, "
+            f"{judged.lost} lost, {pace}")
 
 
 # The one mode both sync types carry, and what the source is left showing. A

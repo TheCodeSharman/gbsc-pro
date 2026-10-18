@@ -73,6 +73,7 @@ import card_edges
 import framing_decomposition
 import gbs_unit
 import hdmi_capture
+import picture_stability
 
 BENCH_MODE = "X320 Y256 C256 F50"
 
@@ -286,18 +287,30 @@ def test_the_default_framing_puts_the_card_flush_to_the_emitted_edges(
     # test, so one capture reports the edge missing.
     clip = hdmi_capture.frames(card_edges.CLIP_FRAMES, capture_device,
                                width=emitted[0], height=emitted[1])
+    # **AN UNSTABLE PICTURE IS NOT A FRAMING, AND card_edges CANNOT SAY SO.** It
+    # reduces the clip to its greenest frame, which is what the flashing ring
+    # needs and what collapses a rolling picture into a plausible set of edges.
+    # The roll is judged first, on the clip already taken, so a case that cannot
+    # be framed reports that rather than a size. Vertical displacement only --
+    # picture_jitter.py is what resolves a sub-pixel shimmer, and the share
+    # stands without a span this clip cannot supply.
+    held = picture_stability.judge(picture_stability.row_luma(clip), None)
     found = {name: card_edges.judge(clip, axis, card_edges.ALLOWANCE,
                                     card_edges.source_pixel_px(mode, clip, axis))
              for name, axis in (("across", 1), ("down", 0))}
 
     whys = [f"{name}: {judged.why}" for name, judged in found.items()
             if judged.why]
+    if held.why:
+        whys.insert(0, f"not holding still: {held.why}")
     read = "  ".join(f"{name} {card_edges.reading(judged)}"
                      for name, judged in found.items())
     # The state the verdict was taken in, because a margin of hundreds of
     # columns is a SCALE rather than a placement and two things give one: a
     # divider left on another mode's value, and the declared shape coming back
     # under reset_framing(), whose bars are our own blanking.
+    read += (f"   still {held.displaced}+{held.lost}/{held.frames} "
+             f"worst {held.worst}")
     read += f"   {emitted[0]}x{emitted[1]} {state_of(host)}"
     # EVERY CASE, not only the ones that fail. A verdict records nothing a later
     # run can be compared against, and the size is the whole point of out_by:
