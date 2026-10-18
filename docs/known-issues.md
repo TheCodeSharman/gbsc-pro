@@ -2306,8 +2306,9 @@ granted an xfail, which is what let the composite vertical fall from whole at
 both ends to a tenth of its top border without a case turning red: a size
 recorded as prose beside a pass is a size nothing compares against.
 
-One run at 1080p, 16:9, each case's framing reset, as `across near|far` and
-`down near|far` wholeness with the black margins beside them:
+Two runs at 1080p, 16:9, each case's framing reset, as `across near|far` and
+`down near|far` wholeness with the black margins beside them. The second run is
+tabulated and the spread between the two is recorded below it:
 
 | mode | sync | `PLLAD_MD` | across | down |
 |---|---|---|---|---|
@@ -2357,58 +2358,71 @@ types, where they used to land on 1272 or 1444 and 1342 or 1436 depending on
 whether the source arrived as a mode change or a re-detection.
 `docs/investigations/the-divider-is-an-actuator-in-its-own-sensor.md`
 
-**EVERY REMAINING FAILURE IS ACROSS, AND THE VERTICAL PASSES ON SIX OF THE
-TEN.** The horizontal signature is a PAN: the near border off the frame with
-black at the FAR end on six cases, which is a shifted window -- the far margin
-bounds the shift, the two ends moving together. 640x480@60 separate is the
-clearest, 17 output pixels at 3 to the source pixel.
+**THE ACROSS AXIS FAILS ON ALL TEN; THE VERTICAL REACHES THE THREE-QUARTER
+ACCEPTANCE ON SIX AND FAILS ON FOUR** -- 640x480@60 on both sync types,
+240x352@70 composite and 640x512@50 composite.
 
-Four of them are not a placement at all:
+**THE HORIZONTAL SIGNATURE IS A PAN, AND WHICH EDGE IT LOSES FOLLOWS THE SYNC
+TYPE.** Separate sync loses the NEAR edge and leaves black at the far one on
+three of its five cases; composite loses the FAR edge and leaves black at the
+near one on three of its five. The far margin bounds the shift, the two ends
+moving together.
 
-- **240x352@70 composite** is a span rather than a shift, 154 rows of black
-  between the two borders, and the only case whose vertical reads that way.
-- **640x512@50 composite NEVER SETTLES, and the framing is the least of it.**
-  Over ninety seconds of a solved acquisition: five solves armed, 39 scan
-  changes, 19 engagements of the motion-adaptive deinterlacer on a progressive
-  source, and a count visiting 529, 530 and 531. The separate-sync leg of the
-  same mode and the composite leg of 320x256@50 each score zero on all four.
-  The dither is `SP_H_PULSE_IGNOR`, which `divider x 49 / 1000` puts at 79% of
-  that mode's own sync pulse -- 85 against 107 -- where 320x256@50 gets 70%;
-  dropped to 48 the count reads 530 in 23 of 25 samples. It is why the count
-  restoration latches on one acquisition in eight, and the capture is sized
-  from the short count on the other seven, which is what reaches neither
-  vertical border. Separate sync frames the same mode at 1\|1.
-  `investigations/the-composite-count-dithers-where-the-ignore-nears-the-pulse.md`
-- **640x480@60 composite ACQUIRES now**, on the count the mode sends: `PLLAD_MD`
-  1272 against a 1273-unit capture and 525 lines, where it read 2040 against
-  312. So it is a framing reading again rather than an acquisition one.
+Three cases are not a placement at all:
+
+- **240x352@70 composite loses the vertical FAR border outright**, 0.00 with 8
+  rows of black at the near edge, and it is the only case whose vertical reads
+  that way. It was 84\|66 rows of black between the two borders before the
+  pulse ignore followed a measurement.
+- **640x512@50 composite OVERRUNS BOTH ENDS ON BOTH AXES**, so nothing in the
+  frame says by how much. It solves 1424 and a 534-line capture, which is its
+  separate-sync leg's own pair -- the two sync types agree on what was measured
+  and the framing placed from it is what does not land. Separate sync frames the
+  same mode at far 5 and 1\|1.
 - **1600x600@60** is `--all-modes` only and shares 800x600@60's solve. The two
   want placements about 5 output pixels apart off that one solve, so its reading
-  moves whenever that mode's framing does: 2 before it was flush, 6 to 8 after.
-  A clash cannot be optimised for.
+  moves whenever that mode's framing does. A clash cannot be optimised for.
 
-**TWO CASES VARY BETWEEN RUNS, AND THE SPREAD IS NOT IN OUTPUT PIXELS**, which
-is why no allowance covers it: about 6 output pixels on the 240-pixel source
-line, 3 on the 640-pixel one, 2 on the 800-pixel one and under 1 on the
-1600-pixel one -- an ordering that tracks the magnification, so the quantity is
-the source's own pixel or the capture's unit rather than the emitted frame's.
-Which of the two is open, and the green frame's captured width is too noisy to
-settle it: 4 columns at one edge against 8 at the other on one clip where the
-magnification is 4.5. 240x352@70 separate read out by 10 across in one run and
-inside the allowance in the next; 640x512@50 separate read 7, 4 and 7 at its far
-edge over three runs.
+**THE SPREAD BETWEEN RUNS IS NOT IN OUTPUT PIXELS**, which is why no allowance
+covers it: about 6 output pixels on the 240-pixel source line, 3 on the
+640-pixel one, 2 on the 800-pixel one and under 1 on the 1600-pixel one -- an
+ordering that tracks the magnification, so the quantity is the source's own
+pixel or the capture's unit rather than the emitted frame's. Which of the two is
+open, and the green frame's captured width is too noisy to settle it: 4 columns
+at one edge against 8 at the other on one clip where the magnification is 4.5.
 
-**THE COMPOSITE VERTICAL WAS THE SEPARATOR'S FRAME LEAD.** The lead was measured
-against the trailing reference edge and composite sync references the leading
-one, so the window sat a line and a half late. 320x256@50 composite now reads
-separate sync's own vertical and 800x600@60 composite is flush at both ends.
+Measured across the two runs above, as the across margin each run read:
+
+| case | run 1 | run 2 |
+|---|---|---|
+| 240x352@70 composite | near 18 | near 14 |
+| 640x480@60 separate | far 14 | far 12 |
+| 640x512@50 separate | far 7 | far 5 |
+| 800x600@60 composite | near 4 | near 5 |
+| 320x256@50 composite | near 26 | near 26 |
+
+So it is not two cases but most of them. Four of the five fit the ordering
+above -- 4 output pixels on the 240-pixel line, 2 on each 640-pixel one, 1 on
+the 800-pixel one -- and **320x256@50 composite does not**, reading 26 twice
+where its 4.3 samples a pixel predicts the largest spread in the set. One pair
+of runs cannot settle that either way. An earlier reading of 240x352@70
+separate at 10 across and inside the allowance in the next run is the same
+effect.
+
+**THE COMPOSITE VERTICAL IS THE SEPARATOR'S FRAME LEAD, and it is placed from
+the reference edge.** The lead measured against the trailing edge sat the window
+a line and a half late, because composite sync references the leading one.
+320x256@50 composite reads separate sync's own vertical and 800x600@60
+composite is flush at both ends.
 `docs/investigations/the-separator-moves-the-counters-origin.md`
 
-**THE COMPOSITE LEG'S EARLIER SHARE OF THE HORIZONTAL WAS THE POLARITY
-CORRECTION**, which follows the sync path now rather than the measured bit:
-240x352@70 went from 14 across to 2, 640x512@50 from 17 down to 1, 320x256@50
-from overrunning both ends to a bounded 16, and 800x600@60 from 5 to 2. Measured
-over three full runs.
+**THE COMPOSITE LEG'S HORIZONTAL IS PLACED FROM THE POLARITY CORRECTION, which
+follows the SYNC PATH rather than the measured bit.** On composite the measured
+bit describes the separator's output rather than the source, so a correction
+taken from it displaced every composite case. What that change bought, measured
+over three full runs at the time and NOT the current state -- the table above is
+that: 240x352@70 from 14 across to 2, 640x512@50 from 17 down to 1, 320x256@50
+from overrunning both ends to a bounded 16, and 800x600@60 from 5 to 2.
 
 **THE WIDTH PARITY CANNOT CARRY THE VERTICAL** -- the step-back in
 `OutputWindow::solve()` is guarded `!axis.vertical()` and never runs there. What
@@ -6063,10 +6077,10 @@ What follows is not only a framing. Over ninety seconds of a solved
 acquisition: five solves armed, **39 scan changes**, **19 engagements of the
 motion-adaptive deinterlacer on a progressive source**, and 34 rate matches.
 The separate-sync leg of the same mode and the composite leg of 320x256@50
-score zero on all four over the same window. The dither also defeats the frame
+score zero on all four over the same window. The dither also defeated the frame
 hold that restores the lines an unserrated vertical interval costs, so one
-acquisition in eight sizes its capture from the frame and seven from the short
-count.
+acquisition in eight sized its capture from the frame and seven from the short
+count -- which the adoption arming a re-solve closes independently.
 
 Frozen on the solve, dropping the one register to 48 reads 530 in 23 of 25
 samples and 16 reads it in 24 of 25; 64 dithers again, and no coast length,
