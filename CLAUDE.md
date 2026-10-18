@@ -1141,11 +1141,19 @@ twelve tables while they existed, which is what `BringUp` was built from.
   FAULT.** The block does not complete a vertical measurement there and
   `VPERIOD_IF` holds debris rather than a period, so the bench RISC PC on `vga`
   reads 0 whenever it is healthy. Reading it as "the input formatter is dead" is
-  a diagnosis of the sync arrangement, not of the unit. It gates exactly one
-  thing -- `Deinterlacer::steer()`, which a progressive source skips regardless
-  -- so it reaches neither acquisition nor the solve, and there is nothing it
-  can explain. `STATUS_IF_HT_OK` is no better in the other direction: it reads 1
-  while `HPERIOD_IF` rails.
+  a diagnosis of the sync arrangement, not of the unit. `STATUS_IF_HT_OK` is no
+  better in the other direction: it reads 1 while `HPERIOD_IF` rails.
+
+  **BUT IT NOW GATES ACQUISITION, AND THAT IS AN OPEN DEFECT RATHER THAN A
+  PROPERTY TO WORK AROUND.** `InputFormatter::verticalPeriod()` returns 0 while
+  the bit is 0, and that reading is the SECOND INSTRUMENT the contradicted-count
+  guard uses to tell a sync processor that stopped counting from a source
+  standing still -- so where the bit reads 0 the guard is blind and the engine
+  holds a dead count at `state: acquired` indefinitely. Measured at over five
+  minutes on `vga` composite after a mode change into 640x512@50, with
+  `VPERIOD_IF` reading the arriving frame correctly underneath the gate.
+  `docs/known-issues.md`,
+  `docs/investigations/the-formatters-frame-is-gated-off-when-the-count-stops.md`.
 
   **The pattern is worth naming, because three of these have now cost time.**
   `STATUS_MISC_PLLAD_LOCK`, `STATUS_SYNC_PROC_VSACT` and `STATUS_IF_VT_OK` all
