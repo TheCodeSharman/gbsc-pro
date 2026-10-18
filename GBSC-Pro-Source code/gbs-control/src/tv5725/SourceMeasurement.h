@@ -5,6 +5,7 @@
 #include <stddef.h>   // NULL
 #include <stdint.h>
 
+#include "AgreementRun.h"
 #include "HsyncPulse.h"
 #include "SourceKey.h"
 #include "SteadyRun.h"
@@ -458,7 +459,7 @@ private:
     // measurement and nothing may read it. A default HsyncPulse is not a
     // pulse, so it carries "nothing offered" as well.
     HsyncPulse offeredHsync_;
-    uint8_t dutyAttempts_;
+    AgreementRun dutyRun_;
 
     // A clock was latched and the wait it owes has not been timed yet, and
     // the wait, once a reading has started it.
@@ -474,7 +475,7 @@ private:
     // nothing re-measures. Sampled on the maintenance cadence instead, by
     // measureScanType().
     SteadyRun scanSteady_;
-    uint8_t rateAttempts_;
+    AgreementRun rateRun_;
     int8_t scanReported_;  // the last answer measureScanType() logged, so it logs changes
 };
 

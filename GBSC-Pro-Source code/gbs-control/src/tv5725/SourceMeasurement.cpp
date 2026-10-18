@@ -108,10 +108,12 @@ SourceMeasurement::SourceMeasurement(InputFormatter &inputFormatter)
       rateRejections_(0), hsyncPolarity_(SourceKey::Undetermined),
       vsyncPolarity_(SourceKey::Undetermined), verticalPeriod_(0),
       rateConfirmed_(false), probesAgreed_(false), rateTaken_(false),
-      dutyMeasured_(false), dutyAttempts_(0), settleArmed_(false),
+      dutyMeasured_(false), dutyRun_(DutyAgreementAttempts),
+      settleArmed_(false),
       settleTiming_(false),
       settleStartedMs_(0),
-      steady_(SteadySamples), scanSteady_(SteadySamples), rateAttempts_(0),
+      steady_(SteadySamples), scanSteady_(SteadySamples),
+      rateRun_(RateAgreementAttempts),
       scanReported_(-1)
 {
 }
@@ -193,7 +195,7 @@ void SourceMeasurement::modeChanged()
     steady_.reset();
     scanSteady_.reset();
     agreedRateHz_ = 0.0f;
-    rateAttempts_ = 0;
+    rateRun_.reset();
     // THE PULSE GOES WITH THE FLAG. Clearing only the flag leaves hsync()
     // handing out the duty of the source that just left, and every consumer
     // asks hsync() rather than the flag -- so the divider's bound was read off
@@ -202,7 +204,7 @@ void SourceMeasurement::modeChanged()
     dutyMeasured_ = false;
     hsync_ = HsyncPulse();
     offeredHsync_ = HsyncPulse();
-    dutyAttempts_ = 0;
+    dutyRun_.reset();
     heldFrame_ = 0;
     offeredFrame_ = 0;
     countRestored_ = false;
@@ -385,19 +387,16 @@ float SourceMeasurement::recurringFieldRateHz(bool *everyProbeAgreed)
 
 bool SourceMeasurement::rateSettled()
 {
-    float previous = agreedRateHz_;
+    const float previous = agreedRateHz_;
     agreedRateHz_ = fieldRateHz_;
 
-    if (rateAttempts_ < RateAgreementAttempts)
-        ++rateAttempts_;
-
+    bool agreed = false;
     if (previous > 0.0f && fieldRateHz_ > 0.0f) {
-        float error = fieldRateHz_ > previous ? fieldRateHz_ / previous
-                                              : previous / fieldRateHz_;
-        if (error < 1.0f + (float)RateAgreementPerThousand / 1000.0f)
-            return true;
+        const float error = fieldRateHz_ > previous ? fieldRateHz_ / previous
+                                                    : previous / fieldRateHz_;
+        agreed = error < 1.0f + (float)RateAgreementPerThousand / 1000.0f;
     }
-    return rateAttempts_ >= RateAgreementAttempts;
+    return rateRun_.offer(agreed);
 }
 
 // The line rate the source is running at, in Hz, or 0 when it cannot be
@@ -665,7 +664,7 @@ bool SourceMeasurement::readSource()
 bool SourceMeasurement::takeDuty(bool latched, const HsyncPulse &reading)
 {
     if (!latched || !reading.isPulse()) {
-        dutyAttempts_ = 0;
+        dutyRun_.reset();
         return dutyMeasured_;
     }
 
@@ -683,18 +682,15 @@ bool SourceMeasurement::takeDuty(bool latched, const HsyncPulse &reading)
     // is held describes neither -- and on a mode change what is held is the
     // duty of the source that just left, which the window would be solved
     // from.
-    if (!agreed && dutyAttempts_ < DutyAgreementAttempts) {
-        ++dutyAttempts_;
+    if (!dutyRun_.offer(agreed))
         return false;
-    }
 
-    dutyAttempts_ = 0;
     hsync_ = reading;
     dutyMeasured_ = true;
     return true;
 }
 
-bool SourceMeasurement::awaitingDutyAgreement() const { return dutyAttempts_ > 0; }
+bool SourceMeasurement::awaitingDutyAgreement() const { return dutyRun_.awaiting(); }
 
 uint16_t SourceMeasurement::sourceLines() const { return sourceLines_; }
 

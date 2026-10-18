@@ -920,9 +920,10 @@ TEST_CASE("the field rate has to REPEAT before anything is sized from it")
         // raster a fraction of a percent wrong is the better failure.
         // Every reading a fifth of a percent from the last -- twice the
         // agreement band, and inside lineRateFrom()'s 2% of the nominal 50, so
-        // each one is measurable and none of them agrees. One attempt is
-        // already spent above.
-        for (uint8_t i = 2; i < SourceMeasurement::RateAgreementAttempts; ++i) {
+        // each one is measurable and none of them agrees. The budget holds
+        // RateAgreementAttempts disagreements and the next reading is taken, and
+        // one of them is already spent above.
+        for (uint8_t i = 2; i <= SourceMeasurement::RateAgreementAttempts; ++i) {
             CAPTURE(i);
             g_fieldRate = 50.0f + (float)i * 0.1f;
             CHECK(rateOnce(measurement) == SourceMeasurement::Settling);
@@ -968,8 +969,8 @@ TEST_CASE("no reading the key is cut from is one sample")
         g_fieldRate = 50.26f;
         REQUIRE(measureToFirstReading(measurement) == SourceMeasurement::Settling);
 
-        // Nothing agrees, so the attempts run out. One is already spent above.
-        for (uint8_t i = 2; i < SourceMeasurement::RateAgreementAttempts; ++i) {
+        // Nothing agrees, so the budget runs out. One is already spent above.
+        for (uint8_t i = 2; i <= SourceMeasurement::RateAgreementAttempts; ++i) {
             CAPTURE(i);
             g_fieldRate = 50.0f + (float)i * 0.1f;
             REQUIRE(rateOnce(measurement) == SourceMeasurement::Settling);
