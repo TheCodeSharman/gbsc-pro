@@ -19,13 +19,13 @@ public:
     // How far the corroborating field-rate measurement may sit from the solved
     // line rate before the disagreement is believed. A second reading of the
     // same quantity by the same instrument, so what it forgives is the
-    // instrument's own spread -- measured at 0.000% over 250 samples a mode.
+    // instrument's own spread.
     // ../../../docs/investigations/the-rate-tolerance-answered-five-questions.md
     // What the corroborating reading has to differ by before the held rate is
     // treated as the source's no longer. Sized by THE INSTRUMENT, not by source
-    // identity: a settled reading repeats to the digit across 24 acquisitions and
-    // the rate is quantised to hundredths of a hertz, 0.2 per mille at 50 Hz,
-    // while a reading taken mid-change sits in a 1.3% band. This sits in the gap.
+    // identity: a settled reading repeats to the digit and a reading taken
+    // mid-change sits in a band an order of magnitude wider. This sits in the
+    // gap between them.
     //
     // **AND AT OR BELOW Tv5725::SourceIdentityPerThousand**, asserted in the .cpp:
     // this is the arm, so a rate change big enough to move the key has to be big
@@ -33,8 +33,7 @@ public:
     //
     // The gross-error net acceptance uses is RateFollowsCountPerThousand, which
     // cannot see any of that band -- and it must stay wide, because a source may
-    // change rate at a constant count and a RISC PC does, measured at 7.87 per
-    // thousand behind one 320x256@50.
+    // change rate at a constant count and a RISC PC does.
     // ../../../docs/investigations/the-rate-tolerance-answered-five-questions.md
     static const uint16_t RateCorroborationPerThousand = 2;
 
@@ -48,10 +47,10 @@ public:
     //
     // Tighter than RateCorroborationPerThousand because BOTH readings are
     // spanned over SourceMeasurement::UnconfirmedRatePulses: a single pulse
-    // carries a whole source line of edge latency -- 3.2 per thousand at 311
-    // lines -- and spanning divides that to 0.4, so a boot error of about one
-    // per thousand is visible here where the drift tolerance cannot see it.
-    // Measured, eight boots of one source agree to 0.2 per thousand.
+    // carries a whole source line of edge latency and spanning divides it, so a
+    // boot error of about one per thousand is visible here where the drift
+    // tolerance cannot see it.
+    // ../../../docs/investigations/one-source-takes-many-keys.md
     static const uint16_t BootRateConfirmPerThousand = 1;
     // What a pass decided that this layer cannot carry out. The frame time
     // lock and the external clock generator are the sketch's, so they are
@@ -147,10 +146,9 @@ public:
     // **A ONE-WAY TAKE-BACK LEAVES THE SEARCH CONFIGURATION UNREACHABLE.** What
     // ends a search is the count, and nothing wrote the configuration again
     // after one -- so a source that fell back into searching kept the settled
-    // configuration and the coast inversion with it, measured on the Wii in
-    // 480i as SP_COAST_INV_REG 0 with STATUS_SYNC_PROC_VTOTAL at 97. Nothing
-    // else reaches it on a component source: the separator tuning that applies
-    // these settings is skipped there.
+    // configuration and the coast inversion with it, and the count collapsed.
+    // Nothing else reaches it on a component source: the separator tuning that
+    // applies these settings is skipped there.
     void followDynamicFacts();
 
     // Walk the level for the source in force, starting from what the input is
@@ -419,8 +417,8 @@ private:
     // every measurement a source change needs is taken when the source changes,
     // so there is nothing left for a timer to re-try. A ladder firing block
     // resets at a source it could not measure destroyed the reading it was
-    // trying to rescue -- measured on a component source at 480p, a correct
-    // count of 524 reset to 97 within ten seconds and never returning.
+    // trying to rescue, taking a correct count to noise it never came back from.
+    // ../../../docs/investigations/the-ladders-deletion-removed-recoveries-nothing-replaced.md
     void noteSourceAbsent();
 
     // The channel's emitted sync polarity, and the latched bit that freshens
@@ -522,10 +520,11 @@ private:
     uint16_t unlockedPasses_;
 
     // Consecutive passes on which the formatter's frame contradicted the
-    // count. A composite separator loses a pulse for up to eight consecutive
-    // samples, measured, and the presence verdict forgives a run of
-    // AbsentPasses; this is well past both, so what reaches it is a processor
-    // that cannot count the source at all.
+    // count. A composite separator loses a pulse for a run of consecutive
+    // samples and the presence verdict forgives a run of AbsentPasses; this is
+    // well past both, so what reaches it is a processor that cannot count the
+    // source at all.
+    // ../../../docs/investigations/the-composite-sync-count-re-arms-its-own-solve.md
     static const uint16_t ContradictedArmPasses = 4 * AbsentPasses;
 
     uint16_t contradictedPasses_;

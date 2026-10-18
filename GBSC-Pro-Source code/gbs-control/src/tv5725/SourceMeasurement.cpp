@@ -197,14 +197,8 @@ void SourceMeasurement::modeChanged()
     // THE PULSE GOES WITH THE FLAG. Clearing only the flag leaves hsync()
     // handing out the duty of the source that just left, and every consumer
     // asks hsync() rather than the flag -- so the divider's bound was read off
-    // whichever published raster the OLD duty matched. Measured at 640x480@60:
-    // 1212 arriving as a mode change against 1272 arriving as a re-detection,
-    // which holds its own duty legitimately.
-    // THE PULSE GOES WITH THE FLAG. Clearing only the flag leaves hsync()
-    // handing out the duty of the source that just left, and every consumer
-    // asks hsync() rather than the flag -- so the divider's bound was read off
-    // whichever published raster the OLD duty matched. Measured at 640x480@60:
-    // 1212 arriving from 320x256@50 against 1272 arriving on its own.
+    // whichever published raster the OLD duty matched.
+    // ../../../docs/investigations/the-divider-is-an-actuator-in-its-own-sensor.md
     dutyMeasured_ = false;
     hsync_ = HsyncPulse();
     offeredHsync_ = HsyncPulse();
@@ -249,10 +243,9 @@ bool SourceMeasurement::clockSettling(uint32_t nowMs)
 // **WHAT A LATER READING IS JUDGED AGAINST MUST NOT ITSELF BE A TRANSIENT.**
 // rateFollowsCount() accepts anything at a moved count, because a moved count
 // IS a mode change -- so a mid-change reading admitted there can become the
-// rate every correct one afterwards is refused against. Measured on the bench,
-// 320x256@50 -> 640x480@60: `524 lines x 45.98 Hz` was taken, and the 59
-// readings of the real 60.36 Hz that followed were all refused, 2.28 s of them,
-// until HeldRateRejectionLimit drained.
+// rate every correct one afterwards is refused against, until
+// HeldRateRejectionLimit drains.
+// ../../../docs/investigations/a-transient-becomes-the-judged-rate.md
 void SourceMeasurement::takeJudgedRate()
 {
     rateTaken_ = true;
@@ -300,9 +293,8 @@ float SourceMeasurement::sampleFieldRateHz()
     // confirmed can be a spread rather than a reading with noise on it: a sync
     // separator inventing and dropping edges makes each reading span k fields,
     // so three readings land on three different multiples and the middle one is
-    // a multiple. Measured on a component source at 480p, the true rate is in
-    // 14% of readings and a median of three returns it in about 5% of trials.
-    // The estimator that finds it asks which value RECURS.
+    // a multiple. The estimator that finds it asks which value RECURS.
+    // ../../../docs/investigations/the-cheap-field-rate-is-earned-by-the-probes.md
     if (!probesAgreed_) {
         bool agreed = false;
         const float hz = recurringFieldRateHz(&agreed);
@@ -447,11 +439,10 @@ bool SourceMeasurement::measureLineRate()
         goodLineRateHz_ = lineRateHz_;
 
     // THE CLOCK THE READING WAS TAKEN THROUGH, WITH THE READING. The count and
-    // the field rate survive a divider the PLL never latched -- measured, a
-    // correct 524 lines and 59.93 Hz with STATUS_SYNC_PROC_HTOTAL reading 425
-    // against a divider of 2040 -- so a reading can look healthy while the
-    // pipeline runs the 27 MHz reference instead. Nothing else on the board
-    // reports a missing latch.
+    // the field rate both survive a divider the PLL never latched, so a reading
+    // can look healthy while the pipeline runs the 27 MHz reference instead.
+    // Nothing else on the board reports a missing latch.
+    // ../../../docs/investigations/an-unlocked-adc-pll-is-invisible-in-the-registers.md
     const uint16_t divider = Adc::dividerInForce();
     const uint16_t lineSamples = SyncProcessor::lineSamples();
     char line[128];
@@ -554,8 +545,8 @@ SourceKey::Polarity SourceMeasurement::hsyncPolarity() const { return hsyncPolar
 
 SourceKey::Polarity SourceMeasurement::vsyncPolarity() const { return vsyncPolarity_; }
 
-// Composite sync and sync on green state no polarity: measured on two modes the
-// monitor definition gives as V positive, both bits read 0 on composite.
+// Composite sync and sync on green state no polarity: both bits read 0 there,
+// whatever the source's mode file says.
 //
 // The arrangement IN FORCE rather than whether it has been probed -- a held
 // sync type nothing probed still says which path the pins are read through,
@@ -573,9 +564,9 @@ const uint16_t SourceMeasurement::VerticalSyncMaxLines;
 
 // Two registers measure the same frame and only one of them loses the vertical
 // sync pulse, so the pair says how much was lost. Which multiple of the frame
-// VPERIOD_IF holds is not derivable -- measured, it is one on some modes and
-// two on others with the whole ADC clock group identical -- so both are tried
-// and the one that lands just above the count is the reading.
+// VPERIOD_IF holds is not derivable -- it is one on some modes and two on
+// others with the whole ADC clock group identical -- so both are tried and the
+// one that lands just above the count is the reading.
 uint16_t SourceMeasurement::reconciledFrame(uint16_t verticalPeriod, uint16_t lines)
 {
     if (verticalPeriod == 0)
