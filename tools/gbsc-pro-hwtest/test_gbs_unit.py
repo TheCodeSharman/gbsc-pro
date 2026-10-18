@@ -144,3 +144,97 @@ def test_a_request_answered_but_never_applied_is_sent_once_more_before_giving_up
     monkeypatch.setattr(gbs_unit.time, "sleep", lambda s: None)
     assert gbs_unit.choose_output("h", "720p", timeout=0.2) is True
     assert sent == ["/uc?g", "/uc?g"]
+
+
+# Measured on the bench: 640x480@60 asked for, and the sync processor still
+# carrying 320x256@50's divider with no sync measurement at all.
+STALE = {"PLLAD_MD": 2200, "STATUS_SYNC_PROC_HTOTAL": 2200,
+         "STATUS_SYNC_PROC_VTOTAL": 310, "STATUS_SYNC_PROC_HLOW_LEN": 0}
+SOLVED = {"PLLAD_MD": 1272, "STATUS_SYNC_PROC_HTOTAL": 1272,
+          "STATUS_SYNC_PROC_VTOTAL": 524, "STATUS_SYNC_PROC_HLOW_LEN": 153}
+
+
+def test_a_state_carrying_the_modes_own_measurement_is_not_stale():
+    assert gbs_unit.stale_solve(SOLVED, 525) is None
+
+
+def test_the_previous_modes_solve_is_named_by_its_line_count():
+    """The failure a settled geometry cannot see: `ch`, `cv` and the rate hold
+    still on a solve nothing re-ran, so the source never left the mode before."""
+    why = gbs_unit.stale_solve(STALE, 525)
+    assert why is not None and "311" in why and "525" in why
+
+
+def test_a_count_a_line_over_is_the_same_source():
+    """An interlaced pair alternates by one, which SteadyRun::agree() treats as
+    agreeing, so the gate cannot be tighter than the engine's own."""
+    assert gbs_unit.stale_solve(dict(SOLVED, STATUS_SYNC_PROC_VTOTAL=525), 525) is None
+
+
+def test_the_separators_own_shortfall_is_the_same_source():
+    """Through composite sync the count runs short of the mode's total by two
+    to four lines on every mode measured, and never over it."""
+    assert gbs_unit.stale_solve(dict(SOLVED, STATUS_SYNC_PROC_VTOTAL=520), 525) is None
+
+
+def test_a_count_over_by_the_separators_allowance_is_another_mode():
+    """The allowance is one-sided for that reason: 640x512@50 counts 530 on
+    composite, and a gate that let it run five lines over would pass it as the
+    525 640x480@60 states."""
+    assert gbs_unit.stale_solve(dict(SOLVED, STATUS_SYNC_PROC_VTOTAL=529), 525)
+
+
+def test_no_sync_measurement_is_not_a_solve():
+    assert "sync" in gbs_unit.stale_solve(
+        dict(SOLVED, STATUS_SYNC_PROC_HLOW_LEN=0), 525)
+
+
+def test_an_unlatched_divider_is_named_rather_than_believed():
+    """STATUS_SYNC_PROC_HTOTAL counts real ADC clocks, so it is the only thing
+    on the board that can see a divider the PLL never loaded."""
+    why = gbs_unit.stale_solve(dict(SOLVED, STATUS_SYNC_PROC_HTOTAL=1346), 525)
+    assert why is not None and "1346" in why and "1272" in why
+
+
+def oversample_unit(monkeypatch, landings):
+    """A unit whose /sc?o cycle lands on `landings` in turn."""
+    sent, seen = [], iter(landings)
+    monkeypatch.setattr(gbs_unit, "get",
+                        lambda host, path, timeout=5: (sent.append(path), (200, ""))[1])
+    monkeypatch.setattr(gbs_unit, "read_fields",
+                        lambda host, names: next(seen))
+    monkeypatch.setattr(gbs_unit.time, "sleep", lambda s: None)
+    return sent
+
+
+DEC = {1: {"ADC_CLK_ICLK1X": 0, "ADC_CLK_ICLK2X": 0},
+       2: {"ADC_CLK_ICLK1X": 1, "ADC_CLK_ICLK2X": 0},
+       4: {"ADC_CLK_ICLK1X": 1, "ADC_CLK_ICLK2X": 1}}
+
+
+def test_a_unit_already_at_the_ratio_is_not_pressed(monkeypatch):
+    sent = oversample_unit(monkeypatch, [DEC[4]])
+    assert gbs_unit.cycle_to_oversample("h", 4) == 4
+    assert sent == []
+
+
+def test_the_cycle_stops_where_the_readback_says_it_arrived(monkeypatch):
+    """The cycle is 1-2-4 and a press is not evidence it advanced -- a run
+    counting presses measured ratio 4 where it had asked for 2."""
+    sent = oversample_unit(monkeypatch, [DEC[4], DEC[1], DEC[2]])
+    assert gbs_unit.cycle_to_oversample("h", 2) == 2
+    assert sent == ["/sc?o", "/sc?o"]
+
+
+def test_a_ratio_the_post_divider_cannot_carry_is_reported_rather_than_pressed_at(monkeypatch):
+    """oversampleFor() caps the ratio at what PLLAD_KS can carry, so asking for
+    one above it is a silent no-op -- which reads as the ratio having no
+    effect on whatever is being measured."""
+    sent = oversample_unit(monkeypatch, [DEC[2]] * 8)
+    assert gbs_unit.cycle_to_oversample("h", 4) == 2
+    assert len(sent) == gbs_unit.OVERSAMPLE_PRESSES
+
+
+def test_the_ratio_in_force_is_read_from_the_decimators(monkeypatch):
+    monkeypatch.setattr(gbs_unit, "read_fields", lambda host, names: DEC[4])
+    assert gbs_unit.oversample_in_force("h") == 4

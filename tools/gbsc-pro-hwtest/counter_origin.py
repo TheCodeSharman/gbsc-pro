@@ -383,13 +383,15 @@ def main():
                         help="hold PLLAD_MD here, so the whole engine solves "
                              "around it. 0 releases a hold a previous run left.")
     parser.add_argument("--osr", type=int, default=0,
-                        help="press /sc?o this many times once the state is "
-                             "frozen, cycling the oversampling ratio 1-2-4. The "
-                             "kept rate is unchanged -- PLLAD_CKOS and the "
+                        help="the oversampling ratio to read the origin at, "
+                             "1, 2 or 4. The /sc?o cycle is pressed until the "
+                             "decimators read it back, and a ratio PLLAD_KS "
+                             "cannot carry is refused rather than measured at. "
+                             "The kept rate is unchanged -- PLLAD_CKOS and the "
                              "decimators move together -- so the geometry the "
                              "engine solved stays valid, which is what makes "
                              "the ratio separable from the PLLAD_KS row it "
-                             "normally moves with.")
+                             "normally moves with. 0 measures what was solved.")
     parser.add_argument("--hbin", default="",
                         help="IF_HBIN_SP values to read the origin at, comma "
                              "separated. The line doubler's FIFO reset, which "
@@ -416,6 +418,13 @@ def main():
             if not gbs_unit.acquired_and_settled(args.host, limit_s=120.0):
                 print("  never acquired")
                 continue
+            # A settled geometry is not evidence the mode under test is what
+            # was solved: a source that never left the previous mode holds
+            # every reported figure still.
+            why = gbs_unit.solving_mode(args.host, sum(v))
+            if why:
+                print(f"  not solving {mode}: {why}")
+                continue
             gbs_unit.mode_serv(args.modeserv, "PATTERN CARD")
             # Always sent, because 0 RELEASES a hold a previous run left behind
             # and a stale one is invisible in the reading it corrupts.
@@ -428,9 +437,14 @@ def main():
             if not gbs_unit.freeze(args.host, True):
                 print("  the freeze would not take")
                 continue
-            for _ in range(args.osr):
-                gbs_unit.get(args.host, "/sc?o")
-                time.sleep(1.5)
+            if args.osr:
+                reached = gbs_unit.cycle_to_oversample(args.host, args.osr)
+                if reached != args.osr:
+                    print(f"  oversample x{args.osr} is out of reach at "
+                          f"PLLAD_KS {gbs_unit.read_named(args.host, 'PLLAD_KS')}"
+                          f": the cycle sits at x{reached}")
+                    gbs_unit.freeze(args.host, False)
+                    continue
             specs = setfield.load_map()
             held = gbs_unit.read_named(args.host, "IF_HBIN_SP")
             try:

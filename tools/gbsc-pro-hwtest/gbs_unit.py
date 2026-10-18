@@ -224,6 +224,98 @@ def recover_lock(host, attempts=3, timeout=40.0):
     return False
 
 
+# The fields a solve of the source under test is read from, and what it is
+# judged on.
+#
+# **`acquired_and_settled()` CANNOT SEE A STALE SOLVE.** `ch`, `cv`, `eh` and
+# the line rate hold perfectly still on a solve nothing re-ran, so a source that
+# never left the previous mode reads as acquired and settled throughout --
+# measured, a run reading `PLLAD_MD` 2200 on 640x480@60 with no sync
+# measurement at all, and nothing is concluded from a reading taken there.
+SOLVE_FIELDS = ("PLLAD_MD", "STATUS_SYNC_PROC_HTOTAL",
+                "STATUS_SYNC_PROC_VTOTAL", "STATUS_SYNC_PROC_HLOW_LEN")
+
+# What the sync processor's count may run OVER the mode's own total by. An
+# interlaced pair alternates by one and SteadyRun::agree() accepts that, so the
+# gate cannot be tighter than the engine's.
+COUNT_OVER = 1
+
+# And what it may run SHORT by, which is what the composite separator costs.
+# Measured on the five matrix modes: +0 on every one through separate sync, and
+# -2, -3, -4, -4 through the separator. It stays this tight because 4 is also
+# the most that separates 640x512@50's composite count of 530 from the 525
+# 640x480@60 states, which are the closest two totals in the set.
+COUNT_SHORT = 4
+
+# What the counted line may differ from the divider by. The sync processor
+# counts in ADC clocks against a PLL locked to HSync with PLLAD_MD as divider,
+# so locked it reports the divider back, 0 or +-1 on every healthy state
+# measured.
+LATCH_SLACK = 2
+
+
+# The decimators the oversampling ratio is read back from, and how many presses
+# of the 1-2-4 cycle it may take to arrive. Three reaches any ratio from any
+# other; the rest is what a dropped press costs.
+OVERSAMPLE_FIELDS = ("ADC_CLK_ICLK1X", "ADC_CLK_ICLK2X")
+OVERSAMPLE_PRESSES = 6
+
+
+def oversample_in_force(host):
+    """The ADC oversampling ratio, off the decimators that undo it."""
+    field = read_fields(host, list(OVERSAMPLE_FIELDS))
+    if field["ADC_CLK_ICLK2X"]:
+        return 4
+    return 2 if field["ADC_CLK_ICLK1X"] else 1
+
+
+def cycle_to_oversample(host, wanted, presses=OVERSAMPLE_PRESSES):
+    """Press /sc?o until the ratio IN FORCE is `wanted`. Reports what it
+    reached, which is not always what was asked.
+
+    **A PRESS IS NOT EVIDENCE THE CYCLE ADVANCED, AND A RATIO THE POST-DIVIDER
+    CANNOT CARRY IS A SILENT NO-OP.** `Adc::oversampleFor()` caps the ratio at
+    what `PLLAD_KS` affords -- `PLLAD_CKOS` is `KS - stepsFor(ratio)` and
+    cannot go negative -- so at KS 1 the cycle sits at 2 for ever and at KS 0
+    at 1. Counting presses instead of reading back measured ratio 4 where it
+    had asked for 2, and a mode whose KS refuses a ratio reads as that ratio
+    having no effect at all.
+    """
+    for _ in range(presses):
+        got = oversample_in_force(host)
+        if got == wanted:
+            return got
+        get(host, "/sc?o")
+        time.sleep(1.5)
+    return oversample_in_force(host)
+
+
+def stale_solve(fields, frame_lines):
+    """Why `fields` is not a measurement of a source of `frame_lines` lines,
+    None where it is.
+
+    The three things a stale solve fails: the count is the previous mode's, the
+    sync measurement is absent, or the divider the register reports was never
+    latched into the PLL.
+    """
+    counted = fields["STATUS_SYNC_PROC_VTOTAL"] + 1
+    if not -COUNT_SHORT <= counted - frame_lines <= COUNT_OVER:
+        return (f"the sync processor counts {counted} lines where the mode "
+                f"states {frame_lines}")
+    if not fields["STATUS_SYNC_PROC_HLOW_LEN"]:
+        return "there is no sync measurement to solve from"
+    divider, htotal = fields["PLLAD_MD"], fields["STATUS_SYNC_PROC_HTOTAL"]
+    if abs(htotal - divider) > LATCH_SLACK:
+        return (f"the counted line is {htotal} against a divider of {divider}, "
+                f"so the divider was never latched")
+    return None
+
+
+def solving_mode(host, frame_lines):
+    """The same, read off the unit."""
+    return stale_solve(read_fields(host, list(SOLVE_FIELDS)), frame_lines)
+
+
 # How many agreeing counts make a lock. Crossing the floor once is detection
 # FINDING the source, which is followed by a preset load and a solve -- and sync
 # can drop again through either. The firmware settles the same way, on its own
