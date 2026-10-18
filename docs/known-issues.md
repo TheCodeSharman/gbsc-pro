@@ -2418,6 +2418,89 @@ opposite signatures, which is as close as this bench comes to isolating
 **THE 70 Hz MODE IS JUDGED AT 1024p, NOT 1080p, AND IT CANNOT BE OTHERWISE.**
 The MS9288A's ceiling is 165 MHz and a mode costs `total_px x frame_lines` per
 field, so 1080p tops out at **66.67 Hz** -- 240x352@70 wants 173.25 MHz.
+
+### The across failure is two defects, and the second one is in the instrument
+
+Measured 2026-10-18 on `vga`, separate sync, each mode's framing reset and 16:9
+declared.
+
+**IT IS A START ERROR AND NOT A WIDTH ERROR.** Every case's capture extent is
+the raster's own active fraction to within half a unit -- 688 against
+`0.625 x 1100` on 320x256@50, 1018 against `0.8 x 1273` on 640x480@60 -- so
+what is wrong is where the window OPENS, and a margin at one edge is matched by
+the same displacement clipped off the other.
+
+**AND NO PART OF IT IS BY DESIGN.** `SourceTiming`'s rows state the mode file's
+own figures exactly on all six matrix modes -- 320x256@50 `512, 36, 110, 320`
+against the file's `36+30+44` and 320 -- and `published_rasters.py` scores every
+one of them at `+0.0 / +0.0`. There is no AKF-against-DMT offset to subtract
+here, which `RetroScaler-Acorn.mdf` carrying the DMT set verbatim is the reason
+for.
+
+`full_margins.py` reads the picture's position in the counter against what the
+file states, at full framing where nothing is clipped:
+
+| mode | `PLLAD_MD` | samples/px | decimators | `h lead` measured / filed | error |
+|---|---|---|---|---|---|
+| 320x256@50 | 2200 | 4.297 | 2 | 111.7 / 110 | **+1.7 px** |
+| 640x480@60 | 1272 | 1.591 | 1 | 140.2 / 144 | **-3.8 px** |
+| 800x600@60 | 1342 | 1.271 | 1 | 216.4 / 216 | **+0.4 px** |
+| 640x512@50 | 1424 | 1.590 | 2 | 166.0 / 168 | **-2.0 px** |
+
+**SAMPLING DENSITY DOES NOT EXPLAIN IT, AND THE OVERSAMPLING RATIO IS WHY.**
+640x480@60 and 640x512@50 sit at one density -- 1.591 against 1.590 -- and read
+-3.8 and -2.0, a 2.9-sample split. What differs is the ratio: one decimator in
+circuit against two, so ratio 2 against ratio 4. **That refutes ratio four being
+a no-op**, which rests on a single held state reading 0.4 samples off the
+ratio-two line.
+`docs/investigations/the-capture-origin-varies-by-mode-at-one-line-rate.md`
+
+**THE LINE FILTER'S DIVIDER CAP IS NOT THE CAUSE**, though it is what put every
+mode at a divider the origin terms were not calibrated at -- 1272 against the
+2046 `docs/sampling-table.md` states for 640x480@60. Toggled on one mode at one
+framing, 640x512@50 reads 4 columns of far margin with the filter on at
+`PLLAD_MD` 1424 and 4 with it off at 1946, and 640x480@60 is WORSE with it off,
+both edges leaving the frame.
+
+**FOUR MODES CANNOT CARRY A MODEL.** A line through them is refused by the two
+at one density, and a curve through three has its minimum at a density no mode
+reaches. What would settle it is a divider HOLD across the ratio 2/4 boundary on
+one mode -- `counter_origin.py --hold --osr` is the instrument -- and more modes
+at distinct densities.
+
+#### The wholeness measure reads attenuation as clipping
+
+**A BORDER THAT NOTHING CAN HAVE CLIPPED READS 0.36 TO 0.68**, so the second
+half of the acceptance -- three quarters of each border pixel surviving --
+currently fails borders that are entirely present, and no framing change can be
+scored against it. At full framing the window opens before the source's active
+region, so the near border cannot be cut: 320x256@50 reads `whole` 0.36 with
+242 columns of black before it, 800x600@60 reads 0.50 with 186, and 640x512@50
+reads 0.68.
+
+**THE CARD'S BORDER IS ONE SOURCE PIXEL AND THE CAPTURE SAMPLES IT 1.6 TO 4.3
+TIMES**, so at low density it does not reach full amplitude at all. Measured on
+640x512@50 at 1.86 emitted columns per source pixel, with the border 254 columns
+clear of the frame: its profile is `22.5 43.8 57.1 56.7 6.0 0.8`, a peak of
+**57.1 against the card's solid green at 196** -- 0.29 of it -- and a mass of
+246 against the 364 that `amplitude x source_px` expects, which is the 0.68.
+
+`edge_wholeness()` divides the run's mass by the clip's green amplitude, and
+that amplitude is taken from the card's SOLID green, which a one-pixel marker
+through the capture cannot reach. So the figure falls with sampling density, and
+the modes it fails are the ones sampling their own pixels fewest times.
+
+**IT IS NOT THE PICTURE FILTERS.** Peaking and the six-tap filter toggled off at
+one framing on 800x600@60 leave the same border at 0.41 to 0.53 against 0.50 as
+found, with the window, the divider and the scale unmoved.
+
+**WHAT CANNOT BE USED IS "BLACK BEYOND IT, THEREFORE WHOLE".** A window stopping
+INSIDE the border leaves our own blanking past the sliver it kept, which is
+indistinguishable from captured source blanking at the far end --
+`test_a_border_clipped_to_a_sliver_inside_the_frames_edge_reports_the_sliver`
+pins exactly that case, from a bottom row carrying 94 of the 882 a whole border
+carries. Separating the two needs the picture lifted off our blanking with
+`VDS_Y_OFST`.
 `OutputMode::transmittableFor()` falls back to the next mode down that can carry
 the rate, which is 1024p at 125.96 MHz, and **nothing records the fallback**:
 `setting(host, "output")` still reads 1920x1080 while the frame is 1066 lines.
