@@ -14,8 +14,14 @@ Two readings per mode, and they answer different questions:
     applied     IF_HB_ST2 on the two sync types, differenced. What the engine
                 DID, against what the form says it should do.
     residual    the card's black margin at one edge on the two sync types,
-                differenced and divided by the magnification. What is LEFT
-                after the lead has been applied, in ADC samples of the source.
+                differenced. What is LEFT after the lead has been applied.
+
+**THE RESIDUAL IS REPORTED IN THE SOURCE'S OWN PIXELS FIRST**, which is the
+frame's extent over the mode's active count and needs no register arithmetic:
+the ADC sample is a different length on every mode, so a figure in samples
+cannot be compared across them without the divider and the doubler beside it.
+Two modes whose residuals differ by a factor of two in samples read the same
+figure in pixels.
 
 **BOTH READINGS ARE DIFFERENCES ON ONE MODE.** A position read against a
 published raster carries that mode's own systematic -- whether the machine emits
@@ -160,11 +166,13 @@ def leg(host, where, device, mode, csync):
         return {"why": "the registers carry no output mode this knows"}
     clip = hdmi_capture.frames(card_edges.CLIP_FRAMES, device,
                                width=emitted[0], height=emitted[1])
+    px = {name: card_edges.source_pixel_px(mode, clip, axis)
+          for name, axis in Axes}
     found = {name: card_edges.judge(clip, axis, card_edges.ALLOWANCE,
-                                    card_edges.source_pixel_px(mode, clip, axis))
+                                    px[name])
              for name, axis in Axes}
     return {"why": None, "registers": registers, "geometry": geometry,
-            "emitted": emitted, "found": found}
+            "emitted": emitted, "found": found, "px": px}
 
 
 def applied(sep, cs):
@@ -194,17 +202,18 @@ def residual(sep, cs, name, columns):
     spu = samples_per_unit(sep["registers"])
     extent = sep["geometry"].get("eh" if name == "across" else "ev")
     if not extent:
-        return None, "no capture extent"
+        return None, None, "no capture extent"
     per_unit = columns / float(extent)
     for end, index, sign in (("near", 0, 1.0), ("far", 1, -1.0)):
         at_sep = sep["found"][name].margins[index]
         at_cs = cs["found"][name].margins[index]
         if at_sep is None or at_cs is None:
             continue
-        return (sign * (at_cs - at_sep) / per_unit * spu,
+        moved = sign * (at_cs - at_sep)
+        return (moved / per_unit * spu, moved / sep["px"][name],
                 f"{end} edge, {at_sep} vs {at_cs} columns at "
                 f"{per_unit:.3f} per unit, {spu} samples per unit")
-    return None, "no edge on the frame under both sync types"
+    return None, None, "no edge on the frame under both sync types"
 
 
 def report(mode, legs):
@@ -241,11 +250,12 @@ def report(mode, legs):
               f"the lead")
     for name, _ in Axes:
         columns = sep["emitted"][0 if name == "across" else 1]
-        left, how = residual(sep, cs, name, columns)
+        left, pixels, how = residual(sep, cs, name, columns)
         if left is None:
             print(f"  residual   {name}: none -- {how}")
         else:
-            print(f"  residual   {name}: {left:+.2f} samples  ({how})")
+            print(f"  residual   {name}: {pixels:+.2f} source pixels, "
+                  f"{left:+.2f} samples  ({how})")
 
 
 def main():
