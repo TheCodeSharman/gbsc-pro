@@ -74,10 +74,17 @@ TIERS = {
     "S": dict(modes=None, outputs=["1080p", "720p"], probes="sink"),
 }
 
+# STATUS_SYNC_PROC_HSPOL and the decimators are here because both are
+# candidate terms for the capture origin's per-mode error -- the polarity
+# decides whether originPulseCorrection() fires, and the oversampling ratio
+# moves the origin 2 to 3 samples between x2 and x4 -- and a record without
+# them cannot test either.
 FIELDS = full_margins.FIELDS + ["VDS_HB_SP", "VDS_HB_ST", "VDS_VB_SP", "VDS_VB_ST",
                                 "VDS_HS_ST", "VDS_HS_SP", "VDS_VS_ST", "VDS_VS_SP",
                                 "PLLAD_KS", "IF_LINE_ST", "IF_LINE_SP",
-                                "PB_FETCH_NUM", "PB_CAP_OFFSET"]
+                                "PB_FETCH_NUM", "PB_CAP_OFFSET",
+                                "STATUS_SYNC_PROC_HSPOL", "SP_HS_INV_REG",
+                                "ADC_CLK_ICLK1X", "ADC_CLK_ICLK2X"]
 
 CLIP_FRAMES = 8
 DONGLE_SETTLE_S = 10.0
@@ -350,9 +357,21 @@ def measure_state(ctx, mode, output):
         return refused("source refused the mode")
     if not gbs_unit.acquired_and_settled(host):
         return refused("never acquired, or never stopped re-solving")
+    # A settled geometry holds still on a solve nothing re-ran, so the mode
+    # under test has to be the one the sync processor is counting.
+    stated = mdf_entry_for(ctx["entries"], mode)
+    lines = (sum(int(v) for v in stated["v_timings"].split(",")) if stated else 0)
+    why = lines and gbs_unit.solving_mode(host, lines)
+    if why:
+        return refused(f"not solving the mode: {why}")
     gbs_unit.show_card(where)
     if gbs_unit.reset_framing(host) is None:
         return refused("the framing never reset")
+    # AFTER the reset, which puts the declared shape back to the raster's own
+    # default -- 4:3 on the bench modes, whose pillarbox is OUR blanking and
+    # reads 96 columns at both edges, swamping every margin this measures.
+    if not gbs_unit.choose_aspect(host, gbs_unit.SIXTEEN_NINE):
+        return refused("the shape never reached 16:9")
     if not gbs_unit.freeze(host, True):
         return refused("automation would not freeze")
     try:
@@ -376,6 +395,7 @@ def measure_state(ctx, mode, output):
                                       analysis["positions"]["h"]["m"], analysis["slope"]["h_pred"])
             gbs_unit.freeze(host, False)
             gbs_unit.reset_framing(host)
+            gbs_unit.choose_aspect(host, gbs_unit.SIXTEEN_NINE)
             gbs_unit.freeze(host, True)
         if ctx["probes"] == "full":
             record["zoom"] = zoom_in(host, geometry)
