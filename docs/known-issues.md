@@ -2429,6 +2429,24 @@ inside the instrument's own spread**, which reaches 0.76 between two borders
 neither of which can have been cut.
 `docs/investigations/the-border-is-measured-against-the-opposite-edge.md`
 
+**640x512@50 COMPOSITE ACQUIRES AND EMITS A PICTURE WITH THE LINE FILTER OFF,
+which supersedes everything below it.** The engine solves 534 lines x 50.16 Hz,
+divider 1746, and `STATUS_SYNC_PROC_VTOTAL` reads 530 in 57 to 60 of every 57
+to 60 samples; the USB capture reads a full-screen legible card, 1917x1069 with
+black margins 2\|1 across and 0\|11 down. With the filter on,
+`VideoPath::dividerCeilingForLineFilter()` caps the divider at 1424 and the
+mode cycles -- but 1424 is not the fault either: once an acquisition has held,
+the same divider counts 530 in every sample and the engine holds it acquired
+for 87 s with the filter back on. What fails is 1424 in the state a MODE CHANGE
+leaves behind, where the count is garbage at every divider up to 1425 and
+perfect from 1430 up. The sync pad, the coast window, the oversampling, all 32
+sampling phases, the pattern animating and all ten configuration registers that
+differ between the two states are each refuted by an A/B inside one
+acquisition.
+`investigations/640x512-at-50-composite-emits-a-picture.md`
+
+**THE EARLIER READING, which the above supersedes in part:**
+
 **640x512@50 COMPOSITE DOES NOT ACQUIRE, AND THE COAST IS WHAT DECIDES IT.**
 The engine solves the mode correctly and tears the solve down, over and over:
 `STATUS_SYNC_PROC_VTOTAL` reads 97 to 1974 with the divider latched at 1424 and
@@ -8711,3 +8729,32 @@ than a property of composite sync. It also makes the source identity move:
 `SourceKey` is the line count and the field rate, so a framing tuned on one sync
 type is not found from the other.
 `docs/source-identity-and-framing-lookup.md`.
+
+### A stopped count has no instrument left to report it, because the second one is gated off
+
+`VideoSourceAcquisition::sourceMoved()` distinguishes a sync processor that has
+STOPPED counting from a source standing still by reading the input formatter's
+frame. That reading comes from `InputFormatter::verticalPeriod()`, which
+returns **0 whenever `STATUS_IF_VT_OK` reads 0**, and both consumers --
+`SourceMeasurement::countContradicted()` and `frameMovedFrom()` -- answer "no
+movement" on 0. On `vga` composite after a mode change into 640x512@50 the bit
+reads 0 and the engine sits at `state: acquired`, holding the departing mode's
+timing, for **over five minutes** with nothing able to arm.
+
+`VPERIOD_IF` itself reads 1056..1078 there, which is the arriving 534-line
+frame in half-lines -- the right answer, thrown away by the gate. The other two
+instruments are blind for their own reasons: the count is frozen at 308 by the
+departing mode's coast window, and `DEBUG_IN_PIN` carries no vsync edge, so
+`rateMoved()`'s expensive half fails `VideoSignal::isVideo()` and returns
+false. `HPERIOD_IF` moved, 431 to 251, and it only opens that expensive half.
+
+Where the bit comes good the guard is prompt -- 2.3 s after the pad in one
+capture, and in another 2.6 s after the IF status byte flipped from
+`HT_OK | VT_BAD` to `HT_OK | VT_OK` at 21.8 s. `ContradictedArmPasses` is 64
+passes of `DetectionIntervalMs` 20 ms, so the arm is 1.3 s away whenever it is
+reachable; the delay is the gate and not the run. `/sc?~` recovers the state in
+about ten seconds.
+
+**This also retires the rule that `STATUS_IF_VT_OK` reaches neither acquisition
+nor the solve.** It gated only `Deinterlacer::steer()` when that was written.
+`investigations/the-formatters-frame-is-gated-off-when-the-count-stops.md`
