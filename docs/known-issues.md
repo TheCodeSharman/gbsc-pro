@@ -2383,18 +2383,41 @@ with the black margins beside them. **Measured 2026-10-18 with the wholeness
 read against the opposite edge**, so one edge of every pair is 1.00 by
 construction and the other is the fraction of its pixel that survives:
 
+**RE-MEASURED 2026-10-18 after the separator path was given the source's video
+lag**, which is what brought the composite column onto the separate one:
+
 | mode | sync | `PLLAD_MD` | `eh` | across | down |
 |---|---|---|---|---|---|
-| 240x352@70 | separate | 1272 | 1018 | 0.00\|1.00, far 8 | 1.00\|0.85, 1\|2 |
-| 320x256@50 | separate | 2200 | 688 | 1.00\|0.83, 4\|0 | 1.00\|1.00, 3\|1 |
-| 640x480@60 | separate | 1272 | 1018 | 0.00\|1.00, far 12 | 0.49\|1.00, 1\|4 |
-| 640x512@50 | separate | 1424 | 1018 | 0.00\|1.00, far 8 | 0.99\|1.00, 1\|1 |
-| 800x600@60 | separate | 1342 | 1017 | 0.32\|1.00, 2\|0 | 1.00\|0.91, 0\|1 |
-| 240x352@70 | composite | 1272 | 1018 | 1.00\|0.00, near 12 | 1.00\|0.00, near 6 |
-| 320x256@50 | composite | 2200 | 688 | 1.00\|0.00, near 26 | 1.00\|1.00, 3\|1 |
-| 640x480@60 | composite | 1272 | 1018 | 0.00\|1.00, far 11 | 1.00\|0.66, 3\|0 |
-| 640x512@50 | composite | 1746 | 1763 | no picture at all | no picture at all |
+| 240x352@70 | separate | 1272 | 1018 | 0.00\|1.00, far 10 | 0.97\|1.00, 1\|3 |
+| 320x256@50 | separate | 2200 | 688 | 1.00\|0.59, 4\|0 | 1.00\|0.99, 3\|1 |
+| 640x480@60 | separate | 1272 | 1018 | 0.00\|1.00, far 14 | 0.49\|1.00, 1\|4 |
+| 640x512@50 | separate | 1424 | 1018 | 0.00\|1.00, far 5 | 0.99\|1.00, 1\|1 |
+| 800x600@60 | separate | 1342 | 1017 | 0.32\|1.00, 2\|0 | 1.00\|0.90, 0\|1 |
+| 240x352@70 | composite | 1272 | 1018 | 0.00\|1.00, far 6 | 1.00\|0.00, near 6 |
+| 320x256@50 | composite | 2200 | 688 | 1.00\|0.06, 6\|2 | 1.00\|1.00, 3\|1 |
+| 640x480@60 | composite | 1272 | 1018 | 0.00\|1.00, far 14 | 1.00\|0.56, 3\|1 |
+| 640x512@50 | composite | 2040 | 1763 | no picture at all | no picture at all |
 | 800x600@60 | composite | 1342 | 1017 | 1.00\|0.00, near 4 | 1.00\|0.99, 0\|0 |
+
+**THE TWO SYNC TYPES NOW AGREE ON THE ACROSS AXIS**, which they did not: as a
+signed displacement in ADC samples the pairs read -2.9 against -2.9 on
+320x256@50 and +7.4 against +7.4 on 640x480@60, 1.1 apart on 800x600@60 and 3.2
+on 240x352@70, where the composite leg used to sit up to 15.8 samples early.
+`investigations/the-capture-origin-varies-by-mode-at-one-line-rate.md`.
+So the across failure is ONE residual to explain rather than two, and the
+separate leg's set is now evidence about the composite one.
+
+**AND IT IS NOT THE SINK'S WINDOW.** The same state judged after the mode
+change and after each of three `PAD_SYNC_OUT_ENZ` toggles reads identical to
+the pixel on 640x480@60 separate, with every output register unchanged -- so the
+residual is the board's placement and the card reading measures it, and judging
+after a pad toggle buys nothing here.
+
+**WHAT REMAINS REFUSES THE DIVIDER'S MAPPING, THE MEASURED SYNC WIDTH, THE
+POLARITY AND THE FIELD RATE**, each tested on the five modes and each recorded
+in that investigation. The residual is +6.4, -2.9, +6.4, +3.2, -1.1 samples
+against a budget of about 2, and the honest next measurement is the 63-mode
+sweep on both legs.
 
 **THE ACROSS AXIS FAILS ON ALL TEN ON ITS MARGIN, AND ON THE PIXEL ONLY ON
 800x600@60 SEPARATE**, which reads 0.32 at a near margin of 2 -- the window
@@ -2405,6 +2428,26 @@ whose far border is off the frame. **Every reading above 0.90 in a pair is
 inside the instrument's own spread**, which reaches 0.76 between two borders
 neither of which can have been cut.
 `docs/investigations/the-border-is-measured-against-the-opposite-edge.md`
+
+**640x512@50 COMPOSITE DOES NOT ACQUIRE, AND THE COAST IS WHAT DECIDES IT.**
+The engine solves the mode correctly and tears the solve down, over and over:
+`STATUS_SYNC_PROC_VTOTAL` reads 97 to 1974 with the divider latched at 1424 and
+`STATUS_SYNC_PROC_HTOTAL` equal to it, while `VPERIOD_IF` reads 533 and
+`STATUS_IF_VT_OK` 1 throughout -- so the formatter counts this source and the
+sync processor does not, and a run of `ContradictedArmPasses` fires about 1.2 s
+after every `sync pad: driven`. Held short through `/coast`, the processor
+counts it perfectly: 42 of 42 and 43 of 43 readings inside the formatter's own
+frame at 1/1 and 0/0 against 7 of 31 at the derived 7/6, with the derived pair
+written through the override as the control. **`SP_H_PULSE_IGNOR` is refuted** --
+held at 16 the loop is unchanged. At 1/1 the mode acquires with the separate
+leg's own divider and window, `oh` 267 and `eh` 1018, and the emitted picture is
+still wrong at 34\|198 across with the top border off the frame, so the coast
+stands between it and an acquisition and something else between the acquisition
+and a picture. A short pair is not available as a global: 0 pre reads 16.2% of
+frames displaced on 320x256@50 composite and destroys the Wii's lock.
+`investigations/the-coast-the-formatter-wants-is-one-the-counter-cannot-use.md`
+
+**THE EARLIER READING, which the above supersedes in part:**
 
 **640x512@50 COMPOSITE EMITS NOTHING, which is not the same as not acquiring.**
 All 40 frames of the clip carry nothing to correlate, with the divider at 1746

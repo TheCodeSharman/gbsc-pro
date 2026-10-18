@@ -515,6 +515,82 @@ acceptance runs both legs, so nothing measured here transfers to the composite
 one -- a term fitted to these eight would still have to be judged against a
 second set the same size.
 `docs/investigations/the-separator-lead-is-not-a-fraction-of-the-line.md`
+## The separator path owed the lag and was not paying it
+
+The composite leg framed every published source its own video lag early, and
+the two sync types place the counter's origin through different registers.
+Referencing the leading edge made the retime stop inert on the separator path,
+so `SP_CS_HS_SP` became the register that places the origin there --
+`placeSeparatorPulseEnd()` -- and it took no sampling density, so
+`SourceVideoDelayPixels` reached `retimeStopFor()` and separate sync alone.
+
+Measured on `vga` at 1080p, 16:9, each matrix mode's framing reset, as the
+composite leg's displacement from the separate one in ADC samples -- the black
+one edge carries less the black the other does, over the magnification:
+
+| mode | samples/px | lag | composite less separate |
+|---|---|---|---|
+| 320x256@50 | 4.297 | 14.0 | **-15.8** |
+| 240x352@70 | 4.240 | 13.7 | **-14.3** |
+| 640x512@50 | 1.589 | 2.1 | -3.7 |
+| 800x600@60 | 1.271 | 0.7 | -1.1 |
+| 640x480@60 | 1.590 | 2.1 | -0.5 |
+
+The residual is `-1.0 x lag`, rms 1.3 samples against a span of 15. Paid on
+both paths, the two legs agree where they differed by up to 15.8 samples:
+320x256@50 reads -2.9 on both and 640x480@60 +7.4 on both, 800x600@60 is 1.1
+apart and 240x352@70 3.2. The lag is one function, `originVideoLagSamples()`,
+because both owners of the origin owe it.
+
+## Two more terms refuted on the five matrix modes
+
+**THE MEASURED SYNC WIDTH IS NOT THE MISSING TERM.** The width is what converts
+the hardware's trailing-edge reference into the leading-edge one every raster
+row states, so an error in it goes straight into the origin -- and the measured
+pulse is 1.0 to 1.3 samples over the filed width on four modes and 5.6 under on
+640x480@60. Substituting the filed width where a raster is published shifts
+every mode by -3.7 to -5.6 and **orders none of them**: the spread is 9.4
+samples after against 9.2 before.
+
+| mode | filed | measured | used | used less filed | late | late if filed |
+|---|---|---|---|---|---|---|
+| 240x352@70 | 84.8 | 86 | 81 | -3.8 | +6.4 | +2.6 |
+| 320x256@50 | 154.7 | 156 | 151 | -3.7 | -2.9 | -6.6 |
+| 640x480@60 | 152.6 | 147 | 147 | -5.6 | +6.4 | +0.7 |
+| 640x512@50 | 89.0 | 90 | 85 | -4.0 | +3.2 | -0.8 |
+| 800x600@60 | 162.7 | 164 | 159 | -3.7 | -1.1 | -4.7 |
+
+**NEITHER IS THE DIVIDER'S MAPPING, AND NEITHER IS THE POLARITY.**
+`STATUS_SYNC_PROC_HTOTAL` equals `PLLAD_MD` on all nine acquisitions measured,
+`SP_RT_HS_SP` matches its own formula to the sample, and `oh` is the filed lead
+exactly -- 237 against `110 x 4.297` and 229 against `144 x 1.590`. The
+measured horizontal polarity does flip to negative on every mode through the
+separator, which `originPulseCorrection()` already follows, and the separate
+leg's one H-negative mode reads the same +6.4 as an H-positive one. The field
+rate does not order the set either: 50 Hz reads -2.9 and +3.2, 60 Hz +6.4 and
+-1.1, 70 Hz +6.4.
+
+## The sink's own window is not in the reading
+
+The acceptance judges a frame taken after a MODE change, and the sink places
+its window afresh every time the output sync pad returns -- 5 to 9 units
+earlier on a transition than on a settled toggle, which is the size of the
+residual. Measured on `640x480@60` separate at 1080p, the same state judged
+after the mode change and after each of three `PAD_SYNC_OUT_ENZ` toggles, with
+`VDS_DIS_HB_SP`/`ST`, `VDS_HSCALE`, `IF_HB_ST2`/`SP2`, `SP_RT_HS_SP`,
+`SP_CS_HS_SP` and `PLLAD_MD` read identical at every reading:
+
+```
+after the mode change  across - (-|12) whole 0.00|1.00   down 5 (1|4) whole 0.50|1.00
+after pad toggle 1     across - (-|12) whole 0.00|1.00   down 5 (1|4) whole 0.50|1.00
+after pad toggle 2     across - (-|12) whole 0.00|1.00   down 5 (1|4) whole 0.50|1.00
+after pad toggle 3     across - (-|12) whole 0.00|1.00   down 5 (1|4) whole 0.50|1.00
+```
+
+Identical to the pixel across four re-latches. **So the across residual is the
+board's and the card reading measures it**, and a pad toggle before judging
+buys nothing on the scaling path.
+
 ## Traps
 
 - **The anchor belongs in ADC samples, not in source pixels, and it is not quite
