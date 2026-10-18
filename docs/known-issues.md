@@ -1826,6 +1826,18 @@ the field rate already has and the same trade: a frozen capture is worse than a
 framing chosen from one reading. A source whose pulse genuinely moves past
 identity on every pass therefore still reaches a second identity.
 
+**ONE MECHANISM BEHIND THE SECOND IDENTITY IS CLOSED: THE KEY NO LONGER MOVES
+WITH THE DIVIDER.** The share was formed from the pulse after
+`SyncProcessor::InvertedPulseWidthSamples` had been taken off it, and that term
+is a count of ADC samples -- so it was a different share of the line at every
+divider, and the divider is bounded by the output raster. Re-acquired at three
+outputs the key read 699, 685 and 673 ten-thousandths against a tolerance of
+20; it now reads 723, 719 and 727, against CEA's published 723. So two of the
+landings above differing in the divider they settled on could differ in the key
+for that reason alone, which is a second route into the same recall miss as the
+shape-narrows-the-room loop this entry describes.
+`investigations/the-key-carried-the-origins-calibration.md`.
+
 **WHAT THIS DOES NOT MEAN IS THAT THE BLACK BORDER IS THE ENGINE'S.** On the
 landings that DO match CEA the capture is exactly the standard's active region --
 `IF_HB_SP2` 164 against the 164.8 the row puts video at, `IF_HB_ST2` 1380
@@ -1835,6 +1847,47 @@ that is about 15 px, 17 px, 15 lines and 9 lines: **a safe-area border the Wii
 draws inside its own active video**, confirmed against the RISC PC, whose modes
 put the card's border flush to all four edges from the computed default on the
 same output.
+
+### Three consumers of the hsync duty inherited the origin's calibration
+
+`SyncProcessor::InvertedPulseWidthSamples` is a calibration of the capture
+origin, fitted in `retimeStopFor()`'s terms, and it is applied where the pulse
+is READ -- so everything asking `HsyncPulse::syncDuty()` spends it. Four do,
+and only one is where it was calibrated:
+
+| consumer | what it spends the term on | units |
+|---|---|---|
+| `SyncProcessor::retimeStopFor()` | the capture counter's origin | ADC samples |
+| `VideoSourceLine::forDuty()` | the capture window's sync interval | IF units |
+| `SyncProcessor::clampOffsetForPulse()` | where the clamp sits when the reference moved by a pulse | **27 MHz counts** |
+| `SyncProcessor::placeSeparatorPulseEnd()` | `SP_CS_HS_SP` | ADC samples |
+
+The third is the odd one: a term in ADC samples multiplied by a line expressed
+in 27 MHz reference counts, which is the unit confusion
+`investigations/the-clamp-had-two-owners-and-two-units.md` records for the
+clamp registers generally.
+
+Nothing establishes that the other three want the term at all -- they have it
+because it was baked into the reading rather than because anything measured
+them with and without it. Taking it out of them is a framing change on every
+source and both sync types, so it wants the framing matrix either side rather
+than a single mode.
+
+`SourceKey` was a fifth consumer and is fixed:
+`investigations/the-key-carried-the-origins-calibration.md`.
+
+### Every stored framing entry is orphaned by the key's sync share moving
+
+The share in a `/framing.txt` key moved up by the origin calibration's share of
+whatever divider the entry was stored at, 22 to 35 ten-thousandths against a
+tolerance of 20, so no entry written before matches the source it was written
+for. There is no migration: the divider an entry was taken at is not recorded,
+so the offset cannot be reconstructed per line.
+
+The cost is the declared shape rather than the framing, because the framings
+stored for both bench sources were the computed defaults -- `/sc?B` on the
+320x256@50 composite entry re-solved to byte-identical numbers, `poh` 2153 and
+`peh` 6249. What has to be re-declared is 16:9 on the sources that are not 4:3.
 
 ### The picture is washed out against the vendor image, and the ADC gain is the candidate
 
