@@ -43,13 +43,21 @@ and `STATUS_IF_VT_OK` 1, one value each with no spread. The count is
 contradicted throughout -- 625 reconciles against 310 by neither factor -- and
 no arm fired in the window, because the formatter's frame never moves.
 
-**IT DOES NOT CLEAR THE BENCH CASE, AND THE REASON IS THE RUN.**
-`ContradictedArmPasses` is 64 CONSECUTIVE passes and `contradictedPasses_`
-resets on any pass that does not see the contradiction. In this state
-`STATUS_IF_VT_OK` flickers -- the line doubler is also the departing mode's, so
-the formatter measures a doubled 1067 and drops the OK bit -- and
-`InputFormatter::verticalPeriod()` returns 0 whenever it is clear. A run
-counter that resets on a gap cannot see a fault that flickers.
+**THE ARM FIRES, AND WHAT IT REACHES IS A SECOND FAULT.** Watched for 220 s
+on 640x512@50 composite, 188 register samples beside the console:
+`STATUS_IF_VT_OK` reads 1 in 166 of 188 with 11 transitions, so the run does
+accumulate, and `TIMINGS change (contradicted count)` fires. The engine then
+re-measures and solves the mode CORRECTLY -- line rate 26786, divider 1424,
+`source key: 534@50.16/613??`, sync pad driven -- and about 1.6 s later the
+count reads 684 against the solved 534 and contradicts again.
+
+So the frozen state is converted into a cycle rather than into a picture. The
+divider walks 1424/1446/1746/2040/2200 and the window 256/974/975/982/1672
+across the run. In the solved state both are RIGHT for the arriving mode --
+the window is 974..982 against the 976 its own arithmetic asks for -- and the
+count still goes bad, which is the fault
+`tools/gbsc-pro-hwtest/sweep_coast.py` attributes to the coast PAIR: 7 of 31
+readings inside the formatter's frame at 7/6 against 42 of 42 at 1/1.
 
 ## What the window does while the source is LOCKED is not settled
 
