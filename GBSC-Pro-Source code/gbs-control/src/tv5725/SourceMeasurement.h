@@ -33,15 +33,11 @@ class SourceMeasurement {
 public:
 
     // How far the line rate may sit from the one held at the SAME line count
-    // before the reading is refused. Measured on a settled source through the
-    // current path, 250 samples a mode: 0.000% spread at both 311 x 50 and
-    // 627 x 60. What it has to reject is 15.6% (57.9 Hz against a real 50.08
-    // after a preset load), and the mid-change readings run to 98% and beyond.
-    //
-    // **THE GAP IS WIDE AND THE MIDDLE IS THE RIGHT PLACE TO SIT.** Tightening
-    // costs genuine movement: a source may change rate at a constant count --
-    // a RISC PC does -- and every such change inside this is refused until
-    // HeldRateRejectionLimit lets it through.
+    // before the reading is refused. A settled source reads one rate and what
+    // this has to reject is tens of per cent, so the gap is wide and the middle
+    // is the right place to sit: tightening costs genuine movement, a source
+    // being free to change rate at a constant count, and every such change
+    // inside this waits for HeldRateRejectionLimit.
     // ../../../docs/investigations/the-rate-tolerance-answered-five-questions.md
     static const uint16_t RateFollowsCountPerThousand = 50;
     explicit SourceMeasurement(InputFormatter &inputFormatter);
@@ -150,11 +146,7 @@ public:
     uint16_t readSourceLines();
 
     // Whether the reading just taken is the formatter's frame rather than the
-    // processor's own count. A restoration is corroborated arithmetic, so an
-    // arm may trust it where it cannot trust a count that merely moved:
-    // CountPairSpread admits 3 and a restoration is at most
-    // VerticalSyncMaxLines, so every narrow one agrees with the count already
-    // solved and would arm nothing.
+    // processor's own count.
     bool countRestored() const;
 
     // The input formatter's line period, settled, or 0 where the samples will
@@ -231,10 +223,8 @@ public:
     //
     // **A MEDIAN IS THE WRONG ESTIMATOR WHERE THE ERROR IS NOT NOISE.** A sync
     // separator inventing and dropping edges makes a reading span k fields, so
-    // the truth recurs to the digit where the errors scatter: measured on a
-    // component source at 480p, the true 59.939 Hz is exact in 32 of 228
-    // readings and a median of three returns it in about 5% of trials. One
-    // pulse a reading, not UnconfirmedRatePulses.
+    // the errors scatter while the truth recurs, and a median returns a rate no
+    // field ran at. One pulse a reading, not UnconfirmedRatePulses.
     // ../../../docs/investigations/the-cheap-field-rate-is-earned-by-the-probes.md
     static float recurringFieldRateHz(bool *everyProbeAgreed = NULL);
 
@@ -293,23 +283,11 @@ public:
     static const uint8_t SteadySamples = 4;
 
     // How far apart the two values of a MISCOUNTED source may sit and still be
-    // one source standing still. Wider than SteadyRun's interlaced default,
-    // which asks a different question -- whether a field carries a half line.
-    //
-    // Measured on the Wii at 480p: the sync processor reads 521 where the
-    // raster is 525 lines, 79 per cent of samples against 19 for the correct
-    // 524, and at the interlaced spread every crossing read as the source
-    // leaving -- 400 of each in 110 s, so it was never present for two
-    // consecutive polls.
-    //
-    // **THE SOLVE'S OWN RUN KEEPS THE INTERLACED SPREAD.** Widening it changes
-    // nothing: it stops being fed once the rate is taken, so it settles after
-    // SteadySamples with too few crossings to widen a pair and reports the
-    // same value either way. Only the question "has the source moved" is
-    // asked at this spread.
-    //
-    // It cannot merge two modes, because a pair is earned by the count
-    // RETURNING and a one-way move is adopted instead.
+    // one source standing still. The presence poll's spread alone, and wider
+    // than SteadyRun's interlaced default because it asks a different question
+    // -- the processor miscounts one way by three lines on a source standing
+    // still, where a half line moves the count by one.
+    // ../../../docs/investigations/the-count-spread-is-a-miscount-not-interlace.md
     static const uint16_t CountPairSpread = 3;
 
     // How many readings may disagree before the rate is taken as it stands, and
@@ -334,17 +312,12 @@ public:
     // **A DURATION, BECAUSE A PASS COUNT IS NOT A PROXY FOR ONE.** A count of
     // passes only stands in for this at the detection ladder's cadence, and an
     // install from a route that does not wait on that ladder --
-    // VideoPath::setLineFilter() is one -- drains five passes of a
-    // free-running loop() in 30 ms. Measured on the bench, the key built after
-    // one read a count of 521 against the source's 524 and a duty of 11.0%
-    // against the standard's 7.2%.
+    // VideoPath::setLineFilter() is one -- drains five of them in 30 ms.
     //
-    // Measured with SamplingLog across a source mode change:
-    // STATUS_SYNC_PROC_HTOTAL took 82 ms to echo a newly latched divider, and
-    // this is that with a margin -- five passes of the detection ladder.
-    // STATUS_MISC_PLLAD_LOCK is not what this waits on -- on a settled source
-    // it dithers, 136 transitions in 1109 samples with the count exact
-    // throughout, so it can corroborate a reading and can never refuse one.
+    // It is the time STATUS_SYNC_PROC_HTOTAL takes to echo a newly latched
+    // divider, with a margin. STATUS_MISC_PLLAD_LOCK is not what it waits on:
+    // that bit dithers on a settled source, so it can corroborate a reading and
+    // can never refuse one.
     // docs/investigations/the-duty-is-counted-before-the-processor-relocks.md
     static const uint16_t LatchSettleMs = 100;
 
