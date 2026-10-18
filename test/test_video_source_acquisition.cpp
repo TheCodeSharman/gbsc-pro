@@ -794,7 +794,7 @@ TEST_CASE("a source passed through still reports the raster it measured")
     REQUIRE(unit.path.outputMode()->isBypass());
 
     CHECK(unit.path.reportedKey().valid());
-    CHECK(unit.path.reportedKey().lines() == 524);
+    CHECK(unit.path.reportedKey().lines() == 525);
     CHECK(unit.path.reportedKey().rateHz() == doctest::Approx(60.0f).epsilon(0.01));
 }
 
@@ -988,14 +988,14 @@ TEST_CASE("a passed-through source names itself rather than the last scaled one"
     unit.acquisition.usePassThroughSwitch(enterPassThrough);
     unit.start();
     REQUIRE(unit.pollUntilSolved());
-    REQUIRE(unit.path.reportedKey().lines() == 311);
+    REQUIRE(unit.path.reportedKey().lines() == 312);
 
     unit.acquisition.allowPassThrough(true);
     seedPassThroughSource();
     REQUIRE(unit.pollUntilSolved(8));
     REQUIRE(unit.path.outputMode()->isBypass());
 
-    CHECK(unit.path.reportedKey().lines() == 524);
+    CHECK(unit.path.reportedKey().lines() == 525);
 }
 
 TEST_CASE("a route taken away underneath pass-through is claimed again")
@@ -2087,7 +2087,7 @@ TEST_CASE("a field rate the line count cannot show re-solves the source")
     // The measured field rate over the source's own frame. The counter armed
     // the re-solve; it did not supply the number.
     CHECK(unit.acquisition.sourceLineRateHz()
-          == Tv5725::VideoSignal::lineRateFor(311, 60.29f));
+          == Tv5725::VideoSignal::lineRateFor(312, 60.29f));
 }
 
 TEST_CASE("a rate seen once does not re-solve the source")
@@ -2490,9 +2490,11 @@ TEST_CASE("a contradiction at the count already solved does not arm for ever")
     REQUIRE(unit.acquisition.sourceIsPresent());
     const uint16_t solved = unit.sampling.sourceLines();
 
+    // seedSourceLines() writes the REGISTER, which counts from zero, so the
+    // frame the engine reported back is seeded one short of itself.
     g_logLines.clear();
     for (uint8_t i = 0; i < 20 * SourceMeasurement::SteadySamples; ++i) {
-        seedSourceLines(solved);
+        seedSourceLines((uint16_t)(solved - 1));
         seedFrame(1249);
         unit.poll();
     }
@@ -3841,7 +3843,7 @@ TEST_CASE("a restoration landing after the solve re-solves rather than staying s
     unit.start();
     REQUIRE(unit.pollUntilSolved());
     const uint16_t shortCapture = unit.path.lineUnitsOn(AxisVertical);
-    REQUIRE(unit.sampling.sourceLines() == 308);
+    REQUIRE(unit.sampling.sourceLines() == 309);
 
     // The frame arrives. 623 half-lines is 312 whole ones against a counted
     // 309, so the pulse the counter lost is 3 -- inside the spread.

@@ -57,7 +57,7 @@ public:
     // arithmetic below because three of its callers want only this.
     static bool isVideo(uint16_t sourceLines, float fieldRateHz);
 
-    // The field rate times the frame, where the frame is sourceLines + 1:
+    // The field rate times the frame:
     // STATUS_SYNC_PROC_VTOTAL is zero based. Reading it as the frame makes this
     // 1/312 low on the bench source, which is the whole of the accuracy
     // HPERIOD_IF has over it.

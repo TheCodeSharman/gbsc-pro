@@ -419,7 +419,7 @@ TEST_CASE("the pass-through blank ends on the envelope, not on a constant")
 TEST_CASE("the pass-through blank ends on the envelope whether a raster matched or not")
 {
     const Tv5725::SourceTiming vesa800x600 =
-        Tv5725::SourceTiming::matching(Tv5725::SourceKey(627, 60.0f, 128.0f / 1056.0f, Tv5725::SourceKey::Positive, Tv5725::SourceKey::Positive));
+        Tv5725::SourceTiming::matching(Tv5725::SourceKey(628, 60.0f, 128.0f / 1056.0f, Tv5725::SourceKey::Positive, Tv5725::SourceKey::Positive));
     REQUIRE(vesa800x600.published());
     const uint16_t envelope =
         (uint16_t)lrintf(Tv5725::AxisHorizontal.activeStart() * 2039.0f);
@@ -439,7 +439,7 @@ TEST_CASE("the pass-through blank ends on the envelope whether a raster matched 
 TEST_CASE("the pass-through blank reaches no source's picture")
 {
     const Tv5725::SourceTiming vesa800x600 =
-        Tv5725::SourceTiming::matching(Tv5725::SourceKey(627, 60.0f, 128.0f / 1056.0f, Tv5725::SourceKey::Positive, Tv5725::SourceKey::Positive));
+        Tv5725::SourceTiming::matching(Tv5725::SourceKey(628, 60.0f, 128.0f / 1056.0f, Tv5725::SourceKey::Positive, Tv5725::SourceKey::Positive));
     REQUIRE(vesa800x600.published());
 
     applyForSource(2039, 37879, vesa800x600, 628);
@@ -462,7 +462,7 @@ TEST_CASE("the pass-through blank reaches no source's picture")
 TEST_CASE("the line runs to its end whether a raster matched or not")
 {
     const Tv5725::SourceTiming vesa800x600 =
-        Tv5725::SourceTiming::matching(Tv5725::SourceKey(627, 60.0f, 128.0f / 1056.0f, Tv5725::SourceKey::Positive, Tv5725::SourceKey::Positive));
+        Tv5725::SourceTiming::matching(Tv5725::SourceKey(628, 60.0f, 128.0f / 1056.0f, Tv5725::SourceKey::Positive, Tv5725::SourceKey::Positive));
     REQUIRE(vesa800x600.published());
 
     applyForSource(2039, 37879, vesa800x600, 628);
@@ -626,7 +626,7 @@ TEST_CASE("the channel blanks the lines before active video")
     // counter zeroes after the sync, so active starts at 30. Every arm carried
     // a constant instead -- the progressive one 0x40, which is 64, so 34 lines
     // of picture came off the top.
-    applyForSource(2039, 31469, Tv5725::SourceTiming::matching(Tv5725::SourceKey(524, 60.0f, 62.0f / 858.0f, Tv5725::SourceKey::Negative, Tv5725::SourceKey::Negative)), 525);
+    applyForSource(2039, 31469, Tv5725::SourceTiming::matching(Tv5725::SourceKey(525, 60.0f, 62.0f / 858.0f, Tv5725::SourceKey::Negative, Tv5725::SourceKey::Negative)), 525);
 
     CHECK(HdBypass::HD_VB_SP::read() == 30);
 }
@@ -637,7 +637,7 @@ TEST_CASE("the channel closes the window where active video ends")
     // the source's own end-of-frame blanking and its vertical sync. Left open, the channel plays them
     // out as active black and the picture sits high on the panel with a band
     // under it.
-    applyForSource(2039, 31469, Tv5725::SourceTiming::matching(Tv5725::SourceKey(524, 60.0f, 62.0f / 858.0f, Tv5725::SourceKey::Negative, Tv5725::SourceKey::Negative)), 525);
+    applyForSource(2039, 31469, Tv5725::SourceTiming::matching(Tv5725::SourceKey(525, 60.0f, 62.0f / 858.0f, Tv5725::SourceKey::Negative, Tv5725::SourceKey::Negative)), 525);
 
     CHECK(HdBypass::HD_VB_ST::read() == 510);
 }

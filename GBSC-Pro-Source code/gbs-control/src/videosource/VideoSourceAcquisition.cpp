@@ -339,7 +339,7 @@ void VideoSourceAcquisition::installPassThroughClock()
 void VideoSourceAcquisition::resizePassThrough()
 {
     Tv5725::HdBypass::applyChannelRaster(videoPath_.sourceTiming(),
-                                         sampling_.sourceLines() + 1);
+                                         sampling_.sourceLines());
 }
 
 float VideoSourceAcquisition::sourceFieldRateHz() const { return sampling_.fieldRateHz(); }
@@ -358,7 +358,7 @@ bool VideoSourceAcquisition::sourceIsPresent() const
 bool VideoSourceAcquisition::sourceIsSearching() const
 {
     return !Tv5725::VideoSignal::countIsSource(
-               Tv5725::SyncProcessor::lineCount())
+               Tv5725::SyncProcessor::frameLines())
            && !sourceIsPresent();
 }
 

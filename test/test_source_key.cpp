@@ -33,7 +33,7 @@ TEST_CASE("a source with no measurement behind it identifies nothing")
 
 TEST_CASE("the same source measured twice is the same key")
 {
-    CHECK(SourceKey(311, 50.08f, 0.0f, SourceKey::Negative, SourceKey::Negative) == SourceKey(311, 50.08f, 0.0f, SourceKey::Negative, SourceKey::Negative));
+    CHECK(SourceKey(312, 50.08f, 0.0f, SourceKey::Negative, SourceKey::Negative) == SourceKey(312, 50.08f, 0.0f, SourceKey::Negative, SourceKey::Negative));
 }
 
 // THE COUNT AND THE RATE DO NOT SEPARATE TWO STANDARDS. DMT 640x480@60 and
@@ -68,7 +68,7 @@ TEST_CASE("the rate is bucketed wider than it jitters")
 {
     // The engine re-solves on the measured field rate and that reading wobbles,
     // so an exact match on a float misses its own entry.
-    CHECK(SourceKey(311, 50.02f, 0.0f, SourceKey::Negative, SourceKey::Negative) == SourceKey(311, 50.13f, 0.0f, SourceKey::Negative, SourceKey::Negative));
+    CHECK(SourceKey(312, 50.02f, 0.0f, SourceKey::Negative, SourceKey::Negative) == SourceKey(312, 50.13f, 0.0f, SourceKey::Negative, SourceKey::Negative));
 }
 
 TEST_CASE("readings either side of a quantisation step are still the same source")
@@ -93,7 +93,7 @@ TEST_CASE("the key is quantised as finely as the instrument is repeatable")
     // 60.317 Hz, every reading identical. The instrument is repeatable to
     // better than 0.002%, so hundredths cost no repeatability at all.
     // ../docs/investigations/the-rate-tolerance-answered-five-questions.md
-    CHECK(SourceKey(311, 50.081f, 0.0f, SourceKey::Negative, SourceKey::Negative).rateHz() == doctest::Approx(50.08f));
+    CHECK(SourceKey(312, 50.081f, 0.0f, SourceKey::Negative, SourceKey::Negative).rateHz() == doctest::Approx(50.08f));
     CHECK(SourceKey(627, 60.317f, 0.0f, SourceKey::Negative, SourceKey::Negative).rateHz() == doctest::Approx(60.32f));
     CHECK(SourceKey(524, 59.94f, 0.0f, SourceKey::Negative, SourceKey::Negative).rateHz() == doctest::Approx(59.94f));
 }
@@ -117,14 +117,14 @@ TEST_CASE("a rate change too small to arm a solve does not change identity")
 // two inputs and both sync types is 0.00 per thousand and 0.00000.
 TEST_CASE("two rasters behind one mode are two sources")
 {
-    CHECK(SourceKey(311, 50.474f, 0.07500f, SourceKey::Positive, SourceKey::Positive)
-          != SourceKey(311, 50.0801f, 0.07091f, SourceKey::Positive, SourceKey::Positive));
+    CHECK(SourceKey(312, 50.474f, 0.07500f, SourceKey::Positive, SourceKey::Positive)
+          != SourceKey(312, 50.0801f, 0.07091f, SourceKey::Positive, SourceKey::Positive));
 }
 
 TEST_CASE("adjacent standards stay apart")
 {
-    CHECK(SourceKey(311, 50.08f, 0.0f, SourceKey::Negative, SourceKey::Negative) != SourceKey(311, 60.05f, 0.0f, SourceKey::Negative, SourceKey::Negative));
-    CHECK(SourceKey(311, 50.08f, 0.0f, SourceKey::Negative, SourceKey::Negative) != SourceKey(312, 50.08f, 0.0f, SourceKey::Negative, SourceKey::Negative));
+    CHECK(SourceKey(312, 50.08f, 0.0f, SourceKey::Negative, SourceKey::Negative) != SourceKey(312, 60.05f, 0.0f, SourceKey::Negative, SourceKey::Negative));
+    CHECK(SourceKey(312, 50.08f, 0.0f, SourceKey::Negative, SourceKey::Negative) != SourceKey(313, 50.08f, 0.0f, SourceKey::Negative, SourceKey::Negative));
 }
 
 TEST_CASE("a line count no source runs is not a key")
@@ -132,7 +132,7 @@ TEST_CASE("a line count no source runs is not a key")
     // A settling source passes through counts inside no standard at all, and a
     // framing stored against one of those is stored against nothing.
     CHECK_FALSE(SourceKey(97, 50.08f, 0.0f, SourceKey::Negative, SourceKey::Negative).valid());
-    CHECK_FALSE(SourceKey(311, 0.0f, 0.0f, SourceKey::Negative, SourceKey::Negative).valid());
+    CHECK_FALSE(SourceKey(312, 0.0f, 0.0f, SourceKey::Negative, SourceKey::Negative).valid());
 }
 
 // THE POLARITY PAIR IS HOW THE STANDARDS TELL MODES APART, so both halves of

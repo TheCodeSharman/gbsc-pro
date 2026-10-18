@@ -393,9 +393,10 @@ bool SyncProcessor::vsyncActive()
     return GBS::STATUS_SYNC_PROC_VSACT::read() == 1;
 }
 
-uint16_t SyncProcessor::lineCount()
+uint16_t SyncProcessor::frameLines()
 {
-    return GBS::STATUS_SYNC_PROC_VTOTAL::read();
+    const uint16_t counted = GBS::STATUS_SYNC_PROC_VTOTAL::read();
+    return counted == 0 ? 0 : (uint16_t)(counted + 1);
 }
 
 uint16_t SyncProcessor::lineSamples()

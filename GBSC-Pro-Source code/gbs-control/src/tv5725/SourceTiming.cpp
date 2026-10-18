@@ -173,7 +173,7 @@ const SourceTiming::Raster *SourceTiming::lookUpIn(const Raster *rasters,
 {
     for (uint16_t i = 0; i < count; ++i) {
         const Raster &raster = rasters[i];
-        if (measured.lines() + 1 != raster.totalLines
+        if (measured.lines() != raster.totalLines
             || (fabsf(measured.rateHz() - (float)raster.rateHz) * 1000.0f
                 > (float)StandardRateDeviationPerThousand * (float)raster.rateHz))
             continue;

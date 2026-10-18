@@ -262,7 +262,7 @@ static const PanAndZoom Far(0.2698f, 0.6249f, 0.1154f, 0.8205f);
 
 static SourceKey at(float rateHz)
 {
-    return SourceKey(311, rateHz, 0.0732f, SourceKey::Positive, SourceKey::Positive);
+    return SourceKey(312, rateHz, 0.0732f, SourceKey::Positive, SourceKey::Positive);
 }
 
 TEST_CASE("the nearest stored key answers, whichever order the file held them")

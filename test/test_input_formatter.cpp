@@ -615,19 +615,19 @@ TEST_CASE("the block states the counters a capture window sits in")
         InputFormatter block;
 
         block.applyScan(2000, true, false);
-        CHECK(block.capturableFrame(311, false).units() == 624);
+        CHECK(block.capturableFrame(312, false).units() == 624);
 
         block.applyScan(2000, false, false);
-        CHECK(block.capturableFrame(311, false).units() == 312);
-        CHECK(block.capturableFrame(627, false).units() == 628);
+        CHECK(block.capturableFrame(312, false).units() == 312);
+        CHECK(block.capturableFrame(628, false).units() == 628);
     }
 
     SUBCASE("the frame excludes nothing, because no vertical pulse is measured") {
         InputFormatter block;
         block.applyScan(2000, false, false);
 
-        CHECK(block.capturableFrame(627, false).syncUnits() == 0);
-        CHECK(block.capturableFrame(627, false).headBlankingUnits() == 0);
+        CHECK(block.capturableFrame(628, false).syncUnits() == 0);
+        CHECK(block.capturableFrame(628, false).headBlankingUnits() == 0);
     }
 
     // The counter counts half-lines with the doubler in, so a delay stated in
@@ -636,12 +636,12 @@ TEST_CASE("the block states the counters a capture window sits in")
         InputFormatter block;
 
         block.applyScan(2000, false, false);
-        CHECK(block.capturableFrame(627, true).originLeadUnits()
+        CHECK(block.capturableFrame(628, true).originLeadUnits()
               == VideoSourceLine::FrameOriginUnits
                  + (VideoSourceLine::SeparatorFrameLeadHalfLines + 1) / 2);
 
         block.applyScan(2000, true, false);
-        CHECK(block.capturableFrame(311, true).originLeadUnits()
+        CHECK(block.capturableFrame(312, true).originLeadUnits()
               == VideoSourceLine::DoubledFrameOriginUnits
                  + VideoSourceLine::SeparatorFrameLeadHalfLines);
     }
@@ -654,10 +654,10 @@ TEST_CASE("the block states the counters a capture window sits in")
         InputFormatter block;
 
         block.applyScan(2000, true, false);
-        CHECK(block.capturableFrame(311, true).originLeadUnits() == 45);
+        CHECK(block.capturableFrame(312, true).originLeadUnits() == 45);
 
         block.applyScan(2000, false, false);
-        CHECK(block.capturableFrame(627, true).originLeadUnits() == 25);
+        CHECK(block.capturableFrame(628, true).originLeadUnits() == 25);
     }
 
     // The counter's own origin sits after the vsync pulse's leading edge, and
@@ -667,11 +667,11 @@ TEST_CASE("the block states the counters a capture window sits in")
         InputFormatter block;
 
         block.applyScan(2000, false, false);
-        CHECK(block.capturableFrame(627, false).originLeadUnits()
+        CHECK(block.capturableFrame(628, false).originLeadUnits()
               == VideoSourceLine::FrameOriginUnits);
 
         block.applyScan(2000, true, false);
-        CHECK(block.capturableFrame(311, false).originLeadUnits()
+        CHECK(block.capturableFrame(312, false).originLeadUnits()
               == VideoSourceLine::DoubledFrameOriginUnits);
         CHECK(VideoSourceLine::DoubledFrameOriginUnits
               < 2 * VideoSourceLine::FrameOriginUnits);

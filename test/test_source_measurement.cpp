@@ -803,7 +803,7 @@ TEST_CASE("the line rate is measured rather than handed in")
 
     SourceMeasurement measurement(inputFormatter);
     CHECK(rateMeasured(measurePastGate(measurement)));
-    CHECK(measurement.sourceLines() == 311);
+    CHECK(measurement.sourceLines() == 312);
     CHECK(measurement.lineRateHz() == 15624u);
 
     SUBCASE("and it holds both inputs, because nothing downstream can say which was wrong") {
@@ -812,7 +812,7 @@ TEST_CASE("the line rate is measured rather than handed in")
     }
 
     SUBCASE("the diagnostic names both inputs and the result") {
-        CHECK(loggedContaining("measured: 311 lines x 50.08 Hz -> line rate 15624"));
+        CHECK(loggedContaining("measured: 312 lines x 50.08 Hz -> line rate 15624"));
     }
 }
 
@@ -837,8 +837,8 @@ TEST_CASE("a rate that moves without the line count is refused, and says so")
     CHECK(measurement.lineRateHz() == 15624u);
 
     SUBCASE("and reports what it saw, both halves") {
-        CHECK(measurement.sourceLines() == 311);
-        CHECK(loggedContaining("measured: 311 lines x 57.90 Hz -> line rate 0"));
+        CHECK(measurement.sourceLines() == 312);
+        CHECK(loggedContaining("measured: 312 lines x 57.90 Hz -> line rate 0"));
     }
 
     SUBCASE("an unmeasurable field rate is refused the same way") {
@@ -1045,22 +1045,26 @@ TEST_CASE("a near-integer multiple of the divider is a PLL counting several line
     // samples per line too high, because the PLL locked to every other hsync
     // and counts one line per two sent. The count alone cannot show it -- 155
     // is simply not a source -- so the sample count against the divider is what
-    // recovers the real 310.
+    // recovers the real 312.
+    //
+    // The FRAME is what multiplies, which is why the correction runs after the
+    // zero base is taken out: 156 counts of two lines is the 312 the bench
+    // source sends, where doubling the register's 155 gives 310.
     SourceMeasurement sampling(inputFormatter);
 
     seedSource(155, 2249, 1124);
-    CHECK(sampling.readSourceLines() == 310);
+    CHECK(sampling.readSourceLines() == 312);
 
     SUBCASE("and four lines to a count likewise") {
         // STATUS_SYNC_PROC_HTOTAL is 12 bits, so four lines to a count is only
         // reachable on a divider small enough for the product to fit.
-        seedSource(78, 4000, 1000);
+        seedSource(77, 4000, 1000);
         CHECK(sampling.readSourceLines() == 312);
     }
 
     SUBCASE("a count that is already a source is taken as it stands") {
         seedSource(311, 2553, 2553);
-        CHECK(sampling.readSourceLines() == 311);
+        CHECK(sampling.readSourceLines() == 312);
     }
 
     SUBCASE("an unlocked sync processor is not a multiple of anything") {
@@ -1068,25 +1072,25 @@ TEST_CASE("a near-integer multiple of the divider is a PLL counting several line
         // of looking like a multiple: the nearest is 5106. So nothing corrects
         // the count and it comes back as read.
         seedSource(97, 2558, 2553);
-        CHECK(sampling.readSourceLines() == 97);
+        CHECK(sampling.readSourceLines() == 98);
     }
 
     SUBCASE("nor is a reading simply unrelated to the divider") {
         // 2400 with the sync processor unconfigured.
         seedSource(97, 2400, 2553);
-        CHECK(sampling.readSourceLines() == 97);
+        CHECK(sampling.readSourceLines() == 98);
     }
 
     SUBCASE("beyond the multiples any offset can be made to fit one") {
         seedSource(155, 5620, 1124);
-        CHECK(sampling.readSourceLines() == 155);
+        CHECK(sampling.readSourceLines() == 156);
     }
 
     SUBCASE("and nothing is a multiple of nothing") {
         seedSource(155, 0, 1124);
-        CHECK(sampling.readSourceLines() == 155);
+        CHECK(sampling.readSourceLines() == 156);
         seedSource(155, 2249, 0);
-        CHECK(sampling.readSourceLines() == 155);
+        CHECK(sampling.readSourceLines() == 156);
     }
 }
 
@@ -1100,14 +1104,14 @@ TEST_CASE("the multiple tolerates the jitter of every line it counts")
     SourceMeasurement sampling(inputFormatter);
 
     seedSource(155, 2251, 1124);
-    CHECK(sampling.readSourceLines() == 310);
+    CHECK(sampling.readSourceLines() == 312);
 
     seedSource(155, 2247, 1124);
-    CHECK(sampling.readSourceLines() == 310);
+    CHECK(sampling.readSourceLines() == 312);
 
     SUBCASE("and widening it does not reach the readings that are not multiples") {
         seedSource(97, 2558, 2553);
-        CHECK(sampling.readSourceLines() == 97);
+        CHECK(sampling.readSourceLines() == 98);
     }
 }
 
@@ -1116,14 +1120,14 @@ TEST_CASE("the count the presence poll reads carries the correction")
     // One reader answers the arm, the scan mode and the measurement, so what
     // the arm compares against a solve is the corrected count rather than the
     // register. Where the PLL locked to every other hsync the correction
-    // recovers 310 from a reported 155, and a reading without it calls a
+    // recovers 312 from a reported 155, and a reading without it calls a
     // healthy source unusable -- which discards the held sync type and spends
     // the one arm that state is given.
     SourceMeasurement sampling(inputFormatter);
 
     seedSource(155, 2249, 1124);
 
-    CHECK(sampling.readSourceLines() == 310);
+    CHECK(sampling.readSourceLines() == 312);
 }
 
 // What an output frame of this many lines can display, which is the question
@@ -1424,13 +1428,13 @@ TEST_CASE("the restored count holds through a torn vertical period")
     seedSourceHalfLines(623);
     SourceMeasurement measurement(inputFormatter);
     REQUIRE(measurePastGate(measurement) != SourceMeasurement::NotSteady);
-    REQUIRE(measurement.sourceLines() == 311);
+    REQUIRE(measurement.sourceLines() == 312);
 
     seedSourceHalfLines(615);
     for (uint8_t pass = 0; pass < 8; pass++)
         measureOnce(measurement);
 
-    CHECK(measurement.sourceLines() == 311);
+    CHECK(measurement.sourceLines() == 312);
 }
 
 TEST_CASE("the composite count is restored to the frame the source sends")
@@ -1440,7 +1444,7 @@ TEST_CASE("the composite count is restored to the frame the source sends")
     SourceMeasurement measurement(inputFormatter);
     REQUIRE(measurePastGate(measurement) != SourceMeasurement::NotSteady);
 
-    CHECK(measurement.sourceLines() == 311);
+    CHECK(measurement.sourceLines() == 312);
 }
 
 TEST_CASE("a count one short while the width is established does not shift the frame")
@@ -1460,7 +1464,7 @@ TEST_CASE("a count one short while the width is established does not shift the f
     seedSourceLines(623);
     seedSourceHalfLines(1255);
 
-    CHECK(measurement.readSourceLines() == 627);
+    CHECK(measurement.readSourceLines() == 628);
 }
 
 TEST_CASE("the held frame stops answering for a count it cannot be the frame of")
@@ -1473,11 +1477,11 @@ TEST_CASE("the held frame stops answering for a count it cannot be the frame of"
     seedSourceHalfLines(1255);
     SourceMeasurement measurement(inputFormatter);
     measurement.readSourceLines();
-    REQUIRE(measurement.readSourceLines() == 627);
+    REQUIRE(measurement.readSourceLines() == 628);
 
     seedSourceLines(805);
 
-    CHECK(measurement.readSourceLines() == 805);
+    CHECK(measurement.readSourceLines() == 806);
 }
 
 TEST_CASE("the width is established by whichever reader runs")
@@ -1490,12 +1494,12 @@ TEST_CASE("the width is established by whichever reader runs")
     // offering the frame throughout either way.
     seedSource(623, 1436, 1436);
     SourceMeasurement measurement(inputFormatter);
-    REQUIRE(measurement.readSourceLines() == 623);
+    REQUIRE(measurement.readSourceLines() == 624);
 
     seedSourceHalfLines(1255);
     measurement.readSourceLines();
 
-    CHECK(measurement.readSourceLines() == 627);
+    CHECK(measurement.readSourceLines() == 628);
 }
 
 // --- an interlaced count never holds still, and that IS the measurement ------
@@ -1539,7 +1543,7 @@ TEST_CASE("the pair's higher count is the one settled on")
     SourceMeasurement measurement(inputFormatter);
     REQUIRE(settleAlternating(measurement, 259, 8));
 
-    CHECK(measurement.steadyLines() == 260);
+    CHECK(measurement.steadyLines() == 261);
 }
 
 TEST_CASE("a count alternating by one reads as interlaced where the period cannot")
@@ -1656,7 +1660,7 @@ TEST_CASE("one call measures the source, and every reading comes from that pass"
         reading = measureOnce(sampling);
 
     REQUIRE(reading == SourceMeasurement::Measured);
-    CHECK(sampling.sourceLines() == 311);
+    CHECK(sampling.sourceLines() == 312);
     CHECK(sampling.lineRateHz() == 15624u);
     CHECK(sampling.hsync().syncDuty() == doctest::Approx(181.0f / (float)BenchDivider));
 }

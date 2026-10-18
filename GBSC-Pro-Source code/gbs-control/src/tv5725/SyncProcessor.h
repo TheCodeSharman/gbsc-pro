@@ -553,7 +553,12 @@ public:
     // The two counts are in DIFFERENT units -- lines per field, and ADC samples
     // per line -- because the sync processor counts hsync edges vertically and
     // ADC clocks horizontally.
-    static uint16_t lineCount();
+    // The source's frame, in lines. STATUS_SYNC_PROC_VTOTAL counts from zero
+    // and so reads one short of the frame every standard states, and this is
+    // where that is corrected -- at the boundary, once, so nothing downstream
+    // carries a copy of the correction. 0 stays 0, because a counter reading
+    // nothing has not measured a one-line frame.
+    static uint16_t frameLines();
     static uint16_t lineSamples();
 
     // The hsync low time in ADC samples, and whether the pulse is

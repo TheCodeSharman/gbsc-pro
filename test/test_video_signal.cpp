@@ -12,14 +12,15 @@ using namespace Tv5725;
 
 TEST_CASE("the line rate is the field rate over the whole frame")
 {
-    // STATUS_SYNC_PROC_VTOTAL is zero based: the frame is one line longer than
-    // it counts. Reading it as the frame is 1/312 low on the bench source,
-    // which is the whole of the accuracy HPERIOD_IF has over this route.
+    // The FRAME, not what STATUS_SYNC_PROC_VTOTAL counts -- that register is
+    // zero based and SyncProcessor::frameLines() corrects it at the boundary,
+    // so nothing downstream carries the correction.
+    //
     // Two instruments settle the zero base: HPERIOD_IF reads the bench source
     // at 15625 Hz, and 15625/312 is the 50.08 the field rate measures where
     // 15625/311 is 50.24, which it does not.
-    CHECK(VideoSignal::lineRateFor(311, 50.08f) == 15624u);
-    CHECK(VideoSignal::lineRateFor(524, 60.0f) == 31500u);
+    CHECK(VideoSignal::lineRateFor(312, 50.08f) == 15624u);
+    CHECK(VideoSignal::lineRateFor(525, 60.0f) == 31500u);
 }
 
 TEST_CASE("a count and a rate video runs at is a video signal")

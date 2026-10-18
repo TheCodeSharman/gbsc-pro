@@ -35,9 +35,9 @@ TEST_CASE("a source matching no published raster carries only its rate")
 TEST_CASE("a VESA source is placed where its own raster puts active video")
 {
     // 640x480@60: 800 pixels, 96 sync and 48 back porch before 640 of picture.
-    // 524 rather than 525 because the sync processor counts from zero, which is
-    // what the bench reads on a source running this mode.
-    SourceTiming dmt = SourceTiming::matching(SourceKey(524, 59.94f, 96.0f / 800.0f, SourceKey::Negative, SourceKey::Negative));
+    // The frame, which is what a key carries: the sync processor counts from
+    // zero and SyncProcessor::frameLines() corrects it where it is read.
+    SourceTiming dmt = SourceTiming::matching(SourceKey(525, 59.94f, 96.0f / 800.0f, SourceKey::Negative, SourceKey::Negative));
 
     REQUIRE(dmt.published());
     CHECK_NEAR(dmt.activeStart(AxisHorizontal), 144.0f / 800.0f, 0.0005f);
@@ -49,7 +49,7 @@ TEST_CASE("the vertical axis comes from the same raster")
     // 525 lines, 2 of sync and 33 of back porch before 480 of picture, counted
     // from the pulse's leading edge as the horizontal is. Where the counter's
     // origin sits after that edge is VideoSourceLine's.
-    SourceTiming dmt = SourceTiming::matching(SourceKey(524, 59.94f, 96.0f / 800.0f, SourceKey::Negative, SourceKey::Negative));
+    SourceTiming dmt = SourceTiming::matching(SourceKey(525, 59.94f, 96.0f / 800.0f, SourceKey::Negative, SourceKey::Negative));
 
     REQUIRE(dmt.published());
     CHECK_NEAR(dmt.activeStart(AxisVertical), 35.0f / 525.0f, 0.0005f);
@@ -60,7 +60,7 @@ TEST_CASE("the vertical start is the standard's own, whatever the pulse")
 {
     // 800x600@60 is 628 lines: 4 of sync, 23 of back porch, 600 of picture.
     SourceTiming dmt = SourceTiming::matching(
-        SourceKey(627, 60.32f, 128.0f / 1056.0f, SourceKey::Positive, SourceKey::Positive));
+        SourceKey(628, 60.32f, 128.0f / 1056.0f, SourceKey::Positive, SourceKey::Positive));
     REQUIRE(dmt.published());
 
     CHECK_NEAR(dmt.activeStart(AxisVertical), 27.0f / 628.0f, 0.0005f);
@@ -70,8 +70,8 @@ TEST_CASE("a measured rate anywhere in the bucket still matches")
 {
     // The engine re-solves on the measured rate and that reading wobbles, so a
     // match on the float misses the raster the source is running.
-    CHECK(SourceTiming::matching(SourceKey(627, 60.32f, 128.0f / 1056.0f, SourceKey::Positive, SourceKey::Positive)).published());
-    CHECK(SourceTiming::matching(SourceKey(627, 59.85f, 128.0f / 1056.0f, SourceKey::Positive, SourceKey::Positive)).published());
+    CHECK(SourceTiming::matching(SourceKey(628, 60.32f, 128.0f / 1056.0f, SourceKey::Positive, SourceKey::Positive)).published());
+    CHECK(SourceTiming::matching(SourceKey(628, 59.85f, 128.0f / 1056.0f, SourceKey::Positive, SourceKey::Positive)).published());
 }
 
 TEST_CASE("two standards on one line count are told apart by the sync width")
@@ -79,8 +79,8 @@ TEST_CASE("two standards on one line count are told apart by the sync width")
     // 525 lines at 60 Hz is 640x480 DMT and it is 720x480p, and they put active
     // video 2.2% of the line apart. DMT spends 96 pixels of 800 on sync where
     // CEA spends 62 of 858.
-    SourceTiming dmt = SourceTiming::matching(SourceKey(524, 59.94f, 96.0f / 800.0f, SourceKey::Negative, SourceKey::Negative));
-    SourceTiming cea = SourceTiming::matching(SourceKey(524, 59.94f, 62.0f / 858.0f, SourceKey::Negative, SourceKey::Negative));
+    SourceTiming dmt = SourceTiming::matching(SourceKey(525, 59.94f, 96.0f / 800.0f, SourceKey::Negative, SourceKey::Negative));
+    SourceTiming cea = SourceTiming::matching(SourceKey(525, 59.94f, 62.0f / 858.0f, SourceKey::Negative, SourceKey::Negative));
 
     REQUIRE(dmt.published());
     REQUIRE(cea.published());
@@ -92,9 +92,9 @@ TEST_CASE("a source running neither standard is left unpublished")
 {
     // Placing a source from a raster it is not emitting crops picture, so an
     // unrecognised sync width takes the assumption rather than the nearest row.
-    CHECK_FALSE(SourceTiming::matching(SourceKey(524, 59.94f, 0.20f, SourceKey::Negative, SourceKey::Negative)).published());
-    CHECK_FALSE(SourceTiming::matching(SourceKey(311, 50.08f, 0.140f, SourceKey::Positive, SourceKey::Positive)).published());
-    CHECK_FALSE(SourceTiming::matching(SourceKey(97, 50.08f, 0.12f, SourceKey::Positive, SourceKey::Positive)).published());
+    CHECK_FALSE(SourceTiming::matching(SourceKey(525, 59.94f, 0.20f, SourceKey::Negative, SourceKey::Negative)).published());
+    CHECK_FALSE(SourceTiming::matching(SourceKey(312, 50.08f, 0.140f, SourceKey::Positive, SourceKey::Positive)).published());
+    CHECK_FALSE(SourceTiming::matching(SourceKey(98, 50.08f, 0.12f, SourceKey::Positive, SourceKey::Positive)).published());
 }
 
 // The bench RISC PC on AKF50's 800x600@60, measured 2026-09-10: VTOTAL 627,
@@ -103,7 +103,7 @@ TEST_CASE("a source running neither standard is left unpublished")
 // 216 exactly where DMT puts them -- the 40-pixel borders sit in the porches.
 TEST_CASE("the bench RISC PC at 800x600@60 is recognised as the published mode")
 {
-    SourceTiming t = SourceTiming::matching(SourceKey(627, 60.32f, 137.0f / 1124.0f, SourceKey::Positive, SourceKey::Positive));
+    SourceTiming t = SourceTiming::matching(SourceKey(628, 60.32f, 137.0f / 1124.0f, SourceKey::Positive, SourceKey::Positive));
 
     REQUIRE(t.published());
     CHECK_NEAR(t.activeStart(AxisHorizontal), 216.0f / 1056.0f, 0.0005f);
@@ -116,8 +116,8 @@ TEST_CASE("a field rate that wobbles across half a hertz still finds its mode")
 {
     const float duty = 137.0f / 1124.0f;
 
-    CHECK(SourceTiming::matching(SourceKey(627, 60.32f, duty, SourceKey::Positive, SourceKey::Positive)).published());
-    CHECK(SourceTiming::matching(SourceKey(627, 60.72f, duty, SourceKey::Positive, SourceKey::Positive)).published());
+    CHECK(SourceTiming::matching(SourceKey(628, 60.32f, duty, SourceKey::Positive, SourceKey::Positive)).published());
+    CHECK(SourceTiming::matching(SourceKey(628, 60.72f, duty, SourceKey::Positive, SourceKey::Positive)).published());
 }
 
 TEST_CASE("the line active video starts on, for a caller that cannot scale")
@@ -128,7 +128,7 @@ TEST_CASE("the line active video starts on, for a caller that cannot scale")
     // HD CHANNEL'S COUNTER, not the input formatter's, and where that one
     // zeroes has not been measured -- so it is taken as the pulse's end and
     // active video is line 30 of 525.
-    const SourceTiming cea = SourceTiming::matching(SourceKey(524, 59.94f, 62.0f / 858.0f, SourceKey::Negative, SourceKey::Negative));
+    const SourceTiming cea = SourceTiming::matching(SourceKey(525, 59.94f, 62.0f / 858.0f, SourceKey::Negative, SourceKey::Negative));
     REQUIRE(cea.published());
 
     CHECK(cea.activeStartLine(525) == 30);
@@ -153,7 +153,7 @@ TEST_CASE("a source matching no raster names no line to blank to")
 TEST_CASE("an Acorn 15 kHz mode is placed on the picture inside its border")
 {
     SourceTiming akf = SourceTiming::matching(
-        SourceKey(311, 50.08f, 36.0f / 512.0f, SourceKey::Negative, SourceKey::Negative));
+        SourceKey(312, 50.08f, 36.0f / 512.0f, SourceKey::Negative, SourceKey::Negative));
 
     REQUIRE(akf.published());
     CHECK_NEAR(akf.activeStart(AxisHorizontal), 110.0f / 512.0f, 0.0005f);
@@ -163,7 +163,7 @@ TEST_CASE("an Acorn 15 kHz mode is placed on the picture inside its border")
 TEST_CASE("the Acorn mode's vertical picture starts inside its top border")
 {
     SourceTiming akf = SourceTiming::matching(
-        SourceKey(311, 50.08f, 36.0f / 512.0f, SourceKey::Negative, SourceKey::Negative));
+        SourceKey(312, 50.08f, 36.0f / 512.0f, SourceKey::Negative, SourceKey::Negative));
 
     REQUIRE(akf.published());
     CHECK_NEAR(akf.activeStart(AxisVertical), 36.0f / 312.0f, 0.0005f);
@@ -176,7 +176,7 @@ TEST_CASE("an Acorn mode no standard states is published from the mode file")
     // 262 lines, so the mode file is the only thing that can say where its
     // picture sits inside the borders.
     SourceTiming akf = SourceTiming::matching(
-        SourceKey(261, 60.0f, 72.0f / 1020.0f, SourceKey::Negative, SourceKey::Negative));
+        SourceKey(262, 60.0f, 72.0f / 1020.0f, SourceKey::Negative, SourceKey::Negative));
 
     REQUIRE(akf.published());
     CHECK_NEAR(akf.activeStart(AxisHorizontal), 234.0f / 1020.0f, 0.0005f);
@@ -192,7 +192,7 @@ TEST_CASE("a standard's raster wins over a mode file describing the same one")
     // what it is EMITTING is the standard: the mode file is one machine's
     // description of it, and its borders are placed differently.
     SourceTiming akf = SourceTiming::matching(
-        SourceKey(524, 60.0f, 94.0f / 800.0f, SourceKey::Negative, SourceKey::Negative));
+        SourceKey(525, 60.0f, 94.0f / 800.0f, SourceKey::Negative, SourceKey::Negative));
 
     REQUIRE(akf.published());
     CHECK_NEAR(akf.activeStart(AxisHorizontal), 144.0f / 800.0f, 0.0005f);
@@ -207,9 +207,9 @@ TEST_CASE("two rasters differing only in polarity are told apart by it")
     const float duty = 64.0f / 832.0f;
 
     SourceTiming lines350 = SourceTiming::matching(
-        SourceKey(444, 85.08f, duty, SourceKey::Positive, SourceKey::Negative));
+        SourceKey(445, 85.08f, duty, SourceKey::Positive, SourceKey::Negative));
     SourceTiming lines400 = SourceTiming::matching(
-        SourceKey(444, 85.08f, duty, SourceKey::Negative, SourceKey::Positive));
+        SourceKey(445, 85.08f, duty, SourceKey::Negative, SourceKey::Positive));
 
     REQUIRE(lines350.published());
     REQUIRE(lines400.published());
@@ -222,7 +222,7 @@ TEST_CASE("an undetermined polarity still finds the first raster on the key")
     // Composite sync and sync on green state no polarity, and a source on
     // either is still emitting a raster the standards state.
     SourceTiming t = SourceTiming::matching(
-        SourceKey(444, 85.08f, 64.0f / 832.0f, SourceKey::Undetermined, SourceKey::Undetermined));
+        SourceKey(445, 85.08f, 64.0f / 832.0f, SourceKey::Undetermined, SourceKey::Undetermined));
 
     REQUIRE(t.published());
     CHECK_NEAR(t.activeExtent(AxisVertical), 350.0f / 445.0f, 0.0005f);
@@ -233,7 +233,7 @@ TEST_CASE("a polarity no raster on the key carries still finds the first one")
     // A source that has the timing of a standard and inverts one pulse is
     // still placed from that standard rather than from the envelope.
     SourceTiming t = SourceTiming::matching(
-        SourceKey(444, 85.08f, 64.0f / 832.0f, SourceKey::Positive, SourceKey::Positive));
+        SourceKey(445, 85.08f, 64.0f / 832.0f, SourceKey::Positive, SourceKey::Positive));
 
     REQUIRE(t.published());
     CHECK_NEAR(t.activeExtent(AxisVertical), 350.0f / 445.0f, 0.0005f);
@@ -253,7 +253,7 @@ TEST_CASE("a published raster states the shape it is to be shown in")
     // 800x600@60, the bench Acorn desktop mode: square pixels, 4:3 on the
     // monitor the mode file was written for.
     SourceTiming dmt = SourceTiming::matching(
-        SourceKey(627, 60.317f, 128.0f / 1056.0f, SourceKey::Positive, SourceKey::Positive));
+        SourceKey(628, 60.317f, 128.0f / 1056.0f, SourceKey::Positive, SourceKey::Positive));
 
     REQUIRE(dmt.published());
     CHECK(dmt.aspect() == Aspect(Aspect::FourThree));
@@ -263,7 +263,7 @@ TEST_CASE("the one 5:4 raster says so rather than inheriting its neighbours")
 {
     // 1280x1024@60 is the only mode in any of the three tables that is not 4:3.
     SourceTiming dmt = SourceTiming::matching(
-        SourceKey(1065, 60.0f, 112.0f / 1688.0f, SourceKey::Positive, SourceKey::Positive));
+        SourceKey(1066, 60.0f, 112.0f / 1688.0f, SourceKey::Positive, SourceKey::Positive));
 
     REQUIRE(dmt.published());
     CHECK(dmt.aspect() == Aspect(Aspect::FiveFour));
@@ -275,9 +275,9 @@ TEST_CASE("the broadcast rasters are 4:3 although their pixels are not square")
     // shown as 4:3. The stated shape is the DISPLAY's, which is why it cannot
     // be derived from the active counts the table already carries.
     SourceTiming ntsc = SourceTiming::matching(
-        SourceKey(524, 59.94f, 62.0f / 858.0f, SourceKey::Negative, SourceKey::Negative));
+        SourceKey(525, 59.94f, 62.0f / 858.0f, SourceKey::Negative, SourceKey::Negative));
     SourceTiming pal = SourceTiming::matching(
-        SourceKey(624, 50.0f, 64.0f / 864.0f, SourceKey::Negative, SourceKey::Negative));
+        SourceKey(625, 50.0f, 64.0f / 864.0f, SourceKey::Negative, SourceKey::Negative));
 
     REQUIRE(ntsc.published());
     REQUIRE(pal.published());
@@ -288,7 +288,7 @@ TEST_CASE("the broadcast rasters are 4:3 although their pixels are not square")
 TEST_CASE("an Acorn mode takes the shape of the monitor its mode file describes")
 {
     SourceTiming acorn = SourceTiming::matching(
-        SourceKey(311, 50.08f, 36.0f / 512.0f, SourceKey::Positive, SourceKey::Positive));
+        SourceKey(312, 50.08f, 36.0f / 512.0f, SourceKey::Positive, SourceKey::Positive));
 
     REQUIRE(acorn.published());
     CHECK(acorn.aspect() == Aspect(Aspect::FourThree));
@@ -311,7 +311,7 @@ TEST_CASE("a published raster says how wide one of the source's pixels is")
     // a width in ADC samples only where a raster states the line's own pixel
     // count. The bench 320x256@50 samples 2200 of them across 512 pixels.
     SourceTiming akf = SourceTiming::matching(
-        SourceKey(311, 50.08f, 36.0f / 512.0f, SourceKey::Negative, SourceKey::Negative));
+        SourceKey(312, 50.08f, 36.0f / 512.0f, SourceKey::Negative, SourceKey::Negative));
 
     REQUIRE(akf.published());
     CHECK_NEAR(akf.pixelSamples(2200), 2200.0f / 512.0f, 0.001f);

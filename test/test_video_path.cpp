@@ -1313,7 +1313,7 @@ TEST_CASE("a source arriving with nothing stored says so under its key")
     engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(acquisition));
 
-    CHECK(loggedContaining("source key: 311@50.08/"));
+    CHECK(loggedContaining("source key: 312@50.08/"));
     CHECK(loggedContaining("no framing stored"));
 }
 
@@ -1411,7 +1411,7 @@ TEST_CASE("a framing restored from the file is applied when its source arrives")
     VideoSourceAcquisition acquisition(sampling, engine);
 
     const PanAndZoom stored(0.10f, 0.60f, 0.15f, 0.55f);
-    REQUIRE(framings.remember(SourceKey(311, 50.08f, BenchSyncWidth, BenchPolarity, BenchPolarity), stored));
+    REQUIRE(framings.remember(SourceKey(312, 50.08f, BenchSyncWidth, BenchPolarity, BenchPolarity), stored));
 
     engine.setOutputMode(benchMode());
     engine.inputTimingsChanged(4);
@@ -1447,7 +1447,7 @@ TEST_CASE("a press stores the framing without leaving the source")
     frameAt(engine, 100, 120, 40, -15);
 
     PanAndZoom stored;
-    REQUIRE(framings.find(SourceKey(311, 50.08f, BenchSyncWidth, BenchPolarity, BenchPolarity), &stored));
+    REQUIRE(framings.find(SourceKey(312, 50.08f, BenchSyncWidth, BenchPolarity, BenchPolarity), &stored));
     CHECK(stored == engine.framing());
 }
 
@@ -1722,7 +1722,7 @@ TEST_CASE("a divider the source cannot lock to is replaced before it is believed
                  + SourceMeasurement::SteadySamples + 1;
          ++i)
         CHECK_FALSE(pollOnce(acquisition));
-    CHECK(sampling.sourceLines() == 310);
+    CHECK(sampling.sourceLines() == 312);
     CHECK(sampling.lineRateHz() > 15000);
     CHECK(sampling.lineRateHz() < 16000);
 
@@ -1739,7 +1739,7 @@ TEST_CASE("a divider the source cannot lock to is replaced before it is believed
         seedField(0, 0x1B, 0, 11, 311);
         seedField(0, 0x19, 0, 12, 181);
         REQUIRE(pollUntilSolved(acquisition));
-        CHECK(sampling.sourceLines() == 311);
+        CHECK(sampling.sourceLines() == 312);
     }
 }
 
@@ -2233,7 +2233,7 @@ TEST_CASE("a source is acquired from the state a chip reset leaves")
          ++i)
         pollOnce(acquisition);
 
-    CHECK(sampling.sourceLines() == 311);
+    CHECK(sampling.sourceLines() == 312);
     CHECK(Adc::PLLAD_MD::read() == Adc::dividerInForce());
 }
 
@@ -2315,7 +2315,7 @@ TEST_CASE("a divider from another mode does not stop the source being counted")
 
     // The count the correction recovered, and a divider sized from the rate it
     // gave -- both while the chip was still clocking the other mode's line.
-    CHECK(sampling.sourceLines() == 310);
+    CHECK(sampling.sourceLines() == 312);
     CHECK(sampling.lineRateHz() > 15000);
     CHECK(Adc::PLLAD_MD::read() != 1124);
 
@@ -2324,7 +2324,7 @@ TEST_CASE("a divider from another mode does not stop the source being counted")
         seedField(0, 0x1B, 0, 11, 311);
         seedField(0, 0x19, 0, 12, 181);
         REQUIRE(pollUntilSolved(acquisition));
-        CHECK(sampling.sourceLines() == 311);
+        CHECK(sampling.sourceLines() == 312);
     }
 }
 
@@ -2356,7 +2356,7 @@ TEST_CASE("a framing applied whole lands as the window it describes")
 
     SUBCASE("and the source is left framed that way for next time") {
         PanAndZoom remembered;
-        REQUIRE(framings.find(SourceKey(311, 50.08f, BenchSyncWidth, BenchPolarity, BenchPolarity), &remembered));
+        REQUIRE(framings.find(SourceKey(312, 50.08f, BenchSyncWidth, BenchPolarity, BenchPolarity), &remembered));
         CHECK(remembered == engine.framing());
     }
 }
@@ -2377,7 +2377,7 @@ TEST_CASE("the engine says which source the framing it holds is against")
     engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(acquisition));
 
-    CHECK(engine.framedKey() == SourceKey(311, 50.08f, BenchSyncWidth, BenchPolarity, BenchPolarity));
+    CHECK(engine.framedKey() == SourceKey(312, 50.08f, BenchSyncWidth, BenchPolarity, BenchPolarity));
 }
 
 
@@ -3657,10 +3657,10 @@ TEST_CASE("the rate being confirmed re-derives which stored framing matches")
 
     const PanAndZoom framed(0.10f, 0.60f, 0.15f, 0.55f);
     REQUIRE(framings.remember(
-        SourceKey(311, 50.61f, BenchSyncWidth, BenchPolarity, BenchPolarity),
+        SourceKey(312, 50.61f, BenchSyncWidth, BenchPolarity, BenchPolarity),
         framed));
     REQUIRE(framings.remember(
-        SourceKey(311, 50.45f, BenchSyncWidth, BenchPolarity, BenchPolarity),
+        SourceKey(312, 50.45f, BenchSyncWidth, BenchPolarity, BenchPolarity),
         framed, Aspect(Aspect::FourThree)));
 
     g_fieldRate = 50.60f;
@@ -3691,10 +3691,10 @@ TEST_CASE("a confirmed rate drifting inside tolerance keeps the framing in force
 
     const PanAndZoom framed(0.10f, 0.60f, 0.15f, 0.55f);
     REQUIRE(framings.remember(
-        SourceKey(311, 50.61f, BenchSyncWidth, BenchPolarity, BenchPolarity),
+        SourceKey(312, 50.61f, BenchSyncWidth, BenchPolarity, BenchPolarity),
         framed));
     REQUIRE(framings.remember(
-        SourceKey(311, 50.45f, BenchSyncWidth, BenchPolarity, BenchPolarity),
+        SourceKey(312, 50.45f, BenchSyncWidth, BenchPolarity, BenchPolarity),
         framed, Aspect(Aspect::FourThree)));
 
     g_fieldRate = 50.60f;

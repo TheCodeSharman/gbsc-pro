@@ -133,7 +133,7 @@ TEST_CASE("whitespace around the record does not matter")
 TEST_CASE("a whole file reads back as the table that wrote it")
 {
     FramingTable written;
-    REQUIRE(written.remember(SourceKey(311, 50.08f, 0.0f, SourceKey::Negative, SourceKey::Negative),
+    REQUIRE(written.remember(SourceKey(312, 50.08f, 0.0f, SourceKey::Negative, SourceKey::Negative),
                              PanAndZoom(0.03f, 0.85f, 0.07f, 0.85f)));
     REQUIRE(written.remember(SourceKey(525, 59.94f, 0.0f, SourceKey::Negative, SourceKey::Negative),
                              PanAndZoom(0.05f, 0.90f, 0.03f, 0.94f)));
@@ -202,10 +202,10 @@ TEST_CASE("a rate off a whole hertz survives the round trip")
 TEST_CASE("a record written as a whole hertz is still read")
 {
     FramingTable table;
-    FramingText(table).readLine("311@50/686++ = 2625 6249 1250 8205");
+    FramingText(table).readLine("312@50/686++ = 2625 6249 1250 8205");
 
     CHECK(table.count() == 1);
-    CHECK(table.find(SourceKey(311, 50.0801f, 0.0686f,
+    CHECK(table.find(SourceKey(312, 50.0801f, 0.0686f,
                                SourceKey::Positive, SourceKey::Positive), 0));
 }
 

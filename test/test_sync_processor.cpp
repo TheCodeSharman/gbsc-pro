@@ -1632,3 +1632,28 @@ TEST_CASE("the separation thresholds leave the pulse ignore alone")
 
     CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 0x6b);
 }
+
+TEST_CASE("the count the block reports is the source's frame, not the register")
+{
+    // STATUS_SYNC_PROC_VTOTAL counts from zero, so it reads one short of the
+    // frame every standard states. Normalised here, at the boundary, because
+    // the alternative is a correction at each consumer -- and there were six of
+    // them in five files, each one a copy that could be forgotten.
+    Wire.reset();
+    Wire.poison(Poisons[0]);
+
+    SUBCASE("the AKF50 PAL frame") {
+        GBS::STATUS_SYNC_PROC_VTOTAL::write(311);
+        CHECK(SyncProcessor::frameLines() == 312);
+    }
+
+    SUBCASE("CEA 720x480p") {
+        GBS::STATUS_SYNC_PROC_VTOTAL::write(524);
+        CHECK(SyncProcessor::frameLines() == 525);
+    }
+
+    SUBCASE("a counter reading nothing stays nothing rather than becoming one") {
+        GBS::STATUS_SYNC_PROC_VTOTAL::write(0);
+        CHECK(SyncProcessor::frameLines() == 0);
+    }
+}

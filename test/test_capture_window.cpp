@@ -338,7 +338,7 @@ TEST_CASE("a source running a published raster is captured where that raster put
     // a raster the standards state is placed from the standard rather than from
     // the assumption an unrecognised one takes.
     const VideoSourceLine line(1126);
-    const SourceTiming dmt = SourceTiming::matching(SourceKey(524, 59.94f, 96.0f / 800.0f, SourceKey::Negative, SourceKey::Negative));
+    const SourceTiming dmt = SourceTiming::matching(SourceKey(525, 59.94f, 96.0f / 800.0f, SourceKey::Negative, SourceKey::Negative));
 
     BlankingTiming got = defaultWindowOn(line, dmt, AxisHorizontal);
 
@@ -1214,7 +1214,7 @@ TEST_CASE("a source on the sync separator arrives late in the frame too")
 TEST_CASE("the default capture reaches the END of the last active line")
 {
     SourceTiming akf = SourceTiming::matching(
-        SourceKey(311, 50.08f, 36.0f / 512.0f, SourceKey::Negative, SourceKey::Negative));
+        SourceKey(312, 50.08f, 36.0f / 512.0f, SourceKey::Negative, SourceKey::Negative));
     REQUIRE(akf.published());
 
     // 624 counter units over 312 lines is two to the line, so 256 active lines

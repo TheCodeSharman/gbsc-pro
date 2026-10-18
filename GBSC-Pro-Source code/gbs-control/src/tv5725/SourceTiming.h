@@ -25,10 +25,10 @@ public:
     // is known about it.
     SourceTiming(float fieldRateHz);
 
-    // `sourceLines` is STATUS_SYNC_PROC_VTOTAL, which counts from zero and so
-    // reads one short of the frame the standards state. `syncDuty` is the hsync
-    // low time as a fraction of the line, which with the polarity pair is what
-    // separates two standards sharing a frame and a field rate.
+    // `sourceLines` is the source's frame, normalised at the boundary by
+    // SyncProcessor::frameLines(). `syncDuty` is the hsync low time as a
+    // fraction of the line, which with the polarity pair is what separates two
+    // standards sharing a frame and a field rate.
     static SourceTiming matching(const SourceKey &measured);
 
     float fieldRateHz() const;

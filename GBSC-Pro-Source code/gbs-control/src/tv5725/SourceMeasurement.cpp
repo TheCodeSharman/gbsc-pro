@@ -159,11 +159,10 @@ uint16_t SourceMeasurement::verticalPeriod() const { return verticalPeriod_; }
 
 uint16_t SourceMeasurement::countFrom(uint16_t correctedLines) const
 {
-    const uint16_t counted = (uint16_t)(correctedLines + 1);
-    if (heldFrame_ < counted
-        || (uint16_t)(heldFrame_ - counted) > VerticalSyncMaxLines)
+    if (heldFrame_ < correctedLines
+        || (uint16_t)(heldFrame_ - correctedLines) > VerticalSyncMaxLines)
         return correctedLines;
-    return (uint16_t)(heldFrame_ - 1);
+    return heldFrame_;
 }
 
 bool SourceMeasurement::countContradicted(uint16_t lines)
@@ -261,7 +260,7 @@ float SourceMeasurement::settledFieldRateHz() const
     if (judgedRateHz_ == 0 || judgedLines_ == 0)
         return 0.0f;
 
-    return (float)judgedRateHz_ / (float)(judgedLines_ + 1);
+    return (float)judgedRateHz_ / (float)judgedLines_;
 }
 
 bool SourceMeasurement::rateConfirmed() const { return rateConfirmed_; }
@@ -571,14 +570,15 @@ uint16_t SourceMeasurement::reconciledFrame(uint16_t verticalPeriod, uint16_t li
     if (verticalPeriod == 0)
         return 0;
 
+    // VPERIOD_IF counts from zero as well, and this is the only reader of it,
+    // so it is normalised here rather than at a boundary of its own.
     const uint16_t measured = (uint16_t)(verticalPeriod + 1);
-    const uint16_t counted = (uint16_t)(lines + 1);
 
     for (uint8_t factor = 1; factor <= 2; factor++) {
         if (measured % factor != 0)
             continue;
         const uint16_t frame = (uint16_t)(measured / factor);
-        if (frame >= counted && (uint16_t)(frame - counted) <= VerticalSyncMaxLines)
+        if (frame >= lines && (uint16_t)(frame - lines) <= VerticalSyncMaxLines)
             return frame;
     }
 
@@ -711,7 +711,7 @@ bool SourceMeasurement::lowLineRate() const
 
 uint16_t SourceMeasurement::measureSourceLinesCorrected(uint16_t divider)
 {
-    const uint16_t lines = SyncProcessor::lineCount();
+    const uint16_t lines = SyncProcessor::frameLines();
     if (VideoSignal::countIsSource(lines))
         return lines;
 

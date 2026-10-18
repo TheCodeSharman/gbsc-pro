@@ -36,7 +36,7 @@ bool VideoSignal::isVideo(uint16_t sourceLines, float fieldRateHz)
 
 uint32_t VideoSignal::lineRateFor(uint16_t sourceLines, float fieldRateHz)
 {
-    return (uint32_t)(fieldRateHz * (float)(sourceLines + 1));
+    return (uint32_t)(fieldRateHz * (float)sourceLines);
 }
 
 bool VideoSignal::ratesAgree(uint32_t a, uint32_t b, uint16_t perThousand)

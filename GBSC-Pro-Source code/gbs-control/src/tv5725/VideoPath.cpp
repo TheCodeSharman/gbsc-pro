@@ -1049,7 +1049,7 @@ static uint16_t countThroughThreshold(bool rejectsSerrations)
 {
     SyncProcessor::applyPulseIgnore(Adc::dividerInForce(), rejectsSerrations);
     delay(SerrationSampleMs);
-    return SyncProcessor::lineCount();
+    return SyncProcessor::frameLines();
 }
 
 void VideoPath::measureSerration()

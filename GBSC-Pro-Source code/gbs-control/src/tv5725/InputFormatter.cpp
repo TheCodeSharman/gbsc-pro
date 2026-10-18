@@ -32,7 +32,7 @@ VideoSourceLine InputFormatter::capturableFrame(uint16_t sourceLines,
                                      : VideoSourceLine::FrameOriginUnits;
     const uint16_t lead = (uint16_t)(
         (perLine * VideoSourceLine::SeparatorFrameLeadHalfLines + 1) / 2);
-    return VideoSourceLine::frame((uint16_t)(perLine * (sourceLines + 1)),
+    return VideoSourceLine::frame((uint16_t)(perLine * sourceLines),
                                   separated ? (uint16_t)(origin + lead) : origin);
 }
 
@@ -61,7 +61,7 @@ bool InputFormatter::shouldDoubleLine(uint16_t sourceLines,
 
     // The IF counts half-lines with the doubler in, so the doubled frame asks
     // for twice the source's own count.
-    return 2u * ((uint32_t)sourceLines + 1u) <= showableUnits;
+    return 2u * (uint32_t)sourceLines <= showableUnits;
 }
 
 void InputFormatter::init()

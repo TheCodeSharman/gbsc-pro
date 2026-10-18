@@ -1566,11 +1566,11 @@ uint8_t detectAndSwitchToActiveInput()
                         // docs/investigations/a-boot-that-detects-too-early-can-never-recover.md
                         const unsigned long countFrom = millis();
                         while (!Tv5725::VideoSignal::countIsSource(
-                                   Tv5725::SyncProcessor::lineCount())
+                                   Tv5725::SyncProcessor::frameLines())
                                && millis() - countFrom < DetectCountWaitMs)
                             delay(2);
                         const unsigned countWaited = (unsigned)(millis() - countFrom);
-                        const uint16_t counted = Tv5725::SyncProcessor::lineCount();
+                        const uint16_t counted = Tv5725::SyncProcessor::frameLines();
 
                         bootLogPrintf("DETECT: found t=%lums vsyncWait=%lums "
                                       "hsyncWait=%lums presets=%lums count=%ums "
@@ -1609,7 +1609,7 @@ uint8_t detectAndSwitchToActiveInput()
                     while ((millis() - timeOutStart) < 6000) {
                         delay(2);
                         if (Tv5725::VideoSignal::countIsSource(
-                                Tv5725::SyncProcessor::lineCount())) {
+                                Tv5725::SyncProcessor::frameLines())) {
                             return 1;
                         }
                         testCycle++;
