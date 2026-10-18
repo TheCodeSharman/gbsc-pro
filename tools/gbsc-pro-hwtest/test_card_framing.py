@@ -295,8 +295,7 @@ def test_the_default_framing_puts_the_card_flush_to_the_emitted_edges(
     # picture_jitter.py is what resolves a sub-pixel shimmer, and the share
     # stands without a span this clip cannot supply.
     held = picture_stability.judge(picture_stability.row_luma(clip), None)
-    found = {name: card_edges.judge(clip, axis, card_edges.ALLOWANCE,
-                                    card_edges.source_pixel_px(mode, clip, axis))
+    found = {name: card_edges.judge(clip, axis, card_edges.ALLOWANCE)
              for name, axis in (("across", 1), ("down", 0))}
 
     whys = [f"{name}: {judged.why}" for name, judged in found.items()

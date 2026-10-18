@@ -114,7 +114,7 @@ def blocks(near_at, far_at, width=SOURCE_PX):
 
 def test_a_border_clear_of_the_frames_edge_is_whole():
     out = card_edges.judge(blocks(2, WIDTH - 2 - SOURCE_PX), ACROSS,
-                           card_edges.FLUSH, SOURCE_PX)
+                           card_edges.FLUSH)
     assert out.whole == (1.0, 1.0)
 
 
@@ -122,7 +122,7 @@ def test_a_border_running_past_the_frame_reports_the_fraction_that_survives():
     """A margin cannot say this: a block sitting wholly on column 0 and one
     with three of its four columns off the frame above it both read 0."""
     out = card_edges.judge(blocks(-3, WIDTH - SOURCE_PX), ACROSS,
-                           card_edges.FLUSH, SOURCE_PX)
+                           card_edges.FLUSH)
     assert out.whole[0] == 0.25
 
 
@@ -130,7 +130,7 @@ def test_a_border_flush_against_the_frames_edge_is_still_whole():
     """Flush and clipped are what the fraction tells apart, so a block whose
     outer column IS column 0 has all of itself on the frame."""
     out = card_edges.judge(blocks(0, WIDTH - SOURCE_PX), ACROSS,
-                           card_edges.FLUSH, SOURCE_PX)
+                           card_edges.FLUSH)
     assert out.whole == (1.0, 1.0)
 
 
@@ -138,7 +138,7 @@ def test_a_border_off_the_frame_altogether_survives_none_of_itself():
     """Black at the edge is a border clear of it OR one that missed the frame
     entirely, and only the run says which."""
     out = card_edges.judge(blocks(None, WIDTH - 2 - SOURCE_PX), ACROSS,
-                           card_edges.FLUSH, SOURCE_PX)
+                           card_edges.FLUSH)
     assert out.whole == (0.0, 1.0)
 
 
@@ -154,7 +154,7 @@ def test_a_border_mostly_off_the_frame_fails_though_its_margin_is_flush():
     """The fault the margin cannot see: flush at both ends, and the outermost
     source pixel nearly all gone."""
     out = card_edges.judge(blocks(1 - SOURCE_PX, WIDTH - SOURCE_PX), ACROSS,
-                           card_edges.FLUSH, SOURCE_PX)
+                           card_edges.FLUSH)
     assert out.margins == (0, 0)
     assert out.out_by == 0
     assert out.whole == (0.25, 1.0)
@@ -165,7 +165,7 @@ def test_three_quarters_of_the_outermost_pixel_is_enough():
     """What the acceptance allows: the border may run past the frame, as long
     as most of the pixel it marks is still on it."""
     out = card_edges.judge(blocks(-1, WIDTH - SOURCE_PX), ACROSS,
-                           card_edges.FLUSH, SOURCE_PX)
+                           card_edges.FLUSH)
     assert out.whole == (card_edges.WHOLE_ENOUGH, 1.0)
     assert out.why is None
 
@@ -178,6 +178,48 @@ def test_a_border_clipped_to_a_sliver_inside_the_frames_edge_reports_the_sliver(
     whole border carries, reported as the whole pixel."""
     clip = blocks(0, None)
     clip[0, :, WIDTH - 2, 1] = 255
-    out = card_edges.judge(clip, ACROSS, card_edges.FLUSH, SOURCE_PX)
+    out = card_edges.judge(clip, ACROSS, card_edges.FLUSH)
     assert out.margins == (0, 1)
     assert out.whole == (1.0, 0.25)
+
+
+# What the BENCH's border looks like, against the synthetic block above. The
+# card's frame is one source pixel and the capture samples it a few times, so
+# what arrives is a ramp that never reaches the green the card is drawn at, and
+# it spreads wider than the pixel it marks. Measured on `vga` at 640x512@50
+# into 1080p, 1.86 emitted columns per source pixel, the border 254 columns
+# clear of the frame's edge -- so nothing can have cut it.
+BENCH_SMEAR = (22, 22, 44, 44, 57, 57, 6, 6)
+BENCH_SOLID = 196
+BENCH_SOURCE_PX = 1.86
+
+
+def smeared(near_at, far_at):
+    """A clip carrying the bench's attenuated border at each end and a block of
+    the card's own solid green between them."""
+    clip = np.zeros((1, HEIGHT, WIDTH, 3), np.uint8)
+    for at, smear in ((near_at, BENCH_SMEAR), (far_at, BENCH_SMEAR[::-1])):
+        for i, level in enumerate(smear):
+            clip[0, :, at + i, 1] = level
+    clip[0, :, WIDTH // 2 - 50:WIDTH // 2 + 50, 1] = BENCH_SOLID
+    return clip
+
+
+def test_an_attenuated_border_clear_of_the_frames_edge_is_whole():
+    """The border's captured amplitude follows the sampling density and none of
+    that is a deficit. Against the card's solid green this reads 0.67, which
+    fails a border the capture window opened 254 columns before."""
+    out = card_edges.judge(smeared(10, WIDTH - 10 - len(BENCH_SMEAR)), ACROSS,
+                           card_edges.FLUSH)
+    assert out.whole == (1.0, 1.0)
+
+
+def test_the_cards_own_green_is_not_the_reference():
+    """The card carries solid green blocks between its edges, which outweigh a
+    one-pixel border many times over. Where the near border is off the frame
+    the outermost run is one of those blocks, and reading it as the opposite
+    edge reports a whole far border as nearly all gone."""
+    clip = smeared(10, WIDTH - 10 - len(BENCH_SMEAR))
+    clip[0, :, 10:10 + len(BENCH_SMEAR), 1] = 0
+    out = card_edges.judge(clip, ACROSS, card_edges.FLUSH)
+    assert out.whole == (0.0, 1.0)

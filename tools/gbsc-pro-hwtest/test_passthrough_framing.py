@@ -217,7 +217,7 @@ def test_the_passed_through_card_reaches_every_emitted_edge(
     # wholeness measure reads it directly.
     whys = []
     for name, axis in (("across", 1), ("down", 0)):
-        judged = card_edges.judge(clip, axis, card_edges.ALLOWANCE, 1.0)
+        judged = card_edges.judge(clip, axis, card_edges.ALLOWANCE)
         for end, surviving in zip(card_edges.ENDS, judged.whole):
             if surviving < card_edges.WHOLE_ENOUGH:
                 whys.append(f"{name} {end}: {surviving:.2f} of the border, "
