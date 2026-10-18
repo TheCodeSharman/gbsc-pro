@@ -40,12 +40,10 @@ const uint16_t RateStepsPerHz = 100;
 // How far two sync-width readings may sit apart and still be the same source,
 // as a fraction of the line.
 //
-// Wider than the reading moves and narrower than what it has to tell apart.
-// Across the same 24 acquisitions it repeats exactly on three modes and dithers
-// one ADC count on the fourth, 0.00069; it shifts 0.00187 when the source's
-// sync type changes under it. What it has to separate is two rasters a RISC PC
-// emits behind one 320x256@50, 0.0041 apart, and DMT 640x480@60 from CEA
-// 720x480p, 0.048 apart.
+// Wider than the reading moves and narrower than what it has to tell apart,
+// and both bounds are measured. The tight one is the shift a sync-type change
+// puts into the reading, which sits just under this -- so changing sync type
+// does not by itself move the key.
 // ../../../docs/source-identity-and-framing-lookup.md
 const float SyncWidthIdentity = 0.002f;
 

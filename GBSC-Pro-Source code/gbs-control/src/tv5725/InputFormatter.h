@@ -286,8 +286,9 @@ public:
     // progressive branch keeps 0 and gets no tail guard at all.
     //
     // One measurement sizes it because there is one divider to size it against:
-    // SamplingClock::DoubledLineSampleLimit pins every doubled line to
-    // PLLAD_MD 2200, where the contaminated tail measures 70 samples.
+    // SamplingClock::DoubledLineSampleLimit pins every doubled line to one
+    // PLLAD_MD, so a count, a fraction of the line and a time are not
+    // distinguishable there.
     // docs/investigations/the-hbin-start-blanks-the-captured-tail.md
     static const uint16_t DoubledTailBlanking = 96;
 
@@ -297,10 +298,10 @@ public:
     // solve places goes with it.
     //
     // A COUNT, not a fraction of the line and not a time. What each mode wants
-    // splits by field rate -- 137..152 at 50 Hz against 175..179 at 60 Hz, over
-    // every doubled mode the bench can reach -- with no mechanism for the split
-    // and every input register identical across it, so one value takes all of
-    // them within 23 samples where 272 was out by 127.
+    // splits by FIELD RATE over every doubled mode the bench can reach, with no
+    // mechanism for the split and every input register identical across it --
+    // so one value takes all of them, where the preset tables' was out by more
+    // than the whole band is wide.
     // ../../../../docs/investigations/the-line-doubler-resets-the-fifo-late.md
     static const uint16_t LineDoubleReset = 160;
 

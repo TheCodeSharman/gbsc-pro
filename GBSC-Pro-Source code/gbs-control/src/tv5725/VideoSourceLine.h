@@ -74,11 +74,11 @@ public:
     // displaced at all.
     //
     // **A COUNT OF ADC SAMPLES, AND NOT ANY OF THE SHAPES ONE MODE SUGGESTS.**
-    // Six published modes spanning 104..173 samples of sync, 15.6..48.4 kHz and
-    // both scan modes give 65.0..67.2, where a fraction of the line, a constant
-    // count of units, a constant time, the sync width itself and every fraction
-    // of it each leave a 50-unit residual somewhere. The doubled mode is what
-    // says it is samples rather than units.
+    // Six published modes spanning both scan modes agree on a count of samples,
+    // where a fraction of the line, a constant count of units, a constant time,
+    // the sync width itself and every fraction of it each leave a large
+    // residual somewhere. The doubled mode is what says samples rather than
+    // units.
     // ../../../../docs/investigations/the-separator-lead-is-not-a-fraction-of-the-line.md
     static const uint16_t SeparatorPulseEndLeadSamples = 66;
 
@@ -91,9 +91,8 @@ public:
     // moves this origin: at one window value the trailing edge lands the
     // picture where the leading edge lands it four units earlier, so a lead
     // measured on one edge frames nothing on the other. 17.5 lines is what
-    // frames both scan modes -- 45 units on the doubled 320x256@50 and 25 on
-    // the undoubled 800x600@60, each inside half a unit -- where a whole count
-    // reaches one and leaves the other a unit short.
+    // frames both scan modes, where a whole count reaches one and leaves the
+    // other a unit short -- which is why it is held in half lines.
     // ../../../../docs/investigations/the-separator-moves-the-counters-origin.md
     static const uint16_t SeparatorFrameLeadHalfLines = 35;
 

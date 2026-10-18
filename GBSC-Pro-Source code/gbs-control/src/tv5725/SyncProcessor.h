@@ -623,9 +623,10 @@ public:
     // SP_HS_INV_REG, which this class owns.
     //
     // **IT DOES NOT MAKE hsyncLowSamples() THE PULSE**, and relying on it to
-    // did. Measured with SP_HS_INV_REG 1 and HSPOL 1, the count held the
-    // complement for 30 s. hsyncPulseSamples() takes the shorter interval
-    // instead, which no write has to have reached.
+    // did: the count goes on holding the complement with the write in force.
+    // hsyncPulseSamples() takes the shorter interval instead, which no write
+    // has to have reached.
+    // ../../../../docs/investigations/the-duty-is-the-shorter-interval.md
     //
     // This is the whole point: a polarity carried into the solve is an input
     // every later calculation can get wrong, and normalising it here deletes

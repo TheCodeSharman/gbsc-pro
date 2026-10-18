@@ -125,12 +125,12 @@ public:
     // opening is the sink's own window position, and it is taken from the
     // standard's blanking FRACTION of our line rather than from its duration --
     // solve() places activeStart on that fraction for this reason. Against it
-    // the six measured openings are one residual: +5.29 to +6.57 over rasters
-    // 1590 to 2402, two inputs, two output standards and both field rates.
+    // the six measured openings are one residual, over two inputs, two output
+    // standards and both field rates.
     //
     // The field-rate band this was a table for is what the DURATION base
-    // produces. That base sits at 139 samples whatever the raster, so a 50 Hz
-    // line reads as a 28-sample jump where the fraction simply grew with it.
+    // produces: that base does not move with the raster, so a 50 Hz line reads
+    // as a jump where the fraction simply grew with it.
     // docs/investigations/the-near-end-is-a-fraction-of-the-line.md
     //
     // **MOVING IT IS SAFE FOR THE ODD-WIDTH PARITY BIAS.** That bias is on the
@@ -179,8 +179,8 @@ public:
     // eat into it -- at a stop left where a smaller offset put it the pulse is
     // short of the standard by the difference. The stop is the start plus the
     // duration for that reason. Widening it beyond the standard buys nothing
-    // measurable: 30, 32 and 36 units hold the emitted edge to 44.50 px with a
-    // spread of 0.1 px over 120 frames each, and lose no frames.
+    // measurable -- the sink neither moves its window nor drops a frame for a
+    // wider pulse.
     // docs/investigations/full-screen-framing-on-the-vesa-modes.md
     static const uint16_t HsyncStartPx = 13;
 

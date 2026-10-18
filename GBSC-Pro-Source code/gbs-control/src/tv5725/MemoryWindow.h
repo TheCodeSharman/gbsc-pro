@@ -33,8 +33,8 @@
 //
 // The capture base is 0x060000 rather than the tables' 0x100000, which leaves
 // nothing stranded between the field store's guard and the capture buffer. At
-// 0x100000 a 527-line capture overruns past 1989 samples per line, and PLLAD_MD
-// is 12 bits.
+// 0x100000 a 527-line capture overruns inside the range PLLAD_MD's twelve bits
+// can ask for. test_memory_window.cpp holds the bound.
 //
 // One map for both standards. The tables' PAL 0x100000 against NTSC 0xc0000 is a
 // coarse split of the map rather than a computed size -- 625/525 is 1.19 against

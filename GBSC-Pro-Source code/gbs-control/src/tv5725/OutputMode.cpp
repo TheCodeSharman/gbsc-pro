@@ -35,9 +35,9 @@ uint16_t OutputMode::horizontalTotalFor(uint32_t hz, uint16_t frameLines,
 
     // EVEN, because VideoPath writes horizontalTotal - 1 into VDS_HSYNC_RST and
     // an even value there plays out the wrong samples -- the wedge's bars split
-    // and the label text carries black bars. Measured at 1024p with one register
-    // moved and nothing else: 2025 clean, 2024 corrupt, 2023 clean, 2022
-    // corrupt, 2021 clean, 2020 corrupt.
+    // and the label text carries black bars. Walked one register at a time with
+    // nothing else moved, every even value corrupts and every odd one is clean.
+    // test_output_mode.cpp holds the walk.
     //
     // UP, so the raster gains a pixel rather than losing one. It costs a pixel
     // of clock budget, which the frame time lock steers out.
@@ -270,8 +270,8 @@ OutputTiming OutputMode::solve(float fieldRateHz, uint32_t ceilingHz) const
 // **carriedPx IS MEASURED, AND IT IS NOT activePx ON THE TWO SD MODES.** What
 // reaches the panel is 0.804 of the line at 480p and 0.786 at 576p, where the
 // standard's activePx/totalPx is 0.839 and 0.833; the other four carry all of
-// theirs. Measured against the panel on all six, with the photo-column mapping
-// re-derived per mode, and the fraction holds to 0.3% across a 33% change of
+// theirs. Measured against the panel on all six with the photo-column mapping
+// re-derived per mode, and the fraction holds across a third-sized change of
 // raster. It is a property of the MODE.
 //
 // Where the window OPENS is a separate quantity and the panel reading of it is

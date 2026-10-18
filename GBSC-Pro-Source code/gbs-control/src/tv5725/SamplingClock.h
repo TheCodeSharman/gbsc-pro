@@ -30,7 +30,7 @@ public:
     // margin is for that, not for the part.
     //
     // Measured only on a doubled line because only there can the divider reach
-    // it -- an undoubled line of 1561 samples shows no band.
+    // it -- no undoubled line the bench runs shows the band at all.
     // ../../../docs/investigations/tail-green.md
     static const uint16_t DoubledLineSampleLimit = 2200;
 
