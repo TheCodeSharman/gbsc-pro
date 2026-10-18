@@ -255,3 +255,20 @@ false -- so the gate does let the escalation run once the state is reached. The
 escalation then cannot recover it. Withholding the escalation causes a fault the
 escalation cannot repair, which is why the gate cannot land on this alone.
 `docs/investigations/the-gate-runs-a-ladder-that-is-not-safe-yet.md`
+
+## The count and the field rate both survive a divider that never latched
+
+Which is why the reading is printed with the clock it was taken through. The
+sync processor's line total is the only register that reports the LATCHED
+divider, because it counts real ADC clocks:
+
+| | reading |
+|---|---|
+| `STATUS_SYNC_PROC_VTOTAL` | 524, correct |
+| field rate | 59.93 Hz, correct |
+| `PLLAD_MD` | 2040, as written |
+| `STATUS_SYNC_PROC_HTOTAL` | **425** |
+
+So a reading looks entirely healthy while the pipeline is running the 27 MHz
+reference instead of the divider the register names. Nothing else on the board
+reports a missing latch, and `Adc::dividerLatched()` is that comparison.
