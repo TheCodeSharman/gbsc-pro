@@ -93,3 +93,41 @@ candidates are the freeze, the sample count, and the firmware having moved.
 - **That fix cannot reach this fault**, because `prepareToMeasure()` runs only
   on a mode change the engine has armed, and this is the fault that stops one
   being armed.
+
+## The pair cannot be a constant, and that is measured on both ends
+
+`sweep_coast.py` on a settled 320x256@50 composite source scores every pair
+from 7/6 down to 1/1 identically -- count steady, blanking live, acquired at
+all nine -- so the bench mode says nothing against a short pair, and 1/1 is
+what 640x512@50 composite needs. That reads as an argument for making 1/1 the
+composite pair outright and deleting the choice.
+
+**The Wii refuses it.** Held at 1/1 over `ypbpr` in 576i, 50 samples across
+45 s:
+
+| coast | `STATUS_SYNC_PROC_VTOTAL` 310 | spread | `VPERIOD_IF` | `STATUS_IF_VT_OK` |
+|---|---|---|---|---|
+| 7/2, the derived pair | 50 of 50 | -- | 624, one value | 1 throughout |
+| 1/1 | **16 of 50** | 308..316 | 621..627 | 0 and 1 |
+
+So both candidate constants are refused by sync on green -- 0 pre was already
+known to destroy its lock, and 1/1 degrades its count the same way. The pair
+is a property of the source and has to be chosen per source, which is what
+makes this hard rather than a constant nobody had tried.
+
+## What the mode file does not predict
+
+Blanking before the vertical sync is the obvious candidate, because the pre
+coast is applied there and 7 lines of it could overrun a short one. It does
+not separate the cases, from `RetroScaler-Acorn.mdf`:
+
+| mode | vsync | bottom border + front porch | at 7/6 |
+|---|---|---|---|
+| 320x256@50 | 3 | 20 | works |
+| 640x512@50 | 3 | **1** | fails |
+| 240x352@70 | 2 | 37 | works |
+| 640x480@60 | 2 | 10 | works |
+| 800x600@60 | 4 | **1** | works |
+
+800x600@60 has the same single line before its vertical sync as the mode that
+fails, and carries the derived pair without trouble.
