@@ -311,3 +311,18 @@ and the top of the picture is still clipped. So the clip has a cause other than
 the table, and restating the lookup will not move it.
 `investigations/the-vertical-capture-window-is-placed-late.md` carries what is
 measured and why its magnitude is not yet established.
+
+## What the sync-width agreement has to admit and refuse
+
+`HsyncPulse::agrees()` compares two duty readings at the key's own tolerance,
+because what a disagreeing pair costs is an identity: a pair allowed to straddle
+`SyncWidthIdentity` settles on a duty that finds a different source's framing,
+or none.
+
+| | reading |
+|---|---|
+| the dither a healthy counter shows | one ADC sample, 0.00083 of the line at the narrowest divider the engine runs |
+| the excursion it must refuse | the Wii at 480p reading **100 samples of 1212** against a true 89 |
+
+So the tolerance sits between a single sample and an eleven-sample excursion,
+and the two are an order of magnitude apart.

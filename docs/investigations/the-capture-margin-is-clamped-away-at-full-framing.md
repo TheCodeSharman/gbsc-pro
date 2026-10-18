@@ -69,3 +69,21 @@ window does with a picture wherever it sits.
 the display opens at 40 with the write starting at 40.6, and horizontally at 142
 against 142.9 -- under a unit at each, where before it opened 3.4 lines after the
 write began and hid that much. Both edges of the emitted frame read 0.00.
+
+## What the two vertical units were measured as
+
+`Axis`'s capture margin opens the window this far beyond the picture at EACH
+end, so a unit the write only partly fills has a spare one under it. The
+vertical value is 2, and each unit was measured separately:
+
+| unit | measured at | reading |
+|---|---|---|
+| the first | 800x600@60 | the top frame reaches the panel from `IF_VB_SP` 19 and not from 20, and the bottom from `IF_VB_ST` 621 and not from 620 |
+| the second | 1024x768@60 | `PATTERN CARD`'s green frame does not reach the panel from the engine's own window and does from one unit earlier |
+
+Opening early costs a line of the source's own blanking and nothing else, which
+is why the second unit is affordable. **The doubled case is not measured.**
+
+Horizontally the margin is 1, for the partly written unit at each end. At 0 the
+aperture was inset instead, which showed as a black column down the left of a
+full-screen picture and a black row across the bottom.
