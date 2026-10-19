@@ -1144,15 +1144,23 @@ twelve tables while they existed, which is what `BringUp` was built from.
   a diagnosis of the sync arrangement, not of the unit. `STATUS_IF_HT_OK` is no
   better in the other direction: it reads 1 while `HPERIOD_IF` rails.
 
-  **BUT IT NOW GATES ACQUISITION, AND THAT IS AN OPEN DEFECT RATHER THAN A
-  PROPERTY TO WORK AROUND.** `InputFormatter::verticalPeriod()` returns 0 while
-  the bit is 0, and that reading is the SECOND INSTRUMENT the contradicted-count
-  guard uses to tell a sync processor that stopped counting from a source
-  standing still -- so where the bit reads 0 the guard is blind and the engine
-  holds a dead count at `state: acquired` indefinitely. Measured at over five
-  minutes on `vga` composite after a mode change into 640x512@50, with
-  `VPERIOD_IF` reading the arriving frame correctly underneath the gate.
-  `docs/known-issues.md`,
+  **IT GATES ACQUISITION TOO, AND WHAT COVERS THAT IS THE LINE PERIOD RATHER
+  THAN THE BIT.** `InputFormatter::verticalPeriod()` returns 0 while the bit is
+  0, and that reading is the SECOND INSTRUMENT the contradicted-count guard
+  uses to tell a sync processor that stopped counting from a source standing
+  still -- so where the bit reads 0 that guard is blind, and the engine held a
+  dead count at `state: acquired` indefinitely. `rateMoved()` is what notices
+  now: a line period that MOVED arms on its own where no field rate can be
+  measured at all, because a reading that is missing cannot refuse one that
+  moved. **So the bit still explains nothing and is still not a verdict** -- it
+  no longer decides whether the engine can act.
+
+  **THE QUIET PIN IS THE DISCRIMINATOR, AND IT IS NOT THE SAME THING AS THE
+  BIT.** `TestBus::selectInputVsync()` drives the formatter's vertical SIGNAL,
+  where `STATUS_IF_VT_OK` gates only its MEASUREMENT REGISTER -- so a healthy
+  separate-sync source reads the bit 0 and still times a field rate, which is
+  why the arm does not fire there. `vsyncEdges(): no INPUT vsync` on the console
+  is the state that reaches it. `docs/known-issues.md`,
   `docs/investigations/the-formatters-frame-is-gated-off-when-the-count-stops.md`.
 
   **The pattern is worth naming, because three of these have now cost time.**
