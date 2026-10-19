@@ -585,6 +585,36 @@ TEST_CASE("forgetting the override returns the constants")
     CHECK(SyncProcessor::SP_POST_COAST::read() == 6);
 }
 
+TEST_CASE("an overridden pulse-width difference is what every writer applies")
+{
+    // The threshold is re-applied whenever the searching or csync answer moves,
+    // so a value written from outside is taken back part way through a leg --
+    // measured against a 30 s capture, where the register read the engine's
+    // 192 again by the end of every poked one.
+    SyncProcessor::overridePulseWidthDifference(48);
+
+    Wire.reset();
+    SyncProcessor::applySeparationThresholds(true);
+    CHECK(SyncProcessor::SP_DLT_REG::read() == 48);
+
+    Wire.reset();
+    SyncProcessor::applyPulseWidthDifference();
+    CHECK(SyncProcessor::SP_DLT_REG::read() == 48);
+
+    SyncProcessor::forgetPulseWidthDifferenceOverride();
+}
+
+TEST_CASE("forgetting the pulse-width override returns the measured threshold")
+{
+    SyncProcessor::overridePulseWidthDifference(48);
+    SyncProcessor::forgetPulseWidthDifferenceOverride();
+
+    Wire.reset();
+    SyncProcessor::applyPulseWidthDifference();
+
+    CHECK(SyncProcessor::SP_DLT_REG::read() == 0xC0);
+}
+
 
 
 

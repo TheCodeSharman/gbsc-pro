@@ -210,6 +210,10 @@ volatile bool pendingCoastClear = false;
 volatile bool pendingCoastApply = false;
 volatile uint8_t pendingCoastPre = 0;
 volatile uint8_t pendingCoastPost = 0;
+volatile bool pendingSepWidth = false;
+volatile bool pendingSepWidthClear = false;
+volatile bool pendingSepWidthApply = false;
+volatile uint16_t pendingSepWidthValue = 0;
 volatile bool pendingSampleClock = false;
 volatile bool pendingSampleClockApply = false;
 volatile bool pendingReferenceClock = false;
@@ -2809,6 +2813,31 @@ static void applyCoastOverride(bool apply, bool clear, uint8_t pre, uint8_t post
         (unsigned)Tv5725::SyncProcessor::postCoastLines());
 }
 
+// The separator's sync pulse width difference threshold, held against the
+// engine's own constant. SP_DLT_REG 48 runs the mid-picture vertical restart at
+// 187 per 900 s against 10 at the engine's 192, and the picture agrees, so it is
+// the assay a candidate fix is screened against -- which needs the engine to
+// stop restoring 192 part way through a leg.
+// docs/investigations/the-large-composite-jump-is-a-torn-frame.md
+static void applySepWidthOverride(bool apply, bool clear, uint16_t difference)
+{
+    if (apply) {
+        if (clear)
+            Tv5725::SyncProcessor::forgetPulseWidthDifferenceOverride();
+        else
+            Tv5725::SyncProcessor::overridePulseWidthDifference(difference);
+
+        geometry.reapplySyncTypeInForce();
+        inputAcquisition.resolveFromSource(millisNow());
+    }
+
+    debugPrintf("sep width: %s %u, SP_DLT_REG %u\n",
+        Tv5725::SyncProcessor::pulseWidthDifferenceOverridden() ? "override"
+                                                                : "default",
+        (unsigned)Tv5725::SyncProcessor::pulseWidthDifference(),
+        (unsigned)Tv5725::SyncProcessor::SP_DLT_REG::read());
+}
+
 static void applySampleClock(bool apply, uint16_t divider, uint8_t oversample)
 {
     if (!apply) {
@@ -4805,6 +4834,11 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
             applyCoastOverride(pendingCoastApply, pendingCoastClear,
                 pendingCoastPre, pendingCoastPost);
         }
+        if (pendingSepWidth) {
+            pendingSepWidth = false;
+            applySepWidthOverride(pendingSepWidthApply, pendingSepWidthClear,
+                pendingSepWidthValue);
+        }
         if (pendingSampleClock) {
             pendingSampleClock = false;
             applySampleClock(pendingSampleClockApply,
@@ -5906,6 +5940,24 @@ void startWebserver()
         pendingCoastApply = pendingCoastClear || pre || post;
         pendingCoast = true;
         request->send(200, "application/json", "{\"queued\":\"coast\"}");
+    });
+
+    // The separator's pulse width difference threshold, held the same way and
+    // for the same reason: the engine re-applies it whenever the searching or
+    // csync answer moves, so a poke is taken back part way through a leg.
+    //
+    //   /sepwidth                       report, change nothing
+    //   /sepwidth?dlt=48                the assay the fault is frequent at
+    //   /sepwidth?clear                 back to the engine's own threshold
+    server.on("/sepwidth", HTTP_GET, [](AsyncWebServerRequest *request) {
+        const bool dlt = request->hasParam("dlt");
+        pendingSepWidthClear = request->hasParam("clear");
+        if (dlt)
+            pendingSepWidthValue =
+                (uint16_t)request->getParam("dlt")->value().toInt();
+        pendingSepWidthApply = pendingSepWidthClear || dlt;
+        pendingSepWidth = true;
+        request->send(200, "application/json", "{\"queued\":\"sepwidth\"}");
     });
 
     // Ask whether a candidate reference clock can measure the source that is

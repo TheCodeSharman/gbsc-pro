@@ -73,6 +73,8 @@ namespace {
 const unsigned int ResetHoldUs = 10;
 
 const uint16_t PulseWidthDifference = 0xC0;
+bool pulseWidthOverridden_ = false;
+uint16_t pulseWidthOverride_ = 0;
 bool coastPlaced_ = false;
 bool clampPlaced_ = false;
 bool sogInverted_ = false;
@@ -225,9 +227,30 @@ void SyncProcessor::applyPulseIgnore(uint16_t divider, bool serrated)
     SP_H_PULSE_IGNOR::write(pulseIgnoreFor(divider, serrated));
 }
 
+void SyncProcessor::overridePulseWidthDifference(uint16_t difference)
+{
+    pulseWidthOverridden_ = true;
+    pulseWidthOverride_ = difference;
+}
+
+void SyncProcessor::forgetPulseWidthDifferenceOverride()
+{
+    pulseWidthOverridden_ = false;
+}
+
+bool SyncProcessor::pulseWidthDifferenceOverridden()
+{
+    return pulseWidthOverridden_;
+}
+
+uint16_t SyncProcessor::pulseWidthDifference()
+{
+    return pulseWidthOverridden_ ? pulseWidthOverride_ : PulseWidthDifference;
+}
+
 void SyncProcessor::applyPulseWidthDifference()
 {
-    SP_DLT_REG::write(PulseWidthDifference);
+    SP_DLT_REG::write(pulseWidthDifference());
 }
 
 void SyncProcessor::applyForSearch(const Dynamic &source)

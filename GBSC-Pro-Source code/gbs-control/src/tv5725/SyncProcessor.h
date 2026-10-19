@@ -460,6 +460,15 @@ public:
     // docs/investigations/the-pulse-ignore-value-is-measured-not-chosen.md
     static void applyPulseWidthDifference();
 
+    // A threshold to apply in place of that one, wherever it is written. Same
+    // reason the coast has one: the engine re-applies it whenever the searching
+    // or csync answer moves, so a value written from outside is taken back part
+    // way through a measurement.
+    static void overridePulseWidthDifference(uint16_t difference);
+    static void forgetPulseWidthDifferenceOverride();
+    static bool pulseWidthDifferenceOverridden();
+    static uint16_t pulseWidthDifference();
+
     // How short a horizontal pulse must be to be ignored: a fraction of the
     // line in ADC samples, and WHICH fraction follows whether the source's
     // vertical interval is serrated. THE SYNC TYPE DOES NOT CHOOSE IT -- a
