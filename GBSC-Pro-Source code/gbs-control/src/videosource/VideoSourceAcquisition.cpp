@@ -894,8 +894,20 @@ bool VideoSourceAcquisition::rateMoved()
     if (confirming)
         sampling_.confirmRate();
 
+    // A FIELD RATE THAT CANNOT BE MEASURED CANNOT REFUSE A LINE PERIOD THAT
+    // MOVED, so it must not be the reading that settles it. Both guards ahead
+    // of this read the input formatter's frame, which is 0 whenever
+    // STATUS_IF_VT_OK is -- and where that bit is clear a count frozen by a
+    // coast window the source has left equals the solve exactly, nothing
+    // contradicts it, and this is the last instrument. Returning false holds a
+    // dead count at acquired for as long as the state lasts.
+    //
+    // The held rate goes with it: the count has not moved, and
+    // measureLineRate() refuses a rate that changed at an unchanged count, so
+    // leaving it would refuse the measurement this armed the solve for.
+    // ../../../../docs/investigations/the-formatters-frame-is-gated-off-when-the-count-stops.md
     if (!Tv5725::VideoSignal::isVideo(solvedLines_, fieldRateHz)) {
-        if (!confirming)
+        if (!confirming && !periodMoved)
             return false;
         // Nothing to judge the boot's rate against, so re-solve rather than
         // keep a rate this never managed to check.

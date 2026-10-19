@@ -2546,6 +2546,50 @@ TEST_CASE("a count frozen at the solved one arms when the formatter's frame move
     CHECK(loggedContaining("TIMINGS change (contradicted count)"));
 }
 
+TEST_CASE("a frozen count arms where the formatter's frame is gated off")
+{
+    // **THE SECOND INSTRUMENT IS NOT ALWAYS THERE.**
+    // InputFormatter::verticalPeriod() returns 0 while STATUS_IF_VT_OK reads 0,
+    // and both guards above read 0 as nothing moved -- so where the bit is
+    // clear the frozen count equals the solve, the frame says nothing, and
+    // neither of them can arm. Measured on `vga` composite into 640x512@50,
+    // where the bit reads 0 for as long as the state lasts: VPERIOD_IF carried
+    // the arriving frame correctly underneath the gate, and the engine held
+    // `state: acquired` on the departing mode's timing for over five minutes.
+    //
+    // What is left is the pair rateMoved() already reads -- HPERIOD_IF 431
+    // when solved against 251 here, and no vsync edge on DEBUG_IN_PIN at all.
+    // A field rate that cannot be measured cannot refuse a line period that
+    // moved, so it must not be the reading that settles it.
+    // docs/investigations/the-formatters-frame-is-gated-off-when-the-count-stops.md
+    seedBenchSource();
+    seedFrame(623);
+    seedField(0, 0x06, 0, 9, 431);        // HPERIOD_IF, this source at 50 Hz
+    Acquiring unit;
+    unit.path.useSyncTypeProbe(probeOwnVsync);
+
+    g_hasOwnVsync = false;
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+    REQUIRE(unit.acquisition.sourceIsPresent());
+    const uint16_t solved = unit.sampling.sourceLines();
+
+    // The mode change, as the state reads: the count frozen at the solve, the
+    // formatter's reading thrown away by its own bit, the line period moved,
+    // and the pin quiet.
+    seedField(0, 0x00, 0, 1, 0);          // STATUS_IF_VT_OK
+    seedField(0, 0x06, 0, 9, 251);        // HPERIOD_IF, the arriving mode
+    g_fieldRate = 0.0f;
+
+    g_logLines.clear();
+    for (uint8_t i = 0; i < 20 * SourceMeasurement::SteadySamples; ++i) {
+        seedSourceLines((uint16_t)(solved - 1));
+        unit.poll();
+    }
+
+    CHECK(loggedContaining("TIMINGS change (rate)"));
+}
+
 TEST_CASE("a mode change the formatter's frame agrees with still arms one")
 {
     // The corroboration refuses a count the formatter contradicts, not a count
