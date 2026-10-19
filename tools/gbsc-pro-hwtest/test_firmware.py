@@ -420,6 +420,38 @@ def test_a_dropout_that_persists_is_confirmed():
     assert dropout_is_confirmed([locked, unlocked, locked])
 
 
+def test_an_overridden_pulse_width_difference_survives_a_re_solve(host, source):
+    """The separator's threshold held against the engine's own constant, which
+    is what makes it measurable on a running engine.
+
+    The engine re-applies SP_DLT_REG whenever the searching or csync answer
+    moves, so a value written over /setreg is taken back part way through a
+    measurement -- read back at the start of a leg and correct, read back at the
+    end and restored. Two legs were published as states on that basis before the
+    read-back at both ends was taken, so what this pins is the read-back at the
+    far end of a re-solve.
+    """
+    assert get_json(host, "/sepwidth?dlt=48"), "no /sepwidth route: a build without GBS_DEBUG"
+    try:
+        assert wait_for(lambda: read_named(host, "SP_DLT_REG") == 48, timeout=15), (
+            "the override did not reach the register"
+        )
+
+        # The call the engine takes a poke back on.
+        get(host, "/coast?pre=7&post=2", timeout=8)
+        time.sleep(5)
+
+        assert read_named(host, "SP_DLT_REG") == 48, (
+            "a re-solve restored the engine's own threshold over the override"
+        )
+    finally:
+        get(host, "/sepwidth?clear", timeout=8)
+
+    assert wait_for(lambda: read_named(host, "SP_DLT_REG") == 0xC0, timeout=15), (
+        "clearing the override did not return the engine's own threshold"
+    )
+
+
 def test_the_sync_processor_holds_a_lock(host, source):
     """H sync active and staying active is what every downstream stage waits
     for. The no-sync fault shows up here twice over: as a lock that never
