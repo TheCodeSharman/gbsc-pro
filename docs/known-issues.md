@@ -659,16 +659,37 @@ opens is untouched by either.
 post 4 reads 33 and 9, so the spread within one value covers the difference
 between them.
 
-What is open is why the separator asserts vertical part way down the frame.
-The collapses land at 181, 106, 181 and 115 of 308, scattered rather than at
-one place. `SP_DLT_REG` holds 192 and is the threshold deciding how much
-broader than a line pulse something must be to read as vertical; below 0x70 a
-serrated source is miscounted and by 2048 the separator stops extracting
-vertical at all, so the range between is unwalked against this fault. **The
-rate is what makes that walk expensive** -- 3 and 7 tears per 600 s, and 300 s
-legs on one state reading 0, 8, 17 and 26 -- so an A/B scored on tears needs
-legs no session can afford, and whether a collapse can happen without tearing
-is untested. `investigations/the-large-composite-jump-is-a-torn-frame.md`.
+**WHAT PRECEDES THE COLLAPSE IS THE SEPARATOR EMITTING NO PULSE AT ALL.**
+`STATUS_SYNC_PROC_HLOW_LEN` reads 153 of a 2200-sample line on this source and
+in one sample reads near zero; over 900 s at 3.3 ms, **six collapses of ten are
+led by a reading under 30 within 20 ms and none follows one**, against an
+ambient 0.06%. The lead times are 9 to 17 ms against a 19.97 ms field, so the
+dropout falls inside the field before the count restarts. **It is the pulse
+GOING, not narrowing** -- the bands 30..60 and 100..150 hold 57 and 275 events
+and lead nothing, which also rules out `SP_H_PULSE_IGNOR`, 61 here, as the
+boundary being crossed. `VPERIOD_IF` reads 623 throughout, so the formatter's
+vertical measurement is untouched while the sync processor's count restarts.
+**The untried candidate is the slicing level**, `ADC_SOGCTRL` 12: a slicer
+cutting near the signal's edge both drops pulses and inserts them.
+
+**And the count restarts in TWO places rather than scattered.** Pooled over 20
+events: 106 twice, 115 twice, 120 six times, 180 four times, 181 six times,
+with nothing between or outside the two clusters. The earlier reading of four
+scattered values was four events.
+
+**THE RATE IS ONE COLLAPSE EVERY 90 s AND A FASTER SAMPLE DOES NOT MAKE IT
+COUNTABLE.** `/samplinglog?changes=1` emits a row only where a watched reading
+moved, which lets the interval fall from 25 ms to the 3.3 ms the loop achieves;
+read there a 900 s run holds 10 collapses where the 25 ms runs read 4 across
+1200 s, and decimating one fast run in software shows six events reading as two
+at 43 ms and one at 58 ms. So the earlier counts were missing two thirds, and
+the true rate is still the same order as the 3 and 7 tears per 600 s -- a leg
+scored on collapses buys one point per half hour. `STATUS_0F` reads 0 in all
+270837 samples with every source unmasked, so there is no lossless hardware
+count to score a walk on either. `SP_DLT_REG` 192 and the vertical-detection
+thresholds remain unwalked against this fault.
+`tools/gbsc-pro-hwtest/sync_dropouts.py`,
+`investigations/the-large-composite-jump-is-a-torn-frame.md`.
 
 **THE COAST IS DERIVED NOW, AND WHAT IT ASKS IS NOT SERRATION.**
 `VideoPath::measureVerticalInterval()` takes the coast off and asks whether the
