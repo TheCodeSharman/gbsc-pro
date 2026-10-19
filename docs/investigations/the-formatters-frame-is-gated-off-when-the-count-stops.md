@@ -62,7 +62,8 @@ second instrument was added it gates acquisition too, and a bit documented as
 reading 0 in the normal course on some sync arrangements now decides whether
 the engine can notice that its own count has died. Either the guard must not
 read "no reading" as "no movement", or the frame has to come from somewhere the
-bit does not gate.
+bit does not gate. **The first route is the one taken**, in `rateMoved()`
+rather than in the frame -- see below.
 
 ## The bit is what separates the mode that wedges from the ones that do not
 
@@ -78,3 +79,39 @@ each given 45 s to reach a geometry that holds for 8 s:
 
 The mode-change path is healthy on three of four. The one that wedges is the
 one whose formatter stops reporting, and that is the same bit the guard reads.
+
+## The line period carries the arm where the field rate cannot
+
+`rateMoved()` is the instrument that was left, and it refused for a reason of
+its own: the cheap half saw `HPERIOD_IF` move, the expensive half could not
+measure a field rate at all, and `VideoSignal::isVideo()` failing was read as a
+reason to do nothing. **A reading that is missing cannot refuse one that
+moved**, so a line period that moved now arms on its own where the field rate
+is unmeasurable, and `forgetHeldRate()` goes with it -- the count has not
+moved, and `measureLineRate()` refuses a rate that changed at an unchanged
+count.
+
+One mode change each way on `vga` composite, 320x256@50 -> 640x512@50, nothing
+else touched:
+
+| | first arm | as |
+|---|---|---|
+| before | 22.97 s | `contradicted count`, the bit having come good at ~21.8 s |
+| after | **4.37 s** | `TIMINGS change (rate), 312 lines, solved 312` |
+
+Through the whole window before the arm the console printed
+`vsyncEdges(): no INPUT vsync` every pass, which is the quiet pin this keys on.
+
+## Why the healthy states stay quiet
+
+The bit reading 0 is the normal state on separate sync, so the arm had to
+separate a gated measurement from a gated signal, and it does because they are
+different things: `TestBus::selectInputVsync()` drives the formatter's vertical
+**signal** onto `DEBUG_IN_PIN`, where `STATUS_IF_VT_OK` gates only its
+**measurement register**. A source whose bit reads 0 while it is well therefore
+still times a field rate, and the arm never reaches the period.
+
+Measured with the console open and nothing else moving: the bench RISC PC on
+separate sync for 120 s, the same source on composite for 90 s, and the Wii on
+sync on green at 720p for 90 s -- no arm in any of them, and the console
+silent but for auto gain settling.
