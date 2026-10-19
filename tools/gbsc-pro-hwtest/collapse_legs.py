@@ -138,10 +138,15 @@ def geometry(host):
 
 def leg(host, state, seconds, out, resting):
     apply_state(host, state, resting)
-    before = read_fields(host, WATCHED)
+    # THE POKED FIELDS ARE READ BACK WHETHER OR NOT THEY ARE WATCHED. Reading
+    # only the watched set left a candidate outside it unverified: the missed
+    # check compares a field against itself when the read has no entry for it,
+    # so a poke that never landed reported as a state.
+    watched = sorted(set(WATCHED) | set(fields_of(state)))
+    before = read_fields(host, watched)
     acquired = geometry(host).get("state")
     lines = capture(host, 1, int(seconds * 1000), out=out)
-    after = read_fields(host, WATCHED)
+    after = read_fields(host, watched)
     rows, done = rows_of(lines)
     if done is None:
         print(f"  {state:34s} the run did not report its own sample count")
@@ -162,13 +167,13 @@ def leg(host, state, seconds, out, resting):
     # cannot say whether the poke landed at all, and the engine re-derives the
     # coast behind a clear -- so a leg whose state is not printed is a leg whose
     # state is not known.
-    print("           " + "  ".join(f"{k}={before[k]}" for k in WATCHED))
+    print("           " + "  ".join(f"{k}={before[k]}" for k in watched))
     asked = {k: int(v, 0) for k, v in fields_of(state).items()}
     dlt = held_of(state, "dlt:")
     if dlt:
         asked["SP_DLT_REG"] = int(dlt, 0)
-    missed = [k for k, v in asked.items() if before.get(k, v) != v]
-    moved = [k for k in WATCHED if before[k] != after[k]]
+    missed = [k for k, v in asked.items() if before.get(k) != v]
+    moved = [k for k in watched if before[k] != after[k]]
     if missed:
         print(f"           THE POKE DID NOT LAND: {','.join(missed)}")
     if moved:
