@@ -669,8 +669,19 @@ GOING, not narrowing** -- the bands 30..60 and 100..150 hold 57 and 275 events
 and lead nothing, which also rules out `SP_H_PULSE_IGNOR`, 61 here, as the
 boundary being crossed. `VPERIOD_IF` reads 623 throughout, so the formatter's
 vertical measurement is untouched while the sync processor's count restarts.
-**The untried candidate is the slicing level**, `ADC_SOGCTRL` 12: a slicer
-cutting near the signal's edge both drops pulses and inserts them.
+**THE SLICING LEVEL IS AN ELEVENFOLD LEVER AND IT DOES NOT ACT THROUGH THE
+DROPOUT.** `ADC_SOGCTRL` below the engine's 12 carries one collapse in 1440 s
+against 19 in 2400 s at 12, with dropouts flat across the whole walk -- 38 per
+900 s at 8 against 46 at 12 and 38 at 14 -- so what the level moves is
+downstream of the pulse, in the vertical extraction. `SyncOnGreen::acquire()`
+walks the level DOWN from the input's and stops at the first level holding
+clean edges over a run of milliseconds, so **it stops at the marginal level by
+construction** and a fault appearing twice a minute cannot reach that run. A
+margin below the first clean level is the candidate fix, and the Wii on `ypbpr`
+is the gate on it -- sync on green is weaker than a dedicated sync line, which
+is why `ComponentLevel` starts above `DefaultLevel`, and how far below 14 it
+holds is unmeasured. **The comparison must be pooled**: level 12 read 10, 9 and
+3 per 900 s on one state, wider than those counts' Poisson spread.
 
 **And the count restarts in TWO places rather than scattered.** Pooled over 20
 events: 106 twice, 115 twice, 120 six times, 180 four times, 181 six times,
