@@ -26,11 +26,18 @@ twofold one.
 steady and does not ramp after a re-solve; between sessions it moves about
 threefold.
 
-A state is `default`, `coast:PRE/POST`, or a comma-separated `NAME=VALUE` list
-written by name. The coast goes through `/coast` because that survives the
-re-solve the engine runs behind it; a named field is poked, so a field the
-engine rewrites per pass cannot be held this way -- the leg prints every
+A state is a comma-separated list of `coast:PRE/POST`, `dlt:VALUE` and
+`NAME=VALUE`, or the word `default`. The coast and the separator's width
+threshold go through `/coast` and `/sepwidth`, because those survive the
+re-solve the engine runs behind them; a named field is poked, so a field the
+engine rewrites per pass cannot be held that way -- the leg prints every
 watched field back, so one that moved says so.
+
+**THE ASSAY IS `dlt:48`, AND A CANDIDATE IS SCREENED ON TOP OF IT.** At the
+engine's own 192 the mid-picture fault runs 10 per 900 s, which no leg this
+session can resolve; at 48 it runs 187, which a 60 s leg settles. So a
+candidate is `dlt:48,CANDIDATE` against a `dlt:48` control, and anything that
+works is confirmed back at `dlt:192`.
 
 **SCREEN FOR A LARGE EFFECT IN A SHORT LEG RATHER THAN MEASURING A SMALL ONE IN
 A LONG ONE.** At one collapse every 90 to 150 s a state twenty times worse
@@ -72,24 +79,42 @@ def ask(host, path):
     return urllib.request.urlopen(f"http://{host}{path}", timeout=5).read().decode()
 
 
+def tokens_of(state):
+    return [t for t in state.split(",") if t and t != "default"]
+
+
 def fields_of(state):
-    return dict(pair.split("=") for pair in state.split(",")) if "=" in state else {}
+    return dict(t.split("=") for t in tokens_of(state) if "=" in t)
+
+
+def held_of(state, prefix):
+    """What one of the two engine-held quantities is asked for, or None for the
+    engine's own value."""
+    for token in tokens_of(state):
+        if token.startswith(prefix):
+            return token[len(prefix):]
+    return None
 
 
 def apply_state(host, state, resting):
     """EVERY LEG STARTS FROM THE RESTING VALUES, so a field one state pokes is
     back where the engine left it in the next.
 
-    THE COAST REQUEST GOES FIRST AND IS WAITED OUT, because it is queued for
-    loop() and the re-solve behind it runs `applyForSyncType()`, which rewrites
-    the edge reference and the pulse ignore. A poke written before that lands
-    is silently undone -- which read as the edge pair not being a lever at all.
+    THE ENGINE-HELD REQUESTS GO FIRST AND ARE WAITED OUT, because each is queued
+    for loop() and the re-solve behind it runs `applyForSyncType()`, which
+    rewrites the edge reference and the pulse ignore. A poke written before that
+    lands is silently undone -- which read as the edge pair not being a lever at
+    all.
     """
-    if state.startswith("coast:") and state != "coast:default":
-        pre, post = state[len("coast:"):].split("/")
+    coast = held_of(state, "coast:")
+    if coast and coast != "default":
+        pre, post = coast.split("/")
         ask(host, f"/coast?pre={pre}&post={post}")
     else:
         ask(host, "/coast?clear")
+
+    dlt = held_of(state, "dlt:")
+    ask(host, f"/sepwidth?dlt={dlt}" if dlt else "/sepwidth?clear")
     time.sleep(SETTLE_S)
 
     for name, value in resting.items():
@@ -139,6 +164,9 @@ def leg(host, state, seconds, out, resting):
     # state is not known.
     print("           " + "  ".join(f"{k}={before[k]}" for k in WATCHED))
     asked = {k: int(v, 0) for k, v in fields_of(state).items()}
+    dlt = held_of(state, "dlt:")
+    if dlt:
+        asked["SP_DLT_REG"] = int(dlt, 0)
     missed = [k for k, v in asked.items() if before.get(k, v) != v]
     moved = [k for k in WATCHED if before[k] != after[k]]
     if missed:
@@ -178,7 +206,7 @@ def main():
                    if args.out_prefix else None)
             leg(args.host, state, args.seconds, out, resting)
     apply_state(args.host, "default", resting)
-    print("the engine's own coast and the resting fields are back in force")
+    print("the engine's own coast and threshold and the resting fields are back")
     return 0
 
 
