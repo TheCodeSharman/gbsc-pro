@@ -413,12 +413,26 @@ first leg -- 15 and 17 against a control of 30 -- and each came back inside the
 control's range in its second. A single leg against a single control would have
 published both as levers.
 
-**The sub coast is the only candidate not cleared, and it is not yet a
-result.** Disabling it put both legs above every other leg in the run -- but
-two against two is **t 2.1 on the leg-to-leg spread**, which the same
-arithmetic that clears the others does not call a separation. It is where to
-look, not what was found. The coast pair is not involved either way: 0/2
-against 7/2 moves nothing.
+**THE SUB COAST IS WHAT SUPPRESSES THIS FAULT, AND IT IS A SEVENTEENFOLD
+LEVER.** Four interleaved 300 s legs each on the frame at a held 112, the
+register read back at both ends of every leg:
+
+| `SP_DIS_SUB_COAST` | jumps/s | displaced | frames lost |
+|---|---|---|---|
+| 0, the engine's own | 0.65, 0.76, 0.53, 0.64 | 305 mean | 294 in four legs |
+| 1 | 11.35, 10.54, 11.53, 11.04 | 6536 mean | 7090 in four legs |
+
+**17.2x on the jump rate, t 47, with no overlap between the two sets.** The
+displaced share is 21x but saturates -- past about half the frames the
+displaced position becomes the median the rest are judged against -- so the
+jump rate is the figure to quote. The link damage follows: 7090 frames lost
+against 294.
+
+That is far larger than the 2.4x the collapse count gave over two legs, because
+the register sampling misses most events and the frame catches them. **The
+engine's `SP_DIS_SUB_COAST` 0 is therefore not merely right, it is doing most
+of the work**, and the coast pair's LENGTH is not involved at all: 0/2 against
+7/2 moves nothing.
 
 It is at least the right place to look. `SP_DIS_SUB_COAST` suppresses the sync
 processor's horizontal counting through the serrated part of the vertical

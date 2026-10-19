@@ -734,12 +734,16 @@ Two rounds of interleaved 60 s legs, every poke read back at both ends:
 and 26, against a control of 30 and 17. **The control's own spread at 112 is 17
 to 30**, which is what clears the first and third -- each halved its first leg
 and came back inside the control's range in its second, so a single leg against
-a single control would have published two levers. `SP_DIS_SUB_COAST` 1 reads
-**72 and 43**, above every other leg in the run and the only candidate not
-cleared -- **but two legs against two is t 2.1 on the leg-to-leg spread, which
-is not a separation**, and the same arithmetic that clears the others applies
-here. It is the one lead with a direction, not a result. The coast pair is not
-involved either way: 0/2 against 7/2 moves nothing.
+a single control would have published two levers. **`SP_DIS_SUB_COAST` IS A SEVENTEENFOLD
+LEVER AND THE ENGINE'S 0 IS DOING MOST OF THE WORK.** Four interleaved 300 s
+legs each on the frame at a held 112, read back at both ends: **0.65, 0.76,
+0.53 and 0.64 jumps a second enabled against 11.35, 10.54, 11.53 and 11.04
+disabled**, t 47 with no overlap, and 294 frames lost against 7090. Quote the
+JUMP RATE rather than the displaced share, which is 21x but saturates once
+about half the frames are displaced and the displaced position becomes the
+median. The collapse count gave 2.4x over two legs because the register
+sampling misses most events. The coast pair's length is not involved: 0/2
+against 7/2 moves nothing.
 `SP_L_DLT_REG` already reads 15, the value proposed for it.
 
 **AND EVERY ENGINE DEFAULT TESTED IS ALREADY THE BETTER VALUE.** Four
