@@ -232,6 +232,12 @@ source's 53 blanking lines begin -- against the leading edge's bands of
 the same event as one detected 190 lines early, so a candidate cleared in the
 loud state is not thereby cleared in the quiet one.
 
+**The third bit the vendor writes is cleared in it.** `SP_HS_PROC_INV_REG` 1
+added to the trailing edge, three interleaved 120 s rounds: **7 collapses in
+360 s without it against 4 with**, and 25 dropouts against 33. Nothing
+separates, so the decimator invert does no work on this fault either -- which
+is the first candidate the assay has retired.
+
 **THE LOUD STATE IS THE ASSAY THE FAULT NEEDED.** At eleven times the rate a
 120 s leg expects three collapses where the engine's own state expects 0.9, so
 a candidate that moves the loud state threefold is measurable in one pair --
