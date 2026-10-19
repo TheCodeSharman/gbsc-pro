@@ -804,6 +804,50 @@ TEST_CASE("the search admits the sync pulse at whatever clock the block is count
     }
 }
 
+TEST_CASE("an overridden h coast is what the search applies")
+{
+    // The search writes SP_H_COAST 0 every pass, and a source loud enough to
+    // re-enter searching takes a poke back inside a single measurement -- read
+    // 1 before a 300 s leg and 0 after it, four legs out of four. So the field
+    // cannot be measured from outside without this.
+    SyncProcessor::overrideHCoast(true);
+
+    Wire.reset();
+    SyncProcessor::applyForSearch(hunting(true, false));
+
+    CHECK(SyncProcessor::SP_H_COAST::read() == 1);
+
+    SyncProcessor::forgetHCoastOverride();
+}
+
+TEST_CASE("an overridden h coast is applied without a search")
+{
+    // applyForSearch() is the only writer, and it does not run on a settled
+    // source -- so an override that only reached the search left SP_H_COAST at
+    // whatever it already held, measured 0 on an acquired unit after the
+    // override was set and a re-solve had run.
+    SyncProcessor::SP_H_COAST::write(0);
+    SyncProcessor::overrideHCoast(true);
+
+    Wire.reset();
+    SyncProcessor::applyHCoast();
+
+    CHECK(SyncProcessor::SP_H_COAST::read() == 1);
+
+    SyncProcessor::forgetHCoastOverride();
+}
+
+TEST_CASE("forgetting the h coast override returns the search's own value")
+{
+    SyncProcessor::overrideHCoast(true);
+    SyncProcessor::forgetHCoastOverride();
+
+    Wire.reset();
+    SyncProcessor::applyForSearch(hunting(true, false));
+
+    CHECK(SyncProcessor::SP_H_COAST::read() == 0);
+}
+
 TEST_CASE("the search separates on the threshold every source is read with")
 {
     Wire.reset();

@@ -210,6 +210,10 @@ volatile bool pendingCoastClear = false;
 volatile bool pendingCoastApply = false;
 volatile uint8_t pendingCoastPre = 0;
 volatile uint8_t pendingCoastPost = 0;
+volatile bool pendingHCoast = false;
+volatile bool pendingHCoastClear = false;
+volatile bool pendingHCoastApply = false;
+volatile uint8_t pendingHCoastValue = 0;
 volatile bool pendingSepWidth = false;
 volatile bool pendingSepWidthClear = false;
 volatile bool pendingSepWidthApply = false;
@@ -2838,6 +2842,29 @@ static void applySepWidthOverride(bool apply, bool clear, uint16_t difference)
         (unsigned)Tv5725::SyncProcessor::SP_DLT_REG::read());
 }
 
+// The search's SP_H_COAST, held against the engine. applyForSearch() writes it
+// 0 every pass, so at a threshold loud enough to keep the engine re-searching a
+// poke is taken back inside one measurement -- read 1 before a 300 s leg and 0
+// after it, four legs out of four.
+// docs/investigations/the-large-composite-jump-is-a-torn-frame.md
+static void applyHCoastOverride(bool apply, bool clear, uint8_t value)
+{
+    if (apply) {
+        if (clear)
+            Tv5725::SyncProcessor::forgetHCoastOverride();
+        else
+            Tv5725::SyncProcessor::overrideHCoast(value != 0);
+
+        Tv5725::SyncProcessor::applyHCoast();
+        geometry.reapplySyncTypeInForce();
+        inputAcquisition.resolveFromSource(millisNow());
+    }
+
+    debugPrintf("h coast: %s, SP_H_COAST %u\n",
+        Tv5725::SyncProcessor::hCoastOverridden() ? "override" : "default",
+        (unsigned)Tv5725::SyncProcessor::SP_H_COAST::read());
+}
+
 static void applySampleClock(bool apply, uint16_t divider, uint8_t oversample)
 {
     if (!apply) {
@@ -4839,6 +4866,11 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
             applySepWidthOverride(pendingSepWidthApply, pendingSepWidthClear,
                 pendingSepWidthValue);
         }
+        if (pendingHCoast) {
+            pendingHCoast = false;
+            applyHCoastOverride(pendingHCoastApply, pendingHCoastClear,
+                pendingHCoastValue);
+        }
         if (pendingSampleClock) {
             pendingSampleClock = false;
             applySampleClock(pendingSampleClockApply,
@@ -5958,6 +5990,22 @@ void startWebserver()
         pendingSepWidthApply = pendingSepWidthClear || dlt;
         pendingSepWidth = true;
         request->send(200, "application/json", "{\"queued\":\"sepwidth\"}");
+    });
+
+    // The search's SP_H_COAST, held the same way and for the same reason.
+    //
+    //   /hcoast                         report, change nothing
+    //   /hcoast?on=1                    hold it set
+    //   /hcoast?clear                   back to the search's own 0
+    server.on("/hcoast", HTTP_GET, [](AsyncWebServerRequest *request) {
+        const bool on = request->hasParam("on");
+        pendingHCoastClear = request->hasParam("clear");
+        if (on)
+            pendingHCoastValue =
+                (uint8_t)request->getParam("on")->value().toInt();
+        pendingHCoastApply = pendingHCoastClear || on;
+        pendingHCoast = true;
+        request->send(200, "application/json", "{\"queued\":\"hcoast\"}");
     });
 
     // Ask whether a candidate reference clock can measure the source that is

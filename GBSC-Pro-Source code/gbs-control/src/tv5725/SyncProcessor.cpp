@@ -73,8 +73,21 @@ namespace {
 const unsigned int ResetHoldUs = 10;
 
 const uint16_t PulseWidthDifference = 0xC0;
-bool pulseWidthOverridden_ = false;
-uint16_t pulseWidthOverride_ = 0;
+
+// A value held against the engine for a measurement. The engine re-applies
+// these fields whenever the searching or csync answer moves, so a value written
+// from outside is taken back part way through a leg and the leg is a control.
+struct Override {
+    bool held;
+    uint16_t value;
+
+    uint16_t or_(uint16_t own) const { return held ? value : own; }
+    void hold(uint16_t wanted) { held = true; value = wanted; }
+    void forget() { held = false; }
+};
+
+Override pulseWidth_ = { false, 0 };
+Override hCoast_ = { false, 0 };
 bool coastPlaced_ = false;
 bool clampPlaced_ = false;
 bool sogInverted_ = false;
@@ -229,24 +242,37 @@ void SyncProcessor::applyPulseIgnore(uint16_t divider, bool serrated)
 
 void SyncProcessor::overridePulseWidthDifference(uint16_t difference)
 {
-    pulseWidthOverridden_ = true;
-    pulseWidthOverride_ = difference;
+    pulseWidth_.hold(difference);
 }
 
 void SyncProcessor::forgetPulseWidthDifferenceOverride()
 {
-    pulseWidthOverridden_ = false;
+    pulseWidth_.forget();
 }
 
 bool SyncProcessor::pulseWidthDifferenceOverridden()
 {
-    return pulseWidthOverridden_;
+    return pulseWidth_.held;
 }
 
 uint16_t SyncProcessor::pulseWidthDifference()
 {
-    return pulseWidthOverridden_ ? pulseWidthOverride_ : PulseWidthDifference;
+    return pulseWidth_.or_(PulseWidthDifference);
 }
+
+void SyncProcessor::applyHCoast()
+{
+    SP_H_COAST::write(hCoast_.or_(0));
+}
+
+void SyncProcessor::overrideHCoast(bool wanted)
+{
+    hCoast_.hold(wanted ? 1 : 0);
+}
+
+void SyncProcessor::forgetHCoastOverride() { hCoast_.forget(); }
+
+bool SyncProcessor::hCoastOverridden() { return hCoast_.held; }
 
 void SyncProcessor::applyPulseWidthDifference()
 {
@@ -258,7 +284,7 @@ void SyncProcessor::applyForSearch(const Dynamic &source)
     applyPulseWidthDifference();
     SP_H_PULSE_IGNOR::write(searchPulseIgnoreFor(source.latched, source.divider));
     applyDefaultCoastWindow();
-    SP_H_COAST::write(0);
+    applyHCoast();
     SP_H_TIMER_VAL::write(SearchHTimerValue);
     forgetPositions();
 }

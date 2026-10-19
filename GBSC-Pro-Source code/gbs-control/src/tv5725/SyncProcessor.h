@@ -469,6 +469,17 @@ public:
     static bool pulseWidthDifferenceOverridden();
     static uint16_t pulseWidthDifference();
 
+    // The search's own SP_H_COAST, held the same way. It writes 0 every pass,
+    // so a source loud enough to re-enter searching takes a poke back inside
+    // one measurement.
+    // The search's own value, or the override. applyForSearch() does not run on
+    // a settled source, so an override reaching only the search never leaves
+    // the register where it found it.
+    static void applyHCoast();
+    static void overrideHCoast(bool wanted);
+    static void forgetHCoastOverride();
+    static bool hCoastOverridden();
+
     // How short a horizontal pulse must be to be ignored: a fraction of the
     // line in ADC samples, and WHICH fraction follows whether the source's
     // vertical interval is serrated. THE SYNC TYPE DOES NOT CHOOSE IT -- a
