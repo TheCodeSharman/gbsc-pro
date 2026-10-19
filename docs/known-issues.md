@@ -618,8 +618,32 @@ against 0.55% measured unfrozen at post 6, so five to nine times fewer -- but
 the offsets are `{1: 4}` on one leg and `{-153: 3, 84: 1, 159: 2, 252: 1}` on
 the other. The line-or-two roll is gone; what remains is the occasional
 100..250-row jump, and it appears only UNFROZEN where frozen post 4 reads 0 of
-6406 twice. So it belongs to the engine or the sink rather than to the
-separator, and the frame time lock is the obvious candidate.
+6406 twice.
+
+**THE FRAME TIME LOCK IS REFUTED AS THE CANDIDATE, AND SO IS THE READ/WRITE
+CROSSOVER BEHIND IT.** Three 300 s legs of `picture_stability.py` on `vga` at
+320x256@50 into 1080p, unfrozen, plus a sync-type control:
+
+| state | displaced of ~19220 | worst | jumps/s |
+|---|---|---|---|
+| composite, `targetPhase` 90 | 27 | 210 rows | 0.05 |
+| composite, `targetPhase` 0 | 36 | 197 rows | 0.05 |
+| composite, clock parked (`observe=1`) | 13 | 193 rows | 0.02 |
+| composite, in the control run | 14 | -180 rows | 0.02 |
+| **separate sync** | **0** | **0** | **0.00** |
+
+Each one cuts a different way. The target phase is said to provoke and cure
+it, and 0 and 90 read the same. Parking the clock leaves the crossing all but
+stationary -- 13 ppm is one crossing per ~1280 s -- and the jumps continue.
+And **the lock cannot see the sync type**: both arrangements run the same
+output raster, the same display clock, the same target phase and the same
+loop, and only composite jumps, 0 of 19219 against 14 of 19220 in one run.
+
+So it is composite-specific and belongs to the separator path after all. What
+is NOT thereby established is which part of that path, and the crossing may
+still be the trigger that something composite-specific decides the visibility
+of -- the capture is three lines short there, which
+`investigations/the-composite-roll-is-below-the-engine.md` leaves open.
 
 **THE COAST IS DERIVED NOW, AND WHAT IT ASKS IS NOT SERRATION.**
 `VideoPath::measureVerticalInterval()` takes the coast off and asks whether the
