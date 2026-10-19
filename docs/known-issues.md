@@ -735,9 +735,11 @@ and 26, against a control of 30 and 17. **The control's own spread at 112 is 17
 to 30**, which is what clears the first and third -- each halved its first leg
 and came back inside the control's range in its second, so a single leg against
 a single control would have published two levers. `SP_DIS_SUB_COAST` 1 reads
-**72 and 43**, above every other leg in the run: the sub coast is protective,
-the engine's 0 is right, and that is the one new mechanism fact. The coast pair
-is not involved, so it is the sub-window rather than the window's length.
+**72 and 43**, above every other leg in the run and the only candidate not
+cleared -- **but two legs against two is t 2.1 on the leg-to-leg spread, which
+is not a separation**, and the same arithmetic that clears the others applies
+here. It is the one lead with a direction, not a result. The coast pair is not
+involved either way: 0/2 against 7/2 moves nothing.
 `SP_L_DLT_REG` already reads 15, the value proposed for it.
 
 **AND NOTHING ABOVE 192 HELPS EITHER, SO THE THRESHOLD IS SETTLED IN BOTH
