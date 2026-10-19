@@ -8757,4 +8757,39 @@ about ten seconds.
 
 **This also retires the rule that `STATUS_IF_VT_OK` reaches neither acquisition
 nor the solve.** It gated only `Deinterlacer::steer()` when that was written.
+
+**CLOSED.** `rateMoved()` was the instrument that was left and it refused for a
+reason of its own -- the cheap half saw `HPERIOD_IF` move, the expensive half
+could not measure a field rate at all, and a failed `VideoSignal::isVideo()`
+was read as a reason to do nothing. A reading that is missing cannot refuse one
+that moved, so the line period now arms on its own there. The first arm comes
+at **4.37 s against 22.97 s**, as `rate` rather than as `contradicted count`,
+and it no longer waits on the bit. The healthy states are quiet because the
+test bus carries the formatter's vertical SIGNAL where the bit gates only its
+measurement register -- 120 s on separate sync, 90 s on composite, 90 s on the
+Wii at 720p over sync on green, no arm in any of them.
 `investigations/the-formatters-frame-is-gated-off-when-the-count-stops.md`
+
+### 640x512@50 on `vga` composite re-solves itself for ever once it is acquired
+
+The mode is now REACHED promptly, and it does not hold. Once the arriving
+source is solved the divider lands on **1424**, the sync processor's count is
+then contradicted at wildly scattered values, and the engine cycles arm ->
+re-measure -> re-solve indefinitely, `/geometry` flipping between `absent` and
+`acquired` while `cv` stays 534.
+
+Measured across two 100 s captures, one on each side of the arming change above
+-- so it is not the arm. The contradicted counts in one of them: 1032, 1063,
+305, 229, 1367, 1746, 458, 1594. **Every arm in the cycle reads the divider at
+1424, and every measurement that returns a usable count takes it at 1746 or
+2040**, which is the shape of a source being put at a divider its own sync
+processor cannot count it through. 1424 is what
+`VideoPath::dividerCeilingForLineFilter()` holds it down to; the mode has a
+clean full-screen picture with the filter off, one `/uc?m`.
+
+That reading is not settled against an earlier one taken on the same mode,
+where 1424 counted 530 in every sample and the state held acquired for 87 s --
+so what makes 1424 countable on one acquisition and not another is the open
+question, not the ceiling itself. The cycle also spends long runs in
+`measure: the reference clock measured nothing, trying the next`, which is the
+recovery ladder working on a source it cannot measure at either reference.
