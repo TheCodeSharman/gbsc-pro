@@ -4855,7 +4855,8 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
         }
         if (pendingSamplingMonitor) {
             pendingSamplingMonitor = false;
-            samplingLog.monitor(millis(), pendingSamplingA, pendingSamplingD);
+            samplingLog.monitor(millis(), pendingSamplingA, pendingSamplingD,
+                                pendingSamplingB != 0);
         }
         if (pendingSamplingSweep) {
             pendingSamplingSweep = false;
@@ -6085,6 +6086,7 @@ void startWebserver()
             pendingSamplingSweep = true;
         } else {
             pendingSamplingA = (uint16_t)number("ms", 5);
+            pendingSamplingB = (uint16_t)number("changes", 0);
             pendingSamplingD = number("for", 60000);
             pendingSamplingMonitor = true;
         }

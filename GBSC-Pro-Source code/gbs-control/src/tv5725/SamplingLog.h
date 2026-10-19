@@ -30,7 +30,13 @@ public:
     SamplingLog();
 
     // Log every `intervalMs` for `durationMs`, touching nothing.
-    void monitor(uint32_t nowMs, uint16_t intervalMs, uint32_t durationMs);
+    //
+    // `changesOnly` emits a row only where one moved. A fault showing once
+    // every hundred seconds cannot be sampled at the rate the link will
+    // carry -- at a row a sample the console delivers 138 a second and
+    // drops the rest -- so the interval decides how much of it is seen.
+    void monitor(uint32_t nowMs, uint16_t intervalMs, uint32_t durationMs,
+                 bool changesOnly = false);
 
     // Walk the divider, logging `dwellMs` at each step from the latch onward so
     // the settling is in the record. The divider held on entry goes back at the
@@ -80,6 +86,26 @@ public:
     // not fit is truncated for the comparison only, so two long names sharing a
     // prefix would read as one decision -- none do.
     static const uint8_t BranchNameMax = 24;
+
+    // The sample row, in the order the header names it. The comparison a
+    // change-triggered run makes skips SamplePlladLock and SampleHperiodIf,
+    // both of which move continuously on a state judged perfect; they stay
+    // in the row, so a line still carries its own context.
+    // docs/investigations/pllad-lock-is-a-duty-cycle-not-a-state.md,
+    // docs/investigations/hperiod-if-railing.md
+    enum SampleColumn : uint8_t {
+        SampleDivider,
+        SamplePlladLock,
+        SampleVtotal,
+        SampleHtotal,
+        SampleHlowLen,
+        SampleHperiodIf,
+        SampleVperiodIf,
+        SampleHsact,
+        SampleIfBits,
+        SampleIntStatus,
+        SampleFields
+    };
 
     // How many registers the solved output carries.
     static const uint8_t SolveFields = 22;
@@ -136,6 +162,13 @@ private:
     uint32_t durationMs_;
     uint32_t startedMs_, stepStartedMs_, lastSampleMs_;
     uint16_t remaining_;
+
+    static bool sampleMoved(const uint16_t taken[SampleFields],
+                            const uint16_t last[SampleFields]);
+
+    uint16_t sample_[SampleFields];
+    bool sampleValid_, changesOnly_;
+    uint32_t samples_;
 
     uint16_t solve_[SolveFields];
     uint32_t lastSolveMs_;

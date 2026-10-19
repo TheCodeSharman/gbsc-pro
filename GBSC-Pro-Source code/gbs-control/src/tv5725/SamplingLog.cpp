@@ -31,25 +31,31 @@ uint8_t ifStatusBits()
 
 // Short and fixed-width so a long capture stays readable and parses without a
 // schema. One line per sample; the leader is what a log filter greps for.
-void emitLine(uint32_t sinceMs, uint16_t divider)
+void readSample(uint16_t out[SamplingLog::SampleFields], uint16_t divider)
+{
+    out[SamplingLog::SampleDivider] = divider;
+    out[SamplingLog::SamplePlladLock] = GBS::STATUS_MISC_PLLAD_LOCK::read();
+    out[SamplingLog::SampleVtotal] = GBS::STATUS_SYNC_PROC_VTOTAL::read();
+    out[SamplingLog::SampleHtotal] = GBS::STATUS_SYNC_PROC_HTOTAL::read();
+    out[SamplingLog::SampleHlowLen] = GBS::STATUS_SYNC_PROC_HLOW_LEN::read();
+    out[SamplingLog::SampleHperiodIf] = GBS::HPERIOD_IF::read();
+    out[SamplingLog::SampleVperiodIf] = GBS::VPERIOD_IF::read();
+    out[SamplingLog::SampleHsact] = GBS::STATUS_SYNC_PROC_HSACT::read();
+    out[SamplingLog::SampleIfBits] = ifStatusBits();
+    // The whole latched interrupt byte, unacknowledged. RD-5725-1.1 documents
+    // s0_0F as one 8-bit block, and bit 3 is "input source switch the mode" --
+    // read by nothing in the firmware, and the one signal of a mode change that
+    // no divider colours.
+    out[SamplingLog::SampleIntStatus] = GBS::STATUS_0F::read();
+}
+
+void emitSample(uint32_t sinceMs, const uint16_t values[SamplingLog::SampleFields])
 {
     char line[96];
-    snprintf(line, sizeof(line), "smp,%lu,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u",
-             (unsigned long)sinceMs,
-             (unsigned)divider,
-             (unsigned)GBS::STATUS_MISC_PLLAD_LOCK::read(),
-             (unsigned)GBS::STATUS_SYNC_PROC_VTOTAL::read(),
-             (unsigned)GBS::STATUS_SYNC_PROC_HTOTAL::read(),
-             (unsigned)GBS::STATUS_SYNC_PROC_HLOW_LEN::read(),
-             (unsigned)GBS::HPERIOD_IF::read(),
-             (unsigned)GBS::VPERIOD_IF::read(),
-             (unsigned)GBS::STATUS_SYNC_PROC_HSACT::read(),
-             (unsigned)ifStatusBits(),
-             // The whole latched interrupt byte, unacknowledged. RD-5725-1.1
-             // documents s0_0F as one 8-bit block, and bit 3 is "input source
-             // switch the mode" -- read by nothing in the firmware, and the one
-             // signal of a mode change that no divider colours.
-             (unsigned)GBS::STATUS_0F::read());
+    int at = snprintf(line, sizeof(line), "smp,%lu", (unsigned long)sinceMs);
+    for (uint8_t i = 0;
+         i < SamplingLog::SampleFields && at > 0 && at < (int)sizeof(line); ++i)
+        at += snprintf(line + at, sizeof(line) - at, ",%u", (unsigned)values[i]);
     tv5725Log(line);
 }
 
@@ -127,6 +133,7 @@ SamplingLog::SamplingLog()
     : mode_(Idle), low_(0), high_(0), step_(0), dwellMs_(0), interval_(0),
       restoreDivider_(0), divider_(0), lineRateHz_(0), oversample_(1),
       durationMs_(0), startedMs_(0), stepStartedMs_(0), lastSampleMs_(0),
+      sampleValid_(false), changesOnly_(false), samples_(0),
       lastSolveMs_(0), solveValid_(false)
 {
     memset(solve_, 0, sizeof(solve_));
@@ -137,7 +144,7 @@ bool SamplingLog::active() const { return mode_ != Idle; }
 bool SamplingLog::sweeping() const { return mode_ == Sweeping; }
 
 void SamplingLog::monitor(uint32_t nowMs, uint16_t intervalMs,
-                          uint32_t durationMs)
+                          uint32_t durationMs, bool changesOnly)
 {
     mode_ = Monitoring;
     interval_ = intervalMs < 1 ? 1 : intervalMs;
@@ -147,6 +154,9 @@ void SamplingLog::monitor(uint32_t nowMs, uint16_t intervalMs,
     lastSampleMs_ = startedMs_ - interval_;
     durationMs_ = durationMs;
     solveValid_ = false;
+    sampleValid_ = false;
+    changesOnly_ = changesOnly;
+    samples_ = 0;
     tv5725Log("smp,header,ms,divider,pllad_lock,sp_vtotal,sp_htotal,"
               "hlow_len,hperiod_if,vperiod_if,hsact,ifbits,intstatus");
     tv5725Log("sol,header,ms,vds_hsync_rst,vds_vsync_rst,vds_hscale,vds_vscale,"
@@ -167,6 +177,9 @@ void SamplingLog::sweep(uint32_t nowMs, uint16_t low, uint16_t high,
         low = high;
 
     mode_ = Sweeping;
+    changesOnly_ = false;
+    samples_ = 0;
+    startedMs_ = nowMs;
     low_ = low;
     high_ = high;
     step_ = step;
@@ -185,6 +198,8 @@ void SamplingLog::rates(uint32_t nowMs, uint16_t count, bool useSyncProcessorBus
                         uint8_t pulses)
 {
     mode_ = Rating;
+    changesOnly_ = false;
+    samples_ = 0;
     remaining_ = count;
     interval_ = 0;
     startedMs_ = nowMs;
@@ -201,6 +216,8 @@ void SamplingLog::separator(uint32_t nowMs, uint8_t low, uint8_t high,
                             uint16_t reads)
 {
     mode_ = Separating;
+    changesOnly_ = false;
+    samples_ = 0;
     low_ = low;
     high_ = high > SyncOnGreen::LevelMax ? SyncOnGreen::LevelMax : high;
     readsPerLevel_ = reads < 1 ? 1 : (reads > 255 ? 255 : (uint8_t)reads);
@@ -225,11 +242,32 @@ void SamplingLog::applyStep(uint32_t nowMs)
     lastSampleMs_ = stepStartedMs_ - interval_;
 }
 
+bool SamplingLog::sampleMoved(const uint16_t taken[SampleFields],
+                              const uint16_t last[SampleFields])
+{
+    for (uint8_t i = 0; i < SampleFields; ++i) {
+        if (i == SamplePlladLock || i == SampleHperiodIf)
+            continue;
+        if (taken[i] != last[i])
+            return true;
+    }
+    return false;
+}
+
 void SamplingLog::emit(uint32_t nowMs)
 {
     lastSampleMs_ = nowMs;
-    emitLine(lastSampleMs_ - stepStartedMs_,
-             mode_ == Sweeping ? divider_ : (uint16_t)GBS::PLLAD_MD::read());
+
+    uint16_t taken[SampleFields];
+    readSample(taken,
+               mode_ == Sweeping ? divider_ : (uint16_t)GBS::PLLAD_MD::read());
+    ++samples_;
+    if (changesOnly_ && sampleValid_ && !sampleMoved(taken, sample_))
+        return;
+
+    memcpy(sample_, taken, sizeof(sample_));
+    sampleValid_ = true;
+    emitSample(lastSampleMs_ - stepStartedMs_, taken);
 }
 
 void SamplingLog::reportSolve(uint32_t nowMs)
@@ -264,7 +302,13 @@ void SamplingLog::finish(uint32_t nowMs)
         SyncOnGreen::putInForce();
     }
     mode_ = Idle;
-    tv5725Log("smp,done");
+
+    // The rate a run achieved is what every count taken from it is divided by,
+    // and a dropped line cannot be told from a sample never taken.
+    char line[48];
+    snprintf(line, sizeof(line), "smp,done,%lu,%lu",
+             (unsigned long)samples_, (unsigned long)(nowMs - startedMs_));
+    tv5725Log(line);
 }
 
 void SamplingLog::poll(uint32_t nowMs)

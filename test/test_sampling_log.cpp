@@ -361,3 +361,83 @@ TEST_CASE("an output sync start that moved is news, because it is a pan")
     CHECK(solveColumns() == "1915,1125,850,512,99,1501,20,620,62,62,4,8,1104,336,"
             "1897,8,1121,1,132,1105,117,181");
 }
+
+// The rows, with the leader and the timestamp taken off, newest last.
+static std::vector<std::string> sampleColumns()
+{
+    std::vector<std::string> out;
+    for (size_t i = 0; i < g_lines.size(); ++i) {
+        const std::string &line = g_lines[i];
+        if (line.rfind("smp,", 0) != 0 || line.rfind("smp,header", 0) == 0
+            || line == "smp,done")
+            continue;
+        out.push_back(line.substr(line.find(',', 4) + 1));
+    }
+    return out;
+}
+
+// A fault that shows once every hundred seconds cannot be sampled at the rate
+// the link will carry: at one row a sample the console delivers 138 a second
+// and a run of 600 s is 83000 lines, which is 25 times what a change-triggered
+// run emits for the same window -- so the interval, not the fault, is what
+// decides how much of it is seen.
+TEST_CASE("a run asked for changes only does not repeat a row that has not moved")
+{
+    sourceOnTheBus(2250);
+    SamplingLog log;
+
+    log.monitor(0, 10, 10000, true);
+    log.poll(10);
+    g_lines.clear();
+
+    driveMonitor(log, 20, 3000);
+
+    CHECK(sampleColumns().empty());
+}
+
+TEST_CASE("a count that moved is news")
+{
+    sourceOnTheBus(2250);
+    SamplingLog log;
+    log.monitor(0, 10, 10000, true);
+    log.poll(10);
+    g_lines.clear();
+
+    GBS::STATUS_SYNC_PROC_VTOTAL::write(120);
+    driveMonitor(log, 20, 3000);
+
+    CHECK(sampleColumns().size() == 1);
+}
+
+// Both are known to move continuously on a state judged perfect, so triggering
+// on either emits a row several times a second and buries the readings that do
+// mean something. They stay in the row: a line carries its own context.
+// docs/investigations/pllad-lock-is-a-duty-cycle-not-a-state.md,
+// docs/investigations/hperiod-if-railing.md
+TEST_CASE("the lock bit and the line period are reported but do not trigger a row")
+{
+    sourceOnTheBus(2250);
+    SamplingLog log;
+    log.monitor(0, 10, 10000, true);
+    log.poll(10);
+    g_lines.clear();
+
+    GBS::STATUS_MISC_PLLAD_LOCK::write(1);
+    GBS::HPERIOD_IF::write(500);
+    driveMonitor(log, 20, 3000);
+
+    CHECK(sampleColumns().empty());
+}
+
+// The rate a run achieved is what every count taken from it is divided by, and
+// a dropped line cannot be told from a sample never taken. The device counts
+// its own.
+TEST_CASE("a run says how many samples it took and over how long")
+{
+    sourceOnTheBus(2250);
+    SamplingLog log;
+    log.monitor(0, 10, 100, true);
+    driveMonitor(log, 10, 200);
+
+    CHECK(g_lastLine == "smp,done,9,100");
+}
