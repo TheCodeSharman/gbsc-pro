@@ -740,6 +740,37 @@ the engine's 0 is right, and that is the one new mechanism fact. The coast pair
 is not involved, so it is the sub-window rather than the window's length.
 `SP_L_DLT_REG` already reads 15, the value proposed for it.
 
+**AND NOTHING ABOVE 192 HELPS EITHER, SO THE THRESHOLD IS SETTLED IN BOTH
+DIRECTIONS.** Six interleaved 300 s legs per state on the emitted frame,
+108000 frames each: 112 reads 172.5 displaced per 300 s, **192 reads 9.0**, 512
+reads 16.7 and 1024 reads 8.7, with neither 512 nor 1024 separated from 192 on
+the leg-to-leg spread. At 2047 the source is lost outright --
+`STATUS_SYNC_PROC_VTOTAL` 114, divider 2040, `state: absent`, black capture,
+cleared by any lower value. **The engine's 192 is at the floor**; the cliff
+runs downwards only.
+
+**THE FRAME IS THE INSTRUMENT AT THE QUIET END, AND POISSON IS THE WRONG
+TEST.** A 300 s stability leg catches about as many events at 192 as a 900 s
+collapse leg, five times the rate per unit time. But the counts are
+overdispersed 2.2 to 2.9 leg to leg, so a Poisson sigma overstates every
+effect -- 512 reads 3.7 sigma worse pooled and t 1.3, not separated, on what
+its legs actually did. **Score a state on its legs, never on the square root of
+a pooled count**, and note this cuts against figures quoted here from before
+it was measured.
+
+**A SINGLE EMPTY LEG IS NOT A STATE, AND A LOUD STATE BELONGS IN EVERY ROUND.**
+Five 300 s legs returned zero tonight at 192, 512 and 1024 -- one of them the
+first 1024 leg, which pooled read as a fix. Without a state known to fire
+beside them, a run of small numbers cannot be told from an instrument that
+stopped seeing.
+
+**A HELD 48 DESTROYS THE LINK AND THE BOARD REPORTS NOTHING.** 18003 of 18003
+frames lost in one leg, 8704 lost and 9293 of the surviving 9300 displaced in
+the other, 3.83 jumps a second -- throughout which `state: acquired` and
+`STATUS_SYNC_PROC_VTOTAL` 308. The capture's frame loss tracks the fault
+independently: every frame at 48, 742 of 108024 at 112, none in eighteen legs
+at 192 and above.
+
 **SO A RATE IS PER POPULATION AND A COUNT OF READINGS UNDER 300 POOLS TWO
 FAULTS.** The two bands have different precursors too: pooled over both states,
 8 of 16 events below 240 are led by a pulse dropout and 1 of 18 at or above it.

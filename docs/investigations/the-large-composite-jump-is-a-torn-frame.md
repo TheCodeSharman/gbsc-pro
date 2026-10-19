@@ -422,6 +422,54 @@ than the window's length.
 
 `SP_L_DLT_REG` needs no leg -- it already reads 15, the value proposed for it.
 
+## The threshold is settled in both directions
+
+**NOTHING ABOVE 192 HELPS, AND 2047 LOSES THE SOURCE.** Six interleaved 300 s
+legs per state, 108000 frames each, read on the emitted frame:
+
+| held | displaced per 300 s | legs | against 192 |
+|---|---|---|---|
+| 112 | 172.5 | 183, 136, 157, 167, 171, 221 | worse, t 13.6 |
+| **192** | **9.0** | 13, 9, 0, 3, 8, 21 | the engine's own |
+| 512 | 16.7 | 33, 22, 9, 0, 12, 24 | not separated, t 1.3 |
+| 1024 | 8.7 | 0, 18, 3, 14, 17, 0 | not separated, t -0.1 |
+
+At 2047 the source is gone outright: `STATUS_SYNC_PROC_VTOTAL` 114, the divider
+fallen to 2040, `state: absent` and a black capture, recovered by any lower
+threshold. So the usable range has a hard ceiling below 2047, and inside it the
+engine's 192 is already at the floor -- the cliff is downwards only.
+
+**THE FRAME IS THE INSTRUMENT AT THE QUIET END.** A 300 s stability leg reads
+about 9 events at 192 where a 900 s collapse leg reads about 10, so the frame
+catches roughly five times the events per unit time, and it is what makes 192
+measurable at all.
+
+**THE COUNTS ARE OVERDISPERSED BY 2.2 TO 2.9, SO A POISSON SIGMA OVERSTATES
+EVERY EFFECT.** Judged on Poisson, 512 separates from 192 at 3.7 sigma and
+reads as a lever; judged on the leg-to-leg spread the same data give t 1.3 and
+no separation. The rate is regular over seconds and wanders over minutes --
+the collapse count is UNDER-dispersed binned at 90 s inside one leg, index
+0.71, and the frame count is OVER-dispersed leg to leg at 300 s -- which is one
+rate drifting on a timescale between the two. **Score a state on what its legs
+did, never on the square root of a pooled count.**
+
+**A SINGLE EMPTY LEG IS NOT A STATE.** Five 300 s legs returned zero events
+tonight, at 192, 512 and 1024, including one at 1024 in the first round where
+the pooled figure then read as a fix. **A state known to fire belongs in every
+round**: without 112 beside them, six rounds of small numbers cannot be told
+from an instrument that stopped seeing.
+
+**A HELD 48 DESTROYS THE LINK RATHER THAN MERELY TEARING THE PICTURE.** Two
+legs: 18003 of 18003 frames lost, and 8704 lost with 9293 of the surviving
+9300 displaced, at 3.83 jumps a second. The published 18 of 1802 came from
+legs the engine restored to 192 part way through. **The board reports none of
+it** -- `state: acquired` and `STATUS_SYNC_PROC_VTOTAL` 308 throughout.
+
+The capture's own frame loss follows the fault and is a second witness to it:
+every frame at 48, 742 of 108024 at 112, and **none at all in the eighteen legs
+at 192, 512 and 1024**. So does the jump rate -- 3.83 a second at 48, 0.44 at
+112, 0.02 at 192.
+
 The trailing edge is not the lever either: split by band it leaves the
 mid-picture population at 5.6 per 900 s against 5.8 and all its tenfold is the
 vertical-interval event. Starving the separator is not it, and the slicing
