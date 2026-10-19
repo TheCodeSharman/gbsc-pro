@@ -620,30 +620,55 @@ the other. The line-or-two roll is gone; what remains is the occasional
 100..250-row jump, and it appears only UNFROZEN where frozen post 4 reads 0 of
 6406 twice.
 
-**THE FRAME TIME LOCK IS REFUTED AS THE CANDIDATE, AND SO IS THE READ/WRITE
-CROSSOVER BEHIND IT.** Three 300 s legs of `picture_stability.py` on `vga` at
-320x256@50 into 1080p, unfrozen, plus a sync-type control:
+**WHAT IS LEFT IS NOT A JUMP AT ALL: THE FRAME IS TORN, AND THE SEPARATOR
+TRIGGERS IT.** Read down one, the tail of one capture, a band of black, and the
+head of the next, the picture leaning sideways through both halves and the
+frame before it whole and square. The band measures 234 and 233 output rows
+where the mode's 56 blanking lines scale to 234.6, so it is the part of the
+input frame during which the capture write produces nothing -- the playback
+read is on the far side of the write and emits black for as long as the write
+idles. A dongle straddling two HDMI frames delivers no band at all, so the
+band is in the emitted frame.
+
+**The trigger is the sync processor's count restarting mid-frame.**
+`Tv5725::SamplingLog` at 25 ms held against the capture on one clock, 600 s,
+22618 samples: 308 x21865, 309 x741, 310 x11, and **181, 106, 181 and 115 one
+each -- every reading below 300 within 0.25 s of a tear and none anywhere
+else**, where the seven tears cover 0.58% of the run. `SP_VTOTAL` is a live
+counter and a mid-count sample reads anything, so that share is what makes a
+collapsed reading evidence rather than an artefact. `VPERIOD_IF` holds 623
+throughout, the collapsed samples included: the field period does not move,
+only the count restarts.
+
+**AND THE FRAME TIME LOCK IS NOT INVOLVED.** Across every tear in two runs of
+600 s it reports `in 50080 mHz, out 50080 -> 50080 mHz` with the clock between
+107944888 and 107944920 and the phase error near 12270 -- no correction, no
+excursion. The earlier legs that refuted the target phase and the parked clock
+refuted the OUTPUT CLOCK's account of a crossing; a crossing a separator event
+opens is untouched by either.
 
 | state | displaced of ~19220 | worst | jumps/s |
 |---|---|---|---|
 | composite, `targetPhase` 90 | 27 | 210 rows | 0.05 |
 | composite, `targetPhase` 0 | 36 | 197 rows | 0.05 |
 | composite, clock parked (`observe=1`) | 13 | 193 rows | 0.02 |
-| composite, in the control run | 14 | -180 rows | 0.02 |
 | **separate sync** | **0** | **0** | **0.00** |
 
-Each one cuts a different way. The target phase is said to provoke and cure
-it, and 0 and 90 read the same. Parking the clock leaves the crossing all but
-stationary -- 13 ppm is one crossing per ~1280 s -- and the jumps continue.
-And **the lock cannot see the sync type**: both arrangements run the same
-output raster, the same display clock, the same target phase and the same
-loop, and only composite jumps, 0 of 19219 against 14 of 19220 in one run.
+**THE POST COAST IS RETIRED AS THE CAUSE.** 2 against 4, unfrozen through
+`/coast`, 300 s a leg alternating: post 2 reads 17, 12 and 17 of ~18003 and
+post 4 reads 33 and 9, so the spread within one value covers the difference
+between them.
 
-So it is composite-specific and belongs to the separator path after all. What
-is NOT thereby established is which part of that path, and the crossing may
-still be the trigger that something composite-specific decides the visibility
-of -- the capture is three lines short there, which
-`investigations/the-composite-roll-is-below-the-engine.md` leaves open.
+What is open is why the separator asserts vertical part way down the frame.
+The collapses land at 181, 106, 181 and 115 of 308, scattered rather than at
+one place. `SP_DLT_REG` holds 192 and is the threshold deciding how much
+broader than a line pulse something must be to read as vertical; below 0x70 a
+serrated source is miscounted and by 2048 the separator stops extracting
+vertical at all, so the range between is unwalked against this fault. **The
+rate is what makes that walk expensive** -- 3 and 7 tears per 600 s, and 300 s
+legs on one state reading 0, 8, 17 and 26 -- so an A/B scored on tears needs
+legs no session can afford, and whether a collapse can happen without tearing
+is untested. `investigations/the-large-composite-jump-is-a-torn-frame.md`.
 
 **THE COAST IS DERIVED NOW, AND WHAT IT ASKS IS NOT SERRATION.**
 `VideoPath::measureVerticalInterval()` takes the coast off and asks whether the

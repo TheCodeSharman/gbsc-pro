@@ -282,39 +282,16 @@ not it.
 
 ## What is open
 
-**The large jump is a different fault. IT IS NOT THE READ/WRITE CROSSOVER --
-that reading is REFUTED.** It was attributed to `FrameSync`'s target phase,
-which places where the read pointer crosses the write pointer, on a sweep
-where 0 and 90 degrees read 0 of ~7688 frames displaced against 7 and 10 at
-180 and 270. Re-measured at 300 s a leg, unfrozen, with a sync-type control:
+**The large jump is a different fault, and it is not a jump.** The frame is
+TORN -- the tail of one capture, a band of black measuring the mode's own
+vertical blanking, then the head of the next -- and the trigger is the sync
+processor's count restarting part way down the frame, which is this path. The
+frame time lock is flat through every one.
+`the-large-composite-jump-is-a-torn-frame.md`.
 
-| state | displaced of ~19220 | worst | jumps/s |
-|---|---|---|---|
-| composite, `targetPhase` 90 | 27 | 210 rows | 0.05 |
-| composite, `targetPhase` 0 | 36 | 197 rows | 0.05 |
-| composite, clock parked (`observe=1`) | 13 | 193 rows | 0.02 |
-| composite, in the control run | 14 | -180 rows | 0.02 |
-| **separate sync** | **0** | **0** | **0.00** |
-
-Three independent cuts, and the third is the one that settles it:
-
-- **The target phase does not provoke or cure it.** 0 and 90 read alike, where
-  the attribution needs one of them clean.
-- **Parking the clock does not stop it.** At the 13 ppm this bench reads the
-  pointers cross about once per 1280 s, so a 300 s leg admits at most one
-  crossing and carries six jump events.
-- **The lock cannot see the sync type.** Both arrangements run the same output
-  raster, the same display clock, the same target phase and the same loop, and
-  only composite jumps.
-
-The earlier sweep's clean readings were 128 s legs; at 0.05 jumps a second one
-of those holds about six events, so they were not a floor the rate could hide
-under. What changed between the two is not established.
-
-**So it is back on the separator path**, which is where the sub-line roll was.
-What is NOT established is which part: the crossing may still be the trigger,
-with something composite-specific deciding whether it shows -- the capture is
-three lines short there, `the-composite-roll-is-below-the-engine.md`.
+The target phase and the parked clock refuted the OUTPUT CLOCK's account of a
+read/write crossing, which is not the same as refuting the crossing: a
+crossing a separator event opens is untouched by either.
 
 The POST COAST is settled separately and is not this. Unfrozen on the shipped
 build two 100 s legs read 4 and 7 of ~6407, and four further 120 s legs on a
