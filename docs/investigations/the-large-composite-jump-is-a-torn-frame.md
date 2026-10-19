@@ -141,6 +141,13 @@ outside them. Read as four events it looks scattered and read as twenty it
 looks like two tight clusters; neither survives. What the bands are is open,
 and nothing about a window edge is implied by either.
 
+**A THIRD BAND EXISTS AND BELONGS TO A DIFFERENT FAULT.** A restart at 249..299
+is the vertical detected inside the source's 53 blanking lines, which begin at
+line 256, and it is 1 event of 43 on the engine's own configuration against 17
+of 23 on the chip's default edge reference. **So a count of readings under 300
+pools two faults**, and a rate compared between two states has to be split at
+240 first.
+
 ## A pulse dropout leads the collapse, and never follows it
 
 `STATUS_SYNC_PROC_HLOW_LEN` reads 153 of a 2200-sample line on this source,
@@ -201,55 +208,49 @@ nothing in the firmware acknowledges bits 4 to 7 on a settled source -- so
 do. The dropout is below the interrupt block's own notion of a change, so there
 is no lossless hardware count to score a walk on.
 
-## The separator's edge reference is the lever, and the fault is its residual
+## The edge reference adds a SECOND fault and does not touch this one
 
 Reverting the pair that closed the roll -- `SP_CS_P_SWAP` and
 `SP_HS2PLL_INV_REG`, which reference the LEADING edge of a negative-going
-composite sync -- to the chip's default multiplies both events. Interleaved
-120 s legs through `collapse_legs.py`, one state per leg in rotation, every leg
-`acquired` and every poke read back:
+composite sync -- to the chip's default multiplies the count collapse about
+tenfold. **It is the wrong tenfold.** Split by where the count restarts:
 
-| round | collapses, 1/1 | collapses, 0/0 | dropouts, 1/1 | dropouts, 0/0 |
-|---|---|---|---|---|
-| 1 | 1 | 3 | 2 | 20 |
-| 2 | 0 | 1 | 6 | 15 |
-| 3 | 0 | 2 | 9 | 13 |
+| state | restart < 240 | restart >= 240 |
+|---|---|---|
+| the engine's own pair, 6538 s | 42, **5.8 per 900 s** | 1, 0.1 per 900 s |
+| the chip's default, 958 s | 6, **5.6 per 900 s** | 17, **16.0 per 900 s** |
 
-The dropout rises in all three rounds -- 48 against 17 over 360 s a side, which
-binomial puts at 3.9 sigma -- and the collapse rises with it. Over every
-verified leg of both runs, **16 collapses in 600 s of the trailing edge against
-2 in 840 s of the leading edge**, which is a rate of 24 against 2.1 per 900 s
-and 4.1 sigma.
+**The population this investigation is about is unchanged**, 5.8 against 5.6
+per 900 s across 42 events and 6, while a population that barely exists on the
+leading edge rises by a factor of 160. So the edge reference creates a
+different event rather than amplifying this one, and the eleven-fold figure a
+pooled count gives is the sum of two faults.
 
-**So the leading edge is not only the roll's fix. It is most of this one too,
-and what is left on it is the residual of the same mechanism** -- which is why
-every register walked against the collapse separately moved nothing.
+**THE TWO POPULATIONS ARE THE BANDS, AND THEY HAVE DIFFERENT PRECURSORS.** The
+source's 53 blanking lines begin at line 256, so a restart at 249..299 is the
+vertical detected inside the interval -- a few lines early -- where the bands
+at 106..121 and 170..181 are a vertical arriving 130 to 200 lines early, mid
+picture. The dropout separates them too: pooled over both states, **8 of 16
+events below 240 are led by a pulse dropout and 1 of 18 at or above it**.
 
-**The restarts move into the vertical interval.** On the trailing edge they
-land at 185 to 299 of 308 -- 13 of 17 in one run at or past line 256, where the
-source's 53 blanking lines begin -- against the leading edge's bands of
-106..121 and 170..181. A vertical detected nine lines early is not evidently
-the same event as one detected 190 lines early, so a candidate cleared in the
-loud state is not thereby cleared in the quiet one.
+So the leading edge earns its place twice over, and the trailing edge is not an
+assay for this fault. **What it is an assay for is the vertical-interval
+event**, which on the leading edge is too rare to study and is not what tears
+the picture here.
 
-**The third bit the vendor writes is cleared in it.** `SP_HS_PROC_INV_REG` 1
-added to the trailing edge, three interleaved 120 s rounds: **7 collapses in
-360 s without it against 4 with**, and 25 dropouts against 33. Nothing
-separates, so the decimator invert does no work on this fault either -- which
-is the first candidate the assay has retired.
-
-**THE LOUD STATE IS THE ASSAY THE FAULT NEEDED.** At eleven times the rate a
-120 s leg expects three collapses where the engine's own state expects 0.9, so
-a candidate that moves the loud state threefold is measurable in one pair --
-and the dropout, at 2.8 times, is measurable in a single leg.
+**A RATE IS PER POPULATION, NOT PER EVENT CLASS, AND THAT IS HOW THIS WAS
+MIS-READ.** `collapse_legs.py` counts every reading under 300 as one fault,
+which is the right default for finding a lever and the wrong one for believing
+it: the restart value was printed beside the count throughout and the pooled
+figure was quoted anyway. **Split by restart band before comparing two states.**
 
 **AND A POKE THAT IS NOT READ BACK IS NOT A STATE.** Two legs of the first
 repeat were silently controls: `/coast?clear` is queued for `loop()` and the
 re-solve behind it runs `applyForSyncType()`, which rewrites the edge reference
-and the pulse ignore, so a poke written before the clear landed was undone. The
-legs read 1 and 0 collapses and said nothing, which is a clean refutation of a
-real lever. `collapse_legs.py` waits the coast request out, then pokes, then
-verifies, and prints every watched field for every leg.
+and the pulse ignore, so a poke written before that landed was undone. The legs
+read 1 and 0 collapses and said nothing. `collapse_legs.py` waits the coast
+request out, then pokes, then verifies, and prints every watched field for
+every leg.
 
 ## The slicing level is NOT the lever, and a block of legs is why it looked like one
 
@@ -308,31 +309,37 @@ for every source.
 
 ## What is open
 
-**THE SPREAD IS COUNTING NOISE, NOT A STATE THAT WANDERS, AND THAT IS WHAT
-MAKES A LEG DESIGN POSSIBLE.** Binned at 90 s over the six long captures the
-collapse is **under-dispersed -- 60 bins, mean 0.65, variance 0.46, index of
-dispersion 0.71** -- and no bin holds more than 2, so within a run the events
-are if anything more regular than Poisson. The per-900 s counts 9, 10, 9, 3, 1,
-6 and 8 have a dispersion of 1.52 on seven runs, which chi-square does not
-separate from 1. So the 1-to-10 range is the square root of a rate near 6.6 and
-not evidence of a condition coming and going.
+**WITHIN A SESSION THE RATE IS STEADY; BETWEEN SESSIONS IT MOVES.** Binned at
+90 s over the six long captures of one session the collapse is
+**under-dispersed -- 60 bins, mean 0.65, variance 0.46, index of dispersion
+0.71** -- and no bin holds more than 2, so the events are if anything more
+regular than Poisson and the 1-to-10 per 900 s range is the square root of a
+rate near 6. Nor does the rate ramp after a re-solve: across 31 events the
+quarters of a 120 s leg hold 11, 7, 7 and 6 against a flat 7.8, so a short leg
+is not biased by the one that set it up.
 
-What follows is arithmetic rather than a counsel of despair:
+**But the next session's controls read 1 event below 240 in 959 s where that
+rate predicts 6.2**, which Poisson puts at p 0.014. So the rate between
+sessions moves by about threefold and the within-session regularity licenses
+nothing across one.
+
+What follows is the leg arithmetic, and it holds only inside a session:
 
 | effect sought | legs of 900 s per arm |
 |---|---|
-| threefold | one pair, at 2.6 sigma |
+| threefold | one pair |
 | twofold | three pairs |
-| a state twenty times worse | a single 90 s leg, which expects 0.65 and would hold 13 |
+| a state ten times worse | a single 120 s leg |
 
-**So screen for a large effect in short legs; do not measure a small one.**
-Legs must still be INTERLEAVED with controls, because a rate read in one
-session against a control read in another compares two sessions.
+**So screen for a large effect in short legs, do not measure a small one, and
+interleave** -- a rate read in one session against a control read in another
+compares two sessions.
 
-**The frequent state exists now**, and it is the trailing edge: eleven times
-the collapse and 2.8 times the dropout, which is what makes a candidate
-screenable in a 120 s pair. Starving the separator is not it, and the slicing
-level is not it.
+**A STATE WHERE THIS FAULT IS FREQUENT IS STILL NOT FOUND.** The trailing edge
+looked like one and is not: split by restart band it leaves the sub-240
+population at 5.6 per 900 s against 5.8, and all of its tenfold is a
+vertical-interval event this investigation is not about. Starving the separator
+is not it and the slicing level is not it either.
 
 **What drops the pulse.** `STATUS_SYNC_PROC_HLOW_LEN` reading near zero leads
 the collapse by a median 14 ms and never follows it, which is the one link

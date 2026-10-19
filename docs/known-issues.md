@@ -683,27 +683,31 @@ of four steps below the first clean level was built and reverted with it --
 the Wii holds acquired at every level down to 6 and the roll reads 0 of 1202
 either way, so it was safe and bought nothing.
 
-**THE SEPARATOR'S EDGE REFERENCE IS THE LEVER, AND THE FAULT IS ITS RESIDUAL.**
+**THE EDGE REFERENCE ADDS A SECOND FAULT AND DOES NOT TOUCH THIS ONE.**
 Reverting `SP_CS_P_SWAP` and `SP_HS2PLL_INV_REG` -- the pair that closed the
 roll by referencing the LEADING edge of a negative-going composite sync -- to
-the chip's default gives **16 collapses in 600 s against 2 in 840 s**, 24
-against 2.1 per 900 s at 4.1 sigma, and the dropout rises with it, 48 against
-17 over 360 s a side across three interleaved rounds. So the leading edge is
-most of this fix too, and what remains on it is the same mechanism at a lower
-rate -- which is why every register walked against the collapse separately
-moved nothing. The restarts move into the vertical interval with it, 185..299
-of 308 against the leading edge's 106..121 and 170..181, so the loud state is
-an assay rather than a copy of the quiet one. **The pair is already in force,
-so the lever is spent as a fix and what it buys is a state where a candidate is
-screenable in a 120 s pair.**
+the chip's default multiplies a pooled count of readings under 300 about
+tenfold, and **it is the wrong tenfold**. Split at the restart value, the
+population this fault is made of is unchanged -- **42 events at 5.8 per 900 s
+on the engine's own pair against 6 at 5.6 on the chip's default** -- while a
+restart at 249..299, the vertical detected inside the source's 53 blanking
+lines, goes from 1 event in 6538 s to 17 in 958. So the trailing edge creates a
+different event and is not an assay for this one, which also means
+`SP_HS_PROC_INV_REG` 1, cleared there at 7 collapses against 4, is cleared of
+that event and not of this.
 
-**AND THE SPREAD IS COUNTING NOISE RATHER THAN A STATE THAT WANDERS.** Binned
-at 90 s the collapse is under-dispersed -- 60 bins, mean 0.65, index of
-dispersion 0.71, no bin above 2 -- and the per-900 s counts 9, 10, 9, 3, 1, 6
-and 8 do not separate from one rate near 6.6. So a threefold effect is one
-900 s pair at 2.6 sigma and a twofold effect is three, and legs must still be
-interleaved because a rate read in one session against a control read in
-another compares two sessions.
+**SO A RATE IS PER POPULATION AND A COUNT OF READINGS UNDER 300 POOLS TWO
+FAULTS.** The two bands have different precursors too: pooled over both states,
+8 of 16 events below 240 are led by a pulse dropout and 1 of 18 at or above it.
+**Split at 240 before comparing two states.**
+
+**AND WITHIN A SESSION THE RATE IS STEADY WHILE BETWEEN SESSIONS IT MOVES.**
+Binned at 90 s the collapse is under-dispersed -- 60 bins, mean 0.65, index of
+dispersion 0.71, no bin above 2 -- and it does not ramp after a re-solve, the
+quarters of a 120 s leg holding 11, 7, 7 and 6 across 31 events. But the next
+session's controls read 1 sub-240 event in 959 s where that rate predicts 6.2,
+p 0.014, so the rate moves about threefold between sessions and legs are
+comparable only inside one.
 
 **A POKE THAT IS NOT READ BACK IS NOT A STATE.** `/coast?clear` is queued for
 `loop()` and the re-solve behind it runs `applyForSyncType()`, which rewrites
