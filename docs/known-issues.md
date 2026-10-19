@@ -742,6 +742,20 @@ here. It is the one lead with a direction, not a result. The coast pair is not
 involved either way: 0/2 against 7/2 moves nothing.
 `SP_L_DLT_REG` already reads 15, the value proposed for it.
 
+**AND EVERY ENGINE DEFAULT TESTED IS ALREADY THE BETTER VALUE.** Four
+interleaved 300 s legs per state on the frame at a held 112, each poke read
+back at both ends: `SP_H_TOTAL_EQ_THD` 8 reads 303.8 displaced per 300 s
+against a control of 199.0, **worse at t 5.3** with every leg above every
+control leg, so the engine's 3 is a measured value and not an arbitrary one;
+`SP_HS_LOOP_SEL` 1 reads 200.2, t 0.1, nothing.
+
+**`SP_H_COAST` CANNOT BE SCREENED BY POKING.** `applyForSearch()` writes it 0,
+and at a held 112 the engine re-enters searching often enough to take the poke
+back inside every leg -- 1 before and 0 after, four times out of four, with
+counts ranging 236 to 682 that are not states. **It needs the override
+`SP_DLT_REG` has.** A leg scored without the readback at the far end would have
+published the 682 as a threefold lever.
+
 **AND NOTHING ABOVE 192 HELPS EITHER, SO THE THRESHOLD IS SETTLED IN BOTH
 DIRECTIONS.** Six interleaved 300 s legs per state on the emitted frame,
 108000 frames each: 112 reads 172.5 displaced per 300 s, **192 reads 9.0**, 512

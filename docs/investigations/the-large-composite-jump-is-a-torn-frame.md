@@ -430,6 +430,27 @@ rate the bench source does not run.
 
 `SP_L_DLT_REG` needs no leg -- it already reads 15, the value proposed for it.
 
+## Every engine default tested is already the better value
+
+Four interleaved 300 s legs per state on the frame at a held 112, each poke
+read back at BOTH ends of its leg:
+
+| state | legs | mean | against the control |
+|---|---|---|---|
+| control | 214, 168, 202, 212 | 199.0 | -- |
+| `SP_H_TOTAL_EQ_THD` 8 | 349, 309, 276, 281 | 303.8 | **worse, t 5.3** |
+| `SP_HS_LOOP_SEL` 1 | 221, 181, 198, 201 | 200.2 | not separated, t 0.1 |
+
+So `SP_H_TOTAL_EQ_THD` 3 is not an arbitrary default: raising it to 8 makes the
+fault half again as frequent, every leg above every control leg.
+
+**`SP_H_COAST` CANNOT BE SCREENED BY POKING, AND FOUR LEGS PROVE IT.**
+`applyForSearch()` writes it 0, and at a held 112 the engine re-enters
+searching often enough to take the poke back inside every leg -- read 1 before
+and 0 after, four times out of four. Its counts ranged 236 to 682 and none of
+them is a state. **It needs the override `SP_DLT_REG` has**, not a poke; a leg
+scored without the readback at the far end would have published the 682.
+
 ## The threshold is settled in both directions
 
 **NOTHING ABOVE 192 HELPS, AND 2047 LOSES THE SOURCE.** Six interleaved 300 s
