@@ -128,17 +128,17 @@ decimating one 301/s run in software, its six collapses read as six at 22 ms,
 a tear per collapse predicts. A leg scored on collapses still costs 30 minutes
 for one point.
 
-## Where the count restarts is two places, not scattered
+## Where the count restarts is two places, with one event outside them
 
-Pooled over 20 events on this one state, the value the count restarts at:
+Pooled over 28 events on this one state, the value the count restarts at:
 
-| 106 | 115 | 120 | 180 | 181 |
-|---|---|---|---|---|
-| 2 | 2 | 6 | 4 | 6 |
+| 106 | 107 | 115 | 120 | 180 | 181 | 270 |
+|---|---|---|---|---|---|---|
+| 3 | 1 | 3 | 7 | 5 | 8 | 1 |
 
-**Two clusters, 106..120 and 180..181**, and nothing between or outside them.
-The earlier reading of four values as scattered through the frame was four
-events.
+**Two clusters, 106..120 and 180..181, hold 27 of the 28.** The earlier reading
+of four values as scattered through the frame was four events; the single 270
+is what stops the clusters being read as the only two places available.
 
 ## A pulse dropout leads the collapse, and never follows it
 
@@ -178,28 +178,54 @@ nothing in the firmware acknowledges bits 4 to 7 on a settled source -- so
 do. The dropout is below the interrupt block's own notion of a change, so there
 is no lossless hardware count to score a walk on.
 
+## The slicing level is not the lever
+
+`ADC_SOGCTRL` 14 against the engine's 12, 900 s a leg, unfrozen with the level
+read back at the end and the source acquired throughout:
+
+| level | collapses | dropouts | collapses per 1000 samples |
+|---|---|---|---|
+| 12 | 10 | 28 | 0.037 |
+| 14 | 8 | 38 | 0.030 |
+
+Both differences are inside the Poisson spread of the counts themselves --
+10 +/- 3.2 against 8 +/- 2.8, 28 +/- 5.3 against 38 +/- 6.2 -- and the dropouts
+read HIGHER at the wider slice. One step is not a walk, but "too low misses
+real pulses" does not describe the gap between 12 and 14 on this source.
+
 ## What is open
 
 **What drops the pulse.** The separator emitting nothing for a line is the
-measured precursor; what makes it do so is not established. The slicing level
-is the untried candidate -- `ADC_SOGCTRL` holds 12, and a slicer cutting near
-the signal's edge drops pulses and inserts them, which is what a reading of
-zero beside a steady 153 looks like. `SP_H_PULSE_IGNOR` is ruled out above.
+measured precursor; what makes it do so is not established, and the slicing
+level does not move it.
 
-**Why a dropped pulse restarts the VERTICAL count.** `VPERIOD_IF` reads 623 in
-every sample of every run, so the input formatter's vertical measurement is
-untouched while the sync processor's count restarts: the two vertical
-extractors disagree across the event. Nothing else in the row moves --
-`STATUS_SYNC_PROC_HTOTAL` 2200, `HLOW_LEN` back at 153, `HSACT` 1, the IF
-status bits 67 -- so the line and the field period are both intact at the
-moment the count restarts.
+**Why a dropped pulse restarts the VERTICAL count, and why the chip's own
+validation does not reject it.** `VPERIOD_IF` reads 623 in every sample of
+every run, so the input formatter's vertical measurement is untouched while the
+sync processor's count restarts: the two vertical extractors disagree across
+the event. Nothing else in the row moves -- `STATUS_SYNC_PROC_HTOTAL` 2200,
+`HLOW_LEN` back at 153, `HSACT` 1, the IF status bits 67 -- so the line and the
+field period are both intact at the moment the count restarts.
 
-**And four collapses in ten carry no caught dropout**, while five dropouts in
-ten carry no collapse. A dropout is held for one sample only, so neither is a
+**The vertical validation layer is the untouched candidate, and its values are
+the question.** `SP_VT_DLT_REG` is "V total different threshold" and holds 47;
+a vertical arriving at line 120 of 309 is 189 lines out, four times that
+threshold, so either the register does not gate the counter the capture
+follows or it does not do what its name says. `SP_V_PRD_EQ_THD` is "how many
+continuous legal v sync as valid" and holds 2, `SP_VSYNC_TGL_THD` holds 3 and
+`SP_V_TIMER_VAL` 6. Requiring more consecutive agreeing verticals is the
+defence a single spurious one would answer to, and none of the four has been
+walked against this fault.
+
+**Four collapses in ten carry no caught dropout**, while five dropouts in ten
+carry no collapse. A dropout is held for one sample only, so neither is a
 measurement of necessity or of sufficiency -- both sides are partially
-detected, and closing that needs a count the sampling cannot miss.
+detected, and closing that needs a count the sampling cannot miss. No latched
+interrupt supplies one.
 
-`SP_DLT_REG` and the vertical-detection thresholds (`SP_SDCS_VSST_REG_L`,
-`SP_VSYNC_TGL_THD`, `SP_V_PRD_EQ_THD`, `SP_VT_DLT_REG`) are still unwalked
-against this fault, and at one collapse every 90 s a leg scored on collapses
-buys one point per half hour.
+**THE RATE IS WHAT BLOCKS EVERY CANDIDATE, AND FINDING A STATE WHERE THE FAULT
+IS FREQUENT IS WORTH MORE THAN THE NEXT CANDIDATE.** At one collapse every 90 s
+a leg buys one point per quarter hour and the within-state spread covers the
+effect being asked about -- the level legs above are the worked example. The
+roll was only separable once `SP_PRE_COAST` 0 was found to make it twenty times
+worse; nothing comparable is known for the tear.
