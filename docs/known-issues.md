@@ -696,6 +696,17 @@ different event and is not an assay for this one, which also means
 `SP_HS_PROC_INV_REG` 1, cleared there at 7 collapses against 4, is cleared of
 that event and not of this.
 
+**THE FREQUENT STATE IS `SP_DLT_REG` 48.** The separator's own sync pulse width
+difference threshold, which the engine writes 192, is a twentyfold lever on the
+mid-picture population downwards -- 187 per 900 s against 10 -- and
+`picture_stability.py` confirms it reaches the frame: **18 of 1802 frames
+displaced at 48, worst 258 rows, against 0 of 1802 at 192** back to back on one
+acquisition. 512 is not a fix, 2 events in 360 s against 4. **But
+`followDynamicFacts()` takes the poke back within a leg** -- at 48 the
+searching answer moves and `applySeparationThresholds()` restores 192 -- so the
+assay needs `PulseWidthDifference` moved in the firmware rather than poked, and
+the restart distribution broadens to 98..275 so it may be a superset.
+
 **SO A RATE IS PER POPULATION AND A COUNT OF READINGS UNDER 300 POOLS TWO
 FAULTS.** The two bands have different precursors too: pooled over both states,
 8 of 16 events below 240 are led by a pulse dropout and 1 of 18 at or above it.

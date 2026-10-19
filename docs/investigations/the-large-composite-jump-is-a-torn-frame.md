@@ -252,6 +252,41 @@ read 1 and 0 collapses and said nothing. `collapse_legs.py` waits the coast
 request out, then pokes, then verifies, and prints every watched field for
 every leg.
 
+## The separator's width threshold is the lever, downwards
+
+`SP_DLT_REG` is the one register RD-5725-1.1 labels **sync separation
+control** -- the sync pulse width difference threshold -- and the engine writes
+192. Interleaved 120 s legs on the engine's own configuration, counting only
+the mid-picture population:
+
+| `SP_DLT_REG` | mid picture | in blanking | dropouts |
+|---|---|---|---|
+| 48 | **25, 2, in 120 s each** | 5, 1 | 10, 2 |
+| 192, the engine's | 2, 1, 1 | 0, 0, 0 | 7, 5, 5 |
+| 512 | 0, 1, 1 | 0, 0, 0 | 4, 8, 6 |
+
+**48 is a twentyfold lever on the fault's own population** -- 187 per 900 s on
+the leg that held it against 10 at 192 -- and **512 is not a fix**, 2 events in
+360 s against 4 where Poisson separates nothing.
+
+**AND THE PICTURE AGREES, WHICH IS WHAT MAKES IT THE FAULT RATHER THAN A
+NEIGHBOUR.** `picture_stability.py` over 30 s, back to back on one acquisition:
+**18 of 1802 frames displaced at 48, worst 258 rows, against 0 of 1802 at
+192.** So the register events at 48 reach the emitted frame with the tear's own
+signature, and the 258 rows is the 234-row blanking band the mechanism
+predicts.
+
+**THE ENGINE TAKES THE POKE BACK, WHICH IS WHY ONE LEG READ 25 AND ANOTHER 2.**
+`followDynamicFacts()` re-runs `applySeparationThresholds()` whenever the
+searching or csync answer moves, and at 48 the separator is bad enough that it
+does -- the register read 192 again by the end of every leg that was poked to
+48, the 30 s clip included. So 48 is self-limiting as a poke: **the constant
+has to move in the firmware for it to be a stable assay.**
+
+**The restart distribution broadens with it**, 98..275 spread evenly against
+the two tight bands at 192, so 48 may be a superset rather than more of the
+same. A candidate screened there still needs confirming at 192.
+
 ## The slicing level is NOT the lever, and a block of legs is why it looked like one
 
 `ADC_SOGCTRL` across nine legs on one source, every leg unfrozen with the level
@@ -335,11 +370,13 @@ What follows is the leg arithmetic, and it holds only inside a session:
 interleave** -- a rate read in one session against a control read in another
 compares two sessions.
 
-**A STATE WHERE THIS FAULT IS FREQUENT IS STILL NOT FOUND.** The trailing edge
-looked like one and is not: split by restart band it leaves the sub-240
-population at 5.6 per 900 s against 5.8, and all of its tenfold is a
-vertical-interval event this investigation is not about. Starving the separator
-is not it and the slicing level is not it either.
+**THE FREQUENT STATE IS `SP_DLT_REG` 48**, twentyfold on the mid-picture
+population and 18 torn frames of 1802 against 0 -- but the engine takes the
+poke back within a leg, so **the next step is moving `PulseWidthDifference` in
+the firmware and measuring there**. The trailing edge is not it: split by band
+it leaves the mid-picture population at 5.6 per 900 s against 5.8 and all its
+tenfold is the vertical-interval event. Starving the separator is not it, and
+the slicing level is not it.
 
 **What drops the pulse.** `STATUS_SYNC_PROC_HLOW_LEN` reading near zero leads
 the collapse by a median 14 ms and never follows it, which is the one link
