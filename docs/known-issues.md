@@ -683,12 +683,34 @@ of four steps below the first clean level was built and reverted with it --
 the Wii holds acquired at every level down to 6 and the roll reads 0 of 1202
 either way, so it was safe and bought nothing.
 
-**SO THE SPREAD, NOT THE RATE ALONE, IS THE BLOCKER.** One collapse every 90 to
-150 s with a within-state spread of 0 to 10 per 900 s means a 900 s leg cannot
-resolve anything smaller than the fault itself, and legs must be interleaved
-with controls whatever else changes. What is needed is a state where the fault
-is frequent -- the roll only became separable once `SP_PRE_COAST` 0 was found
-to make it twenty times worse -- and starving the separator is not it.
+**THE SEPARATOR'S EDGE REFERENCE IS THE LEVER, AND THE FAULT IS ITS RESIDUAL.**
+Reverting `SP_CS_P_SWAP` and `SP_HS2PLL_INV_REG` -- the pair that closed the
+roll by referencing the LEADING edge of a negative-going composite sync -- to
+the chip's default gives **16 collapses in 600 s against 2 in 840 s**, 24
+against 2.1 per 900 s at 4.1 sigma, and the dropout rises with it, 48 against
+17 over 360 s a side across three interleaved rounds. So the leading edge is
+most of this fix too, and what remains on it is the same mechanism at a lower
+rate -- which is why every register walked against the collapse separately
+moved nothing. The restarts move into the vertical interval with it, 185..299
+of 308 against the leading edge's 106..121 and 170..181, so the loud state is
+an assay rather than a copy of the quiet one. **The pair is already in force,
+so the lever is spent as a fix and what it buys is a state where a candidate is
+screenable in a 120 s pair.**
+
+**AND THE SPREAD IS COUNTING NOISE RATHER THAN A STATE THAT WANDERS.** Binned
+at 90 s the collapse is under-dispersed -- 60 bins, mean 0.65, index of
+dispersion 0.71, no bin above 2 -- and the per-900 s counts 9, 10, 9, 3, 1, 6
+and 8 do not separate from one rate near 6.6. So a threefold effect is one
+900 s pair at 2.6 sigma and a twofold effect is three, and legs must still be
+interleaved because a rate read in one session against a control read in
+another compares two sessions.
+
+**A POKE THAT IS NOT READ BACK IS NOT A STATE.** `/coast?clear` is queued for
+`loop()` and the re-solve behind it runs `applyForSyncType()`, which rewrites
+the edge reference and the pulse ignore -- so two legs poked before that landed
+were silently controls, read 1 and 0 collapses, and refuted a real lever.
+`collapse_legs.py` waits the coast out, pokes, verifies, and prints every
+watched field per leg.
 
 **And the count restarts in TWO places rather than scattered.** Pooled over 20
 events: 106 twice, 115 twice, 120 six times, 180 four times, 181 six times,
@@ -704,8 +726,12 @@ at 43 ms and one at 58 ms. So the earlier counts were missing two thirds, and
 the true rate is still the same order as the 3 and 7 tears per 600 s -- a leg
 scored on collapses buys one point per half hour. `STATUS_0F` reads 0 in all
 270837 samples with every source unmasked, so there is no lossless hardware
-count to score a walk on either. `SP_DLT_REG` 192 and the vertical-detection
-thresholds remain unwalked against this fault.
+count to score a walk on either. `SP_DLT_REG` 192 remains unwalked against this
+fault; **the vertical-detection thresholds are retired**, RD-5725-1.1 labelling
+the whole family V ACTIVE DETECT control, which decides
+`STATUS_SYNC_PROC_VSACT` rather than the V total the capture follows -- and
+that bit reads 0 on this path while the count reads 308 and the picture is
+correct.
 `tools/gbsc-pro-hwtest/sync_dropouts.py`,
 `investigations/the-large-composite-jump-is-a-torn-frame.md`.
 

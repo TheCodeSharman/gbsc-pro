@@ -159,8 +159,30 @@ one. Over 900 s, 10 collapses and 28 readings under 30:
 
 **The asymmetry is the argument.** A dropout covers 0.06% of the run and leads
 six collapses of ten; none follows one, so it is not a consequence of the tear.
-The lead times are **9, 13, 13, 16, 17 and 17 ms** against a 19.97 ms field, so
-the dropout falls inside the field before the count restarts.
+
+**The lead is 14 ms, pooled over 25 events from eight captures** -- 23 of them
+between 9 and 19 ms with a standard deviation of 3.45, and two at 34 -- against
+a 19.97 ms field. So the dropout falls inside the field before the count
+restarts, and does so at a tighter spacing than a field.
+
+## Refuted: the dropout falls in the vertical interval
+
+The restart value says how far into the field the count restarted, `restart /
+308` of 19.97 ms, so subtracting it from the lead gives where the dropout fell
+relative to that field's real vertical. That phase concentrates -- 16 of 25
+between 1 and 6 ms before the vertical, where a uniform dropout would put 6.3
+there -- and the two restart bands then read as a dropout in or just before the
+53 blanking lines.
+
+**It does not survive the comparison that matters.** Over the 23 events under
+25 ms the phase has a standard deviation of **3.17 ms against the lead's
+3.45**, so it is no tighter an account than the lead alone, and the
+concentration is the lead's own spread arriving through the arithmetic. The
+lead grows with the restart position by **+1.8 ms where a fixed phase predicts
++3.8**, which is half. So the data cannot say whether the dropout is anchored to
+the field's vertical or to the restart, and **a mechanism resting on the dropout
+falling in the vertical interval has no support**, the two restart bands
+notwithstanding.
 
 **It is the pulse GOING, not narrowing.** The band 30..60 holds 57 events and
 leads nothing, and 100..150 holds 275 and leads nothing -- which also rules out
@@ -178,6 +200,50 @@ nothing in the firmware acknowledges bits 4 to 7 on a settled source -- so
 `STATUS_INT_INP_HSYNC`, `_VSYNC` and `_CSYNC` would hold a 1 once set and never
 do. The dropout is below the interrupt block's own notion of a change, so there
 is no lossless hardware count to score a walk on.
+
+## The separator's edge reference is the lever, and the fault is its residual
+
+Reverting the pair that closed the roll -- `SP_CS_P_SWAP` and
+`SP_HS2PLL_INV_REG`, which reference the LEADING edge of a negative-going
+composite sync -- to the chip's default multiplies both events. Interleaved
+120 s legs through `collapse_legs.py`, one state per leg in rotation, every leg
+`acquired` and every poke read back:
+
+| round | collapses, 1/1 | collapses, 0/0 | dropouts, 1/1 | dropouts, 0/0 |
+|---|---|---|---|---|
+| 1 | 1 | 3 | 2 | 20 |
+| 2 | 0 | 1 | 6 | 15 |
+| 3 | 0 | 2 | 9 | 13 |
+
+The dropout rises in all three rounds -- 48 against 17 over 360 s a side, which
+binomial puts at 3.9 sigma -- and the collapse rises with it. Over every
+verified leg of both runs, **16 collapses in 600 s of the trailing edge against
+2 in 840 s of the leading edge**, which is a rate of 24 against 2.1 per 900 s
+and 4.1 sigma.
+
+**So the leading edge is not only the roll's fix. It is most of this one too,
+and what is left on it is the residual of the same mechanism** -- which is why
+every register walked against the collapse separately moved nothing.
+
+**The restarts move into the vertical interval.** On the trailing edge they
+land at 185 to 299 of 308 -- 13 of 17 in one run at or past line 256, where the
+source's 53 blanking lines begin -- against the leading edge's bands of
+106..121 and 170..181. A vertical detected nine lines early is not evidently
+the same event as one detected 190 lines early, so a candidate cleared in the
+loud state is not thereby cleared in the quiet one.
+
+**THE LOUD STATE IS THE ASSAY THE FAULT NEEDED.** At eleven times the rate a
+120 s leg expects three collapses where the engine's own state expects 0.9, so
+a candidate that moves the loud state threefold is measurable in one pair --
+and the dropout, at 2.8 times, is measurable in a single leg.
+
+**AND A POKE THAT IS NOT READ BACK IS NOT A STATE.** Two legs of the first
+repeat were silently controls: `/coast?clear` is queued for `loop()` and the
+re-solve behind it runs `applyForSyncType()`, which rewrites the edge reference
+and the pulse ignore, so a poke written before the clear landed was undone. The
+legs read 1 and 0 collapses and said nothing, which is a clean refutation of a
+real lever. `collapse_legs.py` waits the coast request out, then pokes, then
+verifies, and prints every watched field for every leg.
 
 ## The slicing level is NOT the lever, and a block of legs is why it looked like one
 
@@ -236,20 +302,43 @@ for every source.
 
 ## What is open
 
-**THE RATE AND THE SPREAD TOGETHER ARE THE BLOCKER, AND NO CANDIDATE CAN BE
-TESTED UNTIL ONE OF THEM MOVES.** One collapse every 90 to 150 s with a
-within-state spread of 0 to 10 per 900 s means a 900 s leg cannot resolve
-anything smaller than the fault itself. **Legs must be INTERLEAVED with
-controls**, whatever else changes.
+**THE SPREAD IS COUNTING NOISE, NOT A STATE THAT WANDERS, AND THAT IS WHAT
+MAKES A LEG DESIGN POSSIBLE.** Binned at 90 s over the six long captures the
+collapse is **under-dispersed -- 60 bins, mean 0.65, variance 0.46, index of
+dispersion 0.71** -- and no bin holds more than 2, so within a run the events
+are if anything more regular than Poisson. The per-900 s counts 9, 10, 9, 3, 1,
+6 and 8 have a dispersion of 1.52 on seven runs, which chi-square does not
+separate from 1. So the 1-to-10 range is the square root of a rate near 6.6 and
+not evidence of a condition coming and going.
 
-**What is still needed is a state where the fault is frequent, and starving the
-separator is not it.** The roll only became separable once `SP_PRE_COAST` 0 was
-found to make it twenty times worse. Nothing comparable is known here.
+What follows is arithmetic rather than a counsel of despair:
+
+| effect sought | legs of 900 s per arm |
+|---|---|
+| threefold | one pair, at 2.6 sigma |
+| twofold | three pairs |
+| a state twenty times worse | a single 90 s leg, which expects 0.65 and would hold 13 |
+
+**So screen for a large effect in short legs; do not measure a small one.**
+Legs must still be INTERLEAVED with controls, because a rate read in one
+session against a control read in another compares two sessions.
+
+**The frequent state exists now**, and it is the trailing edge: eleven times
+the collapse and 2.8 times the dropout, which is what makes a candidate
+screenable in a 120 s pair. Starving the separator is not it, and the slicing
+level is not it.
 
 **What drops the pulse.** `STATUS_SYNC_PROC_HLOW_LEN` reading near zero leads
-the collapse by 9 to 17 ms and never follows it, which is the one link
-established. Dropouts run 38 to 67 per 900 s across every level, so the level
-does not move them either.
+the collapse by a median 14 ms and never follows it, which is the one link
+established. Dropouts run 19.5 to 67 per 900 s across the eight captures, so
+the level does not move them either.
+
+**THE DROPOUT IS THE CHEAPER INSTRUMENT AND IT IS STILL NOT A CHEAP ONE.** It
+is five times more frequent than the collapse, which is what makes a short leg
+worth taking at all -- but its own within-state spread is **28 against 63 per
+900 s at one level**, two and a half times, where Poisson on either figure is
+under eight. So it resolves a tenfold change and not a twofold one, and the
+interleaving rule binds on it exactly as it does on the collapse.
 
 **Why a dropped pulse restarts the VERTICAL count.** `VPERIOD_IF` reads 623 in
 every sample of every run, so the input formatter's vertical measurement is
@@ -258,13 +347,32 @@ extractors disagree across the event. Nothing else in the row moves --
 `STATUS_SYNC_PROC_HTOTAL` 2200, `HLOW_LEN` back at 153, `HSACT` 1, the IF
 status bits 67.
 
-**The vertical-detection registers are still unwalked**, and at this rate
-walking them is not yet affordable: `SP_VT_DLT_REG` 47, `SP_V_PRD_EQ_THD` 2,
-`SP_VSYNC_TGL_THD` 3, `SP_V_TIMER_VAL` 6. A vertical arriving at line 120 of
-309 is 189 lines out, four times `SP_VT_DLT_REG`, so either that register does
-not gate the counter the capture follows or it does not do what its name says.
+**The vertical-detection registers do not gate the count, and are retired.**
+RD-5725-1.1 labels `SP_VSYNC_TGL_THD` (s5_2d), `SP_SYNC_WIDTH_DTHD` (s5_2e),
+`SP_V_PRD_EQ_THD` (s5_2f), `SP_VT_DLT_REG` (s5_31), `SP_VSIN_INV_REG` (s5_32)
+and `SP_V_TIMER_VAL` (s5_34) all **V active detect control**, mirroring an H
+family -- `SP_SYNC_TGL_THD`, `SP_L_DLT_REG`, `SP_T_DLT_REG`, `SP_SYNC_PD_THD`,
+`SP_PRD_EQ_THD`, `SP_H_TIMER_VAL` -- labelled H active detect control. What the
+two families decide is `SYNC_PROC_STATUS_[1]` and `[3]`, the HS and VS active
+bits; the V total the capture follows is a different field,
+`SYNC_PROC_STATUS_[50:40]`, and nothing in the datasheet connects the family to
+it.
+
+**The bench settles which of the two readings holds.** On the csync path
+`STATUS_SYNC_PROC_VSACT` reads 0 while `STATUS_SYNC_PROC_VTOTAL` reads 308 and
+the picture is correct, so the block never declares V active on this path and
+the counter follows the source regardless. `SP_VT_DLT_REG` 47 against a
+vertical arriving 189 lines early is therefore no contradiction: the register
+gates a declaration this path does not make.
 
 **Neither link is measured as necessary or sufficient.** Roughly half the
 collapses carry no caught dropout and half the dropouts carry no collapse, and
 a dropout is held for one sample only, so both sides are partially detected. No
 latched interrupt supplies a count the sampling cannot miss.
+
+**What the edge reference leaves open is why either event survives it.** The
+pair is already in force, so the lever is spent as a fix; what it buys is the
+assay. The residual's restarts sit at 106..121 and 170..181 where the loud
+state's sit in the vertical interval, so whether the two are one mechanism at
+two depths or two mechanisms is not settled, and a candidate screened loud
+needs confirming quiet.
