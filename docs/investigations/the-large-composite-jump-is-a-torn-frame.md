@@ -370,13 +370,62 @@ What follows is the leg arithmetic, and it holds only inside a session:
 interleave** -- a rate read in one session against a control read in another
 compares two sessions.
 
-**THE FREQUENT STATE IS `SP_DLT_REG` 48**, twentyfold on the mid-picture
-population and 18 torn frames of 1802 against 0 -- but the engine takes the
-poke back within a leg, so **the next step is moving `PulseWidthDifference` in
-the firmware and measuring there**. The trailing edge is not it: split by band
-it leaves the mid-picture population at 5.6 per 900 s against 5.8 and all its
-tenfold is the vertical-interval event. Starving the separator is not it, and
-the slicing level is not it.
+**THE FREQUENT STATE IS A HELD `SP_DLT_REG`, AND THE LEVER IS A CLIFF BETWEEN
+80 AND 144.** Held by the engine rather than poked -- `/sepwidth?dlt=`, since
+`applySeparationThresholds()` restored 192 part way through every poked leg --
+one round of 60 s legs reads:
+
+| `SP_DLT_REG` | mid picture /900 s | in blanking /900 s | samples/s |
+|---|---|---|---|
+| 48 | 2367, and 2174 and 2280 in a second run | 749 | 81 |
+| 80 | 2010 | 555 | 134 |
+| 112 | 360 | 135 | 236 |
+| 144 | 60 | 15 | 293 |
+| 176 | 0 | 0 | 284 |
+| 192 | 0, and 0 and 0 | 0 | 295 |
+
+**The published 187 per 900 s at 48 was an eighth of the truth**, because the
+poke survived about that share of each leg. The threshold is also the first
+thing measured to move BOTH populations: the trailing edge moved only the
+vertical-interval one, where this moves them together and in step.
+
+**48 IS TOO LOUD TO SCREEN AT.** The sampling log's own effective rate falls
+from about 295 samples/s to 81, and `PLLAD_MD` and `SP_H_PULSE_IGNOR` move
+within a leg -- so the engine is cycling its whole solve, and a candidate that
+merely steadied the solve would score as a fix. **112 is the assay**: 24 events
+in a 60 s leg against an expected 0.7 at 192, the sampler back to 236
+samples/s, and the divider still.
+
+**AND NOTHING ELSE MOVES IT DOWNWARDS.** Four candidates screened at the assay
+in interleaved 60 s legs, two rounds, every poke read back at both ends:
+
+| state at `dlt:112` | mid-picture events | |
+|---|---|---|
+| control | 30, 17, and 24 from the sweep | |
+| `SP_JITTER_SYNC` 1 | 15, 21 | clear |
+| `coast:0/2` | 25, 19 | clear |
+| `SP_H_PROTECT` 0 | 17, 26 | clear |
+| `SP_DIS_SUB_COAST` 1 | 72, 43 | **2.4x worse** |
+
+**THE CONTROL'S OWN SPREAD AT 112 IS 17 TO 30, AND THAT IS WHAT CLEARS THREE OF
+THEM.** Each of `SP_JITTER_SYNC` and `SP_H_PROTECT` halved the count in its
+first leg -- 15 and 17 against a control of 30 -- and each came back inside the
+control's range in its second. A single leg against a single control would have
+published both as levers.
+
+**The sub coast is PROTECTIVE, which is the one new mechanism fact.** Disabling
+it is the only change measured to move the fault at all, both legs above every
+other leg in the run, so the engine's `SP_DIS_SUB_COAST` 0 is right and the
+coast's sub-window is part of what suppresses the event. The coast pair itself
+is not: 0/2 against 7/2 moves nothing, so what matters is the sub coast rather
+than the window's length.
+
+`SP_L_DLT_REG` needs no leg -- it already reads 15, the value proposed for it.
+
+The trailing edge is not the lever either: split by band it leaves the
+mid-picture population at 5.6 per 900 s against 5.8 and all its tenfold is the
+vertical-interval event. Starving the separator is not it, and the slicing
+level is not it.
 
 **What drops the pulse.** `STATUS_SYNC_PROC_HLOW_LEN` reading near zero leads
 the collapse by a median 14 ms and never follows it, which is the one link

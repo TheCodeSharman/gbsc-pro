@@ -696,16 +696,49 @@ different event and is not an assay for this one, which also means
 `SP_HS_PROC_INV_REG` 1, cleared there at 7 collapses against 4, is cleared of
 that event and not of this.
 
-**THE FREQUENT STATE IS `SP_DLT_REG` 48.** The separator's own sync pulse width
-difference threshold, which the engine writes 192, is a twentyfold lever on the
-mid-picture population downwards -- 187 per 900 s against 10 -- and
-`picture_stability.py` confirms it reaches the frame: **18 of 1802 frames
-displaced at 48, worst 258 rows, against 0 of 1802 at 192** back to back on one
-acquisition. 512 is not a fix, 2 events in 360 s against 4. **But
-`followDynamicFacts()` takes the poke back within a leg** -- at 48 the
-searching answer moves and `applySeparationThresholds()` restores 192 -- so the
-assay needs `PulseWidthDifference` moved in the firmware rather than poked, and
-the restart distribution broadens to 98..275 so it may be a superset.
+**THE ASSAY IS A HELD `SP_DLT_REG`, AND THE LEVER IS A CLIFF BETWEEN 80 AND
+144.** The separator's own sync pulse width difference threshold, which the
+engine writes 192, moves the fault downwards and nothing else measured moves it
+at all. **It has to be HELD rather than poked** --
+`applySeparationThresholds()` re-runs whenever the searching or csync answer
+moves and restored 192 part way through every poked leg -- so `/sepwidth?dlt=`
+is what applies it, and the 187 per 900 s published from poked legs was about
+an eighth of the truth. One round of 60 s legs, every leg read back at the
+register:
+
+| `SP_DLT_REG` | mid picture /900 s | in blanking /900 s | samples/s |
+|---|---|---|---|
+| 48 | 2367, and 2174 and 2280 in a second run | 749 | 81 |
+| 80 | 2010 | 555 | 134 |
+| 112 | 360 | 135 | 236 |
+| 144 | 60 | 15 | 293 |
+| 176 | 0 | 0 | 284 |
+| 192 | 0, and 0 and 0 | 0 | 295 |
+
+`picture_stability.py` confirms it reaches the frame at 48, back to back on one
+acquisition: **18 of 1802 frames displaced, worst 258 rows, against 0 of
+1802 at 192** -- and that was the poked 48, so a held one is worse. 512 is not a
+fix, 2 events in 360 s against 4.
+
+**SCREEN AT 112, NOT AT 48.** At 48 the sampling log's own effective rate falls
+to 81 samples/s from about 295 and `PLLAD_MD` moves within a leg, so the engine
+is cycling its whole solve and a candidate that merely steadied it would score
+as a fix. 112 holds 24 events in a 60 s leg against an expected 0.7 at 192,
+with the sampler at 236 and the divider still. The restart distribution
+broadens to 97..297 at 48 against the two tight bands at 192, so a candidate
+screened loud still needs confirming at 192.
+
+**SCREENED AT 112, NOTHING MOVES IT DOWNWARDS AND THE SUB COAST MOVES IT UP.**
+Two rounds of interleaved 60 s legs, every poke read back at both ends:
+`SP_JITTER_SYNC` 1 reads 15 and 21, `coast:0/2` 25 and 19, `SP_H_PROTECT` 0 17
+and 26, against a control of 30 and 17. **The control's own spread at 112 is 17
+to 30**, which is what clears the first and third -- each halved its first leg
+and came back inside the control's range in its second, so a single leg against
+a single control would have published two levers. `SP_DIS_SUB_COAST` 1 reads
+**72 and 43**, above every other leg in the run: the sub coast is protective,
+the engine's 0 is right, and that is the one new mechanism fact. The coast pair
+is not involved, so it is the sub-window rather than the window's length.
+`SP_L_DLT_REG` already reads 15, the value proposed for it.
 
 **SO A RATE IS PER POPULATION AND A COUNT OF READINGS UNDER 300 POOLS TWO
 FAULTS.** The two bands have different precursors too: pooled over both states,
