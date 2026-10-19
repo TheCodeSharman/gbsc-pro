@@ -15,10 +15,16 @@ a confident wrong answer -- `ADC_SOGCTRL` was published as an elevenfold lever
 on exactly that error. This walks the states in rotation and prints every leg,
 and prints no pooled figure at all.
 
-Each leg reports the count collapse and the separator's pulse dropout, which is
-five times more frequent and so the cheaper of the two to score -- but its own
-within-state spread is 28 against 63 per 900 s, so it resolves a tenfold change
-and not a twofold one.
+Each leg reports the collapse SPLIT BY WHERE THE COUNT RESTARTED, because the
+two bands are two faults and a pooled count reads a lever on one as a lever on
+the other. It reports the separator's pulse dropout beside them, which is five
+times more frequent and so the cheaper to score -- but its own within-state
+spread is 28 against 63 per 900 s, so it resolves a tenfold change and not a
+twofold one.
+
+**LEGS ARE COMPARABLE ONLY INSIDE ONE SESSION.** Within a session the rate is
+steady and does not ramp after a re-solve; between sessions it moves about
+threefold.
 
 A state is `default`, `coast:PRE/POST`, or a comma-separated `NAME=VALUE` list
 written by name. The coast goes through `/coast` because that survives the
@@ -46,11 +52,20 @@ from sync_dropouts import COLLAPSE_BELOW, DROPOUT_BELOW       # noqa: E402
 from sync_dropouts import HLOW, VTOTAL, capture, events, rows_of  # noqa: E402
 
 WATCHED = ["SP_PRE_COAST", "SP_POST_COAST", "SP_CS_P_SWAP", "SP_HS2PLL_INV_REG",
-           "SP_DLT_REG", "SP_H_PULSE_IGNOR", "ADC_SOGCTRL", "SP_CS_CLP_ST",
-           "PLLAD_MD"]
+           "SP_DLT_REG", "SP_JITTER_SYNC", "SP_H_PULSE_IGNOR", "ADC_SOGCTRL",
+           "SP_CS_CLP_ST", "PLLAD_MD"]
 
 # The coast reaches the chip from loop(), and the engine re-solves behind it.
 SETTLE_S = 8.0
+
+# THE RESTART VALUE SPLITS TWO FAULTS AND A POOLED COUNT HIDES IT. A restart at
+# or past this is the vertical detected inside the source's vertical blanking,
+# a few lines early; below it the vertical arrives mid picture, 130 to 200 lines
+# early, and only that one tears the bench source. Reverting the separator's
+# edge reference multiplies the first by 160 and leaves the second alone, which
+# a count of every reading under 300 reads as a tenfold lever on the fault.
+# docs/investigations/the-large-composite-jump-is-a-torn-frame.md
+IN_BLANKING_FROM = 240
 
 
 def ask(host, path):
@@ -110,9 +125,12 @@ def leg(host, state, seconds, out, resting):
     secs = span / 1000.0
     collapses = events([r for r in rows if r[VTOTAL] < COLLAPSE_BELOW])
     dropouts = events([r for r in rows if r[HLOW] < DROPOUT_BELOW])
+    mid = [c for c in collapses if c[0][VTOTAL] < IN_BLANKING_FROM]
+    blanking = [c for c in collapses if c[0][VTOTAL] >= IN_BLANKING_FROM]
     print(f"  {state:34s} {acquired:9s}"
           f"  {secs:4.0f} s  {samples/secs:4.0f} samples/s"
-          f"   collapses {len(collapses):3d} ({900*len(collapses)/secs:5.1f}/900s)"
+          f"   mid picture {len(mid):3d} ({900*len(mid)/secs:5.1f}/900s)"
+          f"   in blanking {len(blanking):3d} ({900*len(blanking)/secs:5.1f}/900s)"
           f"   dropouts {len(dropouts):4d} ({900*len(dropouts)/secs:5.1f}/900s)")
 
     # EVERY WATCHED FIELD, EVERY LEG. A leg that only says whether a field MOVED
