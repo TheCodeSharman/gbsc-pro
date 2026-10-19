@@ -136,10 +136,10 @@ Pooled over 32 events on this source, the value the count restarts at:
 |---|---|---|---|---|---|---|---|---|
 | 4 | 1 | 3 | 7 | 1 | 2 | 5 | 8 | 1 |
 
-**Two bands, 106..120 and 170..181, hold 30 of the 32**, with single events at
-132 and 270 outside them. Read as four events it looks scattered and read as
-twenty it looks like two tight clusters; neither survives thirty-two. What the
-bands are is open, and nothing about a window edge is implied by either.
+**Two bands, 106..121 and 170..181**, with single events at 132 and 270
+outside them. Read as four events it looks scattered and read as twenty it
+looks like two tight clusters; neither survives. What the bands are is open,
+and nothing about a window edge is implied by either.
 
 ## A pulse dropout leads the collapse, and never follows it
 
@@ -179,83 +179,92 @@ nothing in the firmware acknowledges bits 4 to 7 on a settled source -- so
 do. The dropout is below the interrupt block's own notion of a change, so there
 is no lossless hardware count to score a walk on.
 
-## The slicing level is the lever, and it does not act through the dropout
+## The slicing level is NOT the lever, and a block of legs is why it looked like one
 
-`ADC_SOGCTRL` walked against the collapse, every leg unfrozen with the level
-read back at the end and the source `acquired` with `cv` 624 throughout:
+`ADC_SOGCTRL` across nine legs on one source, every leg unfrozen with the level
+read back and the source `acquired` with `cv` 624 throughout:
 
-| level | measured | collapses | per 900 s | dropouts per 900 s |
+| level | how it was set | leg | collapses | per 900 s |
 |---|---|---|---|---|
-| 14 | 900 s | 8 | 8.0 | 38 |
-| **12**, the engine's choice | 2400 s | **19** | **7.1** | 46 |
-| 10 | 180 s | 0 | 0 | 20 |
-| 8 | 1080 s | 1 | 0.8 | 38 |
-| 6 | 180 s | 0 | 0 | 40 |
+| 14 | poked | 900 s | 8 | 8.0 |
+| 12, the engine's own | in force | 900 s | 10 | 10.0 |
+| 12 | in force | 600 s | 6 | 9.0 |
+| 12 | in force | 900 s | 3 | 3.0 |
+| 10 | poked | 180 s | 0 | 0 |
+| 8 | poked | 1080 s | 1 | 0.8 |
+| 6 | poked | 180 s | 0 | 0 |
+| 9 | in force | 900 s | 9 | 9.0 |
+| 8 | poked | 900 s | 6 | 6.0 |
 
-**The three levels below 12 carry one collapse in 1440 s against the control's
-19 in 2400 s** -- about an eleven-fold reduction, and against the control rate
-eleven were expected where one appeared. It is not zero.
+**The count runs 0 to 10 per 900 s with no relation to the level.** The same
+value 8, set the same way on the same source, reads 1 in one 900 s leg and 6 in
+another.
 
-**The comparison has to be pooled, because one pair of legs cannot carry it.**
-Level 12 read 10, 9 and 3 collapses per 900 s across three legs on one state,
-which is wider than the Poisson spread of those counts and is the same
-extra-Poisson variance a 300 s leg shows as 0, 8, 17 and 26. A single leg
-against a single control separates nothing here.
+**WHAT MADE IT LOOK LIKE A LEVER WAS A BLOCK OF CONSECUTIVE LEGS.** The four
+quiet legs at 6, 8 and 10 ran one after another and were scored against
+controls taken before and after the block rather than between, which read as an
+elevenfold reduction. Interleaving kills it: level 9 in force reads 9, and a
+poked 8 immediately after reads 6.
 
-**And the level does not act through the dropout.** Dropouts read 38 per 900 s
-at level 8 against 46 at 12 and 38 at 14 -- flat across the whole walk, while
-collapses fall elevenfold. So the pulse going missing is a precursor the level
-leaves alone, and what the level moves is downstream of it, in the vertical
-extraction.
+**So one leg is not a measurement at this rate, and 900 s is not enough.** The
+within-state spread covers the whole range any candidate could move, which is
+the measured form of a 300 s leg reading 0, 8, 17 and 26 on one state. **A
+pooled comparison of non-interleaved legs is worse than no comparison**,
+because it produces a confident wrong answer.
 
-## Why the engine chose the level it did
+**It also kills the one hypothesis that survived the level.** A poked level
+leaves the engine's held level alone, so `putInForce()` never relatches the
+sampling phases or the ADC PLL -- which would have separated the quiet poked
+legs from the noisy in-force ones. The interleaved poked leg reads 6, so it
+does not.
+
+## Why the engine chooses the level it does
 
 `SyncOnGreen::acquire()` walks the chosen level DOWN from the level the input
 needs -- `DefaultLevel` 13, `ComponentLevel` 14 -- and stops at the first one
-where the sync processor holds clean edges over a run. **So it stops at the
-marginal level by construction**, and the run it scores is milliseconds long
-where this fault appears once every two minutes. A level that produces a
-spurious mid-frame vertical twice a minute holds clean edges for the whole of
-that run and the walk stops there.
+where the sync processor holds clean edges over a run, so **it stops at the
+marginal level by construction** and the run it scores is milliseconds long.
+That remains true of the walk and is no longer a candidate explanation for this
+fault.
+
+A margin of four steps below the first clean level was built and reverted. It
+lands the bench source on 9 instead of 12, the Wii on `ypbpr` holds acquired at
+every level down to 6 with `STATUS_SYNC_PROC_HTOTAL` matching `PLLAD_MD`, and
+the roll reads 0 of 1202 frames displaced at both levels -- but the collapse
+reads 9 per 900 s at 9, so the change bought nothing while altering acquisition
+for every source.
 
 ## What is open
 
-**Whether a margin below the first clean level is the fix.** The walk stopping
-at the marginal level is the mechanism, and continuing it a few steps past the
-first clean one is the change that follows -- but it must not starve a weaker
-source. Sync on green is weaker than a dedicated sync line, which is why
-`ComponentLevel` starts a step above `DefaultLevel`, so the Wii on `ypbpr` is
-the gate on any such change and nothing has measured how far below 14 it holds.
+**THE RATE AND THE SPREAD TOGETHER ARE THE BLOCKER, AND NO CANDIDATE CAN BE
+TESTED UNTIL ONE OF THEM MOVES.** One collapse every 90 to 150 s with a
+within-state spread of 0 to 10 per 900 s means a 900 s leg cannot resolve
+anything smaller than the fault itself. **Legs must be INTERLEAVED with
+controls**, whatever else changes.
 
-**How the level reaches the vertical extraction.** Dropouts are flat across the
-walk while collapses fall elevenfold, so the level is not acting on the
-separator's horizontal output. What in the vertical path the slice width
-changes is not established, and the four vertical-detection registers remain
-unwalked: `SP_VT_DLT_REG` 47, `SP_V_PRD_EQ_THD` 2, `SP_VSYNC_TGL_THD` 3,
-`SP_V_TIMER_VAL` 6. A vertical arriving at line 120 of 309 is 189 lines out,
-four times `SP_VT_DLT_REG`, so either that register does not gate the counter
-the capture follows or it does not do what its name says.
+**What is still needed is a state where the fault is frequent, and starving the
+separator is not it.** The roll only became separable once `SP_PRE_COAST` 0 was
+found to make it twenty times worse. Nothing comparable is known here.
 
-**What the two bands are.** 106..120 and 170..181 hold 30 of 32 restarts, and
-nothing is known about why those positions.
+**What drops the pulse.** `STATUS_SYNC_PROC_HLOW_LEN` reading near zero leads
+the collapse by 9 to 17 ms and never follows it, which is the one link
+established. Dropouts run 38 to 67 per 900 s across every level, so the level
+does not move them either.
 
-**Why a dropped pulse restarts the VERTICAL count at all.** `VPERIOD_IF` reads
-623 in every sample of every run, so the input formatter's vertical measurement
-is untouched while the sync processor's count restarts: the two vertical
+**Why a dropped pulse restarts the VERTICAL count.** `VPERIOD_IF` reads 623 in
+every sample of every run, so the input formatter's vertical measurement is
+untouched while the sync processor's count restarts: the two vertical
 extractors disagree across the event. Nothing else in the row moves --
 `STATUS_SYNC_PROC_HTOTAL` 2200, `HLOW_LEN` back at 153, `HSACT` 1, the IF
-status bits 67 -- so the line and the field period are both intact at the
-moment the count restarts.
+status bits 67.
 
-**Neither link is measured as necessary or sufficient.** Four collapses in ten
-carry no caught dropout and five dropouts in ten carry no collapse, and a
-dropout is held for one sample only, so both sides are partially detected. No
+**The vertical-detection registers are still unwalked**, and at this rate
+walking them is not yet affordable: `SP_VT_DLT_REG` 47, `SP_V_PRD_EQ_THD` 2,
+`SP_VSYNC_TGL_THD` 3, `SP_V_TIMER_VAL` 6. A vertical arriving at line 120 of
+309 is 189 lines out, four times `SP_VT_DLT_REG`, so either that register does
+not gate the counter the capture follows or it does not do what its name says.
+
+**Neither link is measured as necessary or sufficient.** Roughly half the
+collapses carry no caught dropout and half the dropouts carry no collapse, and
+a dropout is held for one sample only, so both sides are partially detected. No
 latched interrupt supplies a count the sampling cannot miss.
-
-**THE RATE IS WHAT COSTS, AND POOLING IS THE ONLY ANSWER FOUND SO FAR.** At one
-collapse every two minutes a leg buys one point per quarter hour, the
-within-state spread covers an effect of less than about 3x, and no state is
-known where the fault is frequent -- the roll only became separable once
-`SP_PRE_COAST` 0 was found to make it twenty times worse. Starving the
-separator was the candidate for that and does the opposite: it makes the fault
-RARER, which is why it is a lever rather than a measurement aid.

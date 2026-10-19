@@ -669,19 +669,26 @@ GOING, not narrowing** -- the bands 30..60 and 100..150 hold 57 and 275 events
 and lead nothing, which also rules out `SP_H_PULSE_IGNOR`, 61 here, as the
 boundary being crossed. `VPERIOD_IF` reads 623 throughout, so the formatter's
 vertical measurement is untouched while the sync processor's count restarts.
-**THE SLICING LEVEL IS AN ELEVENFOLD LEVER AND IT DOES NOT ACT THROUGH THE
-DROPOUT.** `ADC_SOGCTRL` below the engine's 12 carries one collapse in 1440 s
-against 19 in 2400 s at 12, with dropouts flat across the whole walk -- 38 per
-900 s at 8 against 46 at 12 and 38 at 14 -- so what the level moves is
-downstream of the pulse, in the vertical extraction. `SyncOnGreen::acquire()`
-walks the level DOWN from the input's and stops at the first level holding
-clean edges over a run of milliseconds, so **it stops at the marginal level by
-construction** and a fault appearing twice a minute cannot reach that run. A
-margin below the first clean level is the candidate fix, and the Wii on `ypbpr`
-is the gate on it -- sync on green is weaker than a dedicated sync line, which
-is why `ComponentLevel` starts above `DefaultLevel`, and how far below 14 it
-holds is unmeasured. **The comparison must be pooled**: level 12 read 10, 9 and
-3 per 900 s on one state, wider than those counts' Poisson spread.
+**THE SLICING LEVEL IS NOT A LEVER, AND A BLOCK OF CONSECUTIVE LEGS IS WHY IT
+LOOKED LIKE ONE.** `ADC_SOGCTRL` across nine legs at five levels gives 0 to 10
+collapses per 900 s with **no relation to the level** -- the same value 8, set
+the same way on the same source, reads 1 in one 900 s leg and 6 in another, and
+the engine's own choice walked down to 9 reads 9. The four quiet legs at 6, 8
+and 10 ran one after another and were scored against controls taken outside the
+block, which read as an elevenfold reduction until interleaving destroyed it.
+**A POOLED COMPARISON OF NON-INTERLEAVED LEGS IS WORSE THAN NO COMPARISON**,
+because it produces a confident wrong answer; the elevenfold claim was
+published on exactly that error and is withdrawn. A `SyncOnGreen::CleanMargin`
+of four steps below the first clean level was built and reverted with it --
+the Wii holds acquired at every level down to 6 and the roll reads 0 of 1202
+either way, so it was safe and bought nothing.
+
+**SO THE SPREAD, NOT THE RATE ALONE, IS THE BLOCKER.** One collapse every 90 to
+150 s with a within-state spread of 0 to 10 per 900 s means a 900 s leg cannot
+resolve anything smaller than the fault itself, and legs must be interleaved
+with controls whatever else changes. What is needed is a state where the fault
+is frequent -- the roll only became separable once `SP_PRE_COAST` 0 was found
+to make it twenty times worse -- and starving the separator is not it.
 
 **And the count restarts in TWO places rather than scattered.** Pooled over 20
 events: 106 twice, 115 twice, 120 six times, 180 four times, 181 six times,
