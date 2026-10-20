@@ -194,6 +194,20 @@ The only thing that changed between the last run to carry an event and the
 first to carry none is an OTA flash, which resets the ESP and re-runs
 detection. Nothing establishes that as the cause.
 
+**BUT THE ENGINE'S OWN MEASUREMENT OF THE SOURCE MOVED.**
+`acquireSeparatorLevel()` chooses `ADC_SOGCTRL` from what the sync looks like,
+and it chose **9** at the start of the session and **12** twice at the end,
+hours apart on the same source, cable and mode -- the second time after the
+level had been set to 9 by hand and the choice handed back with `/sc?~`. That
+is a reading, not a setting, so something about the source's sync is not what
+it was this morning.
+
+It makes a falsifiable prediction, and it is cheap: if the shear is marginal
+slicing of a composite sync whose amplitude drifts as the machine warms, a
+COLD RISC PC should bring it back, and the level should land near 9 again when
+it does. A source that has been on all day is the condition under which this
+page's quiet runs were taken.
+
 ## What is open
 
 Which part of the composite path holds the ADC PLL at three-quarters lock --
