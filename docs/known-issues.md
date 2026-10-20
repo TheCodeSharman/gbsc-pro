@@ -1935,6 +1935,15 @@ describes.
 separate sync reading 311 and clean, is recorded from 2026-08-14 and 2026-08-15.
 What is new is the rate and the freeze result.
 
+**`PA_SP_S` IS REFUTED AS THE LEVER, AND THE RATE'S DEPENDENCE ON UPTIME IS WHY
+IT LOOKED LIKE ONE.** An A-B-A at 900 s a leg, moving that register alone,
+gives 6, 5 and 4 pulse bursts for 16, 13, 16 -- no separation, and monotonic
+rather than following the register. On the same unit and register state the
+rate falls eightfold between 3 minutes and 80 minutes after boot, 32.3 bursts
+per 900 s down to 4. **So a leg's count means nothing without its uptime**, and
+two legs an hour apart compare uptimes.
+`investigations/the-phase-scan-measures-one-band-and-infers-the-rest.md`.
+
 ### A latched separate-sync path answers to `/restart`, not to `/sc?~`
 
 Reached by a mode the separator never reads -- 1280x720@60 on composite, a 2.42%
@@ -4018,15 +4027,24 @@ source, at a different divider, or splits into two runs is unmeasured, and a
 profile with two comparable clean runs is the case the new rule has no evidence
 for.
 
-**AND THE NEW RULE HAS SINCE LANDED INSIDE THE BAND.** A solve on that same
-source, divider and input chose `PA_SP` **10** -- the first phase of the 10..16
-band the rule exists to avoid -- with `STATUS_SYNC_PROC_HTOTAL` reading 2199
-twice and 2201 once in 15 samples against a divider of 2200, and the shimmer on
-the picture. Writing 29 by hand restores 2200 in 25 of 25. So the five
-consecutive solves that chose 29 or 30 are not the whole behaviour, and what
-decides a bad landing is unmeasured. **The count dither is the cheap check**:
+**LANDING INSIDE THE BAND IS WHAT THE RULE DID ON COMPOSITE, AND IT IS
+SYSTEMATIC RATHER THAN UNLUCKY.** The band the metric finds depends on the sync
+type: 26..29 on composite and 11..19 on separate sync, on one source, one cable
+and one mode. The middle of the widest clean run on composite is therefore 8 to
+13, which is inside the band the separate-sync scan reports and the band the
+shimmer profile measures. Solves landing on `PA_SP` **10** and **13** are that
+arithmetic, not a disturbed walk.
+
+`Adc::acquirePhase()` keeps `MidField` wherever the scan scores nothing against
+it and hands the choice to `middleOfWidestCleanRun()` only where the band covers
+it, so the composite answer is 16 on every acquisition.
+`investigations/the-phase-scan-measures-one-band-and-infers-the-rest.md`.
+
+**The count dither is still the cheap check for a phase that landed badly**:
 sample `STATUS_SYNC_PROC_HTOTAL` against `PLLAD_MD` twenty times and a good
-phase reads the divider back every time.
+phase reads the divider back every time. **It is only valid where the metric can
+see the fault** -- in 10..16 on composite it reads the divider back 100 times of
+100 while the picture shears.
 
 **IT IS SEEN ON A SECOND MODE, AND IT CHANGES PER ACQUISITION.** The high
 frequency graticule of the card at 640x480@60 shimmers, and differently from one
@@ -7720,29 +7738,24 @@ emitted frame displaced progressively down the frame for ten frames, then
 recovery. Separate sync does not do it, and nor does the Wii on `ypbpr` in
 53999 frames.
 
-**`PA_SP_S` DECIDES IT.** Measured 2026-10-20 with `/samplinglog?width=`
-beside the emitted frame: 4500 s at phase 16 carries no shear, no burst and no
-count collapse, and 1800 s at phase 13 carries two shears and three bursts,
-with the deciding leg changing that register alone.
+**`PA_SP_S` DOES NOT DECIDE IT.** An A-B-A at 900 s a leg gives 6, 5 and 4
+pulse bursts for phases 16, 13, 16 -- no separation. The earlier reading that
+4500 s at 16 carries nothing against 2700 s at 13 carrying three shears rested
+on legs scoring 1, 0 and 1 bursts, which cannot separate a register from
+Poisson noise, and the rate falls eightfold over the first eighty minutes after
+a boot with nothing written. **Judge no leg without its uptime.**
 
-**And 13 is what `Adc::acquirePhase()` picks.** 16 is what
-`phaseSyncProcessor_` holds at rest and what stands when the sweep is not good
-enough, because the function returns before choosing. A successful sweep takes
-`middleOfWidestCleanRun()` of a band measured here at 10..16, whose middle is
-13.
+**What the phase work did establish is about the scan rather than the shear.**
+The band its metric finds is per sync type -- 26..29 on composite, 11..19 on
+separate sync on one source and cable -- so the composite rule's antipode
+landed in a region the picture measures bad, and the choice changed on every
+acquisition. `Adc::acquirePhase()` keeps `MidField` where the scan scores
+nothing against it, which makes the choice deterministic.
+`investigations/the-phase-scan-measures-one-band-and-infers-the-rest.md`.
 
-**The criterion cannot see the fault.** Each phase is scored on how far
-`STATUS_SYNC_PROC_HTOTAL` departs from `PLLAD_MD`, which is the line LENGTH --
-and the sync processor counts in ADC clocks against a PLL locked to hsync, so
-it reports the divider back whatever the vertical separation does. A phase
-scores a perfect zero while losing vertical sync once a minute.
-
-**What would settle it:** score the scan on something that can see vertical
-separation as well as line length -- the line count holding still across the
-samples at each phase is the obvious candidate, and it costs one more read per
-sample. It has to be measured against the shimmer
-`investigations/the-sampling-phase-cannot-reach-the-shimmer.md` tuned this
-search for, because that is a different symptom on the same register.
+**What would settle the shear is the uptime gradient, measured from a cold boot
+at fixed intervals with nothing written.** Until that is separated, a
+configuration comparison on this fault is a comparison of uptimes.
 
 `investigations/the-composite-shear-rides-a-half-locked-adc-pll.md` has the
 chain, the refuted candidates -- the coast pair, the sub coast, the SOG

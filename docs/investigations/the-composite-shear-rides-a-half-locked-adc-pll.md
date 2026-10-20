@@ -268,10 +268,23 @@ in both states, so the ADC sampling phase is not involved.
 | 13 | 11 | 0/0 | 900 s | 1 | 2 |
 | 13 | 11 | 1/1 | 900 s | 1 | 1 |
 
-## The sync processor's phase is the lever, and the search selects the bad one
+## The sync processor's phase is NOT the lever
 
-`PA_SP_S` decides it, measured on `vga` at 320x256@50 into 1920x1080,
-composite, with the width mode and the emitted frame on one clock:
+Carried as the answer on the strength of the legs below, and refuted by an
+A-B-A at 900 s a leg on the same instrument: 6, 5 and 4 pulse bursts for
+phases 16, 13, 16, which is no separation and is monotonic rather than
+following the register. **The legs below score 1, 0 and 1 bursts**, and counts
+that size cannot separate a register from Poisson noise. The rate also falls
+eightfold over the first eighty minutes after a boot with nothing written, so
+the quiet 3600 s leg and the 900 s legs beside it differ in uptime as well as
+in phase.
+[the-phase-scan-measures-one-band-and-infers-the-rest.md](the-phase-scan-measures-one-band-and-infers-the-rest.md)
+carries the refutation, the uptime gradient, and what the phase work did
+establish -- that the scan's band is per sync type and its antipode rule landed
+in a region the picture measures bad.
+
+Measured on `vga` at 320x256@50 into 1920x1080, composite, with the width mode
+and the emitted frame on one clock:
 
 | `PA_SP_S` | `ADC_SOGCTRL` | `SP_*_POL_ATO` | duration | shears | bursts | count collapse |
 |---|---|---|---|---|---|---|
@@ -281,35 +294,31 @@ composite, with the width mode and the emitted frame on one clock:
 | **16** | **11** | **1/1** | **900 s** | **0** | **0** | no |
 | **13** | **11** | **1/1** | **900 s** | **1** | **1** | **100** |
 
-The last three rows are an A-B-A moving `PA_SP_S` alone: fault, clean, fault.
-Across the set, 4500 s at 16 carries nothing and 2700 s at 13 carries three
-shears, four bursts and three count collapses -- 99, 99 and 100. The same rate
-would have put about five events in the quiet time.
+The last three rows are an A-B-A moving `PA_SP_S` alone, and they read as
+fault, clean, fault. **An A-B-A controls a monotonic trend and does not rescue
+counts of 1 and 0**, which is where this reading fails: a second A-B-A at the
+same leg length, with four to six bursts a leg rather than nought to two, shows
+no separation at all.
 
 An A-B-A rather than two legs because every comparison earlier in the session
 was undermined by the rate moving on its own; moving one register back and
-forth is what separates the register from the drift.
+forth separates the register from a trend but not from noise.
 
-**13 IS WHAT THE SEARCH CHOOSES AND 16 IS WHAT IT LEAVES.**
-`Adc::phaseSyncProcessor_` is 16 at rest, and `Adc::acquirePhase()` returns
-before `choosePhaseSyncProcessor()` when the sweep is not good enough, so the
-default stands. A successful sweep takes
-`middleOfWidestCleanRun()` of a band this bench measures at 10..16, whose
-middle is 13. So the search is not failing to prevent the fault. It selects it.
-
-**ITS CRITERION CANNOT SEE THIS FAULT.** Each phase is scored on how far
-`STATUS_SYNC_PROC_HTOTAL` departs from `PLLAD_MD` over
+**The scan's criterion cannot see this fault either way.** Each phase is scored
+on how far `STATUS_SYNC_PROC_HTOTAL` departs from `PLLAD_MD` over
 `SamplesPerPhase` readings -- the stability of the LINE LENGTH. The sync
 processor counts in ADC clocks against a PLL locked to hsync, so that register
 reports the divider back whatever the vertical separation is doing, and the
-scan is blind to the count collapsing to 99. A phase can score a perfect zero
-on it and lose vertical sync once a minute.
-
-`the-sampling-phase-cannot-reach-the-shimmer.md` records the search being tuned
-against a different symptom, so a change of criterion has to be measured
-against both.
+scan is blind to the count collapsing to 99. So no phase scan result is
+evidence about this fault in either direction.
 
 ## What is open
+
+**THE UPTIME GRADIENT, which is the largest effect measured on this fault and
+the reason a register came to be named.** Four runs on one unit with one
+register state give 32.3 bursts per 900 s at three minutes after boot and 4 at
+eighty minutes. Nothing has been measured from a cold boot at fixed intervals,
+and until it is, any configuration comparison here is a comparison of uptimes.
 
 Which part of the composite path holds the ADC PLL at three-quarters lock --
 though the Wii leg makes this a side question rather than the fault.
