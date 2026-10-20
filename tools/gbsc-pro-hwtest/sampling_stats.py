@@ -68,7 +68,7 @@ def collect(host, interval_ms, seconds, query=None, pattern=None):
 
     rows, other = [], []
     want = pattern if pattern else SAMPLE
-    fields = 6 if pattern else len(COLUMNS)
+    fields = 8 if pattern else len(COLUMNS)
     deadline = time.time() + seconds + 6
     while time.time() < deadline:
         try:
@@ -117,6 +117,15 @@ def widths(host, window_ms, seconds, low, high):
           % (len(rows), window_ms, total, total / seconds, sum(r[5] for r in rows)))
     print("a 50 Hz source runs 15625 lines/s, so this samples one line in %.1f"
           % (15625.0 * seconds / total if total else 0))
+    counts = [r[7] for r in rows if r[7]]
+    if counts:
+        modal = max(set(counts), key=counts.count)
+        odd = [r for r in rows if r[7] and r[7] != modal]
+        print("line count: modal %d, %d windows away from it" % (modal, len(odd)))
+        for r in odd[:30]:
+            print("    %7d ms  vtotal %d..%d   n=%-4d min=%-5d max=%-5d "
+                  "below=%d cross=%d"
+                  % (r[8], r[6], r[7], r[0], r[1], r[2], r[3], r[5]))
     below = [r for r in rows if r[3]]
     above = [r for r in rows if r[4]]
     print("crossings rejected: %d" % sum(r[5] for r in rows))
@@ -135,7 +144,7 @@ def widths(host, window_ms, seconds, low, high):
     if below:
         print("  below-band windows (ms, readings, min, max, below):")
         for r in below[:40]:
-            print("    %7d  n=%-4d min=%-5d max=%-5d below=%d" % (r[6], r[0], r[1], r[2], r[3]))
+            print("    %7d  n=%-4d min=%-5d max=%-5d below=%d" % (r[8], r[0], r[1], r[2], r[3]))
 
 
 def main():
