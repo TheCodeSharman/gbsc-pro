@@ -7711,6 +7711,35 @@ a stated signal rather than whichever `SP_TEST_SIGNAL_SEL` the last caller left
 the signal together, instead of writing the module bare. Two sweeps taken at
 different times are comparable, and each says what it read.
 
+### Two separator checks read a legitimate change as instability
+
+`SyncOnGreen`'s `lineLengthMoves()` and `SyncOnGreen::reacquire()` both read
+`STATUS_SYNC_PROC_HLOW_LEN` once and then again -- 20 more times and 128 more
+times -- and treat ANY difference as the separator inventing or missing edges.
+The first gates `countBadSamples()`; the second walks the separator level.
+
+**On composite the reading legitimately changes once a frame.** The vertical
+interval's low period is a different number from the hsync width -- 2661
+against 153 on `vga` at 320x256@50 -- so a burst that happens to sample it sees
+a change that says nothing about the separator. Measured 2026-10-20 with
+`/samplinglog?width=`, 139704 readings over 60 s at one line in 6.7: the
+interval and the byte crossings around it are 567 readings, 0.4% of the total,
+and a reading costs about 430 us. So a 21-read burst carries about a 7% chance
+of containing one and a 128-read burst about 34%, on a source that is behaving
+perfectly.
+
+The crossings make it worse rather than causing it: a read straddling the
+interval returns one byte from each instant, which is another value again --
+101 and 2713 here.
+`investigations/a-wide-status-field-tears-across-its-two-bytes.md`.
+
+**What would settle it:** compare only readings that are plausible hsync
+pulses. `HsyncPulse::isPulse()` already states that band, and both the interval
+reading and its crossings fall outside it, so filtering before the equality
+test removes the false positive without weakening what the check is for. The
+measurement to take either side is the rate `countBadSamples()` returns
+non-zero on a settled composite source.
+
 ## Measured wrong, no picture consequence found yet
 
 ### `DAC_RGBS_ADC2DAC` reads 0 in pass-through
