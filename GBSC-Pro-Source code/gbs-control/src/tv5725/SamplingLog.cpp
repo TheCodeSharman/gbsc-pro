@@ -135,7 +135,7 @@ SamplingLog::SamplingLog()
       durationMs_(0), startedMs_(0), stepStartedMs_(0), lastSampleMs_(0),
       sampleValid_(false), changesOnly_(false), samples_(0),
       windowMs_(0), bandLow_(0), bandHigh_(0), windowStartedMs_(0),
-      windowReadings_(0), windowBelow_(0), windowAbove_(0),
+      windowReadings_(0), windowBelow_(0), windowAbove_(0), windowTorn_(0),
       windowLowest_(0), windowHighest_(0),
       lastSolveMs_(0), solveValid_(false)
 {
@@ -173,6 +173,7 @@ void SamplingLog::startWindow()
     windowReadings_ = 0;
     windowBelow_ = 0;
     windowAbove_ = 0;
+    windowTorn_ = 0;
     windowLowest_ = 0xFFFF;
     windowHighest_ = 0;
 }
@@ -192,18 +193,19 @@ void SamplingLog::widths(uint32_t nowMs, uint16_t windowMs, uint32_t durationMs,
     bandHigh_ = high;
     windowStartedMs_ = nowMs;
     startWindow();
-    tv5725Log("wid,header,ms,n,min,max,below,above");
+    tv5725Log("wid,header,ms,n,min,max,below,above,torn");
 }
 
 void SamplingLog::emitWindow(uint32_t nowMs)
 {
     char line[80];
-    snprintf(line, sizeof(line), "wid,%lu,%lu,%u,%u,%lu,%lu",
+    snprintf(line, sizeof(line), "wid,%lu,%lu,%u,%u,%lu,%lu,%lu",
              (unsigned long)(nowMs - startedMs_),
              (unsigned long)windowReadings_,
              (unsigned)(windowReadings_ ? windowLowest_ : 0),
              (unsigned)windowHighest_,
-             (unsigned long)windowBelow_, (unsigned long)windowAbove_);
+             (unsigned long)windowBelow_, (unsigned long)windowAbove_,
+             (unsigned long)windowTorn_);
     tv5725Log(line);
 }
 
@@ -365,6 +367,10 @@ void SamplingLog::poll(uint32_t nowMs)
     if (mode_ == Widths) {
         for (uint8_t taken = 0; taken < WidthReadsPerPoll; ++taken) {
             const uint16_t width = GBS::STATUS_SYNC_PROC_HLOW_LEN::read();
+            if (width != GBS::STATUS_SYNC_PROC_HLOW_LEN::read()) {
+                ++windowTorn_;
+                continue;
+            }
             ++windowReadings_;
             if (width < windowLowest_)
                 windowLowest_ = width;

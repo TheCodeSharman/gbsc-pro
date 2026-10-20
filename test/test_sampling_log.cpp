@@ -531,17 +531,19 @@ TEST_CASE("a window counts the readings below the band")
     CHECK(std::stoi(row[5]) == std::stoi(row[2]));
 }
 
+// The value moves between polls rather than between reads, which is what a
+// source does: a line holds its width for the whole line.
 TEST_CASE("a window reports the lowest and highest reading it saw")
 {
     sourceOnTheBus(2250);
-    GBS::STATUS_SYNC_PROC_HLOW_LEN::write(150);
-    Wire.drift(0, 0x19);
     g_lines.clear();
 
     SamplingLog log;
     log.widths(0, 20, 20, 120, 200);
-    for (uint32_t now = 1; now <= 20; ++now)
+    for (uint32_t now = 1; now <= 20; ++now) {
+        GBS::STATUS_SYNC_PROC_HLOW_LEN::write((uint16_t)(150 + now));
         log.poll(now);
+    }
 
     const std::vector<std::string> row = columnsOf(lastOf("wid,"));
     CHECK(std::stoi(row[3]) < std::stoi(row[4]));
@@ -557,4 +559,29 @@ TEST_CASE("a width run stops once its duration is up")
         log.poll(now);
 
     CHECK_FALSE(log.active());
+}
+
+// A WIDE FIELD TEARS ACROSS ITS TWO BYTES. The chip clocks the second byte out
+// tens of microseconds after the first and the register updates every line, so
+// a read straddling an update returns one byte from each instant -- measured on
+// composite, 61 of 27207 samples, every one at the vertical interval's own
+// phase. A tear is therefore a SINGLE read, where a genuinely short line lasts
+// a line and spans several reads of a burst. Taking the reading twice and
+// keeping it only when the two agree is what separates them.
+// docs/investigations/a-wide-status-field-tears-across-its-two-bytes.md
+TEST_CASE("a reading that does not repeat is counted as torn, not as a width")
+{
+    sourceOnTheBus(2250);
+    GBS::STATUS_SYNC_PROC_HLOW_LEN::write(153);
+    Wire.drift(0, 0x19);
+    g_lines.clear();
+
+    SamplingLog log;
+    log.widths(0, 20, 20, 120, 200);
+    for (uint32_t now = 1; now <= 20; ++now)
+        log.poll(now);
+
+    const std::vector<std::string> row = columnsOf(lastOf("wid,"));
+    CHECK(std::stoi(row[2]) == 0);
+    CHECK(std::stoi(row[7]) > 0);
 }

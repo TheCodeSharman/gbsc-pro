@@ -79,6 +79,14 @@ public:
     // `low` and `high` bound the band the caller considers ordinary, and the
     // counts either side of it are what separate a stray reading from a
     // disturbance lasting a field.
+    //
+    // EACH READING IS TAKEN TWICE AND KEPT ONLY WHERE THE TWO AGREE, because
+    // the field is 12 bits across two registers and a read straddling the
+    // per-line update returns one byte from each instant. A tear is one read;
+    // a genuinely short line lasts a line and spans several reads of the
+    // burst. The rejected count is reported rather than dropped, since a real
+    // transition disagrees too.
+    // ../../../../docs/investigations/a-wide-status-field-tears-across-its-two-bytes.md
     void widths(uint32_t nowMs, uint16_t windowMs, uint32_t durationMs,
                 uint16_t low, uint16_t high);
 
@@ -193,7 +201,7 @@ private:
 
     uint16_t windowMs_, bandLow_, bandHigh_;
     uint32_t windowStartedMs_;
-    uint32_t windowReadings_, windowBelow_, windowAbove_;
+    uint32_t windowReadings_, windowBelow_, windowAbove_, windowTorn_;
     uint16_t windowLowest_, windowHighest_;
 
     uint16_t sample_[SampleFields];
