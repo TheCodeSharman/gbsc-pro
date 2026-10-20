@@ -252,10 +252,21 @@ since boot runs composite with them 0. `SP_HS_POL_ATO` is the retiming
 module's hs polarity auto-correct, and a NOR'd csync inverts polarity through
 the vertical interval -- which is exactly where the count collapses.
 
-**`PA_SP_S` is the sync processor's phase**, and the phase search lands
-somewhere different on every acquisition, which is the shape of a fault that
-changes between acquisitions and never within one. `PA_ADC_S` read 0 in both
-states, so the ADC sampling phase is not involved.
+**THE POLARITY PAIR IS REFUTED.** Put back to 1 with the phase left at 13, a
+900 s run gives one shear, one burst and the same `vt=99..308` collapse. So the
+one-branch write is still an unexplained divergence worth closing on the
+convention, but it does not carry this fault.
+
+**`PA_SP_S` is what is left**, and it is the sync processor's phase. The phase
+search lands somewhere different on every acquisition, which is the shape of a
+fault that changes between acquisitions and never within one. `PA_ADC_S` read 0
+in both states, so the ADC sampling phase is not involved.
+
+| `PA_SP_S` | `ADC_SOGCTRL` | `SP_*_POL_ATO` | duration | shears | bursts |
+|---|---|---|---|---|---|
+| 16 | 12 | 1/1 | 3600 s | **0** | **0** |
+| 13 | 11 | 0/0 | 900 s | 1 | 2 |
+| 13 | 11 | 1/1 | 900 s | 1 | 1 |
 
 ## What is open
 
