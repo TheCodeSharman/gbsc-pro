@@ -208,7 +208,12 @@ private:
     // needs: a reading is a crossing where some commoner reading shares its
     // high byte and another shares its low one. One window holds too few
     // readings to decide that, so the census spans the run.
-    static const uint8_t WidthCensusMax = 12;
+    //
+    // Twelve entries overflowed on a 900 s run and lost the values a
+    // disturbance produced, which are the ones worth seeing: a value the
+    // census never held reads as crossing nothing, which is right, but it also
+    // leaves the run unable to say what it was.
+    static const uint8_t WidthCensusMax = 28;
     struct WidthSeen {
         uint16_t value;
         uint32_t count;
