@@ -221,6 +221,11 @@ private:
     void reportCensus();
     uint16_t windowLowest_, windowHighest_;
 
+    // The line count beside the pulse, because the count anomaly is the marker
+    // the shear sits beside and it is commoner than the shear itself. Carried
+    // in the row so one run can ask what the pulse did around one.
+    uint16_t windowCountLow_, windowCountHigh_;
+
     uint16_t sample_[SampleFields];
     bool sampleValid_, changesOnly_;
     uint32_t samples_;

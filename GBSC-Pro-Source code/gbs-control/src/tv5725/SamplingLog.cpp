@@ -138,6 +138,7 @@ SamplingLog::SamplingLog()
       windowReadings_(0), windowBelow_(0), windowAbove_(0),
       windowCrossings_(0), censusHeld_(0),
       windowLowest_(0), windowHighest_(0),
+      windowCountLow_(0), windowCountHigh_(0),
       lastSolveMs_(0), solveValid_(false)
 {
     memset(solve_, 0, sizeof(solve_));
@@ -222,6 +223,8 @@ void SamplingLog::startWindow()
     windowCrossings_ = 0;
     windowLowest_ = 0xFFFF;
     windowHighest_ = 0;
+    windowCountLow_ = 0xFFFF;
+    windowCountHigh_ = 0;
 }
 
 void SamplingLog::widths(uint32_t nowMs, uint16_t windowMs, uint32_t durationMs,
@@ -240,19 +243,21 @@ void SamplingLog::widths(uint32_t nowMs, uint16_t windowMs, uint32_t durationMs,
     windowStartedMs_ = nowMs;
     censusHeld_ = 0;
     startWindow();
-    tv5725Log("wid,header,ms,n,min,max,below,above,crossings");
+    tv5725Log("wid,header,ms,n,min,max,below,above,crossings,vtmin,vtmax");
 }
 
 void SamplingLog::emitWindow(uint32_t nowMs)
 {
     char line[80];
-    snprintf(line, sizeof(line), "wid,%lu,%lu,%u,%u,%lu,%lu,%lu",
+    snprintf(line, sizeof(line), "wid,%lu,%lu,%u,%u,%lu,%lu,%lu,%u,%u",
              (unsigned long)(nowMs - startedMs_),
              (unsigned long)windowReadings_,
              (unsigned)(windowReadings_ ? windowLowest_ : 0),
              (unsigned)windowHighest_,
              (unsigned long)windowBelow_, (unsigned long)windowAbove_,
-             (unsigned long)windowCrossings_);
+             (unsigned long)windowCrossings_,
+             (unsigned)(windowCountHigh_ ? windowCountLow_ : 0),
+             (unsigned)windowCountHigh_);
     tv5725Log(line);
 }
 
@@ -414,6 +419,11 @@ void SamplingLog::poll(uint32_t nowMs)
         return;
 
     if (mode_ == Widths) {
+        const uint16_t counted = GBS::STATUS_SYNC_PROC_VTOTAL::read();
+        if (counted < windowCountLow_)
+            windowCountLow_ = counted;
+        if (counted > windowCountHigh_)
+            windowCountHigh_ = counted;
         for (uint8_t taken = 0; taken < WidthReadsPerPoll; ++taken) {
             const uint16_t width = GBS::STATUS_SYNC_PROC_HLOW_LEN::read();
             countWidth(width);

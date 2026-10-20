@@ -464,6 +464,13 @@ static std::string lastOf(const char *leader)
     return found;
 }
 
+// A column the row does not carry reads as absent rather than crashing, so a
+// row that lost a field fails the check that names it.
+static int column(const std::vector<std::string> &row, size_t at)
+{
+    return at < row.size() ? std::stoi(row[at]) : -1;
+}
+
 static std::vector<std::string> columnsOf(const std::string &line)
 {
     std::vector<std::string> out;
@@ -510,7 +517,7 @@ TEST_CASE("a window carries more readings than it has polls")
         log.poll(now);
 
     const std::vector<std::string> row = columnsOf(lastOf("wid,"));
-    CHECK(std::stoi(row[2]) > 20);
+    CHECK(column(row, 2) > 20);
 }
 
 // Min and max alone say a window held an outlier; the count says whether it
@@ -528,7 +535,7 @@ TEST_CASE("a window counts the readings below the band")
         log.poll(now);
 
     const std::vector<std::string> row = columnsOf(lastOf("wid,"));
-    CHECK(std::stoi(row[5]) == std::stoi(row[2]));
+    CHECK(column(row, 5) == column(row, 2));
 }
 
 // The value moves between polls rather than between reads, which is what a
@@ -546,7 +553,7 @@ TEST_CASE("a window reports the lowest and highest reading it saw")
     }
 
     const std::vector<std::string> row = columnsOf(lastOf("wid,"));
-    CHECK(std::stoi(row[3]) < std::stoi(row[4]));
+    CHECK(column(row, 3) < column(row, 4));
 }
 
 TEST_CASE("a width run stops once its duration is up")
@@ -590,7 +597,7 @@ TEST_CASE("a reading crossing two commoner ones is not an outlier")
     log.poll(1001);
 
     const std::vector<std::string> row = columnsOf(lastOf("wid,"));
-    CHECK(std::stoi(row[7]) > 0);
+    CHECK(column(row, 7) > 0);
 }
 
 TEST_CASE("a reading that crosses nothing is counted below the band")
@@ -609,5 +616,47 @@ TEST_CASE("a reading that crosses nothing is counted below the band")
     log.poll(1001);
 
     const std::vector<std::string> row = columnsOf(lastOf("wid,"));
-    CHECK(std::stoi(row[5]) > 0);
+    CHECK(column(row, 5) > 0);
+}
+
+// The count anomaly is the marker the shear is known to sit beside -- 337
+// against 308 on composite, 29 lines over, genuine on the crossing test and
+// absent from separate sync entirely. It is also commoner than the shear, so
+// carrying it in the row is what lets a run ask what the pulse does around one
+// without having to catch a shear on video at the same time.
+// docs/investigations/the-composite-shear-rides-a-half-locked-adc-pll.md
+TEST_CASE("a window carries the highest line count it saw")
+{
+    sourceOnTheBus(2250);
+    GBS::STATUS_SYNC_PROC_HLOW_LEN::write(153);
+    GBS::STATUS_SYNC_PROC_VTOTAL::write(308);
+    g_lines.clear();
+
+    SamplingLog log;
+    log.widths(0, 20, 20, 120, 200);
+    for (uint32_t now = 1; now <= 20; ++now) {
+        if (now == 10)
+            GBS::STATUS_SYNC_PROC_VTOTAL::write(337);
+        log.poll(now);
+        GBS::STATUS_SYNC_PROC_VTOTAL::write(308);
+    }
+
+    const std::vector<std::string> row = columnsOf(lastOf("wid,"));
+    CHECK(column(row, 9) == 337);
+}
+
+TEST_CASE("a window carries the lowest line count it saw")
+{
+    sourceOnTheBus(2250);
+    GBS::STATUS_SYNC_PROC_HLOW_LEN::write(153);
+    GBS::STATUS_SYNC_PROC_VTOTAL::write(308);
+    g_lines.clear();
+
+    SamplingLog log;
+    log.widths(0, 20, 20, 120, 200);
+    for (uint32_t now = 1; now <= 20; ++now)
+        log.poll(now);
+
+    const std::vector<std::string> row = columnsOf(lastOf("wid,"));
+    CHECK(column(row, 8) == 308);
 }
