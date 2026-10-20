@@ -29,12 +29,22 @@ picture.
 **Do not budget minutes for a source to appear**; a source that has not solved
 in about ten seconds is not settling.
 
-**BUT ACQUISITION ON `ypbpr` DEPENDS ON THE OUTPUT MODE, AND AT 1920x1080 IT
-DOES NOT ACQUIRE AT ALL.** The output decides the divider, so it decides whether
-the source can be measured -- a ypbpr source retrying for ever is the open
-defect in `docs/known-issues.md` rather than a regression to diagnose. **Read
-which output is set before judging an acquisition**, and compare a change
-against the same one at both ends.
+**ACQUISITION ON `ypbpr` DEPENDS ON THE OUTPUT MODE, BECAUSE THE OUTPUT DECIDES
+THE DIVIDER AND SO DECIDES WHETHER THE SOURCE CAN BE MEASURED.** A ypbpr source
+retrying for ever is the open defect in `docs/known-issues.md` rather than a
+regression to diagnose. **Read which output is set before judging an
+acquisition**, and compare a change against the same one at both ends.
+**1920x1080 IS NOT ITSELF THE BAR**: measured 2026-10-20, the Wii at 480p
+selected with `/input?src=ypbpr` acquires into 1920x1080 and holds --
+`STATUS_SYNC_PROC_VTOTAL` 524, `STATUS_SYNC_PROC_HTOTAL` 1212 against
+`PLLAD_MD` 1212, `SP_SOG_MODE` 1, coast 7/6 -- holding across a 183 s run of
+27708 samples. An earlier reading that it never acquires there is superseded.
+
+**AND `/geometry`'s `state` IS STALE ACROSS AN INPUT CHANGE.** Four seconds
+after `/input?src=ypbpr` it answered `acquired` while
+`STATUS_SYNC_PROC_VTOTAL` and `HTOTAL` both read 0 -- the field left over from
+the source that just went away. **Poll the COUNT, not the state**, or an
+acquisition is judged before detection has run.
 
 **ESTABLISH WHICH WII OUTPUT MODE IS SET BEFORE JUDGING THE INPUT.** All three
 solve and hold. 480p solves in 15 s. 480i alternates 259/260 and still acquires,
