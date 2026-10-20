@@ -208,6 +208,55 @@ COLD RISC PC should bring it back, and the level should land near 9 again when
 it does. A source that has been on all day is the condition under which this
 page's quiet runs were taken.
 
+## The chain, measured in one acquisition
+
+Measured 2026-10-20 with `/samplinglog?width=10` beside the emitted frame, on
+`vga` at 320x256@50 into 1920x1080, composite. One 900 s run, 1902680 readings:
+
+```
+T+563.465  min=153 max=2661              the vertical interval, as every frame
+T+563.551  min=0            below=5      the pulse measurement collapses
+T+563.566  min=0            below=16     21 out-of-band readings in 35 ms
+T+563.588                   vt=99..308   the line count collapses to 99
+T+563.664  min=98           below=1
+           the emitted frame shears, T+563.63..T+563.78, 10 frames
+T+563.685  min=153 max=2660              recovered
+```
+
+The count reaches **99** against the usual 308, which is the separator losing
+vertical sync for a frame rather than miscounting it -- far past the 337 the
+earlier runs caught, and 337 is now better read as a mild case of the same
+thing.
+
+## The state carries it, and three fields are the candidates
+
+The fault is reproducible by register state rather than by waiting.
+
+| state | duration | shears | bursts |
+|---|---|---|---|
+| as the engine left it after a separate-sync excursion | 3600 s | **0** | **0** |
+| `PA_SP_S` 13, `SP_HS_POL_ATO` 0, `SP_VS_POL_ATO` 0, `ADC_SOGCTRL` 11 | 900 s | **1** | **2** |
+
+Those four are what a 1536-register diff leaves after the differences that are
+three days of commits rather than drift --
+`tools/gbsc-pro-hwtest/snapshots/csync-320x256-50-quiet-2026-10-20.json`
+against `snapshots/csync-320x256-50-full-rolling-2026-10-17.json`.
+`ADC_SOGCTRL` is already refuted: 0 events in 1200 s at 9 and 0 in 1500 s at
+12.
+
+**`SP_HS_POL_ATO` AND `SP_VS_POL_ATO` ARE WRITTEN ON ONE BRANCH ONLY.**
+`SyncProcessor::applyForSyncType()` writes both 1 in its separate-sync branch
+and neither in its csync branch, so on composite they hold whatever the last
+separate-sync excursion left. A unit that has never been on separate sync
+since boot runs composite with them 0. `SP_HS_POL_ATO` is the retiming
+module's hs polarity auto-correct, and a NOR'd csync inverts polarity through
+the vertical interval -- which is exactly where the count collapses.
+
+**`PA_SP_S` is the sync processor's phase**, and the phase search lands
+somewhere different on every acquisition, which is the shape of a fault that
+changes between acquisitions and never within one. `PA_ADC_S` read 0 in both
+states, so the ADC sampling phase is not involved.
+
 ## What is open
 
 Which part of the composite path holds the ADC PLL at three-quarters lock --
