@@ -292,6 +292,18 @@ public:
     // latch has loaded it. docs/video-source-acquisition.md
     static void choosePhaseSyncProcessor(uint8_t phase);
     static void choosePhaseAdc(uint8_t phase);
+
+    // A sync processor phase to hold in place of whatever the engine chooses,
+    // wherever it is chosen. The search runs on every solve and a solve is
+    // armed by the count moving, so a phase written from outside is taken back
+    // part way through a measurement -- and more often in the arm that
+    // disagrees with the engine, which biases a comparison rather than only
+    // costing it data. acquirePhase() applies the held value and does not walk
+    // the field, because the walk latches each phase to score it.
+    // The coast pair and the separator's width threshold are held the same way.
+    static void overridePhaseSyncProcessor(uint8_t phase);
+    static void forgetPhaseOverride();
+    static bool phaseOverridden();
     static uint8_t phaseSyncProcessor();
     static uint8_t phaseAdc();
 
@@ -642,6 +654,8 @@ private:
 
     static uint8_t phaseSyncProcessor_;
     static uint8_t phaseAdc_;
+    static uint8_t phaseOverride_;
+    static bool phaseOverridden_;
     static uint8_t inputSel_;
     static uint8_t oversampleInForce_;
     static uint16_t dividerInForce_;

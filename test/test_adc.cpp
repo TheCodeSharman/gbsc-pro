@@ -1479,3 +1479,70 @@ TEST_CASE("a band over the default moves the sampling phase off it")
     CHECK(chosen != Adc::MidField);
     CHECK((chosen < 10 || chosen > 16));
 }
+
+TEST_CASE("a held sampling phase survives the search")
+{
+    // A POKED REGISTER MEASURES THE ENGINE'S DETERMINATION, NOT THE REGISTER.
+    // The search runs on every solve, and a solve is armed by the very count
+    // movement an experiment is scoring -- so a phase written from outside is
+    // taken back part way through a leg, and more often in the arm that
+    // disagrees with the engine than in the arm that agrees. The coast and the
+    // separator's width threshold are held against the engine for the same
+    // reason.
+    Wire.reset();
+    Adc::PLLAD_MD::write(2230);
+    g_sweepDivider = 2230;
+    g_badFrom = 4; g_badTo = 6;
+    Adc::choosePhaseSyncProcessor(16);
+    Adc::choosePhaseAdc(16);
+
+    Adc::overridePhaseSyncProcessor(13);
+    REQUIRE(Adc::acquirePhase(2, true, lineSamplesAtPhase, countFeed));
+
+    CHECK(Adc::phaseSyncProcessor() == 13);
+    CHECK(Adc::PA_SP_S::read() == 13);
+}
+
+TEST_CASE("a held sampling phase is not walked to score the field")
+{
+    // The sweep latches each phase to score it, so a search that ran under an
+    // override would move the register it is holding -- which is the thing an
+    // experiment cannot have happen underneath it.
+    Wire.reset();
+    g_logLines.clear();
+    Adc::PLLAD_MD::write(2230);
+    g_sweepDivider = 2230;
+    g_badFrom = 4; g_badTo = 6;
+    g_feeds = 0;
+
+    Adc::overridePhaseSyncProcessor(13);
+    REQUIRE(Adc::acquirePhase(2, true, lineSamplesAtPhase, countFeed));
+
+    CHECK_FALSE(loggedContaining("phase dither"));
+}
+
+TEST_CASE("nothing else may move a held sampling phase")
+{
+    // Every chooser goes through one setter, so the hold does not depend on
+    // which path asked.
+    Wire.reset();
+    Adc::overridePhaseSyncProcessor(13);
+
+    Adc::choosePhaseSyncProcessor(Adc::MidField);
+
+    CHECK(Adc::phaseSyncProcessor() == 13);
+}
+
+TEST_CASE("forgetting the hold gives the phase back to the engine")
+{
+    Wire.reset();
+    Adc::PLLAD_MD::write(2230);
+    g_sweepDivider = 2230;
+    g_badFrom = 10; g_badTo = 16;
+    Adc::overridePhaseSyncProcessor(13);
+    Adc::forgetPhaseOverride();
+
+    REQUIRE(Adc::acquirePhase(2, true, lineSamplesAtPhase, countFeed));
+
+    CHECK(Adc::phaseSyncProcessor() != 13);
+}

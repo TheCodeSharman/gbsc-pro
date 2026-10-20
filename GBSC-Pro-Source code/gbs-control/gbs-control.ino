@@ -206,6 +206,11 @@ volatile uint8_t pendingTestBusIf = 0xff;
 
 // What /sampleclock queued. Same reason: the route answers from a network
 // callback and the bus belongs to loop().
+volatile bool pendingPhase = false;
+volatile bool pendingPhaseClear = false;
+volatile bool pendingPhaseApply = false;
+volatile uint8_t pendingPhaseValue = 16;
+
 volatile bool pendingCoast = false;
 volatile bool pendingCoastClear = false;
 volatile bool pendingCoastApply = false;
@@ -2796,6 +2801,27 @@ static void reportSampleClock(const char *what)
 // divider is one quantity in three registers and PLLAD_LAT loads several
 // members of the ADC PLL group on one edge, so writing a subset by hand leaves
 // the PLL unlocked at a value every register reports correctly.
+// The sync processor's sampling phase, held against the engine's own search for
+// the reason the coast is: the search runs on every solve, a solve is armed by
+// the count moving, and the count moving is what an experiment on this fault is
+// scoring -- so a phase written from outside is taken back part way through a
+// leg, and more often in the arm that disagrees with the engine.
+// docs/investigations/the-phase-scan-measures-one-band-and-infers-the-rest.md
+static void applyPhaseOverride(bool apply, bool clear, uint8_t phase)
+{
+    if (apply) {
+        if (clear)
+            Tv5725::Adc::forgetPhaseOverride();
+        else
+            Tv5725::Adc::overridePhaseSyncProcessor(phase);
+        Tv5725::Adc::applyPhases();
+    }
+
+    debugPrintf("phase: %s sp %u\n",
+        Tv5725::Adc::phaseOverridden() ? "override" : "default",
+        (unsigned)Tv5725::Adc::phaseSyncProcessor());
+}
+
 static void applyCoastOverride(bool apply, bool clear, uint8_t pre, uint8_t post)
 {
     if (apply) {
@@ -4857,6 +4883,12 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                        pendingEdgeTraceSel, pendingEdgeTraceSp,
                        pendingEdgeTraceSig, pendingEdgeTraceIf);
         }
+        if (pendingPhase) {
+            pendingPhase = false;
+            applyPhaseOverride(pendingPhaseApply, pendingPhaseClear,
+                pendingPhaseValue);
+        }
+
         if (pendingCoast) {
             pendingCoast = false;
             applyCoastOverride(pendingCoastApply, pendingCoastClear,
@@ -5965,6 +5997,21 @@ void startWebserver()
     // The coast pair, held against the engine's own constants so it can be swept
     // on a running engine. Freezing would hold it too and would stop the
     // re-solve that makes the consequence for the count visible.
+    // The sync processor's sampling phase, held against the search.
+    //
+    //   /phase                          report, change nothing
+    //   /phase?sp=13                    hold that phase through every solve
+    //   /phase?clear                    back to the engine's own search
+    server.on("/phase", HTTP_GET, [](AsyncWebServerRequest *request) {
+        const bool sp = request->hasParam("sp");
+        pendingPhaseClear = request->hasParam("clear");
+        if (sp)
+            pendingPhaseValue = (uint8_t)request->getParam("sp")->value().toInt();
+        pendingPhaseApply = pendingPhaseClear || sp;
+        pendingPhase = true;
+        request->send(200, "application/json", "{\"queued\":\"phase\"}");
+    });
+
     server.on("/coast", HTTP_GET, [](AsyncWebServerRequest *request) {
         const bool pre = request->hasParam("pre");
         const bool post = request->hasParam("post");

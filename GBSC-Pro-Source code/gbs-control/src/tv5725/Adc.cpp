@@ -232,6 +232,8 @@ void Adc::restartPll()
 
 uint8_t Adc::phaseSyncProcessor_ = 16;
 uint8_t Adc::phaseAdc_ = 16;
+uint8_t Adc::phaseOverride_ = 16;
+bool Adc::phaseOverridden_ = false;
 
 // Which of the two the chip comes up on is whatever the last boot left, and no
 // read-back can be trusted to mean the source is component, so the engine
@@ -250,9 +252,24 @@ bool Adc::phaseFound_ = false;
 
 void Adc::choosePhaseSyncProcessor(uint8_t phase)
 {
+    if (phaseOverridden_)
+        return;
     if (phase <= PhaseMax)
         phaseSyncProcessor_ = phase;
 }
+
+void Adc::overridePhaseSyncProcessor(uint8_t phase)
+{
+    if (phase > PhaseMax)
+        return;
+    phaseOverridden_ = true;
+    phaseOverride_ = phase;
+    phaseSyncProcessor_ = phase;
+}
+
+void Adc::forgetPhaseOverride() { phaseOverridden_ = false; }
+
+bool Adc::phaseOverridden() { return phaseOverridden_; }
 
 void Adc::choosePhaseAdc(uint8_t phase)
 {
@@ -352,6 +369,12 @@ bool Adc::acquirePhase(uint8_t oversample, bool sweep,
                        uint16_t (*lineSamples)(), void (*feedWatchdog)())
 {
     phaseFound_ = false;
+
+    if (phaseOverridden_) {
+        applyPhaseSyncProcessor(phaseOverride_);
+        phaseFound_ = true;
+        return true;
+    }
 
     // What the sync processor should be counting, whoever wrote it: bypass puts
     // its own divider here without going through a measurement.
