@@ -83,13 +83,66 @@ instability, and its sign is wrong for a mechanism that is working.**
 74.0, 74.2, 73.7 at levels 3, 5, 7, 9, 12, 16, 20 and 26, with flips 67..69/s
 throughout. **The slicing level does not reach it.**
 
+## A third arrangement puts the lock duty and the shear on different axes
+
+The Wii at 480p on `ypbpr` is sync on green -- `SP_SOG_MODE` 1, a sliced
+arrangement like composite -- on a direct analog path, with a serrated vertical
+interval where the RISC PC's NOR'd csync has none. Measured the same way, 180 s
+at 1 ms:
+
+| | lock duty | flips/s | shear events |
+|---|---|---|---|
+| RISC PC, composite | 74.3% | 67.6 | yes |
+| **Wii, `ypbpr`, sync on green** | **84.7%** | **47.0** | **none in 183 s** |
+| RISC PC, separate | 97.3% | 7.7 | none |
+
+**SO A DEPRESSED LOCK DUTY IS NOT SUFFICIENT FOR THE SHEAR.** The Wii sits
+between the two and does not shear, and a long session of play shows none. The
+duty tracks whether the arrangement is SLICED, not whether it shears, so it is
+a companion of the sync type rather than the mechanism. 183 s is about one
+expected event's worth at the composite rate, so the Wii leg bounds the rate
+rather than proving zero.
+
+The Wii also carries the byte tearing independently: `hlow_len` 87 and 1122 are
+genuine and 98 (`0x062`) and 1112 (`0x458`) are their crossings, which is the
+same structure on a different source and divider.
+
+## Registers that do not move the lock
+
+Recorded so they are not tried again. Everything here is scored on the lock
+duty at 1 ms, 7000 to 18000 rows a leg.
+
+| leg | lock duty | flips/s |
+|---|---|---|
+| composite, the engine's own coast 7/2 | 74.4% | 67.5 |
+| composite, `SP_NO_COAST_REG` 1 -- coast off | 77.1% | 63.1 |
+| composite, `SP_DIS_SUB_COAST` 1 | 72.7% | 69.2 |
+| `ADC_SOGCTRL` 3, 5, 7, 9, 12, 16, 20, 26 | 73.5..75.0% | 67..69 |
+
+**`SP_HS2PLL_INV_REG` AND `SP_HS_POL_ATO` ARE STILL UNTESTED ON COMPOSITE**, and
+a run that appeared to test them did not: the source had been left on separate
+sync by an interrupted script, so all four of its legs read the separate-sync
+figure of about 97.6%. The two fields do differ between the arrangements --
+composite holds `SP_HS2PLL_INV_REG` 1 and `SP_HS_POL_ATO` 0, separate sync 0
+and 1, and `applyForSyncType()` writes neither on the csync branch. On separate
+sync, inverting `SP_HS2PLL_INV_REG` costs 2.5 points and doubles the flip rate,
+which is the only thing that run established. **Read `SP_SOG_MODE` back before
+scoring any leg.**
+
 ## What is open
 
-Which part of the composite path holds the ADC PLL at three-quarters lock.
-Neither the coast nor the slicing level does, and the remaining differences are
-`SP_SOG_MODE`, `SP_EXT_SYNC_SEL` and the signal itself -- the same wire carries
-csync rather than hsync, so the vertical interval arrives on the PLL's own
-reference.
+Which part of the composite path holds the ADC PLL at three-quarters lock --
+though the Wii leg makes this a side question rather than the fault.
+
+**THE LIVE CANDIDATE IS THE TWELVE SINGLETON `hlow_len` READINGS.** They are
+the only outliers the tearing does not explain: measured against the frame
+period the interval's own readings find, they sit at a phase concentration of
+0.151 against a control of 0.124, so they fall anywhere in the frame, where the
+crossings sit on the interval at 0.906. One of them -- `hlow_len` 1 -- is the
+sample immediately before the shear, 30 ms ahead of the 337 count. Ten
+occurrences in 27207 samples at 1 ms is one line in 420 sampled, so the rate
+they really occur at is unknown and needs an instrument that reads the register
+rather than the interval.
 
 Whether the 74% lock duty is the shear's cause or its companion. The duty does
 not dip at the event: 0.738 inside the window against a 0.743 run mean. So the
