@@ -411,7 +411,12 @@ bool Adc::acquirePhase(uint8_t oversample, bool sweep,
     if (clean < SweepGoodEnough)
         return false;
 
-    choosePhaseSyncProcessor(middleOfWidestCleanRun(dither));
+    // The scan proves where the band is and nothing about the rest of the
+    // field, so the default is kept wherever the scan says nothing against it.
+    // One sync type's band is the other's clean run on the same source.
+    // ../../../docs/investigations/the-sampling-phase-cannot-reach-the-shimmer.md
+    choosePhaseSyncProcessor(dither[MidField] == 0 ? MidField
+                                                    : middleOfWidestCleanRun(dither));
     choosePhaseAdc(oversample == 4 ? halfSampleOn(MidField) : MidField);
 
     applyPhaseSyncProcessor(phaseSyncProcessor());

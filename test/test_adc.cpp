@@ -622,12 +622,13 @@ static uint16_t lineSamplesAtPhase()
 
 static void countFeed() { ++g_feeds; }
 
-TEST_CASE("the sampling phase is swept for the window furthest from the worst")
+TEST_CASE("a swept phase clears the band and is latched into both adjusters")
 {
-    // The search walks the field, scores each phase by how often the sync
-    // processor miscounts the line, and takes the point OPPOSITE the worst run
-    // of three -- so the phase chosen is half a field away from where sampling
-    // was least stable. docs/video-source-acquisition.md
+    // The search walks the field and scores each phase by how often the sync
+    // processor miscounts the line. What it may conclude from that is the
+    // subject of the two cases at the foot of this file: the score locates the
+    // band, and a phase clear of the band is all it establishes.
+    // docs/video-source-acquisition.md
     Wire.reset();
     Adc::PLLAD_MD::write(2230);
     g_sweepDivider = 2230;
@@ -637,13 +638,14 @@ TEST_CASE("the sampling phase is swept for the window furthest from the worst")
     Adc::choosePhaseAdc(16);
 
     CHECK(Adc::acquirePhase(2, true, lineSamplesAtPhase, countFeed));
+    const uint8_t chosen = Adc::phaseSyncProcessor();
 
-    SUBCASE("the phase lands opposite the worst window") {
-        CHECK(Adc::phaseSyncProcessor() == 21);
+    SUBCASE("the phase clears the band it scored") {
+        CHECK((chosen < 4 || chosen > 6));
     }
 
     SUBCASE("and both adjusters are latched with it") {
-        CHECK(Adc::PA_SP_S::read() == 21);
+        CHECK(Adc::PA_SP_S::read() == chosen);
         CHECK(Adc::PA_SP_LAT::read() == 1);
         CHECK(Adc::PA_ADC_LAT::read() == 1);
     }
@@ -1432,4 +1434,48 @@ TEST_CASE("choosing a decimator test logic does not switch the path off")
 
     CHECK(Adc::DEC_TEST_SEL::read() == 2);
     CHECK(Adc::DEC_TEST_ENABLE::read() == 1);
+}
+
+TEST_CASE("a band clear of the default leaves the sampling phase at the default")
+{
+    // THE SWEEP'S EVIDENCE IS WHERE THE BAND IS. IT IS NOT EVIDENCE THAT THE
+    // FAR SIDE OF THE FIELD IS GOOD, and the far side is where the metric
+    // cannot see. Measured on the bench RISC PC at X320 Y256 C256 F50 on
+    // composite sync, 100 reads a phase across the whole field: the only band
+    // the metric finds is 27..29, scoring 17, 22 and 4, and phases 10..16
+    // score 0. The antipode of 27..29 is 13, which is the centre of the band
+    // the metric does find on separate sync -- 11..19 there, and 10..16 by the
+    // picture -- and 13 shears about once every 900 s where MidField measured
+    // 0 shears in 4500 s on the same source.
+    // ../docs/investigations/the-sampling-phase-cannot-reach-the-shimmer.md
+    Wire.reset();
+    Adc::PLLAD_MD::write(2230);
+    g_sweepDivider = 2230;
+    g_badFrom = 27; g_badTo = 29;
+    Adc::choosePhaseSyncProcessor(13);
+    Adc::choosePhaseAdc(16);
+
+    REQUIRE(Adc::acquirePhase(2, true, lineSamplesAtPhase, countFeed));
+
+    CHECK(Adc::phaseSyncProcessor() == Adc::MidField);
+}
+
+TEST_CASE("a band over the default moves the sampling phase off it")
+{
+    // The complement of the case above: the default is only kept where the
+    // sweep says nothing against it. A band at 10..16 covers MidField, so the
+    // widest clean run decides and the phase clears the band -- which is the
+    // shimmer the search was given this metric for.
+    Wire.reset();
+    Adc::PLLAD_MD::write(2230);
+    g_sweepDivider = 2230;
+    g_badFrom = 10; g_badTo = 16;
+    Adc::choosePhaseSyncProcessor(9);
+    Adc::choosePhaseAdc(16);
+
+    REQUIRE(Adc::acquirePhase(2, true, lineSamplesAtPhase, countFeed));
+
+    const uint8_t chosen = Adc::phaseSyncProcessor();
+    CHECK(chosen != Adc::MidField);
+    CHECK((chosen < 10 || chosen > 16));
 }
