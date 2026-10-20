@@ -1172,6 +1172,27 @@ twelve tables while they existed, which is what `BringUp` was built from.
   evidence, and prefer a comparison that has a right answer, such as
   `STATUS_SYNC_PROC_HTOTAL` against the divider.
 
+- **A WIDE STATUS FIELD TEARS ACROSS ITS TWO BYTES, AND THE TORN VALUE LOOKS
+  LIKE A FAULT.** `rawRead()` takes both bytes in one I2C transaction, which is
+  not atomic at the chip: the second byte is clocked out tens of microseconds
+  after the first, and a per-line register updates inside that gap. **The
+  signature is a 2x2 crossing of two genuine values** --
+  `STATUS_SYNC_PROC_HLOW_LEN` on composite reads 153 (`0x099`) and 2661
+  (`0xA65`), and the crossings 101 (`0x065`) and 2713 (`0xA99`) appear 57 times
+  in 27207 samples with nothing else between them. **Decompose an outlier
+  before believing it**, and treat it as real only where its high and low bytes
+  are not both another observed value's -- `STATUS_SYNC_PROC_VTOTAL`'s 337
+  (`0x151`) is genuine on exactly that test. `sampling_stats.py` flags the
+  crossings itself.
+
+  **AND A FIELD THAT NEVER MOVES CANNOT SHOW THE ARTEFACT**, so a comparison of
+  two states is unsound in one direction: the same source on separate sync
+  reads one high nibble and two adjacent low bytes, where tearing is invisible
+  by construction, so its narrower spread is not evidence that the measurement
+  is steadier. **A single-bit field is immune** and carries across such a
+  comparison where a wide one does not.
+  `docs/investigations/a-wide-status-field-tears-across-its-two-bytes.md`.
+
 - **`STATUS_SYNC_PROC_VSACT` is not a lock indicator, and it is not dead
   either — it reports the sync path you are already on.** Both readings are
   measured, on the same source, a day apart:
