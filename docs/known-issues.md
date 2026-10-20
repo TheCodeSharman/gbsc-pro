@@ -7711,6 +7711,43 @@ a stated signal rather than whichever `SP_TEST_SIGNAL_SEL` the last caller left
 the signal together, instead of writing the module bare. Two sweeps taken at
 different times are comparable, and each says what it read.
 
+### The sampling phase search selects a phase that shears the picture
+
+On composite sync the picture shears a few times an hour: a burst of
+mis-measured sync pulses over about 35 ms, then
+`STATUS_SYNC_PROC_VTOTAL` collapsing to 99 against the usual 308, then the
+emitted frame displaced progressively down the frame for ten frames, then
+recovery. Separate sync does not do it, and nor does the Wii on `ypbpr` in
+53999 frames.
+
+**`PA_SP_S` DECIDES IT.** Measured 2026-10-20 with `/samplinglog?width=`
+beside the emitted frame: 4500 s at phase 16 carries no shear, no burst and no
+count collapse, and 1800 s at phase 13 carries two shears and three bursts,
+with the deciding leg changing that register alone.
+
+**And 13 is what `Adc::acquirePhase()` picks.** 16 is what
+`phaseSyncProcessor_` holds at rest and what stands when the sweep is not good
+enough, because the function returns before choosing. A successful sweep takes
+`middleOfWidestCleanRun()` of a band measured here at 10..16, whose middle is
+13.
+
+**The criterion cannot see the fault.** Each phase is scored on how far
+`STATUS_SYNC_PROC_HTOTAL` departs from `PLLAD_MD`, which is the line LENGTH --
+and the sync processor counts in ADC clocks against a PLL locked to hsync, so
+it reports the divider back whatever the vertical separation does. A phase
+scores a perfect zero while losing vertical sync once a minute.
+
+**What would settle it:** score the scan on something that can see vertical
+separation as well as line length -- the line count holding still across the
+samples at each phase is the obvious candidate, and it costs one more read per
+sample. It has to be measured against the shimmer
+`investigations/the-sampling-phase-cannot-reach-the-shimmer.md` tuned this
+search for, because that is a different symptom on the same register.
+
+`investigations/the-composite-shear-rides-a-half-locked-adc-pll.md` has the
+chain, the refuted candidates -- the coast pair, the sub coast, the SOG
+slicing level and the retiming polarity auto-correct -- and the instrument.
+
 ### Two separator checks read a legitimate change as instability
 
 `SyncOnGreen`'s `lineLengthMoves()` and `SyncOnGreen::reacquire()` both read
