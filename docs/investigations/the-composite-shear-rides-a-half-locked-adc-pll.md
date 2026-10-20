@@ -158,6 +158,42 @@ readings respectively, so it cannot appear as a burst and its members read as
 isolated singletons. Twelve such singletons in the 1 ms run, at a phase
 concentration of 0.151, are what this resolves.
 
+## The fault went quiet, and the three markers went quiet together
+
+Measured 2026-10-20 across the session, on `vga` at 320x256@50 into 1920x1080,
+composite:
+
+| run | duration | shears | 30 ms pulse bursts | `sp_vtotal` 337 |
+|---|---|---|---|---|
+| monitor, 25 ms | 203 s | 1 | not measurable | 1 |
+| monitor, 1 ms | 183 s | 1 | not measurable | 3 |
+| width, 10 ms | 900 s | **1** | **1** | -- |
+| width, separator level 12 | 1500 s | 0 | 0 | **0** |
+| width, separator level 9 | 1200 s | 0 | 0 | **0** |
+
+The handover's own clips, recorded earlier the same day, carry 3 events in
+150 s and 4 in 240 s. So the rate fell by more than an order of magnitude
+within the session and then stopped.
+
+**ALL THREE MARKERS MOVE TOGETHER**, which is the useful part: a run with no
+shear has no burst and never sees the count leave 308/309. That is consistent
+with one mechanism and makes any of the three usable as the trigger, but it
+also means a quiet unit cannot test anything.
+
+**IT IS NOT THE INSTRUMENT.** The width mode puts about 2500 reads a second on
+the bus, and the run that caught the burst was a width run. A quiet result on
+one is not the bus being busy.
+
+**THE SEPARATOR LEVEL IS NOT THE LEVER.** `ADC_SOGCTRL` was 9 while the
+handover's clips were taken and the engine re-acquired it to 12 during a
+`/sc?~` in this session, which made it the obvious suspect for the collapse.
+Put back to 9 it gives 0 events in 1200 s against 0 in 1500 s at 12. The level
+is also flat against the lock duty across 3..26.
+
+The only thing that changed between the last run to carry an event and the
+first to carry none is an OTA flash, which resets the ESP and re-runs
+detection. Nothing establishes that as the cause.
+
 ## What is open
 
 Which part of the composite path holds the ADC PLL at three-quarters lock --
