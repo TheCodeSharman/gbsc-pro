@@ -441,3 +441,120 @@ TEST_CASE("a run says how many samples it took and over how long")
 
     CHECK(g_lastLine == "smp,done,9,100");
 }
+
+// Count the emitted lines of one kind, header excluded.
+static int emitted(const char *leader)
+{
+    const std::string header = std::string(leader) + "header";
+    int seen = 0;
+    for (const std::string &line : g_lines)
+        if (line.rfind(leader, 0) == 0 && line.rfind(header, 0) != 0)
+            ++seen;
+    return seen;
+}
+
+// The run's closing line lands after the last window, so g_lastLine is not it.
+static std::string lastOf(const char *leader)
+{
+    const std::string header = std::string(leader) + "header";
+    std::string found;
+    for (const std::string &line : g_lines)
+        if (line.rfind(leader, 0) == 0 && line.rfind(header, 0) != 0)
+            found = line;
+    return found;
+}
+
+static std::vector<std::string> columnsOf(const std::string &line)
+{
+    std::vector<std::string> out;
+    size_t at = 0;
+    while (at <= line.size()) {
+        const size_t comma = line.find(',', at);
+        out.push_back(line.substr(at, comma == std::string::npos
+                                      ? std::string::npos : comma - at));
+        if (comma == std::string::npos)
+            break;
+        at = comma + 1;
+    }
+    return out;
+}
+
+// The sync separator measures the sync pulse once a LINE -- 15625 a second on
+// the bench source -- so an interval run at its fastest samples one line in
+// several hundred and a disturbance lasting a few frames cannot appear in it.
+// A run that reads only this register keeps up, and the console carries it
+// because the row is a WINDOW rather than a reading.
+TEST_CASE("a width run emits one row per window and not one per reading")
+{
+    sourceOnTheBus(2250);
+    GBS::STATUS_SYNC_PROC_HLOW_LEN::write(153);
+    g_lines.clear();
+
+    SamplingLog log;
+    log.widths(0, 20, 100, 120, 200);
+    for (uint32_t now = 1; now <= 100; ++now)
+        log.poll(now);
+
+    CHECK(emitted("wid,") == 5);
+}
+
+TEST_CASE("a window carries more readings than it has polls")
+{
+    sourceOnTheBus(2250);
+    GBS::STATUS_SYNC_PROC_HLOW_LEN::write(153);
+    g_lines.clear();
+
+    SamplingLog log;
+    log.widths(0, 20, 20, 120, 200);
+    for (uint32_t now = 1; now <= 20; ++now)
+        log.poll(now);
+
+    const std::vector<std::string> row = columnsOf(lastOf("wid,"));
+    CHECK(std::stoi(row[2]) > 20);
+}
+
+// Min and max alone say a window held an outlier; the count says whether it
+// held one line or eighty, which is the difference between a stray reading and
+// a disturbance lasting a field.
+TEST_CASE("a window counts the readings below the band")
+{
+    sourceOnTheBus(2250);
+    GBS::STATUS_SYNC_PROC_HLOW_LEN::write(1);
+    g_lines.clear();
+
+    SamplingLog log;
+    log.widths(0, 20, 20, 120, 200);
+    for (uint32_t now = 1; now <= 20; ++now)
+        log.poll(now);
+
+    const std::vector<std::string> row = columnsOf(lastOf("wid,"));
+    CHECK(std::stoi(row[5]) == std::stoi(row[2]));
+}
+
+TEST_CASE("a window reports the lowest and highest reading it saw")
+{
+    sourceOnTheBus(2250);
+    GBS::STATUS_SYNC_PROC_HLOW_LEN::write(150);
+    Wire.drift(0, 0x19);
+    g_lines.clear();
+
+    SamplingLog log;
+    log.widths(0, 20, 20, 120, 200);
+    for (uint32_t now = 1; now <= 20; ++now)
+        log.poll(now);
+
+    const std::vector<std::string> row = columnsOf(lastOf("wid,"));
+    CHECK(std::stoi(row[3]) < std::stoi(row[4]));
+}
+
+TEST_CASE("a width run stops once its duration is up")
+{
+    sourceOnTheBus(2250);
+    SamplingLog log;
+
+    log.widths(0, 20, 100, 120, 200);
+    for (uint32_t now = 1; now <= 1000 && log.active(); ++now)
+        log.poll(now);
+
+    CHECK_FALSE(log.active());
+}

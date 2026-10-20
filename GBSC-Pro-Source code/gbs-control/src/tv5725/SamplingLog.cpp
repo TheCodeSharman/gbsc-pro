@@ -134,6 +134,9 @@ SamplingLog::SamplingLog()
       restoreDivider_(0), divider_(0), lineRateHz_(0), oversample_(1),
       durationMs_(0), startedMs_(0), stepStartedMs_(0), lastSampleMs_(0),
       sampleValid_(false), changesOnly_(false), samples_(0),
+      windowMs_(0), bandLow_(0), bandHigh_(0), windowStartedMs_(0),
+      windowReadings_(0), windowBelow_(0), windowAbove_(0),
+      windowLowest_(0), windowHighest_(0),
       lastSolveMs_(0), solveValid_(false)
 {
     memset(solve_, 0, sizeof(solve_));
@@ -163,6 +166,45 @@ void SamplingLog::monitor(uint32_t nowMs, uint16_t intervalMs,
               "dis_hb_st,dis_hb_sp,dis_vb_st,dis_vb_sp,hs_st,hs_sp,vs_st,vs_sp,"
               "if_hsync_rst,if_hbin_sp,hb_st,hb_sp,vb_st,vb_sp,if_hb_sp2,"
               "if_hb_st2,pll648,hlow_len");
+}
+
+void SamplingLog::startWindow()
+{
+    windowReadings_ = 0;
+    windowBelow_ = 0;
+    windowAbove_ = 0;
+    windowLowest_ = 0xFFFF;
+    windowHighest_ = 0;
+}
+
+void SamplingLog::widths(uint32_t nowMs, uint16_t windowMs, uint32_t durationMs,
+                         uint16_t low, uint16_t high)
+{
+    mode_ = Widths;
+    changesOnly_ = false;
+    samples_ = 0;
+    interval_ = 0;
+    startedMs_ = nowMs;
+    lastSampleMs_ = nowMs;
+    durationMs_ = durationMs;
+    windowMs_ = windowMs < 1 ? 1 : windowMs;
+    bandLow_ = low;
+    bandHigh_ = high;
+    windowStartedMs_ = nowMs;
+    startWindow();
+    tv5725Log("wid,header,ms,n,min,max,below,above");
+}
+
+void SamplingLog::emitWindow(uint32_t nowMs)
+{
+    char line[80];
+    snprintf(line, sizeof(line), "wid,%lu,%lu,%u,%u,%lu,%lu",
+             (unsigned long)(nowMs - startedMs_),
+             (unsigned long)windowReadings_,
+             (unsigned)(windowReadings_ ? windowLowest_ : 0),
+             (unsigned)windowHighest_,
+             (unsigned long)windowBelow_, (unsigned long)windowAbove_);
+    tv5725Log(line);
 }
 
 void SamplingLog::sweep(uint32_t nowMs, uint16_t low, uint16_t high,
@@ -319,6 +361,29 @@ void SamplingLog::poll(uint32_t nowMs)
     const uint32_t now = nowMs;
     if ((uint32_t)(now - lastSampleMs_) < interval_)
         return;
+
+    if (mode_ == Widths) {
+        for (uint8_t taken = 0; taken < WidthReadsPerPoll; ++taken) {
+            const uint16_t width = GBS::STATUS_SYNC_PROC_HLOW_LEN::read();
+            ++windowReadings_;
+            if (width < windowLowest_)
+                windowLowest_ = width;
+            if (width > windowHighest_)
+                windowHighest_ = width;
+            if (width < bandLow_)
+                ++windowBelow_;
+            else if (width > bandHigh_)
+                ++windowAbove_;
+        }
+        if ((uint32_t)(now - windowStartedMs_) >= windowMs_) {
+            emitWindow(now);
+            windowStartedMs_ = now;
+            startWindow();
+        }
+        if ((uint32_t)(now - startedMs_) >= durationMs_)
+            finish(now);
+        return;
+    }
 
     if (mode_ == Rating) {
         if (remaining_ == 0) {

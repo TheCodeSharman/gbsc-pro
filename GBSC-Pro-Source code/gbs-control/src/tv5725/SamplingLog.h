@@ -65,6 +65,23 @@ public:
     void rates(uint32_t nowMs, uint16_t count, bool useSyncProcessorBus = false,
                uint8_t pulses = 8);
 
+    // Read the measured sync pulse width as fast as the bus allows, and
+    // report one row per `windowMs` rather than one per reading.
+    //
+    // The sync separator measures once a LINE, so an interval run at its
+    // fastest samples one line in several hundred -- a disturbance lasting a
+    // few fields cannot appear in it, and the outliers that do are mostly the
+    // vertical interval and the byte crossings a read straddling it produces.
+    // ../../../../docs/investigations/a-wide-status-field-tears-across-its-two-bytes.md
+    //
+    // One register rather than the ten a monitor row carries is what buys the
+    // rate, and the window is what keeps the console able to deliver it.
+    // `low` and `high` bound the band the caller considers ordinary, and the
+    // counts either side of it are what separate a stray reading from a
+    // disturbance lasting a field.
+    void widths(uint32_t nowMs, uint16_t windowMs, uint32_t durationMs,
+                uint16_t low, uint16_t high);
+
     // Walk the sync separator's level across a range, timing the source's field
     // rate `reads` times at each one. Nothing on the board measures the sync
     // amplitude, so which levels slice a given source cleanly is a measurement
@@ -133,6 +150,8 @@ public:
 private:
     void applyStep(uint32_t nowMs);
     void emit(uint32_t nowMs);
+    void emitWindow(uint32_t nowMs);
+    void startWindow();
 
     // Where the engine solved, emitted when it moves. The comparison one run is
     // judged against another on, and the one a register dump over HTTP cannot
@@ -150,7 +169,8 @@ private:
     void reportSolve(uint32_t nowMs);
     void finish(uint32_t nowMs);
 
-    enum Mode : uint8_t { Idle, Monitoring, Sweeping, Rating, Separating };
+    enum Mode : uint8_t { Idle, Monitoring, Sweeping, Rating, Separating,
+                          Widths };
 
     Mode mode_;
     uint16_t low_, high_, step_, dwellMs_, interval_, restoreDivider_;
@@ -165,6 +185,16 @@ private:
 
     static bool sampleMoved(const uint16_t taken[SampleFields],
                             const uint16_t last[SampleFields]);
+
+    // How many readings one poll takes. The class is non-blocking, so the
+    // burst is bounded: eight reads of one register are a fraction of a
+    // millisecond, where a free-running loop would hold the sketch.
+    static const uint8_t WidthReadsPerPoll = 8;
+
+    uint16_t windowMs_, bandLow_, bandHigh_;
+    uint32_t windowStartedMs_;
+    uint32_t windowReadings_, windowBelow_, windowAbove_;
+    uint16_t windowLowest_, windowHighest_;
 
     uint16_t sample_[SampleFields];
     bool sampleValid_, changesOnly_;

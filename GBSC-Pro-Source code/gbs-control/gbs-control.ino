@@ -168,6 +168,7 @@ volatile bool pendingSamplingMonitor = false;
 volatile bool pendingSamplingSweep = false;
 volatile bool pendingSamplingRates = false;
 volatile bool pendingSamplingSeparator = false;
+volatile bool pendingSamplingWidths = false;
 volatile uint16_t pendingSamplingA = 0;
 volatile uint16_t pendingSamplingB = 0;
 volatile uint16_t pendingSamplingC = 0;
@@ -4936,6 +4937,11 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
             samplingLog.separator(millis(), (uint8_t)pendingSamplingA,
                                   (uint8_t)pendingSamplingB, pendingSamplingC);
         }
+        if (pendingSamplingWidths) {
+            pendingSamplingWidths = false;
+            samplingLog.widths(millis(), pendingSamplingA, pendingSamplingD,
+                               pendingSamplingB, pendingSamplingC);
+        }
 #endif
         if (pendingTuneSteps != 0) {
             const int16_t steps = pendingTuneSteps;
@@ -6155,6 +6161,7 @@ void startWebserver()
     //   /samplinglog?ms=5&for=60000              follow a source that changes
     //   /samplinglog?low=1600&high=2900&step=100&dwell=400   walk the divider
     //   /samplinglog?sog=0&to=31&reads=5         walk the sync separator's level
+    //   /samplinglog?width=10&lo=120&hi=200&for=180000   the sync pulse per line
     //
     // Queued, like /input: this answers from a network callback and must not
     // touch the bus.
@@ -6178,6 +6185,12 @@ void startWebserver()
             pendingSamplingB = (uint16_t)number("to", Tv5725::SyncOnGreen::LevelMax);
             pendingSamplingC = (uint16_t)number("reads", 5);
             pendingSamplingSeparator = true;
+        } else if (request->hasParam("width")) {
+            pendingSamplingA = (uint16_t)number("width", 10);
+            pendingSamplingB = (uint16_t)number("lo", 0);
+            pendingSamplingC = (uint16_t)number("hi", 4095);
+            pendingSamplingD = number("for", 60000);
+            pendingSamplingWidths = true;
         } else if (request->hasParam("low")) {
             pendingSamplingA = (uint16_t)number("low", 1600);
             pendingSamplingB = (uint16_t)number("high", 2900);
