@@ -279,10 +279,16 @@ composite, with the width mode and the emitted frame on one clock:
 | 13 | 11 | 0/0 | 900 s | 1 | 2 | **99** |
 | 13 | 11 | 1/1 | 900 s | 1 | 1 | **99** |
 | **16** | **11** | **1/1** | **900 s** | **0** | **0** | no |
+| **13** | **11** | **1/1** | **900 s** | **1** | **1** | **100** |
 
-The last row changes `PA_SP_S` alone against the rows above it. 4500 s at 16
-carries nothing; 1800 s at 13 carries two shears and three bursts, so the same
-rate would have given about five events at 16 and gave none.
+The last three rows are an A-B-A moving `PA_SP_S` alone: fault, clean, fault.
+Across the set, 4500 s at 16 carries nothing and 2700 s at 13 carries three
+shears, four bursts and three count collapses -- 99, 99 and 100. The same rate
+would have put about five events in the quiet time.
+
+An A-B-A rather than two legs because every comparison earlier in the session
+was undermined by the rate moving on its own; moving one register back and
+forth is what separates the register from the drift.
 
 **13 IS WHAT THE SEARCH CHOOSES AND 16 IS WHAT IT LEAVES.**
 `Adc::phaseSyncProcessor_` is 16 at rest, and `Adc::acquirePhase()` returns
