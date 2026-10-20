@@ -129,6 +129,35 @@ sync, inverting `SP_HS2PLL_INV_REG` costs 2.5 points and doubles the flip rate,
 which is the only thing that run established. **Read `SP_SOG_MODE` back before
 scoring any leg.**
 
+## A burst of mis-measured pulses sits on the shear
+
+Measured 2026-10-20 with `/samplinglog?width=10`, 900 s, 2246040 readings at
+2496 a second -- one source line in 6.3, against one in 420 for the interval
+modes. One shear in the run, and beside it:
+
+```
+T+316.348  n=40  min=153  max=154   below=0   cross=1
+T+316.359  n=16  min=118  max=153   below=1   cross=0
+T+316.369  n=40  min=98   max=153   below=16  cross=0
+T+316.379  n=16  min=0    max=154   below=14  cross=0
+T+316.442  n=16  min=153  max=2661  below=0   cross=0
+```
+
+**31 out-of-band readings in three consecutive 10 ms windows**, the minimum
+collapsing 118 -> 98 -> 0, on the one shear event of fifteen minutes. None is a
+crossing: the census test passed them as genuine, and 118, 98 and 0 are not
+products of the two values in circuit.
+
+So the pulse is not merely mis-measured once. It is mis-measured for about 30
+ms -- roughly 470 source lines, one and a half fields -- which is the right
+order for a disturbance that displaces the capture progressively and recovers.
+
+**THE SAMPLING RATE IS WHY NO EARLIER SESSION SAW IT.** At 25 ms the log reads
+one line in 420, and at 1 ms one in 55: a 30 ms burst lands 0.07 and 0.5
+readings respectively, so it cannot appear as a burst and its members read as
+isolated singletons. Twelve such singletons in the 1 ms run, at a phase
+concentration of 0.151, are what this resolves.
+
 ## What is open
 
 Which part of the composite path holds the ADC PLL at three-quarters lock --
