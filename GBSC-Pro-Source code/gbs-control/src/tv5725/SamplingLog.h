@@ -80,12 +80,13 @@ public:
     // counts either side of it are what separate a stray reading from a
     // disturbance lasting a field.
     //
-    // EACH READING IS TAKEN TWICE AND KEPT ONLY WHERE THE TWO AGREE, because
-    // the field is 12 bits across two registers and a read straddling the
-    // per-line update returns one byte from each instant. A tear is one read;
-    // a genuinely short line lasts a line and spans several reads of the
-    // burst. The rejected count is reported rather than dropped, since a real
-    // transition disagrees too.
+    // A READING THAT CROSSES TWO COMMONER ONES IS REPORTED SEPARATELY, not as
+    // an outlier. The field is 12 bits across two registers and a read
+    // straddling the per-line update returns one byte from each instant, so
+    // the product is a 2x2 crossing of two genuine values. Repetition cannot
+    // identify it: the bus takes about 350 us a reading, which is five lines,
+    // so anything lasting ONE line fails to repeat -- including the short
+    // pulse this mode exists to find.
     // ../../../../docs/investigations/a-wide-status-field-tears-across-its-two-bytes.md
     void widths(uint32_t nowMs, uint16_t windowMs, uint32_t durationMs,
                 uint16_t low, uint16_t high);
@@ -201,7 +202,23 @@ private:
 
     uint16_t windowMs_, bandLow_, bandHigh_;
     uint32_t windowStartedMs_;
-    uint32_t windowReadings_, windowBelow_, windowAbove_, windowTorn_;
+    uint32_t windowReadings_, windowBelow_, windowAbove_, windowCrossings_;
+
+    // Every distinct width the run has seen, which is what the crossing test
+    // needs: a reading is a crossing where some commoner reading shares its
+    // high byte and another shares its low one. One window holds too few
+    // readings to decide that, so the census spans the run.
+    static const uint8_t WidthCensusMax = 12;
+    struct WidthSeen {
+        uint16_t value;
+        uint32_t count;
+    };
+    WidthSeen census_[WidthCensusMax];
+    uint8_t censusHeld_;
+
+    void countWidth(uint16_t width);
+    bool widthCrosses(uint16_t width) const;
+    void reportCensus();
     uint16_t windowLowest_, windowHighest_;
 
     uint16_t sample_[SampleFields];

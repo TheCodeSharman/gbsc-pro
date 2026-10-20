@@ -135,7 +135,8 @@ SamplingLog::SamplingLog()
       durationMs_(0), startedMs_(0), stepStartedMs_(0), lastSampleMs_(0),
       sampleValid_(false), changesOnly_(false), samples_(0),
       windowMs_(0), bandLow_(0), bandHigh_(0), windowStartedMs_(0),
-      windowReadings_(0), windowBelow_(0), windowAbove_(0), windowTorn_(0),
+      windowReadings_(0), windowBelow_(0), windowAbove_(0),
+      windowCrossings_(0), censusHeld_(0),
       windowLowest_(0), windowHighest_(0),
       lastSolveMs_(0), solveValid_(false)
 {
@@ -168,12 +169,57 @@ void SamplingLog::monitor(uint32_t nowMs, uint16_t intervalMs,
               "if_hb_st2,pll648,hlow_len");
 }
 
+void SamplingLog::countWidth(uint16_t width)
+{
+    for (uint8_t at = 0; at < censusHeld_; ++at)
+        if (census_[at].value == width) {
+            ++census_[at].count;
+            return;
+        }
+    if (censusHeld_ < WidthCensusMax) {
+        census_[censusHeld_].value = width;
+        census_[censusHeld_].count = 1;
+        ++censusHeld_;
+    }
+}
+
+bool SamplingLog::widthCrosses(uint16_t width) const
+{
+    uint32_t mine = 0;
+    for (uint8_t at = 0; at < censusHeld_; ++at)
+        if (census_[at].value == width)
+            mine = census_[at].count;
+
+    bool high = false;
+    bool low = false;
+    for (uint8_t at = 0; at < censusHeld_; ++at) {
+        const WidthSeen &seen = census_[at];
+        if (seen.value == width || seen.count <= mine)
+            continue;
+        if ((seen.value >> 8) == (width >> 8))
+            high = true;
+        if ((seen.value & 0xFF) == (width & 0xFF))
+            low = true;
+    }
+    return high && low;
+}
+
+void SamplingLog::reportCensus()
+{
+    char line[48];
+    for (uint8_t at = 0; at < censusHeld_; ++at) {
+        snprintf(line, sizeof(line), "cen,%u,%lu", (unsigned)census_[at].value,
+                 (unsigned long)census_[at].count);
+        tv5725Log(line);
+    }
+}
+
 void SamplingLog::startWindow()
 {
     windowReadings_ = 0;
     windowBelow_ = 0;
     windowAbove_ = 0;
-    windowTorn_ = 0;
+    windowCrossings_ = 0;
     windowLowest_ = 0xFFFF;
     windowHighest_ = 0;
 }
@@ -192,8 +238,9 @@ void SamplingLog::widths(uint32_t nowMs, uint16_t windowMs, uint32_t durationMs,
     bandLow_ = low;
     bandHigh_ = high;
     windowStartedMs_ = nowMs;
+    censusHeld_ = 0;
     startWindow();
-    tv5725Log("wid,header,ms,n,min,max,below,above,torn");
+    tv5725Log("wid,header,ms,n,min,max,below,above,crossings");
 }
 
 void SamplingLog::emitWindow(uint32_t nowMs)
@@ -205,7 +252,7 @@ void SamplingLog::emitWindow(uint32_t nowMs)
              (unsigned)(windowReadings_ ? windowLowest_ : 0),
              (unsigned)windowHighest_,
              (unsigned long)windowBelow_, (unsigned long)windowAbove_,
-             (unsigned long)windowTorn_);
+             (unsigned long)windowCrossings_);
     tv5725Log(line);
 }
 
@@ -345,6 +392,8 @@ void SamplingLog::finish(uint32_t nowMs)
         SyncOnGreen::choose(restoreLevel_);
         SyncOnGreen::putInForce();
     }
+    if (mode_ == Widths)
+        reportCensus();
     mode_ = Idle;
 
     // The rate a run achieved is what every count taken from it is divided by,
@@ -367,11 +416,13 @@ void SamplingLog::poll(uint32_t nowMs)
     if (mode_ == Widths) {
         for (uint8_t taken = 0; taken < WidthReadsPerPoll; ++taken) {
             const uint16_t width = GBS::STATUS_SYNC_PROC_HLOW_LEN::read();
-            if (width != GBS::STATUS_SYNC_PROC_HLOW_LEN::read()) {
-                ++windowTorn_;
+            countWidth(width);
+            ++windowReadings_;
+            const bool outside = width < bandLow_ || width > bandHigh_;
+            if (outside && widthCrosses(width)) {
+                ++windowCrossings_;
                 continue;
             }
-            ++windowReadings_;
             if (width < windowLowest_)
                 windowLowest_ = width;
             if (width > windowHighest_)

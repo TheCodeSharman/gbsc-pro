@@ -565,23 +565,49 @@ TEST_CASE("a width run stops once its duration is up")
 // tens of microseconds after the first and the register updates every line, so
 // a read straddling an update returns one byte from each instant -- measured on
 // composite, 61 of 27207 samples, every one at the vertical interval's own
-// phase. A tear is therefore a SINGLE read, where a genuinely short line lasts
-// a line and spans several reads of a burst. Taking the reading twice and
-// keeping it only when the two agree is what separates them.
+// phase. The product is a 2x2 CROSSING of two genuine values, which is what
+// identifies it: 153 and 2661 produce 101 and 2713 and nothing else.
+//
+// Repetition cannot identify it here. The bus takes about 350 us a reading, so
+// two readings are five lines apart and anything lasting ONE line -- the
+// vertical interval, and equally the short pulse this mode exists to find --
+// fails to repeat. Measured: a repetition filter reported 0 of 2370 windows
+// holding the interval, which arrives in every one of them.
 // docs/investigations/a-wide-status-field-tears-across-its-two-bytes.md
-TEST_CASE("a reading that does not repeat is counted as torn, not as a width")
+TEST_CASE("a reading crossing two commoner ones is not an outlier")
 {
     sourceOnTheBus(2250);
-    GBS::STATUS_SYNC_PROC_HLOW_LEN::write(153);
-    Wire.drift(0, 0x19);
     g_lines.clear();
 
     SamplingLog log;
-    log.widths(0, 20, 20, 120, 200);
-    for (uint32_t now = 1; now <= 20; ++now)
+    log.widths(0, 1000, 1000, 120, 200);
+    for (uint32_t now = 1; now <= 80; ++now) {
+        GBS::STATUS_SYNC_PROC_HLOW_LEN::write(now % 2 ? 0x099 : 0xA65);
         log.poll(now);
+    }
+    GBS::STATUS_SYNC_PROC_HLOW_LEN::write(0x065);   // 101, the crossing
+    log.poll(81);
+    log.poll(1001);
 
     const std::vector<std::string> row = columnsOf(lastOf("wid,"));
-    CHECK(std::stoi(row[2]) == 0);
     CHECK(std::stoi(row[7]) > 0);
+}
+
+TEST_CASE("a reading that crosses nothing is counted below the band")
+{
+    sourceOnTheBus(2250);
+    g_lines.clear();
+
+    SamplingLog log;
+    log.widths(0, 1000, 1000, 120, 200);
+    for (uint32_t now = 1; now <= 80; ++now) {
+        GBS::STATUS_SYNC_PROC_HLOW_LEN::write(now % 2 ? 0x099 : 0xA65);
+        log.poll(now);
+    }
+    GBS::STATUS_SYNC_PROC_HLOW_LEN::write(1);       // crosses neither low byte
+    log.poll(81);
+    log.poll(1001);
+
+    const std::vector<std::string> row = columnsOf(lastOf("wid,"));
+    CHECK(std::stoi(row[5]) > 0);
 }
