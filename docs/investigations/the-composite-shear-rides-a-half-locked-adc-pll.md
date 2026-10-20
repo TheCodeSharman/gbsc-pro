@@ -268,6 +268,41 @@ in both states, so the ADC sampling phase is not involved.
 | 13 | 11 | 0/0 | 900 s | 1 | 2 |
 | 13 | 11 | 1/1 | 900 s | 1 | 1 |
 
+## The sync processor's phase is the lever, and the search selects the bad one
+
+`PA_SP_S` decides it, measured on `vga` at 320x256@50 into 1920x1080,
+composite, with the width mode and the emitted frame on one clock:
+
+| `PA_SP_S` | `ADC_SOGCTRL` | `SP_*_POL_ATO` | duration | shears | bursts | count collapse |
+|---|---|---|---|---|---|---|
+| 16 | 12 | 1/1 | 3600 s | 0 | 0 | no |
+| 13 | 11 | 0/0 | 900 s | 1 | 2 | **99** |
+| 13 | 11 | 1/1 | 900 s | 1 | 1 | **99** |
+| **16** | **11** | **1/1** | **900 s** | **0** | **0** | no |
+
+The last row changes `PA_SP_S` alone against the rows above it. 4500 s at 16
+carries nothing; 1800 s at 13 carries two shears and three bursts, so the same
+rate would have given about five events at 16 and gave none.
+
+**13 IS WHAT THE SEARCH CHOOSES AND 16 IS WHAT IT LEAVES.**
+`Adc::phaseSyncProcessor_` is 16 at rest, and `Adc::acquirePhase()` returns
+before `choosePhaseSyncProcessor()` when the sweep is not good enough, so the
+default stands. A successful sweep takes
+`middleOfWidestCleanRun()` of a band this bench measures at 10..16, whose
+middle is 13. So the search is not failing to prevent the fault. It selects it.
+
+**ITS CRITERION CANNOT SEE THIS FAULT.** Each phase is scored on how far
+`STATUS_SYNC_PROC_HTOTAL` departs from `PLLAD_MD` over
+`SamplesPerPhase` readings -- the stability of the LINE LENGTH. The sync
+processor counts in ADC clocks against a PLL locked to hsync, so that register
+reports the divider back whatever the vertical separation is doing, and the
+scan is blind to the count collapsing to 99. A phase can score a perfect zero
+on it and lose vertical sync once a minute.
+
+`the-sampling-phase-cannot-reach-the-shimmer.md` records the search being tuned
+against a different symptom, so a change of criterion has to be measured
+against both.
+
 ## What is open
 
 Which part of the composite path holds the ADC PLL at three-quarters lock --
