@@ -16,8 +16,9 @@ rows a second, which is what the loop and the console together will carry.
 
 `--width` asks the device for the sync pulse alone, as fast as the bus allows,
 reported one row per window. That is the only mode here that sees most LINES
-rather than most frames, and the firmware keeps a reading only where two reads
-agree, so a crossing never reaches the row.
+rather than most frames, and the firmware reports a reading that crosses two
+commoner ones separately, so a torn read does not reach the outlier counts.
+The run's whole value census follows the last window as `cen,` lines.
 
 **A WIDE FIELD TEARS ACROSS ITS TWO BYTES**, so an outlier is checked before it
 is believed: a value whose high byte and low byte are each another observed
@@ -107,17 +108,28 @@ WIDTH = re.compile(r"^wid,(\d+),(.*)$")
 
 def widths(host, window_ms, seconds, low, high):
     query = "width=%d&lo=%d&hi=%d&for=%d" % (window_ms, low, high, seconds * 1000)
-    rows, _ = collect(host, None, seconds, query=query, pattern=WIDTH)
+    rows, other = collect(host, None, seconds, query=query, pattern=WIDTH)
     if not rows:
         raise SystemExit("no width rows -- was the log already running?")
     n = [r[0] for r in rows]
     total = sum(n)
-    print("%d windows of %d ms, %d readings kept (%.0f/s), %d not repeated"
+    print("%d windows of %d ms, %d readings (%.0f/s), %d crossings rejected"
           % (len(rows), window_ms, total, total / seconds, sum(r[5] for r in rows)))
     print("a 50 Hz source runs 15625 lines/s, so this samples one line in %.1f"
           % (15625.0 * seconds / total if total else 0))
     below = [r for r in rows if r[3]]
     above = [r for r in rows if r[4]]
+    print("crossings rejected: %d" % sum(r[5] for r in rows))
+    census = []
+    for line in other:
+        if line.startswith("cen,"):
+            value, count = line.split(",")[1:3]
+            census.append((int(value), int(count)))
+    if census:
+        print("the run's value census:")
+        for value, count in sorted(census):
+            print("  %5d = 0x%03X  high 0x%X low 0x%02X  x%d"
+                  % (value, value, value >> 8, value & 0xFF, count))
     print("windows holding a reading below %d: %d of %d" % (low, len(below), len(rows)))
     print("windows holding a reading above %d: %d of %d" % (high, len(above), len(rows)))
     if below:
