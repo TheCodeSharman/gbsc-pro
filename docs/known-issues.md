@@ -2116,6 +2116,30 @@ than a single mode.
 `SourceKey` was a fifth consumer and is fixed:
 `investigations/the-key-carried-the-origins-calibration.md`.
 
+### A solve taken before the divider latches forms a key of its own, and the shape falls to the raster default
+
+A mode change solves on intermediate measurements, and a field rate read before
+the clock has latched can land in a different half-hertz bucket from the settled
+one. Measured on `vga`, composite, arriving at `MODE X320 Y256 C256 F50` from
+640x480@60:
+
+```
+measured: 312 lines x 50.29 Hz -> line rate 15690, clock 1272@31501 htotal 992 UNLATCHED
+source key: 312@50.29/695??, no framing stored, shape 13333
+   ... ten seconds later ...
+measured: 312 lines x 50.08 Hz -> line rate 15625, clock 2200@15690 htotal 2200
+source key: 312@50.08/695??, framing recalled, shape 17778
+```
+
+The key is formed from a measurement whose own line says `UNLATCHED`. It
+recalls nothing, so the declared shape falls from 16:9 to the raster's 4:3
+default and the framing to the computed one, and the picture is the wrong shape
+for about ten seconds until the settled solve recalls the right entry.
+
+**Nothing was stored against the transient key** -- `/framing.txt` carried no
+`312@50.29` entry afterwards -- so what is open is whether a save inside that
+window writes one, which would be permanent and silent.
+
 ### Every stored framing entry is orphaned by the key's sync share moving
 
 The share in a `/framing.txt` key moved up by the origin calibration's share of
