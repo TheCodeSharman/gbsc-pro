@@ -1949,11 +1949,21 @@ and 1.479 on the sheared frame for 13 against 16 -- so 16 is the better phase
 by tens of percent, not the difference between a fault and none. The claim that
 13 shears and 16 is clean rested on legs scoring 1, 0 and 1 bursts.
 
-**WHICH OF THE PRE AND POST LINES CARRIES IT IS OPEN**: that run moved them
-together. `preCoastLines()` returns `CompositePreCoastLines` for every
-composite source with no serration dependence, where `postCoastLines()` follows
-the measurement, and the header states only a serrated source needs the pre
-coast.
+**IT IS THE PRE LINES.** Crossing the pair over 180 blocks and 2.39 scored
+hours gives 41 sheared frames at pre 7 against 6 at pre 0 -- ratio 6.76
+[2.54, 18.00], p = 1.8e-07 -- and 12 bursts against 0, where the post lines
+within pre 7 give 22 against 19 at p = 0.76. `preCoastLines()` returns
+`CompositePreCoastLines` for every composite source with no serration
+dependence, where `postCoastLines()` follows the measurement, and the header
+states only a serrated source needs the pre coast. **The fix is to make the pre
+coast follow that measurement**, which cannot be unconditional: a serrated
+source at pre 0 dithers its count until the engine drops it to absent.
+
+**AND THE COUNT COLLAPSE IS NOT A SHEAR-SPECIFIC ENDPOINT.** At 0/2 it fires
+1650 times, 47 times the engine's rate, beside no bursts at all and six sheared
+frames -- so a leg scored on the collapse alone calls that cell the worst
+measured where the picture calls it among the best. pre 0 is also only safe
+with post 0: 0/0 and 0/2 differ 69-fold on the dither with nothing else moved.
 `investigations/the-composite-shear-is-the-coast.md`,
 `investigations/the-phase-scan-measures-one-band-and-infers-the-rest.md`.
 

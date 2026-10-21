@@ -81,19 +81,71 @@ poked phase is taken back part way through a leg, and more often in the arm
 that disagrees with the engine. `Adc::overridePhaseSyncProcessor()` and
 `SyncProcessor::overrideCoast()` are what make a leg measure the register.
 
+## It is the PRE coast
+
+The run above moved the pair together, so it attributes nothing between the
+lines. Crossing them does: 180 blocks over 2.39 scored hours, the same
+randomised blocks with the phase held at 16, `PATTERN CARD`.
+
+| coast | bursts | sheared frames | worst spread | collapses | scored |
+|---|---|---|---|---|---|
+| 0/0 | **0** | **0** | 0 | 24 | 36.0 min |
+| 0/2 | **0** | 6 | 129 | **1650** | 35.2 min |
+| 7/0 | 5 | 19 | 290 | 49 | 36.0 min |
+| 7/2, the engine's | 7 | 22 | 237 | 36 | 36.0 min |
+
+**The PRE lines carry the shear.** Sheared frames are 41 at pre 7 against 6 at
+pre 0, a ratio of **6.76** [2.54, 18.00] at p = 1.8e-07, and the pulse burst is
+**12 against 0** at p = 4.9e-04. **The POST lines do not**: within pre 7 they
+give 22 against 19, p = 0.76.
+
+That is what the register's own reasoning says. `SyncProcessor.h` states that
+only a serrated source needs the pre coast; `preCoastLines()` returns
+`CompositePreCoastLines` for every composite source with no serration
+dependence, where `postCoastLines()` follows the measurement. An unserrated
+source is handed a hold the header says it does not need.
+
+## THE COUNT COLLAPSE IS NOT SPECIFIC TO THE SHEAR, AND 0/2 IS WHERE THAT SHOWS
+
+At 0/2 the count leaves its band **1650 times**, 47 times the engine's rate,
+with **no pulse burst at all and six sheared frames**. So the count dithers
+violently while the picture does not shear, and a leg scored on the collapse
+alone would call 0/2 the worst state measured when on the picture it is among
+the best.
+
+The three metrics agree across 0/0, 7/2 and 7/6, which is why the collapse was
+taken as the primary endpoint; 0/2 is a cell that run never visited. **So an
+endpoint that tracks the fault across three states is not thereby specific to
+it**, and the attribution above rests on the burst and the sheared frame, which
+were ranked second and third. It wants confirming on its own run rather than
+reading as closed.
+
+**AND pre 0 IS ONLY SAFE WITH post 0.** The same pair of cells differ by a
+factor of 69 on the count dither -- 1650 against 24 -- with nothing else moved.
+Whatever the post lines do to an unheld count, they do it only when the count
+is unheld.
+
+## The sheared frame count is content dependent
+
+The overnight ran on `PATTERN PM5544` at a mean luma of 139 and the attribution
+run on `PATTERN CARD` at 80. The shear is read as the spread across bands of
+one frame, which a detailed picture carries more strongly than a plain one, so
+**sheared-frame counts do not compare between the two runs.** The burst and the
+collapse are register reads and do compare. Judge a shear rate within one run
+and one pattern.
+
 ## Open
 
-- **Which of the pre and post lines carries it.** The run above moved them
-  together, so it attributes nothing between them. `SyncProcessor.h` states
-  that only a serrated source needs the PRE coast, and `preCoastLines()`
-  returns `CompositePreCoastLines` for every composite source with no
-  serration dependence, where `postCoastLines()` does follow the measurement.
-  That asymmetry is the candidate.
-- **What the coast does to the vertical interval on a source with no serrations
-  at all.** The mechanism is unmeasured: the shear is the vertical sync being
-  detected about 32 lines late, and nothing says how holding the PLL longer
-  makes that more likely.
-- **Whether 0/0 suits a serrated source.** It must not: the pre coast holds the
-  count, and a serrated source at 0 is recorded as dithering its count at every
-  post coast. So a fix follows the serration measurement rather than lowering
-  the pair for everyone.
+- **The candidate fix, and why it cannot be unconditional.** Make the pre coast
+  follow the serration measurement as the post coast already does: an
+  unserrated source gets 0/0, a serrated one keeps the hold. A serrated source
+  at pre 0 is recorded as dithering its count at every post coast until the
+  engine drops it to absent, so lowering the pair for everyone trades this
+  fault for that one. Validation needs all three bench arrangements -- the RISC
+  PC on composite, the Wii on `ypbpr` for the serrated path, and the RISC PC on
+  separate sync, where the coast is not applied at all.
+- **The mechanism.** The shear is the vertical sync being detected about 32
+  lines late, and nothing measured says why holding the PLL across the
+  preceding seven lines makes that more likely.
+- **What the post lines do to an unheld count**, which is the 69-fold
+  difference between 0/0 and 0/2.
