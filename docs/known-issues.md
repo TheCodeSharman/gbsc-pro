@@ -6664,28 +6664,6 @@ measured zero in two windows of ninety seconds.
 
 `investigations/the-composite-count-dithers-where-the-ignore-nears-the-pulse.md`.
 
-### The coast gate keys on equalisation, which is not the fact it needs
-
-`SyncProcessor::preCoastLines()` and `postCoastLines()` return 0 when
-`Tv5725::EqualisationMeasurement` reports no half-line pulses. That probe cannot
-see SERRATION -- a serrated broad pulse clears both of its thresholds and is
-counted once per line -- and the Wii at 480p is serrated while carrying no
-equalisation. Held at 0/0 it never settles: the count dithers 521..525, the rate
-alternates 31348/31468 and the sync pad cycles about every 2.2 s.
-
-**It is not reaching that state today, and only by accident.** The probe runs in
-the same 20 ms as a divider install and the engine installs twice in quick
-succession on that source -- 1446 then 1212, ~310 ms apart -- so it reads across
-a clock that is changing and returns a false `serrated`, which happens to be the
-safe answer. Reproduced on both selections of `ypbpr` in one session.
-
-The gate needs the equalisation answer AND
-`VideoPath::measureVerticalInterval()`'s, which asks whether the input formatter
-can still measure the interval uncoasted. Every state measured good satisfies
-both: RISC PC composite none/8 of 8 -> 0/0, Wii 480p none/**0 of 8** -> 7/6,
-Wii 576i +9/8 of 8 -> 7/2, Wii 480i +10/8 of 8 -> 7/2.
-`investigations/the-equalisation-probe-cannot-see-serration.md`.
-
 ### The equalisation probe runs across a divider change
 
 `VideoPath::measureEqualisation()` is gated on `samplingClockLatched()`, which
@@ -6708,6 +6686,11 @@ Frozen at the settled divider the same source reads 524 at both thresholds.
 
 **Why the engine installs twice is not established.**
 
+**The coast no longer rests on this.** The gate takes
+`VideoPath::measureVerticalInterval()`'s answer as well, so a false `serrated`
+reaches only `SP_H_PULSE_IGNOR`, where the higher threshold costs an unserrated
+source nothing the next probe cannot recover.
+
 ### The equalisation answer is forgotten per INPUT, not per MODE
 
 `VideoPath::establishSyncType()` forgets `EqualisationMeasurement` only when the
@@ -6715,9 +6698,12 @@ input selection changes, so a mode change on one cable keeps the held answer --
 and 480p to 576i is progressive to interlaced on one cable. Measured: 576i ran
 on the answer probed at 480p and only re-probed when the input was bounced.
 
-Same shape as the sync-type entry below. It mattered less when the answer chose
-only `SP_H_PULSE_IGNOR`; it now also chooses the coast, where a stale
-"no equalisation" carried into a source that needs the hold drops it to 0/0.
+Same shape as the sync-type entry below, and
+`VideoPath::measureVerticalInterval()` is keyed the same way -- so a mode change
+carries BOTH halves of the coast gate forward. The benign direction is
+480p -> 576i, which lands 7/6 on a source measured good at 7/2 and is a hold it
+does not need. The other direction is the live one: 576i's answers carried into
+480p give 7/2, where a source needing the hold is measured to want at least 4.
 
 ### 1280x720@60 on `vga` comes up absent
 

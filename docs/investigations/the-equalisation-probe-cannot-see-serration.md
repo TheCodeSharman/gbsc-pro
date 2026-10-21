@@ -60,7 +60,7 @@ immediately.
 
 So a source reading **no equalisation** can still require the coast, and gating
 the pre lines on the equalisation answer alone admits a state the picture cannot
-be held in. The gate needs both that answer and
+be held in. The gate takes both that answer and
 `VideoPath::measureVerticalInterval()`'s, which asks the functional question --
 whether the input formatter can still measure the interval uncoasted:
 
@@ -73,6 +73,15 @@ whether the input formatter can still measure the interval uncoasted:
 
 Every state measured good satisfies both; dropping either admits one that is
 not.
+
+Measured on the gate as it stands, both inputs in one session: `vga` solves
+`SP_PRE_COAST`/`SP_POST_COAST` 0/0 with count 308 and
+`STATUS_SYNC_PROC_HTOTAL` 2200 against the divider, and `ypbpr` on the Wii at
+480p solves 7/6 with count 524 and `HTOTAL` 1212 against 1212, steady over four
+samples sixteen seconds apart. The console names the measurement it used --
+`the formatter measured it uncoasted in 0 of 8, post coast 6` on 480p -- and
+the equalisation probe read a false `equalisation` in the same acquisition
+without changing the pair, which is the gate's point.
 
 ## A second instrument for serration exists and needs no poking
 
