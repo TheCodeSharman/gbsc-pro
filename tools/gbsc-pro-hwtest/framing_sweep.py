@@ -227,7 +227,7 @@ def relock(where, host, mode):
     """The source leaves and returns with our registers as they stand, and the
     engine settles again. It re-acquires the capture; the sink's window is
     placed only when the sync pad returns, which this never toggles.
-    docs/investigations/the-encoder-places-its-window-when-the-sync-pad-returns.md"""
+    docs/investigations/the-transmitted-window.md"""
     return gbs_unit.mode_round_trip(where, host, mode)
 
 

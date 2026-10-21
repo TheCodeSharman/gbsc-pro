@@ -9,7 +9,7 @@ registers do not say where it landed. The card's own liveness animation carries
 both boundaries, so a landing is measured with NOTHING on the scaler touched --
 which matters, because a write provokes a re-lock and a re-lock is the thing
 being measured.
-../../docs/investigations/the-encoder-tunes-the-left-edge-in-pass-through.md
+../../docs/investigations/the-transmitted-window.md
 
 PatLib flips the screen border cyan/magenta and four corner blocks yellow/white
 off one phase. `R-G` swings on cyan/magenta and is zero on yellow/white; `B`

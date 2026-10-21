@@ -575,7 +575,7 @@ def test_one_source_is_framed_the_same_on_every_acquisition(bench, host,
     /geometry and what reached the screen is in the capture, and the emitted
     frame can move while every register holds: the sink's window is latched when
     the link acquires, downstream of the board.
-    docs/investigations/the-shown-window-is-latched-at-lock.md
+    docs/investigations/the-transmitted-window.md
     """
     where = bench
     want_passed_through(host, False)

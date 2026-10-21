@@ -20,7 +20,7 @@ every span. It reaches the ABSOLUTE figures in principle, and measured against
 the scaling path at 1080p, across three modes spanning a 19-sample range. An
 output-resolution change or a pass-through excursion is a different matter and
 was never in that comparison.
-../../docs/investigations/the-shown-window-is-latched-at-lock.md
+../../docs/investigations/the-transmitted-window.md
 
 An IF unit is TWO ADC samples on a line-doubled source and one otherwise, so
 every figure the sync processor reports -- it counts in ADC samples -- is

@@ -39,7 +39,7 @@ at the near edge and none at the far one.
 Taking its origin from `VDS_DIS_HB_SP` is REFUTED -- do not reach for it -- and
 the encoder tuning the near edge to the content it receives is PASS-THROUGH
 only. `docs/known-issues.md`, `docs/investigations/
-the-encoder-tunes-the-left-edge-in-pass-through.md`.
+the-transmitted-window.md`.
 
 It is repeatable to the pixel across re-locks at one state, though the
 sub-pixel landing inside the edge column does move: measured frozen, with every
@@ -66,7 +66,7 @@ are nearly right -- so it is reported whether the verdict passes or fails,
 which is what keeps a widened allowance from hiding a drift.
 
 The model this instrument used to assume, and the measurements that killed it:
-`docs/investigations/the-transmitted-window-is-latched-from-our-blanking.md`.
+`docs/investigations/the-transmitted-window.md`.
 
 **THE CARD'S OUTERMOST RING FLASHES YELLOW AND WHITE**, twice a second, and the
 green frame is drawn over it in both phases. **ONE FRAME IS NOT ENOUGH TO SEE
