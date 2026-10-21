@@ -589,7 +589,7 @@ distinguish these:
    is the arm and `sync pad: driven` is the end of the setup, and a divider,
    rate match or phase line AFTER the driven line is a sequencing fault.
    `docs/investigations/encoder-stale-timing.md`,
-   `docs/investigations/a-transition-and-a-settled-toggle-place-the-window-alike.md`.
+   `docs/investigations/the-transmitted-window.md`.
 
    A power cycle — mains *and* USB, since USB backfeeds the rails — remains the
    fallback for a state the toggle does not clear.
@@ -638,8 +638,7 @@ landings and onto neither value. **The black at the LEFT is the discriminator**
 none, and a reading that only asks where the picture starts is reading our own
 aperture. That confound is what cut `OutputMode::TransmittedWindowDelayPx` from
 20 to 3 and left 25 of 1920 columns black at the right.
-`docs/investigations/the-transmitted-window-is-latched-from-our-blanking.md`,
-`docs/investigations/the-shown-window-is-latched-at-lock.md`.
+`docs/investigations/the-transmitted-window.md`.
 
 **THE SHOWN WINDOW MOVES WITH SOMETHING THE OUTPUT REGISTERS DO NOT DESCRIBE,
 AND WHAT IT IS REMAINS OPEN.** Latching to image content is the obvious reading
@@ -1833,7 +1832,7 @@ one the same way; the rules below are each a wasted session.
   usable frame after either, so a clip taken too early is all black and reads
   as a dead output. Read the register back afterwards -- a frozen unit is not an
   inert one.
-  `docs/investigations/the-encoder-places-its-window-when-the-sync-pad-returns.md`,
+  `docs/investigations/the-transmitted-window.md`,
   `docs/investigations/full-screen-framing-on-the-vesa-modes.md`.
 - **THE SINK'S OWN POSITION IS PER RASTER AND NO TERM PLACES IT.** Measured
   across the stock AKF50 set into 1080p and 720p with `framing_sweep.py --tier
@@ -1843,7 +1842,7 @@ one the same way; the rules below are each a wasted session.
   pad toggle on the settled state does not. So a frame judged after a mode
   change carries a placement a settled toggle would not give, and a model in
   T, the clock or the rate cannot close the 50 Hz 1080p rasters.
-  `docs/investigations/the-sinks-own-window-position-is-per-raster.md`.
+  `docs/investigations/the-transmitted-window.md`.
 - **An open window past the end of the picture is not corruption.** It shows
   whatever the playback stage fetches, which looks like a fault and is only
   absence of data. Establish that there IS picture under the window before
@@ -1903,7 +1902,7 @@ one the same way; the rules below are each a wasted session.
   remains unlicensed is a specific mechanism inside the encoder, not the
   locality. Repeat the overlay measurement before believing any new claim about
   where the position is set; it costs one photograph per landing.
-  `docs/investigations/the-picture-position-is-latched-not-re-rolled.md`.
+  `docs/investigations/the-transmitted-window.md`.
 - **Separate what the board must emit from what one display happens to show.**
   The MS9288A consumes the scaler's analog blanking and generates HDMI blanking
   of its own, so the minimum the scaler must emit is a board property, measured
@@ -2008,7 +2007,7 @@ emitted columns, bottom ~40 rows, top ~3, and **none at all at the left** --
 so the bars a pass-through frame shows are the source's, and the left one is
 not arriving. **It also refutes the black-hunt model**, because the border is
 not black in that state and the window still does not reach it.
-`docs/investigations/the-encoder-tunes-the-left-edge-in-pass-through.md`.
+`docs/investigations/the-transmitted-window.md`.
 
 ### Move the picture without disturbing the parity bias
 
