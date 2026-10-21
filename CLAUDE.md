@@ -1820,12 +1820,16 @@ one the same way; the rules below are each a wasted session.
   `PAD_SYNC_OUT_ENZ`, and the sink's window stays where the last mode change
   put it: measured on 320x256@50 into 1080p, three round trips at 172, 171 and
   172 with the framing zoomed for the middle one. **The sink places its window
-  each time the pad is driven again**, at the first non-black content at the
-  aperture's edge where that is earlier than its own position for the raster,
-  else at that position -- 158.9 with the picture at the edge, 171 with
-  captured black there, on one state. So a measurement of where the SINK cuts
-  the line needs a pad toggle in the state under test, and a measurement of the
-  capture needs the round trip. The dongle needs ten seconds or so to deliver a
+  each time the pad is driven again** and remembers nothing between returns --
+  158.9 with the picture at the aperture's edge, 171 with captured black there,
+  on one state. **WHAT IT READS TO CHOOSE THAT IS OPEN, AND THE IMAGE CONTENT
+  IS REFUTED**: see the shown-window entry above, and do not reason from "it
+  hunts the first non-black column" in either direction -- a measurement taken
+  with picture hard against the aperture's edge reports the APERTURE back, and
+  the discriminator is the black at the LEFT rather than where the picture
+  starts. So a measurement of where the SINK cuts the line needs a pad toggle
+  in the state under test, and a measurement of the capture needs the round
+  trip. The dongle needs ten seconds or so to deliver a
   usable frame after either, so a clip taken too early is all black and reads
   as a dead output. Read the register back afterwards -- a frozen unit is not an
   inert one.
