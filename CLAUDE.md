@@ -72,6 +72,20 @@ the Wii on `ypbpr`. No sync arrangement is out of reach from a session.
 concluding a branch is untestable**, and it carries what each one is currently
 known to do.
 
+**FIX THE SCALER, NOT THE SOURCE. THE UNCONFIGURED SOURCE IS THE TORTURE
+TEST.** The firmware accepts whatever timings arrive, and bending the source to
+suit it is a closed question rather than an open trade-off. The reason is
+representativeness and not illegitimacy: authoring an MDF to match a panel is
+exactly what the mechanism is for and would work, but a Wii cannot be retimed
+and most retro machines emit what they emit, so arranging the one source that
+CAN be arranged tunes the scaler to the least representative case and hides the
+problems it exists to solve. The `RetroScale` MDF is the abandoned attempt --
+a custom 320x256 entry tweaked until the picture went fullscreen, correct for
+predicting that machine and carrying no authority about RISC OS timings. So no
+mode-file edit, per-source lookup table or anything keyed on one machine's modes
+is a runtime mechanism; the firmware cannot read an MDF at all. Defaults come
+from what the chip can MEASURE, with a trim control for the rest.
+
 **THE OUTPUT IS READ BY A USB HDMI CAPTURE, NOT BY PHOTOGRAPHING THE PANEL.**
 `hdmi_capture.py` gives the emitted frame itself, so a margin is a number rather
 than a judgement and two states compare without controlling the room. The
@@ -846,6 +860,14 @@ mistake that has been made and cost a wrong diagnosis — bypass produces a work
   panel left running is not a fault and closing one has never fixed anything.
   A **polling** loop is the thing to look at, because it changes what the unit
   is doing between your reads.
+  **ONLY ONE PROCESS MAY DRIVE THE UNIT AT A TIME**, and this is about WRITERS:
+  two runs that both call `/input` time each other's source changes, which reads
+  as the unit being unreliable rather than as the bench being driven twice. It
+  invalidated a twenty-leg acceptance run -- the first run had not died as
+  assumed, because `gbs_unit.wait_for()` RETURNS rather than raising, so a
+  precheck that never saw an acquired source carried on into its legs and ran
+  concurrently with its own relaunch, both writing the same log. **A background
+  task reported "completed" is not proof its process exited.**
 - **Never flash `GBS_DEBUG=0` while diagnosing.** It is the flag gating
   `debugPrintf`, which `tv5725Log()` expands to, so it silences `no INPUT vsync`,
   `no OUTPUT vsync` and every `runFrequency()` reason — precisely the messages
@@ -1306,6 +1328,15 @@ twelve tables while they existed, which is what `BringUp` was built from.
 - **Two points cannot disconfirm a line.** Three magnifications is the minimum
   that can fail, and `measure_produced.py` and `measure_origin.py` print
   residuals so they can.
+- **WHERE AN EXTREME CARRIES A REAL HAZARD THE MARGIN BELONGS IN THE DEFAULT,
+  NOT IN THE CLAMP**, because the default is adjustable and the clamp is not.
+  The line volume is the worked case: the PT2257's floor was hardcoded 12 dB
+  above its own 0 dB, costing 12 dB on every source to guard a clipping level
+  the encoder's datasheet never states. Exposing 0..50 dB with a default of 12
+  keeps the protection for a unit nobody has touched and lets a quiet source
+  reach 0 -- measured clean at 0 dB on the RiscPC's headphone output. Capping
+  the top cannot express that and penalises every source to guard a case that
+  may not exist.
 - **Don't pin a CONSTANT to a panel edge**, because where a display stops
   showing is a property of that display: `geometry_math` centres on the raster
   instead and the user finds their own edges with pan and scale. The vertical
@@ -1953,6 +1984,18 @@ one the same way; the rules below are each a wasted session.
   is the same error as measuring a fixed span from a moving origin. Anchor the
   band to a feature of the picture, and print that feature's position with every
   frame so a shift is visible in the results rather than hidden in them.
+- **A SHARE OF ZERO DISPLACED FRAMES IS NOT A VERDICT UNTIL A FRAME HAS BEEN
+  LOOKED AT.** `picture_stability.judge`'s row-profile correlation finds lag 0
+  on whatever part of the frame still correlates, so a band of unwritten memory
+  a hundred rows high reads as perfectly still. The H coast stop past the line
+  (`SP_H_CST_SP` >= 1728 at 320x256@50) scored 0 of 514 on every trial beside a
+  frame that was mostly magenta noise, with the measured sync width at 1 and
+  the count pinned at 199 -- and it would have shipped as a fix. Grab a frame
+  with `hdmi_capture` and look at it, and read `STATUS_SYNC_PROC_HLOW_LEN` and
+  the count beside the share. **The count is a correlate of the roll, not an
+  instrument for it**: `SP_H_PULSE_IGNOR` 30 removed every short count and left
+  the roll alone, and `SP_DLT_REG` 4095 gave the steadiest count ever seen on a
+  frame rolling in 90% of samples.
 - **A FRAME DIFFERENCE IS NOT A DISPLACEMENT, AND IT IS BLIND OVER FLAT COLOUR.**
   Scoring a clip on `tblend=all_mode=difference` measures displacement
   MULTIPLIED BY LOCAL CONTRAST, so a whole line can shift across a solid block
@@ -2119,6 +2162,102 @@ So: keep a difference that has a reason, and write the reason down. Delete one
 that does not. A faithful refactor of an accident preserves the accident.
 
 
+**CONFIGURE EXPLICITLY ON THREE EVENTS. "PRESET" IS LEGACY VOCABULARY AND THE
+CONCEPT GOES WITH THE WORD.** Each subsystem is configured on exactly three:
+
+| event | owner |
+|---|---|
+| app boot | `Tv5725::<Subsystem>::init()` -- constants only, no arguments |
+| input source switch | `VideoSourceSelector` -- mux, colour space, stored ADC calibration, sync arrangement |
+| mode change, source or output | the engine, `VideoPath` / `VideoSourceAcquisition` -- everything derived from a measurement, plus the ordered restart |
+
+**The duplication is where the bugs live rather than untidiness**: two ways the
+chip gets configured means some path reaches a picture through one and not the
+other. A flat-field boot was exactly that -- `ResetSDRAM()` was a free function
+only a preset load reached, so a boot whose detection claimed the source on its
+first pass never ran it, 6 of 6 reproducible, and moving it onto the mode change
+cured it. **So when a register looks missing, ask which of the three events
+should have written it and whether that owner exists** -- do not bolt the write
+onto whichever function happens to run, and do not reach for a register diff
+first, which is what produces a partial fix in the wrong place.
+
+**THE ENGINE HAS TWO ENTRY POINTS AND NO OTHER WAY IN.** An input source is
+selected -- which measures the source and then CALLS the output setup, so it is
+a measurement in front of the other method rather than a second implementation
+of it -- and the output is set up, from state held. Anything that is neither is
+a competing path: the preset load, a detection sweep that re-decides an output,
+a resolution ladder in a menu handler. **`rto->videoStandardInput` does not
+survive this**, being replaced by the pair that decouples the two concepts, the
+input mux selection and the output mode resolution. One number currently carries
+which input, which standard family, whether scaling RGBHV is on and whether the
+part is bypassed, and every place that hurts is that conflation. Judge a change
+by whether it reduces the number of ways the output gets configured. Bring-up
+stays outside the engine, being per chip ARM rather than per event; bypass folds
+in as an `OutputMode` rather than a branch that skips the engine; and what the
+source MEASURES belongs to `Tv5725::SourceMeasurement`, so folding it back into
+the input selection just recreates `videoStandardInput` under a new name.
+
+**KNOW EVERY FACT BEFORE SETTING UP. MEASURING AND CONFIGURING MUST NOT
+INTERLEAVE.** Learn everything about the arriving mode -- sync type, count,
+scan, line rate, duty -- and only then set the subsystems up, once, because a
+value chosen partway through is chosen through whatever the previous mode left
+in force and nothing revisits it. **The coast is the worked example**: the
+pre/post pair is chosen in `VideoPath::measureVerticalInterval()` before the
+rate is known while the coast WINDOW is placed in
+`VideoSourceAcquisition::holdSolvedSource()` after it, so a mode change that
+moves the line rate judges the pair through the old mode's window. Where a
+measurement genuinely needs the chip configured, use a known reference for the
+measuring pass and set the real value in the one setup afterwards.
+
+**THE SKETCH WRITES NO REGISTERS.** Every `GBS::X::write` in `gbs-control.ino`
+migrates to the `Tv5725::` class owning the field, and the sketch keeps
+orchestration. A field written from both has two owners and the sketch's write
+usually runs last and unconditionally, so it silently overrides a derived value
+and no check catches it, because checks compare names rather than bits. Prefer
+passing facts in as parameters over adding a callback or an include back to the
+sketch -- **the sketch only shrinks**. The OSD and web code is most of it by
+line count and holds few writes, so that part is readability rather than
+correctness.
+
+**DERIVE THE VALUE. NO NEW LADDER RUNGS.** A fault is fixed by deriving the
+right value, never by adding a recovery step that tries one and backs off.
+Competing rungs are what the rewrite exists to delete: each can undo another's
+work, and no reading says which one put the chip in the state being looked at.
+When a derived value is wrong for some source the suspect is the derivation, or
+a quantity it depends on that is not configured yet when it runs -- find that
+and fix it in one place. Where a measurement is genuinely needed, take it at the
+point in the sequence where everything it depends on is in force, and choose
+once.
+
+**BUT RECOVERY RETRIES AND NEVER GIVES UP.** The engine must never stall: a
+source not yet acquired is one to keep trying to recover, so every recovery
+repeats at some cadence and nothing latches into a state that asks for nothing
+further. The expensive failures here are all "it stopped trying" rather than "it
+tried the wrong thing" -- a run that treated an ambiguous pass as neither
+evidence so it never reached its threshold, and a teardown gated on a flag
+cleared only by success, so a source that never succeeded got exactly one
+attempt. Each looks prudent alone and each turned a slow recovery into none,
+measured at `state: absent` holding 150 s and 90 s with the source present
+throughout and cleared only by a hand-run `/sc?~`. **Re-arm whatever counted up
+to a recovery rather than marking it done**, act on the threshold every time it
+is reached, and treat "tried once already" as a reason to wait and never a
+reason to stop.
+
+**CONTROLS HOLD STATE, NOT DELTAS, AND TESTS SUPPLY THE STATE THEY NEED.**
+A delta applied to whatever the registers hold makes the step size depend on the
+current value, so a fixed step is a different proportion at every zoom level and
+reversibility rests on rounding cancelling; an integer step count as the state is
+exactly reversible by construction. **State living outside the registers is not a
+problem to solve** -- hold the user-facing quantity, derive every register from
+it, and expose it over `/geometry` so tests and presets can read and set it. And
+once registers are an output, a test that saves and restores registers restores
+nothing, because the next press recomputes from state nobody reset -- which let
+eleven zoom steps accumulate across a suite while each test believed it had made
+one press. Set the state at the start of a test; do not add a save-and-restore
+fixture. Applying such state from an `ESPAsyncWebServer` handler runs it in a
+network-stack callback rather than `loop()`, so anything that measures or spins
+reboots the unit -- flag it and let the loop apply it.
+
 **`CODING_STYLE.md` is the C++ style, and it is not optional.** Classes rather
 than namespaces over file-scope globals, one class per file named after it,
 declare-in-header/define-in-.cpp, minimal OO strongly preferring composition over
@@ -2264,6 +2403,9 @@ firmware C++.
   git merge-base --is-ancestor main dev     # main is now an ancestor of dev
   ```
 
+  **Force-pushing is fine on this fork** -- it is a solo playground, so history
+  is curated freely, with `--force-with-lease`.
+
   No `feature/` or `fix/` branches, and no self-review PRs. The discipline is in
   how commits are split, not in branch topology.
 - **`dev` IS PUSHED SO IT CAN BE READ ON GITHUB, and the review is of the
@@ -2310,6 +2452,23 @@ firmware C++.
   ```
 
   One line out means one kind, which is the rule. More than one means split it.
+- **WORK THE ONE ISSUE THAT WAS NAMED.** Several faults on this board look
+  related and are not, so a session chasing two at once cannot tell which
+  change moved which symptom -- cropping and corruption at a high sampling
+  count were treated as one problem and are separate, which produced a fix for
+  a problem nobody had. Restate the single issue before starting, and when a
+  second fault appears put it in `docs/known-issues.md` and carry on with the
+  first. **The exception is a trip already being spent**: where a flash or a
+  bench visit has to happen anyway, offer to carry an already-filed adjacent
+  fix with it. It is still a separate commit -- what is bundled is the trip,
+  not the change.
+- **EVIDENCE MUST BE CURRENT.** The panel is being watched while a session
+  runs, so a capture from earlier presented as live is contradicted immediately
+  and costs trust in every other claim -- and bench state changes constantly,
+  so a frame minutes old is usually of a different state. Take a new one per
+  claim, check its mtime, and delete the target first so a failed capture
+  cannot silently leave the previous file in place. A sweep's per-point frames
+  are evidence for that sweep, labelled as taken then.
 - **Load the `tdd` skill before writing code.** Not a formality here: this
   codebase punishes the alternative. An evening went into a preferences bug that
   three sessions "fixed" without a failing test to say what fixed meant, and each
@@ -2327,6 +2486,13 @@ firmware C++.
   `/geometry`, fields read by NAME, a `tv-snap` photograph, a register diff
   against a known-good. Read them, carry two or three candidates, and pick the
   one experiment that separates them.
+- **A BYTE-IDENTICAL FIRMWARE BINARY IS THE PROOF, SO DO NOT FLASH IT.** Where
+  a behaviour-preserving refactor produces one, the binary comparison is
+  stronger evidence than the suite -- it covers every path, including the ones
+  no test reaches -- and the bench time is expensive and disruptive, the
+  `--source` suite leaving the picture wrong and needing a reset. Compare the
+  `Sketch uses N bytes` line, or diff `build/output/gbs-control.ino.bin`
+  against the previous build; same bytes means commit on the host tests alone.
 - Firmware changes ship as a bounded commit plus a commit adding a runtime
   acceptance test. No source-parsing tests — test behaviour, not implementation.
   No tests for removals.
@@ -2336,6 +2502,20 @@ firmware C++.
   handlers, so it has three manual confirmations and no automation. That is an
   acceptable answer; silently shipping untested and letting the next session
   assume coverage is not.
+- **A HARDWARE FIXTURE WAITS; IT DOES NOT SKIP.** A `pytest.skip` on "the
+  source is not locked" reads as green and is not. Three `test_front_porch.py`
+  tests skipped in every full `--source` run taken, because a preceding
+  teardown's `/sc?~` leaves the source out for about five seconds and
+  `recover_lock()` returns as soon as it locks rather than when the pass ends --
+  so they skipped straight through the change to `OutputMode::FrontPorchMinPx`
+  they exist to guard, and failed the first time they ran. Use
+  `wait_for(lambda: locked_steadily(host))` with a bounded timeout and keep the
+  skip only for a source that genuinely never returns. The same holds for any
+  precondition the firmware reaches on its own schedule: a poison wants
+  `_settled_sampling()` first and a pad press wants a counting sync processor,
+  because a press into an unmeasured source is accepted, logged and moves
+  nothing, and a poison written mid-detection is overwritten before the
+  read-back -- so the failure lands on the next test, or nowhere at all.
 - Tests that disturb the picture or write flash are opt-in flags in
   `conftest.py` (`--source`, `--preset-save`, `--no-sync`, `--pllad-hostile`),
   so a bare `pytest --host=…` stays safe to run on a working unit.
