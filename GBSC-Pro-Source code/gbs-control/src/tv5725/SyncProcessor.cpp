@@ -140,6 +140,12 @@ uint8_t searchPulseIgnoreFor(bool latched, uint16_t divider)
 // chosen.
 const uint8_t SearchHTimerValue = 0x3a;
 
+// Whether the pair can be taken away from the source entirely.
+bool restsUncoasted()
+{
+    return !EqualisationMeasurement::assumeEqualisation() && !longPostCoast_;
+}
+
 }  // namespace
 
 void SyncProcessor::writeSdVsyncStart(uint16_t start)
@@ -228,7 +234,7 @@ uint8_t SyncProcessor::preCoastLines()
 {
     if (coastOverridden_)
         return preCoastOverride_;
-    if (!EqualisationMeasurement::assumeEqualisation())
+    if (restsUncoasted())
         return 0;
     return CompositePreCoastLines;
 }
@@ -237,7 +243,7 @@ uint8_t SyncProcessor::postCoastLines()
 {
     if (coastOverridden_)
         return postCoastOverride_;
-    if (!EqualisationMeasurement::assumeEqualisation())
+    if (restsUncoasted())
         return 0;
     return longPostCoast_ ? LongPostCoastLines : ShortPostCoastLines;
 }

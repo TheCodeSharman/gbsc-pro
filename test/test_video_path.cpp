@@ -190,6 +190,17 @@ static void seedBenchSource()
     EqualisationMeasurement::forget();
 }
 
+// The input formatter measuring the vertical interval with the hold taken
+// away, which is what VideoPath::measureVerticalInterval() asks of it. The
+// RISC PC's composite answers in 8 of 8 samples; the Wii at 480p in 0 of 8,
+// which is the seeded fixture's own state.
+// VPERIOD_IF counts half-lines from zero, so 623 is the bench source's 312.
+static void seedMeasurableVerticalInterval()
+{
+    seedField(0, 0x00, 0, 1, 1);       // STATUS_IF_VT_OK
+    seedField(0, 0x07, 1, 11, 623);    // VPERIOD_IF
+}
+
 // Move the source to a different line count, leaving everything else as the
 // bench seeded it. A different count at the same field rate is a different
 // source as far as the key is concerned, which is what the table keys on.
@@ -2917,6 +2928,7 @@ TEST_CASE("a coast changed on a settled source reaches the chip")
     engine.useSyncTypeProbe(probeOwnVsync);
 
     g_hasOwnVsync = false;
+    seedMeasurableVerticalInterval();
     engine.setOutputMode(benchMode());
     engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(acquisition));
@@ -3025,12 +3037,38 @@ TEST_CASE("a serrated source solves to the threshold that rejects its interval")
     CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 107);
 }
 
-TEST_CASE("an unserrated source solves to no coast at all")
+TEST_CASE("a source resting uncoasted solves to no coast at all")
 {
     // The composite shear is the PRE coast lines, so the pair goes with the
-    // serration the pulse ignore already follows -- and it has to be written
-    // when the probe lands, because the probe runs after the arrangement did.
+    // two measurements the gate takes -- and it has to be written when they
+    // land, because both probes run after the arrangement did.
     // ../docs/investigations/the-composite-shear-is-the-coast.md
+    seedBenchSource();
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+    VideoSourceAcquisition acquisition(sampling, engine);
+    engine.useSyncTypeProbe(probeOwnVsync);
+
+    g_hasOwnVsync = false;
+    seedMeasurableVerticalInterval();
+    engine.setOutputMode(benchMode());
+    engine.inputTimingsChanged(4);
+    REQUIRE(pollUntilSolved(acquisition));
+    REQUIRE_FALSE(EqualisationMeasurement::carriesEqualisation());
+
+    CHECK(SyncProcessor::SP_PRE_COAST::read() == 0);
+    CHECK(SyncProcessor::SP_POST_COAST::read() == 0);
+}
+
+TEST_CASE("an unequalised source the formatter cannot measure keeps the hold")
+{
+    // The Wii at 480p: no equalisation, and nothing the formatter can measure
+    // once the hold is taken away. Held at 0/0 its count dithers 521..525 and
+    // its sync pad cycles every ~2.2 s, so the equalisation answer alone
+    // cannot decide the pair.
+    // ../docs/investigations/the-equalisation-probe-cannot-see-serration.md
     seedBenchSource();
     DisplayClock clock;
     SourceMeasurement sampling(inputFormatter);
@@ -3045,8 +3083,8 @@ TEST_CASE("an unserrated source solves to no coast at all")
     REQUIRE(pollUntilSolved(acquisition));
     REQUIRE_FALSE(EqualisationMeasurement::carriesEqualisation());
 
-    CHECK(SyncProcessor::SP_PRE_COAST::read() == 0);
-    CHECK(SyncProcessor::SP_POST_COAST::read() == 0);
+    CHECK(SyncProcessor::SP_PRE_COAST::read() == 7);
+    CHECK(SyncProcessor::SP_POST_COAST::read() == 6);
 }
 
 TEST_CASE("a serrated source keeps the hold either side of its interval")

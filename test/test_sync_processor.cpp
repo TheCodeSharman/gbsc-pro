@@ -44,6 +44,20 @@ static void givenUnequalised()
     EqualisationMeasurement::probe(countReading);
 }
 
+// Both halves of the gate: no equalisation, and an interval the input
+// formatter still measures with the hold taken away.
+static void givenRestsUncoasted()
+{
+    givenUnequalised();
+    SyncProcessor::useLongPostCoast(false);
+}
+
+static void forgetRestsUncoasted()
+{
+    EqualisationMeasurement::forget();
+    SyncProcessor::useLongPostCoast(true);
+}
+
 template <typename Field>
 static uint32_t applied(bool csync)
 {
@@ -555,6 +569,28 @@ TEST_CASE("an interval needing no hold is coasted for less than one that does")
     SyncProcessor::useLongPostCoast(true);
 }
 
+TEST_CASE("an unequalised source that cannot be measured uncoasted is still coasted")
+{
+    // EQUALISATION IS NOT WHAT THE COAST ANSWERS TO. The Wii at 480p carries
+    // no half-line pulses and still cannot be left at 0/0: held there its
+    // count dithers 521..525, its field rate alternates 31348/31468, and the
+    // sync pad cycles away and driven every ~2.2 s. The functional
+    // measurement is VideoPath::measureVerticalInterval()'s -- whether the
+    // input formatter can measure the interval with the hold taken away -- and
+    // it reads 0 of 8 there against 8 of 8 on the RISC PC's composite.
+    // docs/investigations/the-equalisation-probe-cannot-see-serration.md
+    givenUnequalised();
+    SyncProcessor::useLongPostCoast(true);
+
+    Wire.reset();
+    SyncProcessor::applySeparationThresholds(true);
+
+    CHECK(SyncProcessor::SP_PRE_COAST::read() == 7);
+    CHECK(SyncProcessor::SP_POST_COAST::read() == 6);
+
+    forgetRestsUncoasted();
+}
+
 TEST_CASE("a source with nothing in its vertical interval is not coasted at all")
 {
     // The PRE lines are what carry the composite shear: 862 randomised blocks
@@ -566,7 +602,7 @@ TEST_CASE("a source with nothing in its vertical interval is not coasted at all"
     // THE POST LINES GO WITH THEM. 0/2 dithers the count 69 times as often as
     // 0/0, so the pair is 0/0 or it is the hold.
     // docs/investigations/the-composite-shear-is-the-coast.md
-    givenUnequalised();
+    givenRestsUncoasted();
 
     Wire.reset();
     SyncProcessor::applySeparationThresholds(true);
@@ -574,14 +610,14 @@ TEST_CASE("a source with nothing in its vertical interval is not coasted at all"
     CHECK(SyncProcessor::SP_PRE_COAST::read() == 0);
     CHECK(SyncProcessor::SP_POST_COAST::read() == 0);
 
-    EqualisationMeasurement::forget();
+    forgetRestsUncoasted();
 }
 
-TEST_CASE("an unserrated source is not coasted by the sync type either")
+TEST_CASE("a source that rests uncoasted is not coasted by the sync type either")
 {
     // Two functions write the pair, so a gate reaching one of them is undone
     // by whichever ran last.
-    givenUnequalised();
+    givenRestsUncoasted();
 
     Wire.reset();
     SyncProcessor::applyForSyncType(true, MeasuredCsyncDivider);
@@ -589,7 +625,7 @@ TEST_CASE("an unserrated source is not coasted by the sync type either")
     CHECK(SyncProcessor::SP_PRE_COAST::read() == 0);
     CHECK(SyncProcessor::SP_POST_COAST::read() == 0);
 
-    EqualisationMeasurement::forget();
+    forgetRestsUncoasted();
 }
 
 TEST_CASE("an overridden coast is what the sync type applies")

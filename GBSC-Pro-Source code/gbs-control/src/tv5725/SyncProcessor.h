@@ -438,11 +438,11 @@ public:
     static const uint8_t LongPostCoastLines = 6;
     static const uint8_t ShortPostCoastLines = 2;
 
-    // Which of the two a SERRATED source gets. HELD rather than asked per
-    // write, because both writers of the pair need the answer.
-    // VideoPath::measureVerticalInterval() is what measures it, and it runs
-    // the source at 0/0 to do so -- which a serrated source cannot be left on.
-    // An unserrated one rests there, the gate above being what puts it there.
+    // Which of the two a held source gets, and half of the gate above. HELD
+    // rather than asked per write, because both writers of the pair need the
+    // answer. VideoPath::measureVerticalInterval() is what measures it, and
+    // it runs the source at 0/0 to do so -- which a source needing the hold
+    // cannot be left on.
     static void useLongPostCoast(bool needed);
     static bool longPostCoastInUse();
 
