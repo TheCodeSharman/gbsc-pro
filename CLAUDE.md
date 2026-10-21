@@ -50,7 +50,9 @@ acquisition is judged before detection has run.
 solve and hold. 480p solves in 15 s. 480i alternates 259/260 and still acquires,
 because `SteadyRun::agree()` treats a pair alternating by one as agreeing -- an
 earlier reading that it never reaches `state: acquired` predates that. 576i
-takes about 40 s and holds a steady count of 310.
+holds a steady count of 310 and solves in **about three seconds**, measured from
+the `/input` request to `sync pad: driven`; an earlier reading of 40 s is
+superseded.
 
 **AND ONLY 480i IS DEINTERLACED.** 576i is steered as progressive and shown as a
 single field, line doubled -- correct in shape and aspect at half the vertical
