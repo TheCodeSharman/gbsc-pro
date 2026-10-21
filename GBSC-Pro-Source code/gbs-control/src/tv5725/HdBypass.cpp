@@ -201,10 +201,12 @@ void HdBypass::applyVerticalBlanking(uint16_t activeStartLine,
 // **A PUBLISHED RASTER HAS NO JOB HERE.** PAD_BLK_OUT_ENZ is 1, so HBOUT and
 // VBOUT are off and the encoder takes the analog RGB with HSOUT/VSOUT alone --
 // this edge cannot tell it where active video is, it can only paint black over
-// video the channel sends. The encoder takes its origin from the image content
-// on this path, so it skips a black border whether one is inside the window or
-// not: blanking to a standard's sync extent cannot make a border visible, and
-// blanking to its display area cannot make one invisible.
+// video the channel sends. Whichever edge it states, the source's own border at
+// the left of the frame does not arrive and the one at the right does, so
+// blanking to a standard's sync extent cannot make a border visible and
+// blanking to its display area cannot make one invisible. The mechanism is
+// open: bypassing the colour matrix leaves the left border non-black on the
+// wire and it still does not arrive.
 //
 // What the edge does decide is how much blanking sits inside the emitted
 // active area, which the encoder shows as a bar. Measured on the Wii at 480p

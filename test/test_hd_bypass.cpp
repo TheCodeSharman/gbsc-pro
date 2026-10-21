@@ -396,8 +396,7 @@ TEST_CASE("the pass-through blank ends on the envelope, not on a constant")
 // no job on this path. Our blanking never reaches the encoder --
 // PAD_BLK_OUT_ENZ is 1, so HBOUT and VBOUT are off and the encoder takes
 // analog RGB plus HSOUT/VSOUT alone -- so the only thing HD_HB_SP can do is
-// paint black over video we send. The encoder chooses the window itself, and
-// in bypass it chooses it from the image content.
+// paint black over video we send. The encoder chooses the window itself.
 //
 // Blanking to the end of sync therefore leaves every porch the match admits
 // inside the emitted active area, where the encoder shows it as a bar.
@@ -407,10 +406,12 @@ TEST_CASE("the pass-through blank ends on the envelope, not on a constant")
 // re-locks apiece and the 238 reading identical on all three.
 //
 // **AND KEEPING A BORDER VISIBLE IS NOT A REASON TO CONSULT THE RASTER**, which
-// is what the published branch was for. In bypass the encoder takes its origin
-// from the image content, so it skips a black border whether the window
-// contains one or not -- the window cannot make a border visible, and blanking
-// one away cannot make it invisible.
+// is what the published branch was for. The window cannot make a border
+// visible and blanking one away cannot make it invisible: measured on the Wii
+// at 480p with the colour matrix bypassed, which renders the source's border
+// non-black at G exactly 0, the left border does not arrive at any window
+// value and the right one does. Why is open -- the encoder skipping a BLACK
+// border is what that measurement refutes.
 //
 // The envelope is earlier than where either bench source puts video -- 0.117
 // of the line against the Wii 480p's 122/858 and the AKF50 800x600's 176/1056
