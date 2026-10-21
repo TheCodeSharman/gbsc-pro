@@ -1935,13 +1935,26 @@ describes.
 separate sync reading 311 and clean, is recorded from 2026-08-14 and 2026-08-15.
 What is new is the rate and the freeze result.
 
-**`PA_SP_S` IS REFUTED AS THE LEVER, AND THE RATE'S DEPENDENCE ON UPTIME IS WHY
-IT LOOKED LIKE ONE.** An A-B-A at 900 s a leg, moving that register alone,
-gives 6, 5 and 4 pulse bursts for 16, 13, 16 -- no separation, and monotonic
-rather than following the register. On the same unit and register state the
-rate falls eightfold between 3 minutes and 80 minutes after boot, 32.3 bursts
-per 900 s down to 4. **So a leg's count means nothing without its uptime**, and
-two legs an hour apart compare uptimes.
+**THE LEVER IS THE VERTICAL INTERVAL COAST, AND ITS SIGN WAS BACKWARDS.**
+Measured over 11.49 scored hours in 862 randomised blocks with the pair held in
+the engine: no coast at all carries **0 bursts in 229 minutes** and cuts the
+sheared frame sixtyfold against the engine's 7/2, where a long post coast makes
+the burst 57 times more frequent. Collapse ratios 0.031 [0.01, 0.08] and
+6.50 [5.47, 7.73]. **And 0/0 is a picture** -- row profile correlating 1.0000
+with the engine's pair. The coast was previously acquitted on the ADC PLL lock
+duty, which the Wii leg shows does not track this fault.
+
+**`PA_SP_S` is a real but small effect**, 1.139 [1.01, 1.28] on the collapse
+and 1.479 on the sheared frame for 13 against 16 -- so 16 is the better phase
+by tens of percent, not the difference between a fault and none. The claim that
+13 shears and 16 is clean rested on legs scoring 1, 0 and 1 bursts.
+
+**WHICH OF THE PRE AND POST LINES CARRIES IT IS OPEN**: that run moved them
+together. `preCoastLines()` returns `CompositePreCoastLines` for every
+composite source with no serration dependence, where `postCoastLines()` follows
+the measurement, and the header states only a serrated source needs the pre
+coast.
+`investigations/the-composite-shear-is-the-coast.md`,
 `investigations/the-phase-scan-measures-one-band-and-infers-the-rest.md`.
 
 ### A latched separate-sync path answers to `/restart`, not to `/sc?~`
@@ -7762,12 +7775,13 @@ emitted frame displaced progressively down the frame for ten frames, then
 recovery. Separate sync does not do it, and nor does the Wii on `ypbpr` in
 53999 frames.
 
-**`PA_SP_S` DOES NOT DECIDE IT.** An A-B-A at 900 s a leg gives 6, 5 and 4
-pulse bursts for phases 16, 13, 16 -- no separation. The earlier reading that
-4500 s at 16 carries nothing against 2700 s at 13 carrying three shears rested
-on legs scoring 1, 0 and 1 bursts, which cannot separate a register from
-Poisson noise, and the rate falls eightfold over the first eighty minutes after
-a boot with nothing written. **Judge no leg without its uptime.**
+**THE COAST DECIDES IT, OVER A 57-FOLD RANGE.** 11.49 scored hours, 862
+randomised blocks, the pair held in the engine: 0/0 carries 0 bursts in 229
+minutes and a sheared frame rate 0.017 [0.01, 0.04] of the engine's 7/2, and a
+long 7/6 carries 57 times the bursts. `PA_SP_S` is a real effect of 1.1 to 1.5
+times beside it, and not the lever. **Judge no leg on its own count**: the rate
+wanders thirtyfold by itself, and adjacent 600 s legs with nothing written have
+measured 0 and 6 bursts.
 
 **What the phase work did establish is about the scan rather than the shear.**
 The band its metric finds is per sync type -- 26..29 on composite, 11..19 on
