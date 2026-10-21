@@ -13,6 +13,7 @@
 FakeTwoWire Wire;
 
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SyncMeasurement.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SyncProcessor.h"
 #include "RegistersWritten.h"
 
 void tv5725Log(const char *) {}
@@ -20,12 +21,23 @@ void tv5725Log(const char *) {}
 using namespace Tv5725;
 
 static int probeCalls = 0;
-static bool probeAnswer = false;
+static SyncMeasurement::Answer probeAnswer = SyncMeasurement::NoOwnVsync;
 
-static bool countingProbe()
+static SyncMeasurement::Answer countingProbe()
 {
     ++probeCalls;
     return probeAnswer;
+}
+
+// STATUS_SYNC_PROC_HSACT, which is 1 on every source the probe can be asked
+// about -- 1 on the bench RISC PC's separate sync and 1 on the Wii's sync on
+// green, where VSACT is 0 -- and 0 when nothing is arriving at all.
+static void givenHsync(bool arriving)
+{
+    const uint8_t bit = 1;   // STATUS_SYNC_PROC_HSACT, s0 0x16[1]
+    uint8_t raw = Wire.bank[0][0x16];
+    raw = (uint8_t)((raw & ~(1u << bit)) | ((arriving ? 1u : 0u) << bit));
+    Wire.bank[0][0x16] = raw;
 }
 
 static void given(bool sourceHasOwnVsync)
@@ -33,7 +45,10 @@ static void given(bool sourceHasOwnVsync)
     SyncMeasurement::forget();
     SyncMeasurement::set(false);
     probeCalls = 0;
-    probeAnswer = sourceHasOwnVsync;
+    probeAnswer = sourceHasOwnVsync ? SyncMeasurement::OwnVsync
+                                    : SyncMeasurement::NoOwnVsync;
+    Wire.reset();
+    givenHsync(true);
 }
 
 TEST_CASE("a source with its own vsync is not composite sync")
@@ -48,6 +63,39 @@ TEST_CASE("a source without its own vsync is composite sync")
     given(false);
     SyncMeasurement::syncType(countingProbe);
     CHECK(SyncMeasurement::isCsync());
+}
+
+TEST_CASE("a probe taken while no sync is arriving is not latched")
+{
+    // A SOURCE THAT IS ABSENT ANSWERS THE PROBE EXACTLY AS A COMPOSITE ONE
+    // DOES, because both fail to produce a V sync line and the probe concludes
+    // by absence. Latching that holds a separate-sync source on the csync path
+    // for the life of the selection: the separator stays in circuit, hsync is
+    // sought on green where the RISC PC puts none, and nothing re-probes.
+    //
+    // Measured across a Ctrl-Break reboot of the bench RISC PC on separate
+    // sync: the probe ran 10 ms after the source left, read no V sync in
+    // 1001 ms, and the engine hunted a reference clock until /sc?~ forgot the
+    // answer, with PAD_SYNC_OUT_ENZ left 1 so nothing was emitted at all.
+    given(false);
+    probeAnswer = SyncMeasurement::NoSource;
+
+    SyncMeasurement::syncType(countingProbe);
+
+    CHECK_FALSE(SyncMeasurement::isSet());
+}
+
+TEST_CASE("an unlatched probe is taken again on the next pass")
+{
+    given(false);
+    probeAnswer = SyncMeasurement::NoSource;
+    SyncMeasurement::syncType(countingProbe);
+
+    probeAnswer = SyncMeasurement::NoOwnVsync;
+    SyncMeasurement::syncType(countingProbe);
+
+    CHECK(probeCalls == 2);
+    CHECK(SyncMeasurement::isSet());
 }
 
 TEST_CASE("the probe runs once per source, not once per mode change")
@@ -110,7 +158,7 @@ TEST_CASE("a set value survives until something probes or sets again")
     SyncMeasurement::set(true);
     CHECK(SyncMeasurement::isCsync());
 
-    probeAnswer = true;  // the source does have its own vsync
+    probeAnswer = SyncMeasurement::OwnVsync;
     SyncMeasurement::syncType(countingProbe);
     CHECK_FALSE(SyncMeasurement::isCsync());
 }

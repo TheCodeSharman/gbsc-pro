@@ -14,6 +14,16 @@ namespace Tv5725 {
 // and watches for V instead. docs/sync-type-selection.md
 class SyncMeasurement {
 public:
+    // What one probe can conclude. A source that is ABSENT answers the V sync
+    // question exactly as a composite one does -- both fail to produce a V
+    // line -- so the two have to be separable or a source that has merely gone
+    // away is held on the csync path until something forgets the answer.
+    enum Answer {
+        NoSource,     // nothing arriving across the whole window
+        OwnVsync,     // separate H and V
+        NoOwnVsync    // composite sync, or sync on green
+    };
+
     // Composite sync, as last measured or set. Never probes.
     static bool isCsync();
 
@@ -30,17 +40,18 @@ public:
     static void forget();
 
     // The held sync type, probing only if nothing has been measured yet.
-    static bool syncType(bool (*hasOwnVsync)());
+    static bool syncType(Answer (*hasOwnVsync)());
 
-    // Probe regardless, for the paths that have just moved the input.
-    static bool probe(bool (*hasOwnVsync)());
+    // Probe regardless, for the paths that have just moved the input. An
+    // answer of NoSource leaves nothing held, so the next pass asks again.
+    static bool probe(Answer (*hasOwnVsync)());
 
     // Move the sync path, watch for V, and put the path back. Costs up to
     // OwnVsyncWindowMs, so callers probe per source rather than per pass.
     //
     // Takes the clock rather than calling millis(), which is not available to a
     // host test.
-    static bool hasOwnVsync(uint32_t (*nowMs)());
+    static Answer hasOwnVsync(uint32_t (*nowMs)());
 
     // How long the sync processor is given to reacquire V after the path moves.
     static const uint16_t OwnVsyncSettleMs = 240;

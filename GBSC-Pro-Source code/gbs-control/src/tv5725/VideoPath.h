@@ -20,6 +20,7 @@
 #include "PanAndZoom.h"
 #include "PictureOptions.h"
 #include "Aspect.h"
+#include "SyncMeasurement.h"
 #include "InputScale.h"
 #include "ColourBalance.h"
 #include "OutputWindow.h"
@@ -261,7 +262,7 @@ public:
     // without the mux moving -- a RISC PC sets it from CMOS -- so a change is
     // the only signal there is that it may have moved.
     // docs/sync-type-selection.md
-    void useSyncTypeProbe(bool (*hasOwnVsync)());
+    void useSyncTypeProbe(SyncMeasurement::Answer (*hasOwnVsync)());
 
     // How the serration probe reads the source. One call applies the threshold
     // and returns one count; EqualisationMeasurement takes the median of a run.
@@ -793,7 +794,7 @@ private:
     // puts on the connector, so a mode change on one source keeps the answer
     // and must not pay for the probe again.
     uint8_t intervalMeasuredFor_;
-    bool (*syncProbe_)();
+    SyncMeasurement::Answer (*syncProbe_)();
     EqualisationMeasurement::CountAtThreshold equalisationProbe_;
     SourceKey framedKey_;
 

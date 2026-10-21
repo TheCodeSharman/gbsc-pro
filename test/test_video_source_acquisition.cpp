@@ -205,10 +205,11 @@ static void seedPassThroughSource()
 // own V sync cannot be read back, so the engine is handed a function that says.
 static bool g_hasOwnVsync = true;
 static unsigned g_probeCalls = 0;
-static bool probeOwnVsync()
+static Tv5725::SyncMeasurement::Answer probeOwnVsync()
 {
     ++g_probeCalls;
-    return g_hasOwnVsync;
+    return g_hasOwnVsync ? Tv5725::SyncMeasurement::OwnVsync
+                         : Tv5725::SyncMeasurement::NoOwnVsync;
 }
 
 // The divider the engine derives for the bench source, which is also what the

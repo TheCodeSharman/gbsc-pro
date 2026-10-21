@@ -968,7 +968,7 @@ void VideoPath::forceFullFraming(bool on) { fullFraming_ = on; }
 
 bool VideoPath::fullFramingForced() const { return fullFraming_; }
 
-void VideoPath::useSyncTypeProbe(bool (*hasOwnVsync)()) { syncProbe_ = hasOwnVsync; }
+void VideoPath::useSyncTypeProbe(SyncMeasurement::Answer (*hasOwnVsync)()) { syncProbe_ = hasOwnVsync; }
 
 void VideoPath::useEqualisationProbe(EqualisationMeasurement::CountAtThreshold countAt)
 {

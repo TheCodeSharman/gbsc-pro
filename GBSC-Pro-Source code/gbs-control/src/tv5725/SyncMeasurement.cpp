@@ -30,21 +30,25 @@ void SyncMeasurement::forget()
     csync_ = false;
 }
 
-bool SyncMeasurement::probe(bool (*hasOwnVsyncNow)())
+bool SyncMeasurement::probe(Answer (*hasOwnVsyncNow)())
 {
-    csync_ = !hasOwnVsyncNow();
+    const Answer answer = hasOwnVsyncNow();
+    if (answer == NoSource)
+        return csync_;
+
+    csync_ = answer == NoOwnVsync;
     set_ = true;
     return csync_;
 }
 
-bool SyncMeasurement::syncType(bool (*hasOwnVsyncNow)())
+bool SyncMeasurement::syncType(Answer (*hasOwnVsyncNow)())
 {
     if (!set_)
         return probe(hasOwnVsyncNow);
     return csync_;
 }
 
-bool SyncMeasurement::hasOwnVsync(uint32_t (*nowMs)())
+SyncMeasurement::Answer SyncMeasurement::hasOwnVsync(uint32_t (*nowMs)())
 {
     // **THE MEASURING CONFIGURATION IS THE SEPARATE-SYNC ONE, PUT IN FORCE AS A
     // DEFINED STATE RATHER THAN POKED FIELD BY FIELD.**
@@ -64,10 +68,18 @@ bool SyncMeasurement::hasOwnVsync(uint32_t (*nowMs)())
     SyncProcessor::applyForSyncType(false, Adc::dividerInForce());
     delay(OwnVsyncSettleMs);
 
+    // STATUS_SYNC_PROC_HSACT IS A DUTY CYCLE, so one read of it cannot say
+    // whether a source is there -- a 0 sampled on a healthy source would
+    // refuse the answer and re-probe for ever. It is sampled across the window
+    // this loop already pays for and ANY rise means a source: present it reads
+    // 1 on both arrangements, the bench RISC PC's separate sync and the Wii's
+    // sync on green where VSACT stays 0, and absent it never rises at all.
     bool active = false;
+    bool hsync = false;
     const uint32_t start = nowMs();
     while (!active && (nowMs() - start) < OwnVsyncWindowMs) {
         active = GBS::STATUS_SYNC_PROC_VSACT::read() == 1;
+        hsync = hsync || SyncProcessor::hsyncActive();
         delay(2);
     }
     const uint32_t rose = nowMs() - start;
@@ -81,7 +93,8 @@ bool SyncMeasurement::hasOwnVsync(uint32_t (*nowMs)())
     // that distribution and nothing else on the board reports it.
     char line[64];
     snprintf(line, sizeof(line), "measured: own V sync %s after %ums",
-             active ? "YES, separate H/V" : "no, composite or SOG",
+             active ? "YES, separate H/V"
+                    : (hsync ? "no, composite or SOG" : "UNKNOWN, no source"),
              (unsigned)rose);
     tv5725Log(line);
 
@@ -96,7 +109,9 @@ bool SyncMeasurement::hasOwnVsync(uint32_t (*nowMs)())
     // answers it, so left set it arms a second one on a source that has not
     // moved. ../../../../docs/investigations/the-reference-clock-is-applied-to-a-working-picture.md
     Interrupts::acknowledgeSogSwitch();
-    return active;
+    if (active)
+        return OwnVsync;
+    return hsync ? NoOwnVsync : NoSource;
 }
 
 }  // namespace Tv5725

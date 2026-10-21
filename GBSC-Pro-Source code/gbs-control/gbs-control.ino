@@ -1364,15 +1364,15 @@ static void pumpWiFi() { handleWiFi(0); }
 // probing YPbPr answers "own vsync", which puts a sync-on-luma source on the
 // separate-sync path where it never locks. With nothing chosen there is no
 // connector to ask, so the measurement stands.
-boolean syncTypeHasOwnVsync()
+Tv5725::SyncMeasurement::Answer syncTypeHasOwnVsync()
 {
     const VideoSourceSelection::Id id = VideoSourceSelection::selected();
     if (VideoSourceSelection::chosen(id) && !VideoSourceSelection::syncTypeMustBeMeasured(id))
-        return false;
+        return Tv5725::SyncMeasurement::NoOwnVsync;
     return sourceHasOwnVsync();
 }
 
-boolean sourceHasOwnVsync()
+Tv5725::SyncMeasurement::Answer sourceHasOwnVsync()
 {
     return Tv5725::SyncMeasurement::hasOwnVsync(millisNow);
 }
@@ -1546,9 +1546,11 @@ uint8_t detectAndSwitchToActiveInput()
                         // yields a plausible field rate, and every source above 40 Hz
                         // says yes — so it can never conclude "separate sync" on its
                         // own. A V sync line of its own overrules it.
-                        boolean ownVsync = syncTypeHasOwnVsync();
+                        const Tv5725::SyncMeasurement::Answer ownVsync =
+                            syncTypeHasOwnVsync();
 
-                        if (decodeSuccess >= 2 && !ownVsync) {
+                        if (decodeSuccess >= 2
+                            && ownVsync != Tv5725::SyncMeasurement::OwnVsync) {
                             // SerialMprintln(F(" (with CSync)"));
                             Tv5725::SyncMeasurement::set(true);
                         } else {

@@ -2484,7 +2484,12 @@ TEST_CASE("the engine says which source the framing it holds is against")
 
 static unsigned g_probeCalls = 0;
 static bool g_hasOwnVsync = true;
-static bool probeOwnVsync() { ++g_probeCalls; return g_hasOwnVsync; }
+static SyncMeasurement::Answer probeOwnVsync()
+{
+    ++g_probeCalls;
+    return g_hasOwnVsync ? SyncMeasurement::OwnVsync
+                         : SyncMeasurement::NoOwnVsync;
+}
 
 TEST_CASE("a mode change establishes the sync type before it measures anything")
 {
