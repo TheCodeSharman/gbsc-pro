@@ -416,7 +416,7 @@ TEST_CASE("the pass-through blank ends on the envelope, not on a constant")
 // The envelope is earlier than where either bench source puts video -- 0.117
 // of the line against the Wii 480p's 122/858 and the AKF50 800x600's 176/1056
 // -- so it crops no picture, which is what the case below holds.
-// ../docs/investigations/the-encoder-tunes-the-left-edge-in-pass-through.md
+// ../docs/investigations/the-transmitted-window.md
 TEST_CASE("the pass-through blank ends on the envelope whether a raster matched or not")
 {
     const Tv5725::SourceTiming vesa800x600 =

@@ -205,7 +205,7 @@ OutputTiming OutputMode::solve(float fieldRateHz, uint32_t ceilingHz) const
     // picture, so it has to arrive when the standard says whatever clock the
     // line runs at. The back porch is NOT load-bearing, and it is a fraction
     // rather than a duration -- see the active window below.
-    // ../../../docs/investigations/the-transmitted-window-opens-late.md
+    // ../../../docs/investigations/the-transmitted-window.md
     long width = scaled(syncPx_, clockHz);
     if (width < 1)
         width = 1;
@@ -223,7 +223,7 @@ OutputTiming OutputMode::solve(float fieldRateHz, uint32_t ceilingHz) const
     // falls off the end of its line. Our raster overruns the standard's by a
     // different factor in every mode -- 1920 against CEA's 2200, 2026 against
     // DMT's 1688 -- so a front porch stated as a time cannot express it.
-    // docs/investigations/the-active-window-is-a-fraction-of-the-line.md
+    // docs/investigations/the-transmitted-window.md
     long span = (long)horizontalTotal * carriedPx_ / totalPx_;
     long lastUsable = (long)horizontalTotal - FrontPorchMinPx;
 
@@ -234,7 +234,7 @@ OutputTiming OutputMode::solve(float fieldRateHz, uint32_t ceilingHz) const
     // duration lands on the same sample count however long the line is, while
     // the sink's start grows with it. The error then changes sign about that
     // one raster, which is why no value of the delay held it.
-    // docs/investigations/the-near-end-is-a-fraction-of-the-line.md
+    // docs/investigations/the-transmitted-window.md
     long start = (long)horizontalTotal * (syncPx_ + backPorchPx_) / totalPx_
                + TransmittedWindowDelayPx;
     if (start + span > lastUsable)
@@ -281,7 +281,7 @@ OutputTiming OutputMode::solve(float fieldRateHz, uint32_t ceilingHz) const
 // The mechanism is not known and the raster ratio is refuted as the boundary.
 // Nor is it established whether the fraction belongs to the encoder or to the
 // one television it was measured on -- which takes a second display.
-// ../../../docs/investigations/the-transmitted-window-is-a-per-mode-fraction.md
+// ../../../docs/investigations/the-transmitted-window.md
 //
 // The front porch is therefore never stated: it is what the total leaves, and
 // FrontPorchMinPx is the floor under it.

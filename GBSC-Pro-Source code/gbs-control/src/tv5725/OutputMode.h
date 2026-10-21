@@ -82,7 +82,7 @@ public:
     // entire capturable region magnifies past the onset.
     //
     // **Do not raise this to WorkingCeilingHz.** That was tried, for the black
-    // bar in docs/investigations/the-encoder-reframes-the-output.md, and it does
+    // bar in docs/investigations/the-transmitted-window.md, and it does
     // not move the bar -- the encoder decides that, not the raster.
     // docs/investigations/display-window-opens-early.md has the measurements.
     static const uint32_t EngineCeilingHz = 108000000;
@@ -131,7 +131,7 @@ public:
     // The field-rate band this was a table for is what the DURATION base
     // produces: that base does not move with the raster, so a 50 Hz line reads
     // as a jump where the fraction simply grew with it.
-    // docs/investigations/the-near-end-is-a-fraction-of-the-line.md
+    // docs/investigations/the-transmitted-window.md
     //
     // **MOVING IT IS SAFE FOR THE ODD-WIDTH PARITY BIAS.** That bias is on the
     // MEMORY window's width, memoryStart - windowStop, and OutputWindow::solve()
@@ -147,7 +147,7 @@ public:
     // and only blanks into it, and the black that appears at the LEFT is the
     // discriminator -- a window that followed would show none. Refuted across a
     // source mode round trip and a PAD_SYNC_OUT_ENZ toggle, both.
-    // docs/investigations/the-transmitted-window-opens-late.md
+    // docs/investigations/the-transmitted-window.md
     //
     // It must not reach the sampling clock. VideoPath::dividerCeilingForOutput()
     // takes it back off the published raster's far edge for that reason: left

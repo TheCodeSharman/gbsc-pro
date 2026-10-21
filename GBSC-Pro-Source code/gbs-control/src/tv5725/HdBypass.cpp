@@ -46,7 +46,7 @@ const uint16_t RasterGuardSamples = 8;
 // Where the block starts the hsync it emits, in channel clocks. It is not a
 // measured channel delay: the encoder chooses the horizontal placement when it
 // locks, so nothing downstream holds this value's effect still.
-// ../../../docs/investigations/the-encoder-tunes-the-left-edge-in-pass-through.md
+// ../../../docs/investigations/the-transmitted-window.md
 const uint16_t ChannelSyncStart = 40;
 
 uint16_t onChannelLine(float fraction, uint16_t channelLine)
@@ -213,7 +213,7 @@ void HdBypass::applyVerticalBlanking(uint16_t activeStartLine,
 // through the channel's 2038, each value forced to re-lock: the sync extent's
 // 147 leaves 251 columns of black at the right of the emitted frame and the
 // envelope's 238 leaves 56.
-// ../../../docs/investigations/the-encoder-tunes-the-left-edge-in-pass-through.md
+// ../../../docs/investigations/the-transmitted-window.md
 void HdBypass::applyHorizontalFromChannelLine(uint16_t channelLine)
 {
     HD_HSYNC_RST::write(channelLine + RasterGuardSamples);

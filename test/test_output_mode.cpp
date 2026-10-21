@@ -158,7 +158,7 @@ TEST_CASE("the sync pulse is CEA-861's, converted to the clock the line runs at"
 // of a 1590-unit one -- `total x 192/2200 + 6` at both, where the duration gave
 // 161 at each and left 15 emitted columns of our blanking at the right of the
 // wider raster.
-// docs/investigations/the-near-end-is-a-fraction-of-the-line.md
+// docs/investigations/the-transmitted-window.md
 TEST_CASE("the active window opens on the standard's blanking fraction of the line")
 {
     const OutputTiming at108 = Mode1080p.solve(50.0f, 108000000u);
@@ -175,7 +175,7 @@ TEST_CASE("the active window opens on the standard's blanking fraction of the li
 //
 // `FrontPorchMinPx` is a floor under what stays blank, for the part rather than
 // for the standard: 16 px is what this one needs at the far end.
-// docs/investigations/the-active-window-is-a-fraction-of-the-line.md
+// docs/investigations/the-transmitted-window.md
 TEST_CASE("the SD modes carry less of the line than their standard states")
 {
     // Measured against the panel on both SD modes at two rasters each: the chain
@@ -185,7 +185,7 @@ TEST_CASE("the SD modes carry less of the line than their standard states")
     // fraction holds to 0.3% across a 33% change of raster -- which is what
     // makes it a property of the MODE rather than of the raster it is solved
     // into. The raster ratio was the standing explanation and is refuted.
-    // ../docs/investigations/the-transmitted-window-is-a-per-mode-fraction.md
+    // ../docs/investigations/the-transmitted-window.md
     OutputTiming p480 = Mode480p.solve(50.081f, OutputMode::EngineCeilingHz);
     CHECK(p480.horizontalTotal == 2054);
     CHECK(p480.activeWidth() == 2054 * 690 / 858);
@@ -502,7 +502,7 @@ TEST_CASE("the opening is each standard's own blanking fraction, not its duratio
     //
     // The two standards have different fractions, so a duration and a fraction
     // cannot both fit them: 1080p blanks 192 of 2200 and 1024p 360 of 1688.
-    // ../docs/investigations/the-near-end-is-a-fraction-of-the-line.md
+    // ../docs/investigations/the-transmitted-window.md
     CHECK(Mode1080p.solve(50.0f, 108000000u).activeStart
           == 1920 * 192 / 2200 + OutputMode::TransmittedWindowDelayPx);
     CHECK(Mode1024p.solve(50.0f, 108000000u).activeStart
@@ -539,7 +539,7 @@ TEST_CASE("the 625-line mode's transmitted lines are not CEA 576p's")
     //
     // The EMITTED vsync pulse is left at CEA's five lines: the chain locks to it
     // as it is, and only where the picture may go was ever wrong.
-    // ../docs/investigations/the-transmitted-window-is-a-per-mode-fraction.md
+    // ../docs/investigations/the-transmitted-window.md
     OutputTiming p576 = Mode576p.solve(50.081f, OutputMode::EngineCeilingHz);
     CHECK(p576.verticalTotal == 625);
     CHECK(p576.vsyncStop == 5);
