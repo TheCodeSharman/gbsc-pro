@@ -1035,6 +1035,36 @@ re-probe: `/sc?~` is what makes the engine follow the sync type, and the
 recovery is `SYNC 0` followed by another `/sc?~`. Script the restore in a
 `finally` so a failed run cannot leave the bench dark.
 
+**THE BOARD'S OWN OVERLAY DOES NOT GET OUT EITHER, SO IT IS THE OUTPUT STAGE
+AND NOT THE VIDEO CONTENT.** The STV9426 menu is generated on the board from
+`HS_OUT`/`VS_OUT` and keyed into the video at U13, downstream of the VDS, so it
+rides the output whatever the scaler is carrying. Measured 2026-10-21 at
+800x600@60 with the menu open and `/menu` reporting `"open":true`: the capture
+is **mean luma 0.00, min 0 max 0** -- not one lit pixel. The same menu on the
+same source on `SYNC 0` is drawn over the picture and photographs cleanly, so
+the instrument is sound.
+
+So this state emits NOTHING, rather than emitting a frame with no picture in
+it, and anything that reasons about capture windows, clamps, blanking or the
+sampled line is reasoning about the wrong stage.
+
+**FIVE CANDIDATES REFUTED BY DIRECT EXPERIMENT**, each written and re-latched
+with `PAD_SYNC_OUT_ENZ` where the encoder had to re-acquire:
+
+| candidate | result |
+|---|---|
+| `SFTRST_MEM_RSTZ` holding a block down | **0 in the working state too** -- correct for bypass |
+| the channel hsync emitted in the wrong direction | `HD_HS_ST`/`HD_HS_SP` are exactly swapped between the sync types, 164/40 against 40/164. Written back the other way: still black |
+| `SP_RT_HS_SP` flooring at its 63-sample origin | written to the working state's 1858: still black. The reading behind it is wrong too -- the duty measures 167/1436 = 0.116 against the mode's true 0.121 |
+| the continuous re-arming starving the sink of lock time | the pad is away **71% of 120 s across 25 cycles**, but frozen on a DRIVEN pad for 20 s it is still black |
+| `SP_H_PULSE_IGNOR` too low | it already reads **99**, the value measured readable here; the 57 recorded elsewhere is a mid-re-arm sample |
+
+**THE WII IS THE CONTROL THAT KILLS THE SYNC-PATH EXPLANATIONS.** Its 480p on
+`ypbpr` passes through and emits a clean picture while sharing every field the
+csync path sets: `SP_SOG_MODE` 1, `HD_HS_ST`/`HD_HS_SP` 164/40,
+`STATUS_SYNC_PROC_HSPOL` 0, `PLLAD_MD` 2038. So neither the SOG/csync
+arrangement nor the channel's sync direction can be what stops the output.
+
 **THE ENCODER AND THE COAST ARE BOTH REFUTED, AND THE SEPARATOR LEVEL IS THE
 LEVER FOR THE COUNT.** Measured at 800x600@60 into 1920x1080:
 
