@@ -288,7 +288,7 @@ so the picture may run to `horizontalTotal x activePx / totalPx` and what the
 total leaves after that is the porch. It is an order of magnitude above the
 floor, 105 px at 1080p on a 1920 px raster, so the floor binds only where a
 raster has no room for the real one.
-`investigations/the-active-window-is-a-fraction-of-the-line.md`.
+`investigations/the-transmitted-window.md`.
 
 A front porch stated as a DURATION is what this replaces, and it made the active
 region a different fraction of the line in every mode -- 89.4% at 1080p against
@@ -302,7 +302,7 @@ signal between `HS_OUT` edges, so our timing is exactly what reaches it -- and
 emitting the porches the mode states stopped the picture landing somewhere
 different on each acquisition, 17 trials within 0.65 photo px against four
 controls at 101 px.
-`investigations/the-picture-position-is-latched-not-re-rolled.md`.
+`investigations/the-transmitted-window.md`.
 
 **What the porch costs is sampling density, not picture.** It bounds where the
 produced picture may END, so `fitToRaster` sizes the picture to stop there; the

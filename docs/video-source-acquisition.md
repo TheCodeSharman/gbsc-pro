@@ -95,7 +95,7 @@ same rate. Nothing but the last line presents the output -- a solve that
 completes while it is away, a deferred one included, leaves presenting to the
 pass that finds the setup settled -- and the presentation waits one pass past
 the solve so the caller's rate match lands before the encoder sees the line.
-`investigations/a-transition-and-a-settled-toggle-place-the-window-alike.md`.
+`investigations/the-transmitted-window.md`.
 
 **`Tv5725::SourceReading` holds the sync DUTY, not the register.**
 `STATUS_SYNC_PROC_HLOW_LEN` counts ADC samples, so its value means nothing

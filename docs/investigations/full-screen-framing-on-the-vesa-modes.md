@@ -93,7 +93,7 @@ aperture is a fraction of a unit either side of it on both:
 At about 1.38 emitted pixels per raster unit that predicts under two pixels on
 each, so what differs between the modes is chosen after the analog frame --
 which is where
-[the-picture-position-is-latched-not-re-rolled.md](the-picture-position-is-latched-not-re-rolled.md)
+[the-transmitted-window.md](the-transmitted-window.md)
 localised it. A change to our blanking or our capture cannot close a gap our
 blanking does not open.
 
@@ -108,7 +108,7 @@ blanking does not open.
 - **A delay constant in the solve.** Moving the whole solve, write origin and
   aperture together, is what `OutputMode::TransmittedWindowDelayPx` does, and
   +8, +16 and -8 all leave the emitted margins where +0 does.
-  [the-transmitted-window-is-latched-from-our-blanking.md](the-transmitted-window-is-latched-from-our-blanking.md).
+  [the-transmitted-window.md](the-transmitted-window.md).
 - **Opening the capture earlier, which is worth 2 px on one mode and costs the
   far edge on another.** `IF_HB_SP2` two units below what the engine solves is
   the one change that moves the near edge at all -- 640x480@60 goes from 4 px to
@@ -171,7 +171,7 @@ with the acceptance path on both in-scope modes, reading the solve at 4 px and
 12 px. The toggle does not: at 800x600@60 the same solve reads **12 \| 0** after
 a mode round trip and **1 \| 8** after a toggle, the picture having moved about
 ten pixels against the transmitted window with no register touched, which is
-[the-shown-window-is-latched-at-lock.md](the-shown-window-is-latched-at-lock.md)
+[the-transmitted-window.md](the-transmitted-window.md)
 seen from the other end. Read back the register afterwards either way -- a
 frozen unit is not an inert one.
 

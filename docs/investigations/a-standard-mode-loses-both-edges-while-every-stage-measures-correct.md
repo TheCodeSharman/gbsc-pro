@@ -422,7 +422,7 @@ window starts exactly at `activeStart` everywhere, the deficit is entirely at
 the right, and it does not diminish when the raster ratio is taken to 1.50x and
 1.80x. What the chain takes is a fixed fraction of the line, held to 0.3% across
 a 33% change of raster -- it is simply not the standard's fraction on the two SD
-modes. `the-transmitted-window-is-a-per-mode-fraction.md`.
+modes. `the-transmitted-window.md`.
 
 Nothing on the board can measure what the encoder transmits -- the MS9288A is on
 no MCU's I²C bus and EDID is unreachable -- but the fraction does not have to be

@@ -28,7 +28,7 @@ band rows measures where the panel stops painting, not where the capture starts.
 **A source mode change re-lands the encoder.** Two sweeps of the same register
 values either side of an 800x600 -> 640x480 -> 800x600 round trip disagreed by
 about four lines, with the picture placed four photo rows higher in the second.
-[the-encoder-tunes-the-left-edge-in-pass-through.md](the-encoder-tunes-the-left-edge-in-pass-through.md)
+[the-transmitted-window.md](the-transmitted-window.md)
 
 ## What made it measurable
 

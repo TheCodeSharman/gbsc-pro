@@ -80,7 +80,7 @@ over `HD_HS_ST` without re-locking produces a clean linear response with slope
 `HD_HB_SP` 247 -> 600 — 353 samples of blanking — moves the left margin from 147
 to 150, and `HD_HS_ST` 40 -> 160 -> 300 moves it 98 columns then 5, which is the
 sink placing its window at a re-lock.
-`the-encoder-tunes-the-left-edge-in-pass-through.md` already refutes both.
+`the-transmitted-window.md` already refutes both.
 
 ## The retime stop is inert to every measurement the solve reads
 

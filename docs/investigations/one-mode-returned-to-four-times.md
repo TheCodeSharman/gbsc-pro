@@ -84,7 +84,7 @@ and the run that caught it recorded only a register subset -- which is exactly
 the gap that makes the encoder unprovable either way.
 
 **The encoder is the leading hypothesis** and the test is stated:
-identical registers with a displaced picture. `the-encoder-reframes-the-output.md`
+identical registers with a displaced picture. `the-transmitted-window.md`
 already measures 57 columns adrift across an output mode change with the raster
 registers identical either side, so the mechanism is established; what is
 missing is catching this instance with a dump beside it.

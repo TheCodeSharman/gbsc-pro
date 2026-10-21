@@ -141,7 +141,7 @@ all of them.
 
 ## The claim this refutes, and the one it does not
 
-`the-encoder-reframes-the-output.md` stands: it probed by INTERVENTION, moving
+`the-transmitted-window.md` stands: it probed by INTERVENTION, moving
 the output window 60 px by hand, confirming the registers held the new value at
 the moment of the photograph, and observing that the bar did not move. That is
 evidence about a static difference between two output modes.

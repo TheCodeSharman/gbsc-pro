@@ -350,8 +350,7 @@ Where to look: the shown window, which is latched when the link acquires and
 takes its origin from something no output register describes. 320x256@50 on the
 same runs keeps its near edge and loses the far one, so the two modes lose
 OPPOSITE ends -- which a single displacement of the sink's window would do.
-`docs/investigations/the-shown-window-is-latched-at-lock.md`,
-`docs/investigations/the-sinks-own-window-position-is-per-raster.md`.
+`docs/investigations/the-transmitted-window.md`.
 
 ### What acceptance means on the VGA sources
 
@@ -1835,7 +1834,7 @@ the picture lifted: our emitted blanking goes from **14 columns at the right to
 after, and the aperture solves to 145 against the 145 the sink's window starts
 at. `dividerCeilingForOutput()` recovers the standard's far edge correctly as a
 consequence, so the 480p ceiling rises 1804 -> 1852.
-[investigations/the-near-end-is-a-fraction-of-the-line.md](investigations/the-near-end-is-a-fraction-of-the-line.md)
+[investigations/the-transmitted-window.md](investigations/the-transmitted-window.md)
 
 **The warning below against 6 was correct for the base it was written against**
 and does not transfer: on the duration base 6 leaves the 50 Hz raster 29 samples
@@ -1856,7 +1855,7 @@ or the component path -- `ypbpr` at T 1602 and `vga` at T 1600 agree to 0.86
 units. Not the output mode -- the same source gives +7.1 at 1080p and +6.7 at
 720p. Not the lock's placement -- three `PAD_SYNC_OUT_ENZ` toggles leave the
 first lit column at 262 every time. What moves it is the output's FIELD RATE, in
-the bands [investigations/the-sinks-own-window-position-is-per-raster.md](investigations/the-sinks-own-window-position-is-per-raster.md)
+the bands [investigations/the-transmitted-window.md](investigations/the-transmitted-window.md)
 already measured, so the quantity is the sink's own window position and not a
 delay in the chain.
 
@@ -1875,7 +1874,7 @@ A change of placement is safe for the odd-width parity bias, which
 clip and now shows: 18 columns on the bench 320x256@50, none of it ours. That is
 a question about whether a mode's border belongs in the capture, not about where
 the window opens.
-[investigations/the-window-delay-is-a-field-rate-band-not-a-constant.md](investigations/the-window-delay-is-a-field-rate-band-not-a-constant.md)
+[investigations/the-transmitted-window.md](investigations/the-transmitted-window.md)
 
 ### 640x480@60 clips the top border and 8 units of the left, with its raster exact
 
@@ -4335,7 +4334,7 @@ on the same clock two units of T away. And a transition whose line has PICTURE
 at the aperture's edge lands 5 to 9 units before the own position, on 10 of
 the 28 stock modes, where a pad toggle on the settled state never does.
 `framing_sweep.py --tier S` measures it and `framing_report.py --sink` reports
-it. `investigations/the-sinks-own-window-position-is-per-raster.md`.
+it. `investigations/the-transmitted-window.md`.
 
 **SUPERSEDED IN PART: the start is placed per return of the sync pad, not per
 state.** The sink chooses it when `PAD_SYNC_OUT_ENZ` is driven again and
@@ -4350,7 +4349,7 @@ placed while a stored cropped framing put picture at the aperture's edge. With
 black at the edge the position is per raster -- 158.0 to 158.8 on three sources
 at 1600 x 1125 @ 60 Hz, 171.0 to 172.2 at 1916 x 1125 @ 50 Hz -- so an aperture
 placed AT it frames every source flush, since content cannot be earlier than
-the aperture. `investigations/the-encoder-places-its-window-when-the-sync-pad-returns.md`.
+the aperture. `investigations/the-transmitted-window.md`.
 The readings below stand as what each mode change placed.
 
 **The window the chain carries is the right WIDTH and starts where the
@@ -4385,7 +4384,7 @@ sixteen states. Sources at a standard's exact rate -- 60.00 Hz, and 72.81 and
 75.00 at 720p -- read 7 to 13 and -12.7; those at none -- 59.87, 60.32, 56.25
 and 50.16 Hz -- read 16.8 to 24.3; 320x256 at 50.08 reads 18.9 at 1080p and
 37.8 at 720p. What the encoder keys on is not established.
-`investigations/the-encoder-window-start-is-per-source.md` has every row.
+`investigations/the-transmitted-window.md` has every row.
 
 **No constant can correct it**: a delay of 13 leaves black at the left of
 every state placed later, 20 loses picture off the right of every state placed
@@ -4398,7 +4397,7 @@ of the card's green columns in frame, the source's active video runs 298.9 ..
 
 Vertically the picture is flush: 0 or 1 output pixel of the source's own
 blanking on screen across six DMT modes.
-`docs/investigations/the-transmitted-window-is-latched-from-our-blanking.md`.
+`docs/investigations/the-transmitted-window.md`.
 
 ### The undoubled capture origin has a term at each end of the cable
 
@@ -4507,7 +4506,7 @@ instrument. A source with no border loses its last pixels at the right at the
 engine's own framing, which is the requirement above not being met, and the
 correction the plan names for it is the row's own start rather than the
 origin constant.
-`investigations/the-encoder-window-start-is-per-source.md`.
+`investigations/the-transmitted-window.md`.
 
 ### A CEA-861 HD source acquires, and its capture origin is the previous source's
 
@@ -4766,7 +4765,7 @@ picture's end at 1829.5 reading column 1905 -- the window is 160.2 .. 1842.7 at
 1.1411 columns per unit. Our aperture opens at 160. An earlier reading of 156.6
 took the black at the LEFT for our own blanking when it is captured SOURCE
 blanking, which is the confound
-`investigations/the-transmitted-window-is-latched-from-our-blanking.md` names.
+`investigations/the-transmitted-window.md` names.
 
 **IT IS REPEATABLE ACROSS ACQUISITIONS.** Six re-locks per mode through a
 `PAD_SYNC_OUT_ENZ` toggle, framing untouched and `VDS_DIS_HB_ST` unchanged at
@@ -4800,7 +4799,7 @@ into 1080p50, whose CEA total is 2640 -- so the one input the model has that
 changes with the field rate is the one it does not use. **The naive substitution
 goes the wrong way**, 2640 giving 72.7% where the measurement wants more than
 87.27%, so the encoder is not switching to the 50 Hz standard's blanking either.
-`investigations/the-picture-falls-short-of-the-transmitted-window.md` carries the
+`investigations/the-transmitted-window.md` carries the
 whole of it, including what a second output resolution would say.
 
 ### The sync polarity separates no two AKF50 rasters sharing a key
@@ -5773,7 +5772,7 @@ bounds the picture vertically is the scale and the two output windows:
 `produced` is `capture x 1024 / VDS_VSCALE`, and the playback fetch reads that
 many rows from the write origin, so a write that runs longer than the fetch is
 simply not read. `IF_VB_SP` IS live -- the vertical creeps in
-`the-transmitted-window-is-a-per-mode-fraction.md` move the picture one for one
+`the-transmitted-window.md` move the picture one for one
 off it.
 
 **What this invalidates:** any reasoning that treats the vertical capture as
@@ -6423,7 +6422,7 @@ overlay -100.78 px and +26.58 rows against the picture's -101.01 px and
 lag 0 and r = 0.998. Video cannot have moved relative to sync inside the
 scaler, so the analog frame is identical at both landings and the displacement
 is added after it. It does not separate the MS9288A from the television.
-`investigations/the-picture-position-is-latched-not-re-rolled.md`.
+`investigations/the-transmitted-window.md`.
 
 **There is a vertical component at some landing pairs** -- +26.4 photo rows at
 the 1550/1450 pair -- so "a pure horizontal translation" describes the pairs
@@ -6459,7 +6458,7 @@ trips, a spread of 1.6 ppm that does not sort with position.
 What does move it, with every other byte on the part unchanged, is
 `PAD_SYNC_OUT_ENZ` -- once in nine toggles, so it is a demonstration that the
 choice is made downstream of the output pins rather than the trigger a round
-trip pulls. `investigations/the-picture-position-is-latched-not-re-rolled.md`
+trip pulls. `investigations/the-transmitted-window.md`
 carries the measurements. Its open candidate was that the pad returned 300 ms
 in, while FrameSync was still steering; the pad now returns after the rate
 match and the phase, and whether the landings still vary is not re-measured.
@@ -6481,7 +6480,7 @@ The explanation carried here -- that the encoder latches its window origin from
 across a pad toggle. The toggle does move the landing, about 11 columns between
 two positions with the span unchanged, so the landings are real; what they are
 not is a reading of our own blanking.
-`investigations/the-transmitted-window-is-latched-from-our-blanking.md`.
+`investigations/the-transmitted-window.md`.
 
 **And a pass-through round trip is not a provoker either**: twenty-two of them
 across two builds moved the picture once, that once being the first round trip
@@ -7062,7 +7061,7 @@ right-hand 55% of the frame, and the only columns that change at all are 50..148
 at the far left. 340 and 380 differ from 300 in zero columns. The picture does
 not move; a strip of it is blanked. A photograph taken across two ACQUISITIONS
 does appear to move, which is the confound --
-`investigations/the-picture-position-is-latched-not-re-rolled.md`.
+`investigations/the-transmitted-window.md`.
 
 **Putting the porch on the same footing as the span recovers the whole card.**
 At 640x480@75, frozen, with `312/1800 x 1440 = 250` in place of 312 --
@@ -7076,7 +7075,7 @@ Whether the fraction is the right conversion for the pulse as well as the window
 is what a fix has to settle, since the two claims -- that the encoder finds
 active video where the blanking ends, and that it resamples the whole line --
 are not both true in the way they are currently used.
-`investigations/the-active-window-is-a-fraction-of-the-line.md`.
+`investigations/the-transmitted-window.md`.
 
 **IT ALSO BITES BELOW THE STATED BOUNDARY, in the other direction.** 800x600@56
 runs a LONGER raster -- 1706 against the 1600 that makes the line exactly
@@ -7710,7 +7709,7 @@ dark 3.7 to 4.1 s off the dongle where the sink takes its first attempt.
 **The early return was not what placed the sink's window short.** A settled
 toggle with picture at the edge lands where the transition did, to a tenth
 of a unit, on the two rasters that showed it.
-`investigations/a-transition-and-a-settled-toggle-place-the-window-alike.md`.
+`investigations/the-transmitted-window.md`.
 
 ### A mode change into a falling-back resolution installed one extra divider -- FIXED
 
@@ -8186,7 +8185,7 @@ builds. The horizontal pair is 242/254 throughout and the spread stays
 
 The capture window is identical in both -- `ov` 72, `ev` 512, `cv` 624 -- so
 nothing the board emits moved. It is the sink placing its own window when the
-link acquires, which `investigations/the-shown-window-is-latched-at-lock.md`
+link acquires, which `investigations/the-transmitted-window.md`
 carries.
 
 What it costs is a false regression: `242/254/2/0` is the figure a bench note

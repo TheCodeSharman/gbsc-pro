@@ -106,5 +106,5 @@ So the scaler emits the picture at the same offset from its own sync in both
 states and the panel shows it 48 columns apart. What is left is outside the 608
 registers: the display clock the Si5351 is actually running, which no dump
 carries. That is the next thing to instrument, and per
-`the-encoder-reframes-the-output.md` it needs an intervention rather than another
+`the-transmitted-window.md` it needs an intervention rather than another
 absence of difference.
