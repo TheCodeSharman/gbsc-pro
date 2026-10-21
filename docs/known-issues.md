@@ -1094,6 +1094,53 @@ normalisation tried -- but that lands in the untested gap on both sources,
 outstanding measurement.
 `investigations/the-engine-makes-the-composite-count-unmeasurable.md`.
 
+### 1280x720@60 passes through on SEPARATE sync and never acquires at all on composite
+
+Measured 2026-10-21 on `vga`, RISC PC under `RetroScaler-Acorn.mdf`, output
+1920x1080, `scale-rgbhv = 0`.
+
+| sync | outcome | emitted frame |
+|---|---|---|
+| separate, `SYNC 0` | **acquires in 3.4 s** and passes through: `measured: 750 lines x 60.01 Hz -> line rate 45013`, `bypass-switch`, `DAC_RGBS_BYPS2DAC`/`OUT_SYNC_SEL` both 1, count 749, `STATUS_SYNC_PROC_HTOTAL` 2038 against `PLLAD_MD` 2038, silent for 86 s afterwards | a clean PM5544, the card's own text legible |
+| composite, `SYNC 1` | **never acquires**: 272 `the reference clock measured nothing, trying the next` in 90 s, `sync pad: driven` **zero** times | **mean luma 0.00, min 0 max 0** |
+
+So the earlier reading that 1280x720@60 comes up `state: absent` with
+`lineRateHz` 46650 is the COMPOSITE arrangement, and the mode itself is fine.
+
+**It is a different failure from the 800x600 entry above**, which acquires on
+composite and emits nothing: this one never measures the source at all, so the
+pad never returns and nothing reaches the bypass switch.
+
+**`SYNC 0` issued WHILE ALREADY AT 720p does not recover it.** It leaves
+`SP_SOG_MODE` 1 on a separate-sync source with count 97 and
+`STATUS_SYNC_PROC_HTOTAL` 10, spinning the reference clock list with no
+self-recovery in 60 s. `/sc?~` clears it in 5 s. Only a MODE change arms the
+re-probe that reaches the clean state, which is the sync-type entry's shape at
+a mode that cannot be acquired the wrong way round.
+
+### The pass-through transition blanks once on separate sync and repeatedly on composite
+
+Measured 2026-10-21, same source and output.
+
+**Separate sync is one acquisition.** 1280x720 pass-through -> 320x256@50
+across three round trips, six legs: exactly one `sync pad: away` ->
+`sync pad: driven` pair on every leg, 2.7 s down and about 60 ms up. A 30 s
+dongle clip at 30 fps across one transition carries **one** black interval of
+0.13 s, with the mean luma flat either side.
+
+**Composite sync re-arms instead.** 320x256@50 -> 800x600@60 pass-through gives
+**nine** pad cycles in 33 s before settling, each one a solve discarded by a
+count the solve never saw -- `TIMINGS change (restored count), 628 lines,
+solved 623` and the same against 622, 624 and 629. That is the re-arm the
+800x600 entry above carries, seen from the transition rather than from the
+settled state, and it is what a viewer sees as the picture blanking several
+times after a mode change.
+
+**The coast pair is not the lever.** Forced to 7/6 across the same transition
+it gives 10 pad cycles against 3 and 9 at the engine's own 0/0, so the hold
+does not reduce the re-arming and the ranges overlap. The count dither the
+re-arms follow belongs to the composite measurement, not to the coast.
+
 ### No walk reaches a separator level above the starting guess
 
 `acquireSeparatorLevel()` runs `SyncOnGreen::acquire()`, which only **descends**
