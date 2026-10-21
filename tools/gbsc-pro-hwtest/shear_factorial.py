@@ -78,9 +78,14 @@ SCORE_S = 48.0
 # instead, and the block reports the exposure it really had.
 CHECK_S = 8.0
 
-# The factorial. Three coast levels against two sampling phases: the engine's
-# own pair, the long post coast no session has tried on this source, and no
-# hold at all, which bounds what any pre, post or sub coast setting can do.
+# The factorial's default cells. Three coast levels against two sampling
+# phases: the engine's own pair, the long post coast no session has tried on
+# this source, and no hold at all, which bounds what any pre, post or sub coast
+# setting can do.
+#
+# A run that moves the pre and post lines TOGETHER cannot say which of them
+# carries an effect, so attributing one needs the pair crossed instead:
+# --coasts 0/0,0/2,7/0,7/2 --phases 16.
 COASTS = [(0, 0), (7, 2), (7, 6)]
 PHASES = [16, 13]
 
@@ -292,9 +297,19 @@ def main():
     ap.add_argument("--host", required=True)
     ap.add_argument("--hours", type=float, default=9.0)
     ap.add_argument("--out", default="shear_factorial.csv")
+    ap.add_argument("--coasts", default=None,
+                    help="pre/post pairs, as in 0/0,0/2,7/0,7/2")
+    ap.add_argument("--phases", default=None, help="as in 16,13")
     args = ap.parse_args()
 
-    cells = [(c, p) for c in COASTS for p in PHASES]
+    coasts = COASTS
+    if args.coasts:
+        coasts = [tuple(int(n) for n in pair.split("/"))
+                  for pair in args.coasts.split(",")]
+    phases = [int(n) for n in args.phases.split(",")] if args.phases \
+        else PHASES
+    cells = [(c, p) for c in coasts for p in phases]
+    print("%d cells: %s" % (len(cells), cells), flush=True)
     console = Console(args.host)
     widths = Widths(args.host)
     frames = Frames()
