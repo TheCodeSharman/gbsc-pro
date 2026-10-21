@@ -31,7 +31,17 @@ inline void delayMicroseconds(unsigned int) {}
 
 // Admitted on the same terms: Clock::ClockGen waits out the Si5351's preload
 // step, which is the part's settling time rather than a dependency to move out.
-inline void delay(unsigned long) {}
+//
+// The total is ACCUMULATED because a probe's cost is part of its contract and
+// an injected clock cannot see it: a blind settle in front of a poll spends
+// real milliseconds while millis() in the test is driven by the poll alone.
+inline unsigned long &settledMs()
+{
+    static unsigned long ms = 0;
+    return ms;
+}
+
+inline void delay(unsigned long ms) { settledMs() += ms; }
 
 // F() and PSTR() are placement directives rather than dependencies: on the ESP
 // they keep a literal in flash, where .rodata would otherwise cost RAM this

@@ -8,6 +8,8 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest/doctest.h>
 
+#include <Arduino.h>
+
 #include "fake/Wire.h"
 
 FakeTwoWire Wire;
@@ -219,14 +221,46 @@ TEST_CASE("a source the separator finds no frame in is not called composite")
     CHECK(SyncMeasurement::hasOwnVsync(testClock) == SyncMeasurement::NoSource);
 }
 
+TEST_CASE("a source with its own V sync answers without waiting out a settle")
+{
+    // **THE SETTLE IS PURE COST IN THE COMMON CASE.** The probe used to delay
+    // OwnVsyncSettleMs blind before looking, so a source whose V sync is
+    // already there paid the whole of it. Measured on the bench on `vga`,
+    // VSACT timed from the instant applyForSyncType() moves the path: high at
+    // 0 ms on three of four probes, and 294 ms on the first after a detection
+    // cycle. The poll's own budget covers that tail, so nothing needs waiting
+    // out in front of it.
+    vsyncArrivesAt(0);
+    settledMs() = 0;
+
+    REQUIRE(SyncMeasurement::hasOwnVsync(testClock) == SyncMeasurement::OwnVsync);
+
+    CHECK(settledMs() <= 20);
+}
+
 TEST_CASE("a V sync that arrives late is still the source's own")
 {
-    // The tail of the reacquisition time reaches 242 ms where the typical case
-    // is 2-3. A probe that stops looking inside that tail calls a separate-sync
-    // source composite, which latches: SP_VTOTAL collapses to 97 and the picture
-    // goes. docs/investigations/own-vsync-probe-window.md
+    // THE TAIL IS THE SYNC PROCESSOR REACQUIRING, NOT THE SOURCE. Timed from
+    // the moment the path moves, VSACT is high at 0 ms on three probes of four
+    // and 294 ms on the fourth -- the first after a detection cycle. The
+    // earlier distribution, taken 240 ms into a settle, reaches 443 ms by the
+    // same clock. OwnVsyncWindowMs covers that.
     vsyncArrivesAt(400);
     CHECK(SyncMeasurement::hasOwnVsync(testClock) == SyncMeasurement::OwnVsync);
+}
+
+TEST_CASE("a separate-sync source whose V misses the window is not called composite")
+{
+    // **WHAT MAKES THE WINDOW SAFE TO BOUND.** A premature no used to latch
+    // composite separation onto a separate-sync source and collapse
+    // SP_VTOTAL. It cannot now: the negative branch puts the separator in and
+    // asks for a frame, and a separate-sync source yields 97 rather than a
+    // count any source runs -- so the answer is NoSource, which latches
+    // nothing and is probed again on the next pass.
+    vsyncArrivesAt(Never);
+    separatorFinds(97);
+
+    CHECK(SyncMeasurement::hasOwnVsync(testClock) == SyncMeasurement::NoSource);
 }
 
 TEST_CASE("a source with no V sync of its own is not given one")

@@ -53,15 +53,21 @@ public:
     // host test.
     static Answer hasOwnVsync(uint32_t (*nowMs)());
 
-    // How long the sync processor is given to reacquire V after the path moves.
+    // How long the SEPARATOR is given to acquire before its frame is read, in
+    // the negative branch below. Nothing waits this out before the V sync poll:
+    // a settle in front of a poll is paid by every source, where the poll's own
+    // budget covers the same reacquisition and costs a source that has already
+    // reacquired nothing.
     static const uint16_t OwnVsyncSettleMs = 240;
 
-    // How long after that V may still arrive and count. SIZED FOR THE TAIL:
-    // reacquisition is 2-3 ms most of the time but runs to at least 242 ms, and
-    // the error is one-directional -- a false no puts composite separation on a
-    // separate-sync source and collapses SP_VTOTAL, while a false yes cannot
-    // happen because the bit only rises when V arrives.
-    static const uint16_t OwnVsyncWindowMs = 1000;
+    // How long V may take to arrive and still count, measured from the moment
+    // the path moves. SIZED FOR THE TAIL: it is the sync processor reacquiring
+    // rather than the source, and a premature no is recoverable now -- the
+    // negative branch asks the separator for a frame, a separate-sync source
+    // yields none, and the answer is NoSource, which latches nothing and is
+    // probed again on the next pass. A false yes cannot happen at all, because
+    // the bit only rises when V arrives.
+    static const uint16_t OwnVsyncWindowMs = 600;
 
     // How many frames the separator is asked for once no V arrived, and how
     // far apart. TWO READINGS MUST AGREE, because a single count proves

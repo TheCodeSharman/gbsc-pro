@@ -67,7 +67,6 @@ SyncMeasurement::Answer SyncMeasurement::hasOwnVsync(uint32_t (*nowMs)())
     tv5725Log("measure: sync type, probing for the source's own V sync");
 
     SyncProcessor::applyForSyncType(false, Adc::dividerInForce());
-    delay(OwnVsyncSettleMs);
 
     bool active = false;
     const uint32_t start = nowMs();
@@ -82,8 +81,8 @@ SyncMeasurement::Answer SyncMeasurement::hasOwnVsync(uint32_t (*nowMs)())
         active = GBS::STATUS_SYNC_PROC_VSACT::read() == 1;
     }
 
-    // How far into the window V arrived, because OwnVsyncWindowMs is sized from
-    // that distribution and nothing else on the board reports it.
+    // How long after the path moved V arrived, because OwnVsyncWindowMs is sized
+    // from that distribution and nothing else on the board reports it.
     // **ABSENCE IS NOT AN ANSWER, SO THE NEGATIVE CASE IS ASKED POSITIVELY.**
     // A composite source and a source that is merely between modes both fail
     // to put V on its own pin, and latching the first reading holds a
