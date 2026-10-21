@@ -6741,6 +6741,29 @@ measured zero in two windows of ninety seconds.
 
 `investigations/the-composite-count-dithers-where-the-ignore-nears-the-pulse.md`.
 
+### A sync type change on a live source is no longer followed
+
+Nothing in the idle acquisition path re-establishes the sync type. Two arms
+used to -- `sourceStoppedDrivingVsync()` after about 240 ms without V, and the
+unusable-count arm on a steady implausible count -- and both read a source that
+had merely gone away as evidence that the held answer was wrong. A Ctrl-Break
+reboot of the bench RISC PC on separate sync reproduced each of them, latching
+composite on a separate-sync source and leaving `PAD_SYNC_OUT_ENZ` 1 with
+nothing emitted.
+
+They are deleted. An absent source and a composite one cannot be told apart by
+any instantaneous measurement -- both drive H, neither drives V, both collapse
+`STATUS_SYNC_PROC_VTOTAL` to 97 -- and steadiness does not separate them
+either, the reboot holding a count of 5 for as long as the run needed.
+`investigations/an-absent-source-is-not-a-sync-type.md`.
+
+**So a source that changes its sync type on one cable keeps the old answer
+until something forgets it**: `/sc?~`, an input change, or a re-detect. The
+RISC PC's `SYNC` command is exactly that case. This is the entry below widened
+from mode changes to every idle pass, and it is the accepted cost of the
+reboot being survivable -- a delay long enough to outlast a source transition
+was rejected rather than add one.
+
 ### The equalisation probe runs across a divider change
 
 `VideoPath::measureEqualisation()` is gated on `samplingClockLatched()`, which
