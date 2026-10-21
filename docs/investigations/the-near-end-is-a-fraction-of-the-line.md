@@ -65,12 +65,14 @@ aperture ceiling onto the unit the write filled.
 
 ## Why the sink looked like it followed our window
 
-On a raster whose own position falls **before** our aperture the sink takes the
-first non-black content it meets at the aperture's edge instead, so moving our
-window moves its window with it and the margin does not respond. That is the 60 Hz
-case, and it is why a translation there is a no-op rather than a regression:
-measured over −28 to +8 units, the right margin stayed 0 and the left 1 to 2
-throughout. Walking far enough left eventually reveals its own position, which is
+On a raster whose own position falls **before** our aperture, moving our window
+moves the shown window with it and the margin does not respond. That is the
+60 Hz case, and it is why a translation there is a no-op rather than a
+regression: measured over −28 to +8 units, the right margin stayed 0 and the
+left 1 to 2 throughout. **The mechanism is open** -- the sink reading the first
+non-black content at the aperture's edge is the obvious account and is refuted
+by
+[the-encoder-places-its-window-when-the-sync-pad-returns.md](the-encoder-places-its-window-when-the-sync-pad-returns.md). Walking far enough left eventually reveals its own position, which is
 what located the 1590 raster's window at 145..1530.
 
 A measurement taken with picture hard against the aperture's edge therefore

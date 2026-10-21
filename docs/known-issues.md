@@ -4338,10 +4338,12 @@ the 28 stock modes, where a pad toggle on the settled state never does.
 it. `investigations/the-sinks-own-window-position-is-per-raster.md`.
 
 **SUPERSEDED IN PART: the start is placed per return of the sync pad, not per
-state.** The sink chooses it when `PAD_SYNC_OUT_ENZ` is driven again: the first
-non-black content at the aperture's edge where that is earlier than the sink's
-own position for the raster, else that position, and it remembers nothing
-between returns. A source `MODE` round trip never toggles the pad and never
+state.** The sink chooses it when `PAD_SYNC_OUT_ENZ` is driven again and
+remembers nothing between returns. **WHAT IT CHOOSES IT FROM IS OPEN, AND IT IS
+NOT THE IMAGE CONTENT**: the readings split by what sits at the aperture's
+edge, and a capture pan with the aperture held open moved the picture 11
+emitted columns while the strip past the aperture moved 0, byte-identical at
+both pans. A source `MODE` round trip never toggles the pad and never
 moves it; a pad toggle by hand re-places it every time. The same state read
 158.9 in Tier B and 172 in Tier C with every register identical, the first
 placed while a stored cropped framing put picture at the aperture's edge. With

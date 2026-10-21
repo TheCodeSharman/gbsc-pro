@@ -2,11 +2,32 @@
 
 The MS9288A fixes the start of the window it transmits at the moment
 `PAD_SYNC_OUT_ENZ` is driven again after being taken away, and holds it until
-the pad is taken away again. Where it puts it depends on what our line carries
-at that moment: the first non-black content at the aperture's edge if that is
-earlier than the sink's own position for the raster, else that position. The
-width is the mode's fraction of the line whatever the start. A source `MODE`
-round trip does not move it, because the engine never toggles the pad for one.
+the pad is taken away again. The width is the mode's fraction of the line
+whatever the start. A source `MODE` round trip does not move it, because the
+engine never toggles the pad for one.
+
+**WHAT CHOOSES THE START IS OPEN, AND IT IS NOT THE IMAGE CONTENT.** The
+readings below split by what our line carries at the aperture's edge, which
+reads as the sink taking the first non-black content it finds there. Two later
+measurements refute that:
+
+- [the-picture-falls-short-of-the-transmitted-window.md](the-picture-falls-short-of-the-transmitted-window.md)
+  held the aperture open, panned the capture 4 units -- 11.1 emitted columns --
+  and asked every region of the frame which shift explains it. The picture
+  moved 11 and the strip past the aperture moved **0**, byte-identical at both
+  pans.
+- A pan of ten capture units moves the window about ten OUTPUT units at both
+  2.43x and 1.27x magnification, where the content it would be reading moves
+  24.3 and 12.7. Nothing downstream of the VDS can see capture units.
+
+**The confound is that a measurement taken with picture hard against the
+aperture's edge reports the aperture back**, so a reading that asks only where
+the picture starts is reading our own window. The discriminator is the black at
+the LEFT: a window that had followed our content would paint our first column
+at column 0 and show none.
+
+What stands is the latching at the pad's return and the per-raster position
+below.
 
 Measured on the bench RISC PC on `vga` into 1080p, automation frozen, the
 window read by walking `VDS_DIS_HB_SP` and `VDS_DIS_HB_ST` into the picture
@@ -30,9 +51,10 @@ mode change. In raster units:
 | pad away 1.5 s, default framing | captured black | **171.0** |
 
 The round trips leave it where it was, picture at the edge or not. The toggle
-places it at the picture's edge when the picture is there and back at 171 when
-it is not, so it is chosen afresh at every return of the pad and remembers
-nothing.
+lands 158.9 where the framing puts picture at the edge and 171 where it does
+not, so the start is chosen afresh at every return of the pad and remembers
+nothing between returns. **What the split does not establish is that the
+content is what it reads**, for the two reasons at the head of this page.
 
 The console during the sweep says the same from the other side: `sync pad:
 away` and `sync pad: driven` are printed only on a source mode change, never
@@ -57,7 +79,7 @@ first to within two units and twelve short of the second. Two rasters cannot
 say what the sink derives it from; the measurement is one toggle with black at
 the edge, so the rest of the set can be read the same way.
 
-## The same rule read across the Tier C families
+## The same split read across the Tier C families
 
 Seven AKF50 modes at 312 lines and 50.08 Hz share one output raster, T 1916.
 In the sweep each arrives through a mode change, so each carries the window
@@ -69,8 +91,8 @@ that transition placed:
 | 768x288, 1056x250, 1056x256 | picture | 159.1 .. 160.0 |
 
 The four with black show the sink's own position and fifteen black columns at
-the right, where the window runs past the aperture; the three with picture are
-pulled to the aperture and show none. The 158.9 recorded for 320x256@50 in
+the right, where the window runs past the aperture; the three with picture land
+on the aperture and show none. The 158.9 recorded for 320x256@50 in
 Tier B, on the same raster and aperture, was placed while a stored, cropped
 framing put picture at the aperture's edge; today the default framing puts
 captured black there and the same state reads 172.
@@ -98,13 +120,13 @@ is not re-measured. Open.
 ## What follows
 
 - The pad returns once the output is settled. It did not move any placement
-  in this record; the sink's rule below is what does.
-- With the aperture placed AT the sink's own position for the raster, every
-  source frames flush: content cannot be earlier than the aperture, so the
-  sink's rule lands the window on the aperture whatever the source carries at
-  its edge. That position is a property of the output raster, measurable by
+  in this record.
+- The per-raster position is a property of the output raster, measurable by
   one pad toggle with black at the edge, and is not the constant the model
-  carries.
+  carries. An aperture placed AT it has every reading on this page landing on
+  the aperture, which is the framing the engine aims for -- but the mechanism
+  that would guarantee it for a source not measured here is the open question
+  above, so it is an observation rather than a rule to derive from.
 - A source `MODE` round trip is still the re-acquisition of the CAPTURE, which
   is what a hand-set capture register needs judging after; it is not a re-lock
   of the sink, and a measurement of where the sink's window sits needs a pad

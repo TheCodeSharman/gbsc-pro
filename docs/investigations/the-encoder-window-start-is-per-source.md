@@ -3,10 +3,11 @@
 **The placement is per return of the sync pad, not per state, and the rows
 below carry the window each mode change placed.** The same state reads 158.9
 in Tier B and 172 in Tier C with every register identical: the sink chooses the
-window's start when `PAD_SYNC_OUT_ENZ` is driven again, from the first non-black
-content at the aperture's edge if that is earlier than its own position for the
-raster, and a source `MODE` round trip does not toggle the pad and does not move
-it. [the-encoder-places-its-window-when-the-sync-pad-returns.md](the-encoder-places-its-window-when-the-sync-pad-returns.md).
+window's start when `PAD_SYNC_OUT_ENZ` is driven again, and a source `MODE`
+round trip does not toggle the pad and does not move it. **What it chooses the
+start FROM is open, and it is not the image content** -- the readings split by
+what sits at the aperture's edge, which a pan measurement and the magnification
+arithmetic both refute. [the-encoder-places-its-window-when-the-sync-pad-returns.md](the-encoder-places-its-window-when-the-sync-pad-returns.md).
 What stands here unchanged is the width, the capture side and the black counts;
 what a "per (source, output) state" repeat measured was the same transition
 taken the same way.
