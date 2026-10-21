@@ -134,18 +134,46 @@ one frame, which a detailed picture carries more strongly than a plain one, so
 collapse are register reads and do compare. Judge a shear rate within one run
 and one pattern.
 
+## The fix landed, and it is validated on the source that shears
+
+The pair follows a measurement now rather than being 7 for every composite
+source. Scored on the resulting firmware with `shear_factorial.py`, 48.0 scored
+minutes per arm interleaved on the minute, the engine choosing the pair rather
+than an override holding it:
+
+| | 0/0 | 7/2 | ratio |
+|---|---|---|---|
+| bursts | **0** | **17** | -- |
+| blocks carrying a burst | 0 / 60 | 10 / 60 | Fisher p = 0.00065 |
+| count collapses | 30 | 77 | 2.57 [1.68, 3.91] |
+| sheared frames | 13 / 172870 | 35 / 172870 | 2.69 [1.42, 5.09] |
+
+Witness registers read back correct in 60 of 60 blocks on both arms. The
+emitted frame at 0/0 is byte-comparable to the 7/2 it replaces -- black margins
+7/1/3/1 on both, mean luma 78.26 against 78.24, the card's border on all four
+edges -- so the picture pays nothing for it.
+
+All three arrangements hold with a freshly probed verdict: RISC PC composite
+0/0 with count 308, RISC PC separate untouched at 0/0 with count 311, Wii 576i
+7/2 with count 310, Wii 480i 7/2 with the count alternating 259/260.
+
 ## Open
 
-- **The candidate fix, and why it cannot be unconditional.** Make the pre coast
-  follow the serration measurement as the post coast already does: an
-  unserrated source gets 0/0, a serrated one keeps the hold. A serrated source
-  at pre 0 is recorded as dithering its count at every post coast until the
-  engine drops it to absent, so lowering the pair for everyone trades this
-  fault for that one. Validation needs all three bench arrangements -- the RISC
-  PC on composite, the Wii on `ypbpr` for the serrated path, and the RISC PC on
-  separate sync, where the coast is not applied at all.
+- **WHICH SOURCES MAY TAKE 0/0 IS NOT SETTLED, AND THE GATE AS LANDED IS
+  WRONG.** It keys on `Tv5725::EqualisationMeasurement`, which sees only
+  half-line pulses and is blind to serration -- and the Wii at 480p carries no
+  equalisation while failing at 0/0 outright. It is not reaching that state
+  today only because the probe reads across a divider change there and returns
+  a false answer that happens to be the safe one.
+  [`the-equalisation-probe-cannot-see-serration.md`](the-equalisation-probe-cannot-see-serration.md)
+  has the measurements and the gate that matches every state measured good.
 - **The mechanism.** The shear is the vertical sync being detected about 32
   lines late, and nothing measured says why holding the PLL across the
   preceding seven lines makes that more likely.
+  **What is now ruled out is PLL starvation**: with the pair at 0/0 on the RISC
+  PC, disabling the coast generator outright moves the count not at all and
+  `STATUS_SYNC_PROC_HTOTAL` holds the divider through every combination, so
+  nothing was starving.
+  [`what-the-coast-pair-actually-holds.md`](what-the-coast-pair-actually-holds.md).
 - **What the post lines do to an unheld count**, which is the 69-fold
   difference between 0/0 and 0/2.

@@ -6664,6 +6664,68 @@ measured zero in two windows of ninety seconds.
 
 `investigations/the-composite-count-dithers-where-the-ignore-nears-the-pulse.md`.
 
+### The coast gate keys on equalisation, which is not the fact it needs
+
+`SyncProcessor::preCoastLines()` and `postCoastLines()` return 0 when
+`Tv5725::EqualisationMeasurement` reports no half-line pulses. That probe cannot
+see SERRATION -- a serrated broad pulse clears both of its thresholds and is
+counted once per line -- and the Wii at 480p is serrated while carrying no
+equalisation. Held at 0/0 it never settles: the count dithers 521..525, the rate
+alternates 31348/31468 and the sync pad cycles about every 2.2 s.
+
+**It is not reaching that state today, and only by accident.** The probe runs in
+the same 20 ms as a divider install and the engine installs twice in quick
+succession on that source -- 1446 then 1212, ~310 ms apart -- so it reads across
+a clock that is changing and returns a false `serrated`, which happens to be the
+safe answer. Reproduced on both selections of `ypbpr` in one session.
+
+The gate needs the equalisation answer AND
+`VideoPath::measureVerticalInterval()`'s, which asks whether the input formatter
+can still measure the interval uncoasted. Every state measured good satisfies
+both: RISC PC composite none/8 of 8 -> 0/0, Wii 480p none/**0 of 8** -> 7/6,
+Wii 576i +9/8 of 8 -> 7/2, Wii 480i +10/8 of 8 -> 7/2.
+`investigations/the-equalisation-probe-cannot-see-serration.md`.
+
+### The equalisation probe runs across a divider change
+
+`VideoPath::measureEqualisation()` is gated on `samplingClockLatched()`, which
+compares `STATUS_SYNC_PROC_HTOTAL` against the divider -- a correct test, but one
+that is satisfied momentarily between two installs. On the Wii at 480p the
+console shows the probe and the first install sharing a timestamp and the second
+install 310 ms later:
+
+```
+23.05  installing: divider from line rate 31475, doubled 0 -> 1446
+23.05  vertical interval: serrated, pulse ignore 70 of 1446 samples, coast 7/6
+23.36  installing: divider from line rate 31475, doubled 0 -> 1212
+```
+
+`EqualisationMeasurement::probe()` takes five counts at one threshold then five
+at the other, so the re-install lands inside the probe and the thresholds were
+sized for a divider that no longer applies. Its own header names this case: a
+difference between two readings no source produces is arithmetic on noise.
+Frozen at the settled divider the same source reads 524 at both thresholds.
+
+**Why the engine installs twice is not established.**
+
+### The equalisation answer is forgotten per INPUT, not per MODE
+
+`VideoPath::establishSyncType()` forgets `EqualisationMeasurement` only when the
+input selection changes, so a mode change on one cable keeps the held answer --
+and 480p to 576i is progressive to interlaced on one cable. Measured: 576i ran
+on the answer probed at 480p and only re-probed when the input was bounced.
+
+Same shape as the sync-type entry below. It mattered less when the answer chose
+only `SP_H_PULSE_IGNOR`; it now also chooses the coast, where a stale
+"no equalisation" carried into a source that needs the hold drops it to 0/0.
+
+### 1280x720@60 on `vga` comes up absent
+
+Measured 2026-10-21 with `RetroScaler-Acorn.mdf` loaded and the RISC PC set to
+`MODE X1280 Y720 C256 F60`: `/geometry` reports `state: absent`, `present` false,
+`lineRateHz` 46650 against the 45 kHz the mode runs, with `cv` 392 and `ch` 1037.
+Not investigated -- recorded so it is not rediscovered as a regression.
+
 ### A sync-type change arms no re-probe, so the held answer outlives the source
 
 The RiscPC sets its sync type from CMOS at one line count -- 311 at 320x256@50,
