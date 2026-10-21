@@ -341,11 +341,6 @@ private:
 
     bool sourceMoved();
 
-    // Whether a source held as separate sync has stopped driving V on its own
-    // pin for VsyncAbsentArmPasses, which is the one signal that the held sync
-    // type is wrong. Forgets the type on the pass it fires, once per absence.
-    bool sourceStoppedDrivingVsync();
-
     // Report a source event and spend the latched disturbance on it, whichever
     // reason is being reported.
     // `mux` says a DIFFERENT SOURCE is arriving rather than the same one
@@ -501,17 +496,6 @@ private:
 
     uint16_t unsettledPasses_;
     bool unsettledArmed_;
-
-    // Consecutive passes on which the source held as separate-sync was not
-    // driving V. Sized from the window the probe gives the sync processor to
-    // reacquire V after the path moves, because that is the same reacquisition
-    // seen from the other side -- anything shorter answers before the processor
-    // has, which is the error the probe it re-arms exists to avoid.
-    static const uint16_t VsyncAbsentArmPasses =
-        Tv5725::SyncMeasurement::OwnVsyncSettleMs / DetectionIntervalMs;
-
-    uint16_t vsyncAbsentPasses_;
-    bool vsyncAbsentArmed_;
 
     // Consecutive passes on which the divider in force was not the one the
     // sync processor counts the line against. It has to outlast a legitimate

@@ -1925,18 +1925,21 @@ TEST_CASE("a source change puts the sync processor in the state an unmeasured so
     CHECK(SyncProcessor::SP_H_CST_SP::read() == 0x100);
 }
 
-TEST_CASE("a source held as separate sync that drives no V re-establishes the sync type")
+TEST_CASE("a count no source runs does not discard the held sync type")
 {
-    // A composite-sync source the engine holds as separate-sync runs uncoasted:
-    // the count is short by the lines the vertical pulse occupies -- 308 against
-    // 311 -- and dithers, and the picture bounces. Every one of those counts is
-    // PLAUSIBLE, so the unusable-count arm above never fires and the wrong path
-    // stands for as long as the source is attached.
+    // **AN IMPLAUSIBLE COUNT CANNOT SAY WHICH SYNC PATH IS WRONG, BECAUSE IT
+    // IS EQUALLY THE SIGNATURE OF NO SOURCE.** A wrong path collapses
+    // STATUS_SYNC_PROC_VTOTAL to 97 and so does a source that has gone away,
+    // and steadiness does not separate them -- a source mid-reboot holds a
+    // count of 5 for as long as the steadiness run needs.
     //
-    // The separate-sync answer is what puts the separator out, which is the
-    // probe's own measuring configuration, so the V-active bit read there
-    // reports whether the source drives V rather than which path is configured.
-    // docs/investigations/a-sync-type-change-arms-no-probe.md
+    // Measured across a Ctrl-Break of the bench RISC PC on separate sync:
+    // `TIMINGS change (unusable count), 5 lines` discarded the held answer,
+    // the probe that followed ran into the blackout and concluded composite,
+    // and SP_SOG_MODE 1 with ADC_SOGEN 1 then sought hsync on green where the
+    // RISC PC puts none -- PAD_SYNC_OUT_ENZ left 1, nothing emitted, until
+    // /sc?~ forgot it. The re-measure this arms is right; discarding the sync
+    // type on it is not.
     seedBenchSource();
     Acquiring unit;
     unit.path.useSyncTypeProbe(probeOwnVsync);
@@ -1946,12 +1949,14 @@ TEST_CASE("a source held as separate sync that drives no V re-establishes the sy
     unit.start();
     REQUIRE(unit.pollUntilSolved());
     REQUIRE(g_probeCalls == 1);
-    REQUIRE_FALSE(SyncMeasurement::isCsync());
+
+    REQUIRE(SyncMeasurement::isSet());
 
     seedVsyncActive(false);
-    unit.pollFor(4);
+    seedSourceLines(5);
+    unit.pollFor(12);
 
-    CHECK(g_probeCalls == 2);
+    CHECK(SyncMeasurement::isSet());
 }
 
 TEST_CASE("a source that drives V is left on the sync type it was probed for")
@@ -2014,49 +2019,6 @@ TEST_CASE("a source held as composite sync is not re-probed for the V it cannot 
     unit.pollFor(8);
 
     CHECK(g_probeCalls == 1);
-}
-
-TEST_CASE("a source that stops driving V while it is being measured is re-probed")
-{
-    // The arm above is asked only between mode changes. A source that changes
-    // its sync type changes its count for a moment as the mode is re-applied,
-    // so the engine is INSIDE a measurement when the separator is needed and
-    // nothing in that loop asks the question: it cycles the reference clocks
-    // through the separate arrangement until the caller gives up and drops to
-    // low power, about seventy seconds later.
-    // docs/known-issues.md
-    seedBenchSource();
-    Acquiring unit;
-    unit.acquisition.allowMaintenance(true);
-    unit.path.useSyncTypeProbe(probeOwnVsync);
-
-    g_hasOwnVsync = true;
-    g_probeCalls = 0;
-    unit.start();
-    REQUIRE(unit.pollUntilSolved());
-    REQUIRE(g_probeCalls == 1);
-    REQUIRE_FALSE(SyncMeasurement::isCsync());
-
-    // The source becomes composite: the count moves for a moment, which arms a
-    // measurement, and through the separate arrangement nothing steadies and V
-    // is not seen on its own pin.
-    g_hasOwnVsync = false;
-    seedSourceLines(307);
-    for (uint16_t i = 0; i < 4 * SourceMeasurement::SteadySamples
-                         && !unit.path.changingMode(); ++i)
-        unit.poll();
-    REQUIRE(unit.path.changingMode());
-    seedVsyncActive(false);
-
-    for (uint16_t i = 0;
-         i < 6 * (SourceMeasurement::SteadySamples
-                  + VideoSourceAcquisition::LatchSettlePasses); ++i) {
-        seedSourceLines((uint16_t)(97 + (i % 60)));
-        unit.poll();
-    }
-
-    CHECK(g_probeCalls == 2);
-    CHECK(SyncMeasurement::isCsync());
 }
 
 TEST_CASE("a field rate the line count cannot show re-solves the source")

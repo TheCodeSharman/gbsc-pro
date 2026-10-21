@@ -7,6 +7,7 @@
 #include "Chip.h"
 #include "Interrupts.h"
 #include "SyncProcessor.h"
+#include "VideoSignal.h"
 #include "../../gbs_types.h"
 #include "Tv5725Log.h"
 
@@ -68,18 +69,10 @@ SyncMeasurement::Answer SyncMeasurement::hasOwnVsync(uint32_t (*nowMs)())
     SyncProcessor::applyForSyncType(false, Adc::dividerInForce());
     delay(OwnVsyncSettleMs);
 
-    // STATUS_SYNC_PROC_HSACT IS A DUTY CYCLE, so one read of it cannot say
-    // whether a source is there -- a 0 sampled on a healthy source would
-    // refuse the answer and re-probe for ever. It is sampled across the window
-    // this loop already pays for and ANY rise means a source: present it reads
-    // 1 on both arrangements, the bench RISC PC's separate sync and the Wii's
-    // sync on green where VSACT stays 0, and absent it never rises at all.
     bool active = false;
-    bool hsync = false;
     const uint32_t start = nowMs();
     while (!active && (nowMs() - start) < OwnVsyncWindowMs) {
         active = GBS::STATUS_SYNC_PROC_VSACT::read() == 1;
-        hsync = hsync || SyncProcessor::hsyncActive();
         delay(2);
     }
     const uint32_t rose = nowMs() - start;
@@ -91,10 +84,34 @@ SyncMeasurement::Answer SyncMeasurement::hasOwnVsync(uint32_t (*nowMs)())
 
     // How far into the window V arrived, because OwnVsyncWindowMs is sized from
     // that distribution and nothing else on the board reports it.
-    char line[64];
+    // **ABSENCE IS NOT AN ANSWER, SO THE NEGATIVE CASE IS ASKED POSITIVELY.**
+    // A composite source and a source that is merely between modes both fail
+    // to put V on its own pin, and latching the first reading holds a
+    // separate-sync source on the csync path for the life of the selection.
+    // So where no V arrived, the separator goes IN and is asked whether it
+    // extracts a plausible frame: a composite source yields one, and a source
+    // mid-transition yields counts that are nothing of the kind -- 313 at
+    // 0 Hz, 938, 617, measured across a reboot of the bench RISC PC.
+    // ../../../../docs/investigations/the-own-vsync-probe-answers-by-absence.md
+    bool separable = false;
+    if (!active) {
+        SyncProcessor::applyForSyncType(true, Adc::dividerInForce());
+        delay(OwnVsyncSettleMs);
+        uint16_t previous = 0;
+        for (uint8_t taken = 0; taken < SeparatedFrameSamples && !separable;
+             taken++) {
+            const uint16_t lines = SyncProcessor::frameLines();
+            separable = VideoSignal::countIsSource(lines) && lines == previous;
+            previous = lines;
+            delay(SeparatedFrameSampleMs);
+        }
+    }
+
+    char line[72];
     snprintf(line, sizeof(line), "measured: own V sync %s after %ums",
              active ? "YES, separate H/V"
-                    : (hsync ? "no, composite or SOG" : "UNKNOWN, no source"),
+                    : (separable ? "no, the separator finds V"
+                                 : "UNKNOWN, nothing to separate"),
              (unsigned)rose);
     tv5725Log(line);
 
@@ -111,7 +128,7 @@ SyncMeasurement::Answer SyncMeasurement::hasOwnVsync(uint32_t (*nowMs)())
     Interrupts::acknowledgeSogSwitch();
     if (active)
         return OwnVsync;
-    return hsync ? NoOwnVsync : NoSource;
+    return separable ? NoOwnVsync : NoSource;
 }
 
 }  // namespace Tv5725

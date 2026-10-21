@@ -194,6 +194,31 @@ static void vsyncArrivesAt(uint32_t ms)
 // Larger than any arrival, so the bit never comes up.
 static const uint32_t Never = 0xFFFFFFFFu;
 
+// What the separator extracts once the probe puts it in, read back through
+// STATUS_SYNC_PROC_VTOTAL. A plausible frame is a composite source; a count no
+// source runs is one that is simply not there yet.
+static void separatorFinds(uint16_t lines)
+{
+    const uint16_t raw = lines == 0 ? 0 : (uint16_t)(lines - 1);
+    Wire.bank[0][0x1B] = (uint8_t)(raw & 0xFF);
+    Wire.bank[0][0x1C] = (uint8_t)((Wire.bank[0][0x1C] & 0xF8) | (raw >> 8));
+}
+
+TEST_CASE("a source the separator finds no frame in is not called composite")
+{
+    // THE REBOOT CASE. A source between modes drives H with no V, exactly as a
+    // composite source does, so concluding by absence holds a separate-sync
+    // source on the csync path until something forgets the answer. Measured
+    // across a Ctrl-Break of the bench RISC PC: the probe fired 40 ms after the
+    // source left and the counts it was offered were 313 at 0 Hz, 938, 617 --
+    // none of them a frame.
+    vsyncArrivesAt(Never);
+    separatorFinds(938);
+    Wire.drift(0, 0x1B);   // a count that is never twice the same
+
+    CHECK(SyncMeasurement::hasOwnVsync(testClock) == SyncMeasurement::NoSource);
+}
+
 TEST_CASE("a V sync that arrives late is still the source's own")
 {
     // The tail of the reacquisition time reaches 242 ms where the typical case
@@ -201,15 +226,18 @@ TEST_CASE("a V sync that arrives late is still the source's own")
     // source composite, which latches: SP_VTOTAL collapses to 97 and the picture
     // goes. docs/investigations/own-vsync-probe-window.md
     vsyncArrivesAt(400);
-    CHECK(SyncMeasurement::hasOwnVsync(testClock) == true);
+    CHECK(SyncMeasurement::hasOwnVsync(testClock) == SyncMeasurement::OwnVsync);
 }
 
 TEST_CASE("a source with no V sync of its own is not given one")
 {
     // The other half, and what stops the window above from becoming "always
-    // yes": on composite sync the timeout IS the correct answer.
+    // yes": on composite sync no V arrives on its own pin, and the separator
+    // put in afterwards extracts the frame that says so.
     vsyncArrivesAt(Never);
-    CHECK(SyncMeasurement::hasOwnVsync(testClock) == false);
+    separatorFinds(312);
+
+    CHECK(SyncMeasurement::hasOwnVsync(testClock) == SyncMeasurement::NoOwnVsync);
 }
 
 static const uint8_t SOG_MODE_BIT = 0x01;       // s5_56[0]

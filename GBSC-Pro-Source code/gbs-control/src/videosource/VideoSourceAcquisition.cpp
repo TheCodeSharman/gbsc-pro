@@ -41,7 +41,6 @@ VideoSourceAcquisition::VideoSourceAcquisition(Tv5725::SourceMeasurement &sampli
       solvedLinePeriod_(0), rateRun_(0), recheckPasses_(0),
       sourceInterrupted_(false), unacquiredPasses_(0), absentPasses_(0),
       unsettledPasses_(0), unsettledArmed_(false),
-      vsyncAbsentPasses_(0), vsyncAbsentArmed_(false),
       passThroughFieldRateHz_(0.0f),
       unmeasuredPasses_(0), referenceRetryPasses_(0),
       acquiredPasses_(0),
@@ -533,22 +532,6 @@ bool VideoSourceAcquisition::countHeld(uint16_t lines)
     return idle_.sample(lines);
 }
 
-bool VideoSourceAcquisition::sourceStoppedDrivingVsync()
-{
-    if (Tv5725::SyncMeasurement::isCsync() || Tv5725::SyncProcessor::vsyncActive()) {
-        vsyncAbsentPasses_ = 0;
-        vsyncAbsentArmed_ = false;
-        return false;
-    }
-    if (vsyncAbsentPasses_ < VsyncAbsentArmPasses)
-        ++vsyncAbsentPasses_;
-    if (vsyncAbsentPasses_ < VsyncAbsentArmPasses || vsyncAbsentArmed_)
-        return false;
-    vsyncAbsentArmed_ = true;
-    videoPath_.forgetSyncType();
-    return true;
-}
-
 // **THIS MUST NOT USE sampling_.sampleSteady().** That call is the solve's own
 // steadiness run, and filling it while the engine is idle leaves the next mode
 // change's first poll believing a count from the mode before it.
@@ -674,20 +657,15 @@ bool VideoSourceAcquisition::sourceMoved()
             videoPath_.showOutput(false);
     }
 
-    // A count no source runs is the wrong sync path's signature, and a mode
-    // change is the only thing that re-establishes the sync type -- so the
-    // state that most needs a re-probe was the one state that could never arm
-    // one. It arms ONCE: the count stays wrong until the probe has moved the
-    // path. ../../../docs/video-source-acquisition.md
+    // A count no source runs arms a re-measure and NOTHING ELSE. It used to
+    // discard the held sync type as well, on the reading that such a count is
+    // the wrong path's signature -- but it is equally the signature of no
+    // source, the same 97 either way, and steadiness does not separate them.
+    // ../../../docs/investigations/an-absent-source-is-not-a-sync-type.md
     if (!plausible) {
         if (!held || unusableCountArmed_)
             return false;
         unusableCountArmed_ = true;
-
-        // The one thing that says the held sync type is wrong. Every other
-        // arm below is a source that moved, which says nothing about how it
-        // carries sync, so only this one stops trusting the held answer.
-        videoPath_.forgetSyncType();
         return armMove("unusable count", lines, false);
     }
 
@@ -756,12 +734,6 @@ bool VideoSourceAcquisition::sourceMoved()
     // bounces. Every one of those counts is PLAUSIBLE, so
     // neither arm above fires, and nothing else arms a re-probe because the
     // count does not move when a source changes its sync type.
-    //
-    // The separate-sync answer is what puts the separator out, so the V-active
-    // bit read here reports the SOURCE rather than the path.
-    // docs/investigations/a-sync-type-change-arms-no-probe.md
-    if (sourceStoppedDrivingVsync())
-        return armMove("no source V sync", lines, false);
 
     // The rate says the source moved where the count cannot: the same number of
     // lines at a different field rate, which is what 320x256 at 50, 55 and 60
@@ -1194,13 +1166,6 @@ bool VideoSourceAcquisition::runPass(uint32_t nowMs, bool &detectionPass)
     bool settling = false;
     const Tv5725::SourceMeasurement::MeasurementStatus status = sampling_.measureRate(nowMs);
     if (!reading(status, settling)) {
-        // The sync type is asked here as well as between mode changes: a
-        // source that changes its sync type moves its count for a moment, so
-        // the engine is already measuring when the separator is needed, and a
-        // measurement through the wrong arrangement cycles every reference
-        // clock without reading anything until the caller drops to low power.
-        if (sourceStoppedDrivingVsync())
-            tv5725Log("measure: no source V sync, re-probing the sync type");
         if (!settling) {
             sourceState_ = SourceAbsent;
 

@@ -63,6 +63,14 @@ public:
     // happen because the bit only rises when V arrives.
     static const uint16_t OwnVsyncWindowMs = 1000;
 
+    // How many frames the separator is asked for once no V arrived, and how
+    // far apart. TWO READINGS MUST AGREE, because a single count proves
+    // nothing: a source between modes offers numbers that are plausible one at
+    // a time -- 938, 617, 313 -- and never the same one twice, where a
+    // composite source the separator has locked repeats its frame.
+    static const uint8_t SeparatedFrameSamples = 6;
+    static const uint8_t SeparatedFrameSampleMs = 20;
+
 private:
     static bool csync_;
     static bool set_;
