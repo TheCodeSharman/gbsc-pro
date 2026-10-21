@@ -3697,14 +3697,19 @@ TEST_CASE("the dynamic configuration follows the sync type")
     REQUIRE(unit.pollUntilSolved());
     unit.pollFor(2);
     REQUIRE(SyncProcessor::SP_SOG_MODE::read() == 1);
-    const uint8_t onCsync = SyncProcessor::SP_PRE_COAST::read();
-    REQUIRE(onCsync != 0);
+
+    // THE PULSE WIDTH DIFFERENCE IS THE WITNESS, NOT THE COAST. The coast is
+    // 0/0 on an unserrated csync source as well as on separate sync, so it
+    // cannot tell the two branches apart; SP_DLT_REG is written by both and
+    // differs on each.
+    const uint32_t onCsync = SyncProcessor::SP_DLT_REG::read();
+    REQUIRE(onCsync >= 0x70);
 
     unit.path.forgetSyncType();
     REQUIRE_FALSE(SyncMeasurement::isCsync());
     unit.poll();
 
-    CHECK(SyncProcessor::SP_PRE_COAST::read() != onCsync);
+    CHECK(SyncProcessor::SP_DLT_REG::read() != onCsync);
 }
 
 TEST_CASE("a selection carries the threshold of the line, not of the source before")

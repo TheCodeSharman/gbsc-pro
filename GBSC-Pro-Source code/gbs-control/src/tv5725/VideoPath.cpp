@@ -1079,12 +1079,20 @@ void VideoPath::measureSerration()
 
     writePulseIgnore();
 
-    char line[80];
+    // THE COAST FOLLOWS THE SAME ANSWER, AND IT IS WRITTEN HERE BECAUSE THE
+    // PROBE RUNS AFTER THE ARRANGEMENT DID. The pair the sync type wrote is
+    // the serrated one, so an unserrated source would carry the hold -- and
+    // the shear with it -- until something else re-applied the thresholds.
+    SyncProcessor::applySeparationThresholds(true);
+
+    char line[88];
     snprintf(line, sizeof(line),
-             "vertical interval: %s, pulse ignore %u of %u samples",
+             "vertical interval: %s, pulse ignore %u of %u samples, coast %u/%u",
              serrated ? "serrated" : "carries nothing",
              (unsigned)SyncProcessor::SP_H_PULSE_IGNOR::read(),
-             (unsigned)Adc::dividerInForce());
+             (unsigned)Adc::dividerInForce(),
+             (unsigned)SyncProcessor::preCoastLines(),
+             (unsigned)SyncProcessor::postCoastLines());
     tv5725Log(line);
 }
 

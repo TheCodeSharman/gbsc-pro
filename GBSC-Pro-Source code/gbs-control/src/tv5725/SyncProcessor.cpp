@@ -7,6 +7,7 @@
 
 #include "Adc.h"
 #include "Chip.h"
+#include "SerrationMeasurement.h"
 
 #include "../../gbs_types.h"
 
@@ -225,13 +226,19 @@ bool SyncProcessor::coastOverridden() { return coastOverridden_; }
 
 uint8_t SyncProcessor::preCoastLines()
 {
-    return coastOverridden_ ? preCoastOverride_ : CompositePreCoastLines;
+    if (coastOverridden_)
+        return preCoastOverride_;
+    if (!SerrationMeasurement::assumeSerrated())
+        return 0;
+    return CompositePreCoastLines;
 }
 
 uint8_t SyncProcessor::postCoastLines()
 {
     if (coastOverridden_)
         return postCoastOverride_;
+    if (!SerrationMeasurement::assumeSerrated())
+        return 0;
     return longPostCoast_ ? LongPostCoastLines : ShortPostCoastLines;
 }
 

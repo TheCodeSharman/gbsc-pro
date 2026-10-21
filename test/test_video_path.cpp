@@ -183,6 +183,11 @@ static void seedBenchSource()
     seedField(0, 0x0F, 0, 8, 0);
     Wire.lockSyncProcessor();
     seedSourceMeasurement();
+
+    // A source nothing has measured yet, which is what a seeded one is. The
+    // answer is held statically, so without this each case inherits whichever
+    // source the case above it probed.
+    SerrationMeasurement::forget();
 }
 
 // Move the source to a different line count, leaving everything else as the
@@ -2915,7 +2920,7 @@ TEST_CASE("a coast changed on a settled source reaches the chip")
     engine.setOutputMode(benchMode());
     engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(acquisition));
-    REQUIRE(SyncProcessor::SP_PRE_COAST::read() == 7);
+    REQUIRE(SyncProcessor::SP_PRE_COAST::read() == 0);
 
     SyncProcessor::overrideCoast(12, 12);
     engine.reapplySyncTypeInForce();
@@ -3018,6 +3023,51 @@ TEST_CASE("a serrated source solves to the threshold that rejects its interval")
     REQUIRE(Adc::PLLAD_MD::read() == 2200);
 
     CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 107);
+}
+
+TEST_CASE("an unserrated source solves to no coast at all")
+{
+    // The composite shear is the PRE coast lines, so the pair goes with the
+    // serration the pulse ignore already follows -- and it has to be written
+    // when the probe lands, because the probe runs after the arrangement did.
+    // ../docs/investigations/the-composite-shear-is-the-coast.md
+    seedBenchSource();
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+    VideoSourceAcquisition acquisition(sampling, engine);
+    engine.useSyncTypeProbe(probeOwnVsync);
+
+    g_hasOwnVsync = false;
+    engine.setOutputMode(benchMode());
+    engine.inputTimingsChanged(4);
+    REQUIRE(pollUntilSolved(acquisition));
+    REQUIRE_FALSE(SerrationMeasurement::isSerrated());
+
+    CHECK(SyncProcessor::SP_PRE_COAST::read() == 0);
+    CHECK(SyncProcessor::SP_POST_COAST::read() == 0);
+}
+
+TEST_CASE("a serrated source keeps the hold either side of its interval")
+{
+    seedBenchSource();
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+    VideoSourceAcquisition acquisition(sampling, engine);
+    engine.useSyncTypeProbe(probeOwnVsync);
+    engine.useSerrationProbe(serratedProbe);
+
+    g_hasOwnVsync = false;
+    engine.setOutputMode(benchMode());
+    engine.inputTimingsChanged(4);
+    REQUIRE(pollUntilSolved(acquisition));
+    REQUIRE(SerrationMeasurement::isSerrated());
+
+    CHECK(SyncProcessor::SP_PRE_COAST::read() == 7);
+    CHECK(SyncProcessor::SP_POST_COAST::read() > 0);
 }
 
 TEST_CASE("a separate-sync source is not probed at all")

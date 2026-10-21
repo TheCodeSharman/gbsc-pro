@@ -18,6 +18,7 @@ FakeTwoWire Wire;
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Adc.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Chip.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SyncProcessor.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SerrationMeasurement.h"
 #include "../GBSC-Pro-Source code/gbs-control/gbs_types.h"
 
 using namespace Tv5725;
@@ -29,6 +30,19 @@ static const uint16_t MeasuredCsyncDivider = 2200;
 
 // And the one the pass-through channel runs the Wii's 480p line at.
 static const uint16_t ChannelDivider = 2038;
+
+// A PROBED serration answer. A value merely set leaves the probe armed, so it
+// does not reach the coast either.
+static uint16_t countReading(bool rejectsSerrations)
+{
+    return rejectsSerrations ? 310 : 310;
+}
+
+static void givenUnserrated()
+{
+    SerrationMeasurement::forget();
+    SerrationMeasurement::probe(countReading);
+}
 
 template <typename Field>
 static uint32_t applied(bool csync)
@@ -539,6 +553,43 @@ TEST_CASE("an interval needing no hold is coasted for less than one that does")
     CHECK(SyncProcessor::SP_POST_COAST::read() < serrated);
 
     SyncProcessor::useLongPostCoast(true);
+}
+
+TEST_CASE("a source with nothing in its vertical interval is not coasted at all")
+{
+    // The PRE lines are what carry the composite shear: 862 randomised blocks
+    // over 11.49 hours put 0/0 at 0.017 [0.01, 0.04] of 7/6's sheared frames
+    // and 0 bursts in 229 minutes, and crossing the pair attributes it to the
+    // pre lines at 6.76 [2.54, 18.00], p = 1.8e-07, where the post lines do
+    // nothing within pre 7.
+    //
+    // THE POST LINES GO WITH THEM. 0/2 dithers the count 69 times as often as
+    // 0/0, so the pair is 0/0 or it is the hold.
+    // docs/investigations/the-composite-shear-is-the-coast.md
+    givenUnserrated();
+
+    Wire.reset();
+    SyncProcessor::applySeparationThresholds(true);
+
+    CHECK(SyncProcessor::SP_PRE_COAST::read() == 0);
+    CHECK(SyncProcessor::SP_POST_COAST::read() == 0);
+
+    SerrationMeasurement::forget();
+}
+
+TEST_CASE("an unserrated source is not coasted by the sync type either")
+{
+    // Two functions write the pair, so a gate reaching one of them is undone
+    // by whichever ran last.
+    givenUnserrated();
+
+    Wire.reset();
+    SyncProcessor::applyForSyncType(true, MeasuredCsyncDivider);
+
+    CHECK(SyncProcessor::SP_PRE_COAST::read() == 0);
+    CHECK(SyncProcessor::SP_POST_COAST::read() == 0);
+
+    SerrationMeasurement::forget();
 }
 
 TEST_CASE("an overridden coast is what the sync type applies")

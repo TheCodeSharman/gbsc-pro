@@ -408,24 +408,21 @@ public:
 
     // How many lines the PLL is held over BEFORE the vertical interval on a
     // composite source, and how many after. COAST stops the PLL tracking the
-    // reference and holds its output frequency, so the pair is load-bearing on
-    // an UNSERRATED csync too -- the vertical interval starves the PLL of edges
-    // either way, and a pair chosen as a serration skip reads as optional there
-    // and is not.
+    // reference and holds its output frequency.
     //
-    // THE TWO ARE NOT ONE QUANTITY AND THEY ANSWER TO DIFFERENT SOURCES.
+    // **ONLY A SERRATED SOURCE IS COASTED, AND THE PRE LINES ARE WHY.** They
+    // are what carries the composite shear, so an unserrated source takes 0/0
+    // -- and 0/2 is not available as a half step, the count dithering far more
+    // there than at 0/0. Tv5725::SerrationMeasurement gates it, serrated until
+    // measured otherwise, because a serrated source at pre 0 dithers its count
+    // at every post coast until the engine drops it to absent.
+    // docs/investigations/the-composite-shear-is-the-coast.md
     //
-    // The PRE coast holds the COUNT, and only a serrated source needs it: at 0
-    // a serrated source's count dithers at every post coast and the engine
-    // drops to absent, while an unserrated one is displaced vertically.
-    //
-    // **THE POST COAST IS WHAT THE PICTURE ANSWERS TO, AND IT IS PER SOURCE,
-    // BECAUSE ONE VALUE SITS ON THE EDGE OF BOTH MEASURED BANDS.** A source
-    // that needs the hold needs at least 4 and is indistinguishable at 4 and 6;
-    // one that does not is displaced from 5 upwards. So 4 is the boundary of
-    // each band at once, and the residual is the hold itself rather than its
-    // length. A post of 3 at IF_VB_ST 512 also stops the input formatter's
-    // vertical reaching DEBUG_IN_PIN, which no count can see.
+    // **WITHIN THE HOLD THE POST LENGTH IS PER SOURCE**, because one value sits
+    // on the edge of both measured bands: a source needing the hold needs at
+    // least 4 and is indistinguishable at 4 and 6, so the residual is the hold
+    // itself rather than its length. A post of 3 at IF_VB_ST 512 also stops the
+    // input formatter's vertical reaching DEBUG_IN_PIN, which no count can see.
     // tools/gbsc-pro-hwtest/sweep_coast.py scores a pair on the count and the
     // blanking together, which the count alone cannot.
     // docs/investigations/two-owners-of-the-coast-lengths-double-the-count.md
@@ -434,10 +431,11 @@ public:
     static const uint8_t LongPostCoastLines = 6;
     static const uint8_t ShortPostCoastLines = 2;
 
-    // Which of the two the source gets. HELD rather than asked per write: both
-    // writers of the pair need the answer, and the measurement that produces it
-    // costs a coast of 0/0 the picture cannot be left on.
-    // VideoPath::measureVerticalInterval() is what measures it.
+    // Which of the two a SERRATED source gets. HELD rather than asked per
+    // write, because both writers of the pair need the answer.
+    // VideoPath::measureVerticalInterval() is what measures it, and it runs
+    // the source at 0/0 to do so -- which a serrated source cannot be left on.
+    // An unserrated one rests there, the gate above being what puts it there.
     static void useLongPostCoast(bool needed);
     static bool longPostCoastInUse();
 

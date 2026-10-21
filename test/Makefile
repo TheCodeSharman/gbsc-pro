@@ -51,6 +51,7 @@ SAMPLING_SRC = src/tv5725/SourceMeasurement.cpp src/tv5725/HsyncPulse.cpp \
 	src/tv5725/Interrupts.cpp src/tv5725/TestBus.cpp src/tv5725/SamplingClock.cpp \
 	src/tv5725/SteadyRun.cpp src/tv5725/AgreementRun.cpp src/tv5725/Adc.cpp \
 	src/tv5725/InputFormatter.cpp src/tv5725/InputScale.cpp src/tv5725/SyncProcessor.cpp \
+	src/tv5725/SerrationMeasurement.cpp \
 	src/tv5725/VideoSourceLine.cpp \
 	src/tv5725/ModeDetect.cpp
 
@@ -105,7 +106,7 @@ test-bus:
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_test_bus" \
 	  "$(HERE)/test_test_bus.cpp" src/tv5725/TestBus.cpp \
-	  src/tv5725/SyncProcessor.cpp src/tv5725/HsyncPulse.cpp src/tv5725/SyncMeasurement.cpp \
+	  src/tv5725/SyncProcessor.cpp src/tv5725/SerrationMeasurement.cpp src/tv5725/VideoSignal.cpp src/tv5725/HsyncPulse.cpp src/tv5725/SyncMeasurement.cpp \
 	  src/tv5725/Interrupts.cpp src/tv5725/Adc.cpp
 	@"$(OUT)/test_test_bus"
 
@@ -118,7 +119,7 @@ auto-gain:
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_auto_gain" \
 	  "$(HERE)/test_auto_gain.cpp" src/tv5725/AutoGain.cpp src/tv5725/Adc.cpp \
-	  src/tv5725/TestBus.cpp src/tv5725/SyncProcessor.cpp src/tv5725/HsyncPulse.cpp \
+	  src/tv5725/TestBus.cpp src/tv5725/SyncProcessor.cpp src/tv5725/SerrationMeasurement.cpp src/tv5725/VideoSignal.cpp src/tv5725/HsyncPulse.cpp \
 	  src/tv5725/SyncMeasurement.cpp src/tv5725/Interrupts.cpp
 	@"$(OUT)/test_auto_gain"
 
@@ -132,7 +133,7 @@ test-bus-rate-measurement:
 	  -o "$(OUT)/test_test_bus_rate_measurement" \
 	  "$(HERE)/test_test_bus_rate_measurement.cpp" \
 	  src/tv5725/TestBusRateMeasurement.cpp src/tv5725/SyncMeasurement.cpp src/tv5725/Interrupts.cpp \
-	  src/tv5725/TestBus.cpp src/tv5725/SyncProcessor.cpp src/tv5725/HsyncPulse.cpp src/tv5725/Adc.cpp
+	  src/tv5725/TestBus.cpp src/tv5725/SyncProcessor.cpp src/tv5725/SerrationMeasurement.cpp src/tv5725/VideoSignal.cpp src/tv5725/HsyncPulse.cpp src/tv5725/Adc.cpp
 	@"$(OUT)/test_test_bus_rate_measurement"
 
 ## sync-on-green: host unit tests for Tv5725::SyncOnGreen
@@ -145,7 +146,7 @@ sync-on-green:
 	  -o "$(OUT)/test_sync_on_green" \
 	  "$(HERE)/test_sync_on_green.cpp" src/tv5725/SyncOnGreen.cpp src/tv5725/Interrupts.cpp \
 	  src/tv5725/SyncMeasurement.cpp src/tv5725/Adc.cpp \
-	  src/tv5725/TestBus.cpp src/tv5725/SyncProcessor.cpp src/tv5725/HsyncPulse.cpp
+	  src/tv5725/TestBus.cpp src/tv5725/SyncProcessor.cpp src/tv5725/SerrationMeasurement.cpp src/tv5725/VideoSignal.cpp src/tv5725/HsyncPulse.cpp
 	@"$(OUT)/test_sync_on_green"
 
 ## axis: host unit tests for Tv5725::Axis
@@ -455,7 +456,7 @@ frame-sync:
 	  "$(HERE)/test_frame_sync.cpp" src/tv5725/FrameSync.cpp \
 	  src/tv5725/DisplayClock.cpp src/tv5725/TestBus.cpp \
 	  src/tv5725/VideoRoute.cpp src/tv5725/TestBusRateMeasurement.cpp \
-	  src/tv5725/SyncMeasurement.cpp src/tv5725/SyncProcessor.cpp \
+	  src/tv5725/SyncMeasurement.cpp src/tv5725/SyncProcessor.cpp src/tv5725/SerrationMeasurement.cpp src/tv5725/VideoSignal.cpp \
 	  src/tv5725/Interrupts.cpp src/tv5725/HsyncPulse.cpp src/tv5725/Adc.cpp $(CLOCK_SRC)
 	"$(OUT)/test_frame_sync"
 
@@ -761,7 +762,7 @@ sync-processor:
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_sync_processor" \
 	  "$(HERE)/test_sync_processor.cpp" src/tv5725/SyncProcessor.cpp src/tv5725/HsyncPulse.cpp \
-	  src/tv5725/TestBus.cpp
+	  src/tv5725/TestBus.cpp src/tv5725/SerrationMeasurement.cpp src/tv5725/VideoSignal.cpp
 	@"$(OUT)/test_sync_processor"
 
 ## sync-measurement: host unit tests for Tv5725::SyncMeasurement
@@ -773,7 +774,7 @@ sync-measurement:
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_sync_measurement" \
 	  "$(HERE)/test_sync_measurement.cpp" src/tv5725/SyncMeasurement.cpp \
-	  src/tv5725/SyncProcessor.cpp src/tv5725/HsyncPulse.cpp src/tv5725/Interrupts.cpp src/tv5725/TestBus.cpp src/tv5725/Adc.cpp
+	  src/tv5725/SyncProcessor.cpp src/tv5725/SerrationMeasurement.cpp src/tv5725/VideoSignal.cpp src/tv5725/HsyncPulse.cpp src/tv5725/Interrupts.cpp src/tv5725/TestBus.cpp src/tv5725/Adc.cpp
 	@"$(OUT)/test_sync_measurement"
 
 ## serration-measurement: host unit tests for Tv5725::SerrationMeasurement
