@@ -18,7 +18,7 @@ FakeTwoWire Wire;
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Adc.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Chip.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SyncProcessor.h"
-#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SerrationMeasurement.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/EqualisationMeasurement.h"
 #include "../GBSC-Pro-Source code/gbs-control/gbs_types.h"
 
 using namespace Tv5725;
@@ -33,15 +33,15 @@ static const uint16_t ChannelDivider = 2038;
 
 // A PROBED serration answer. A value merely set leaves the probe armed, so it
 // does not reach the coast either.
-static uint16_t countReading(bool rejectsSerrations)
+static uint16_t countReading(bool rejectsEqualisation)
 {
-    return rejectsSerrations ? 310 : 310;
+    return rejectsEqualisation ? 310 : 310;
 }
 
-static void givenUnserrated()
+static void givenUnequalised()
 {
-    SerrationMeasurement::forget();
-    SerrationMeasurement::probe(countReading);
+    EqualisationMeasurement::forget();
+    EqualisationMeasurement::probe(countReading);
 }
 
 template <typename Field>
@@ -543,14 +543,14 @@ TEST_CASE("an interval needing no hold is coasted for less than one that does")
 
     Wire.reset();
     SyncProcessor::applyForSyncType(true, MeasuredCsyncDivider);
-    const uint32_t serrated = SyncProcessor::SP_POST_COAST::read();
+    const uint32_t held = SyncProcessor::SP_POST_COAST::read();
 
     SyncProcessor::useLongPostCoast(false);
 
     Wire.reset();
     SyncProcessor::applyForSyncType(true, MeasuredCsyncDivider);
 
-    CHECK(SyncProcessor::SP_POST_COAST::read() < serrated);
+    CHECK(SyncProcessor::SP_POST_COAST::read() < held);
 
     SyncProcessor::useLongPostCoast(true);
 }
@@ -566,7 +566,7 @@ TEST_CASE("a source with nothing in its vertical interval is not coasted at all"
     // THE POST LINES GO WITH THEM. 0/2 dithers the count 69 times as often as
     // 0/0, so the pair is 0/0 or it is the hold.
     // docs/investigations/the-composite-shear-is-the-coast.md
-    givenUnserrated();
+    givenUnequalised();
 
     Wire.reset();
     SyncProcessor::applySeparationThresholds(true);
@@ -574,14 +574,14 @@ TEST_CASE("a source with nothing in its vertical interval is not coasted at all"
     CHECK(SyncProcessor::SP_PRE_COAST::read() == 0);
     CHECK(SyncProcessor::SP_POST_COAST::read() == 0);
 
-    SerrationMeasurement::forget();
+    EqualisationMeasurement::forget();
 }
 
 TEST_CASE("an unserrated source is not coasted by the sync type either")
 {
     // Two functions write the pair, so a gate reaching one of them is undone
     // by whichever ran last.
-    givenUnserrated();
+    givenUnequalised();
 
     Wire.reset();
     SyncProcessor::applyForSyncType(true, MeasuredCsyncDivider);
@@ -589,7 +589,7 @@ TEST_CASE("an unserrated source is not coasted by the sync type either")
     CHECK(SyncProcessor::SP_PRE_COAST::read() == 0);
     CHECK(SyncProcessor::SP_POST_COAST::read() == 0);
 
-    SerrationMeasurement::forget();
+    EqualisationMeasurement::forget();
 }
 
 TEST_CASE("an overridden coast is what the sync type applies")
@@ -722,7 +722,7 @@ TEST_CASE("a source with no serrations takes the lower fraction")
     // 4.9% above landing inside the dither on 640x512@50 composite.
     //
     // So the fraction follows a MEASUREMENT of the source rather than a
-    // constant. SerrationMeasurement is what takes it.
+    // constant. EqualisationMeasurement is what takes it.
     // ../docs/investigations/the-composite-count-dithers-where-the-ignore-nears-the-pulse.md
     Wire.reset();
     SyncProcessor::applyPulseIgnore(MeasuredCsyncDivider, false);
@@ -808,7 +808,7 @@ static SyncProcessor::Dynamic settled()
     source.divider = MeasuredCsyncDivider;
     source.latched = true;
     // Serrated, which is what every path writes before the probe has run.
-    source.serrated = true;
+    source.equalised = true;
     return source;
 }
 
@@ -1148,7 +1148,7 @@ TEST_CASE("a present source measured unserrated takes the lower fraction")
     // ../docs/investigations/the-composite-count-dithers-where-the-ignore-nears-the-pulse.md
     SyncProcessor::Dynamic source = settled();
     source.csync = true;
-    source.serrated = false;
+    source.equalised = false;
     source.divider = ChannelDivider;
 
     CHECK(dynamicValue<SyncProcessor::SP_H_PULSE_IGNOR>(source) == 57);

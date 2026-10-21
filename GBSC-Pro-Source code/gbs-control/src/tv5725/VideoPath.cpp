@@ -32,7 +32,7 @@
 
 namespace Tv5725 {
 
-static uint16_t countThroughThreshold(bool rejectsSerrations);
+static uint16_t countThroughThreshold(bool rejectsEqualisation);
 
 // --- VideoPath ----------------------------------------------------------
 
@@ -49,7 +49,7 @@ VideoPath::VideoPath(DisplayClock &displayClock, SourceMeasurement &sampling,
       sampling_(sampling),
       scanSolved_(false), lineDoubled_(true),
       syncTypeApplied_(false),
-      syncTypeInForce_(false), syncTypeChosenFor_(NoSelectionSeen), intervalMeasuredFor_(NoSelectionSeen), syncProbe_(0), serrationProbe_(countThroughThreshold),
+      syncTypeInForce_(false), syncTypeChosenFor_(NoSelectionSeen), intervalMeasuredFor_(NoSelectionSeen), syncProbe_(0), equalisationProbe_(countThroughThreshold),
       framings_(framings),
       solvePending_(false), modePending_(false), modeOversample_(4),
       heldDivider_(0), fullFraming_(false), installedRateHz_(0),
@@ -970,15 +970,15 @@ bool VideoPath::fullFramingForced() const { return fullFraming_; }
 
 void VideoPath::useSyncTypeProbe(bool (*hasOwnVsync)()) { syncProbe_ = hasOwnVsync; }
 
-void VideoPath::useSerrationProbe(SerrationMeasurement::CountAtThreshold countAt)
+void VideoPath::useEqualisationProbe(EqualisationMeasurement::CountAtThreshold countAt)
 {
-    serrationProbe_ = countAt;
+    equalisationProbe_ = countAt;
 }
 
 void VideoPath::forgetSyncType()
 {
     SyncMeasurement::forget();
-    SerrationMeasurement::forget();
+    EqualisationMeasurement::forget();
     syncTypeApplied_ = false;
     intervalMeasuredFor_ = NoSelectionSeen;
 }
@@ -986,7 +986,7 @@ void VideoPath::forgetSyncType()
 bool VideoPath::reacquireSyncType()
 {
     SyncMeasurement::forget();
-    SerrationMeasurement::forget();
+    EqualisationMeasurement::forget();
     syncTypeApplied_ = false;
     intervalMeasuredFor_ = NoSelectionSeen;
     establishSyncType(syncTypeChosenFor_);
@@ -1014,7 +1014,7 @@ void VideoPath::establishSyncType(uint8_t chosenFor)
     if (chosenFor != syncTypeChosenFor_) {
         syncTypeChosenFor_ = chosenFor;
         SyncMeasurement::forget();
-        SerrationMeasurement::forget();
+        EqualisationMeasurement::forget();
         syncTypeApplied_ = false;
         intervalMeasuredFor_ = NoSelectionSeen;
     }
@@ -1048,20 +1048,20 @@ static const uint8_t IntervalSampleMs = 20;
 
 // How long the separator is given to count the line through a threshold just
 // written, before the reading taken through it is one of the source's.
-static const uint8_t SerrationSampleMs = 24;
+static const uint8_t EqualisationSampleMs = 24;
 
 // One reading of the count through one of the two thresholds. Injected rather
 // than called directly only so a host test can script the pair.
-static uint16_t countThroughThreshold(bool rejectsSerrations)
+static uint16_t countThroughThreshold(bool rejectsEqualisation)
 {
-    SyncProcessor::applyPulseIgnore(Adc::dividerInForce(), rejectsSerrations);
-    delay(SerrationSampleMs);
+    SyncProcessor::applyPulseIgnore(Adc::dividerInForce(), rejectsEqualisation);
+    delay(EqualisationSampleMs);
     return SyncProcessor::frameLines();
 }
 
-void VideoPath::measureSerration()
+void VideoPath::measureEqualisation()
 {
-    if (serrationProbe_ == 0 || SerrationMeasurement::isSet())
+    if (equalisationProbe_ == 0 || EqualisationMeasurement::isSet())
         return;
 
     // A SEPARATE-SYNC SOURCE HAS NOTHING TO MEASURE. It is indifferent across
@@ -1073,8 +1073,8 @@ void VideoPath::measureSerration()
     if (!samplingClockLatched())
         return;
 
-    const bool serrated = SerrationMeasurement::probe(serrationProbe_);
-    if (!SerrationMeasurement::isSet())
+    const bool equalised = EqualisationMeasurement::probe(equalisationProbe_);
+    if (!EqualisationMeasurement::isSet())
         return;
 
     writePulseIgnore();
@@ -1088,7 +1088,7 @@ void VideoPath::measureSerration()
     char line[88];
     snprintf(line, sizeof(line),
              "vertical interval: %s, pulse ignore %u of %u samples, coast %u/%u",
-             serrated ? "serrated" : "carries nothing",
+             equalised ? "equalisation" : "carries nothing",
              (unsigned)SyncProcessor::SP_H_PULSE_IGNOR::read(),
              (unsigned)Adc::dividerInForce(),
              (unsigned)SyncProcessor::preCoastLines(),
@@ -1379,7 +1379,7 @@ void VideoPath::writePulseIgnore()
         return;
 
     SyncProcessor::applyPulseIgnore(Adc::dividerInForce(),
-                                    SerrationMeasurement::assumeSerrated());
+                                    EqualisationMeasurement::assumeEqualisation());
 }
 
 

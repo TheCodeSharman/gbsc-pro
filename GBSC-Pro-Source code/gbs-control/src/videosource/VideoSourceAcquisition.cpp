@@ -13,7 +13,7 @@
 #include "../tv5725/OutputMode.h"
 #include "../tv5725/RgbhvOutput.h"
 #include "../tv5725/SourceKey.h"
-#include "../tv5725/SerrationMeasurement.h"
+#include "../tv5725/EqualisationMeasurement.h"
 #include "../tv5725/SyncMeasurement.h"
 #include "../tv5725/SyncOnGreen.h"
 #include "../tv5725/VideoRoute.h"
@@ -1245,7 +1245,7 @@ bool VideoSourceAcquisition::runPass(uint32_t nowMs, bool &detectionPass)
     // are fractions of the line in ADC samples, so the probe is of nothing
     // until the divider it is counted against is the one in force; and the
     // threshold it settles on is what every reading after it is taken through.
-    videoPath_.measureSerration();
+    videoPath_.measureEqualisation();
 
     if (!reading(sampling_.measureDuty(nowMs), settling)) {
         if (!settling)
@@ -1416,7 +1416,7 @@ void VideoSourceAcquisition::applySyncProcessorDynamic()
     source.csync = Tv5725::SyncMeasurement::isCsync();
     source.divider = Tv5725::Adc::dividerInForce();
     source.latched = videoPath_.samplingClockLatched();
-    source.serrated = Tv5725::SerrationMeasurement::assumeSerrated();
+    source.equalised = Tv5725::EqualisationMeasurement::assumeEqualisation();
     source.pathSource =
         VideoSourceSelection::isRgbhv(VideoSourceSelection::selected())
         || Tv5725::VideoRoute::isHdBypassChannel();

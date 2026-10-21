@@ -1,4 +1,4 @@
-// Host-compiled unit tests for Tv5725::SerrationMeasurement -- `make -C test serration-measurement`.
+// Host-compiled unit tests for Tv5725::EqualisationMeasurement -- `make -C test serration-measurement`.
 //
 // SP_H_PULSE_IGNOR has to sit above the serrations a broadcast vertical
 // interval carries and below the source's own sync pulse, and on this bench
@@ -9,7 +9,7 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest/doctest.h>
 
-#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SerrationMeasurement.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/EqualisationMeasurement.h"
 
 using namespace Tv5725;
 
@@ -22,19 +22,19 @@ int readings = 0;
 const uint16_t *dithering = 0;
 uint8_t dithered = 0;
 
-uint16_t countAt(bool rejectsSerrations)
+uint16_t countAt(bool rejectsEqualisation)
 {
-    if (dithering != 0 && !rejectsSerrations) {
+    if (dithering != 0 && !rejectsEqualisation) {
         ++readings;
         return dithering[dithered++ % 5];
     }
     ++readings;
-    return rejectsSerrations ? rejecting : admitting;
+    return rejectsEqualisation ? rejecting : admitting;
 }
 
 void given(uint16_t below, uint16_t above)
 {
-    SerrationMeasurement::forget();
+    EqualisationMeasurement::forget();
     admitting = below;
     rejecting = above;
     readings = 0;
@@ -49,7 +49,7 @@ TEST_CASE("a count the lower threshold raises by the vertical interval is serrat
     // The Wii in PAL 576i: 319 against a true 310 below the floor.
     given(319, 310);
 
-    CHECK(SerrationMeasurement::serration(countAt));
+    CHECK(EqualisationMeasurement::equalisation(countAt));
 }
 
 TEST_CASE("a source reading the same count through both thresholds is not serrated")
@@ -57,7 +57,7 @@ TEST_CASE("a source reading the same count through both thresholds is not serrat
     // The RISC PC at 320x256@50 on composite sync: 308 either side.
     given(308, 308);
 
-    CHECK_FALSE(SerrationMeasurement::serration(countAt));
+    CHECK_FALSE(EqualisationMeasurement::equalisation(countAt));
 }
 
 TEST_CASE("the count's own dither is not a vertical interval")
@@ -66,44 +66,44 @@ TEST_CASE("the count's own dither is not a vertical interval")
     // separation two readings of it can show is below the threshold.
     given(530, 527);
 
-    CHECK_FALSE(SerrationMeasurement::serration(countAt));
+    CHECK_FALSE(EqualisationMeasurement::equalisation(countAt));
 }
 
 TEST_CASE("a count the lower threshold LOWERS is not serrated either")
 {
     given(527, 531);
 
-    CHECK_FALSE(SerrationMeasurement::serration(countAt));
+    CHECK_FALSE(EqualisationMeasurement::equalisation(countAt));
 }
 
 TEST_CASE("the probe runs once per source, not once per pass")
 {
     given(319, 310);
 
-    SerrationMeasurement::serration(countAt);
-    SerrationMeasurement::serration(countAt);
-    SerrationMeasurement::serration(countAt);
+    EqualisationMeasurement::equalisation(countAt);
+    EqualisationMeasurement::equalisation(countAt);
+    EqualisationMeasurement::equalisation(countAt);
 
-    CHECK(readings == 2 * SerrationMeasurement::Samples);
+    CHECK(readings == 2 * EqualisationMeasurement::Samples);
 }
 
 TEST_CASE("forgetting re-arms the probe")
 {
     given(319, 310);
-    SerrationMeasurement::serration(countAt);
+    EqualisationMeasurement::equalisation(countAt);
 
-    SerrationMeasurement::forget();
-    SerrationMeasurement::serration(countAt);
+    EqualisationMeasurement::forget();
+    EqualisationMeasurement::equalisation(countAt);
 
-    CHECK(readings == 4 * SerrationMeasurement::Samples);
+    CHECK(readings == 4 * EqualisationMeasurement::Samples);
 }
 
 TEST_CASE("a value merely set does not suppress the probe")
 {
     given(319, 310);
-    SerrationMeasurement::set(false);
+    EqualisationMeasurement::set(false);
 
-    CHECK_FALSE(SerrationMeasurement::isSet());
+    CHECK_FALSE(EqualisationMeasurement::isSet());
 }
 
 TEST_CASE("a probe through counts no source produces establishes nothing")
@@ -112,9 +112,9 @@ TEST_CASE("a probe through counts no source produces establishes nothing")
     // a comparison of two such readings is arithmetic on noise.
     given(97, 97);
 
-    SerrationMeasurement::serration(countAt);
+    EqualisationMeasurement::equalisation(countAt);
 
-    CHECK_FALSE(SerrationMeasurement::isSet());
+    CHECK_FALSE(EqualisationMeasurement::isSet());
 }
 
 TEST_CASE("one stray reading does not carry the verdict")
@@ -126,7 +126,7 @@ TEST_CASE("one stray reading does not carry the verdict")
     given(0, 527);
     dithering = wandering;
 
-    CHECK_FALSE(SerrationMeasurement::serration(countAt));
+    CHECK_FALSE(EqualisationMeasurement::equalisation(countAt));
 }
 
 TEST_CASE("and the interval still carries it through the same dither")
@@ -135,7 +135,7 @@ TEST_CASE("and the interval still carries it through the same dither")
     given(0, 310);
     dithering = wandering;
 
-    CHECK(SerrationMeasurement::serration(countAt));
+    CHECK(EqualisationMeasurement::equalisation(countAt));
 }
 
 TEST_CASE("a source nothing has probed is assumed serrated")
@@ -145,15 +145,15 @@ TEST_CASE("a source nothing has probed is assumed serrated")
     // leaves a serrated source counting its vertical interval as lines -- a
     // count nine lines out, which no raster matches and every window is then
     // solved from.
-    SerrationMeasurement::forget();
+    EqualisationMeasurement::forget();
 
-    CHECK(SerrationMeasurement::assumeSerrated());
+    CHECK(EqualisationMeasurement::assumeEqualisation());
 }
 
 TEST_CASE("and takes the measurement once there is one")
 {
     given(308, 308);
-    SerrationMeasurement::serration(countAt);
+    EqualisationMeasurement::equalisation(countAt);
 
-    CHECK_FALSE(SerrationMeasurement::assumeSerrated());
+    CHECK_FALSE(EqualisationMeasurement::assumeEqualisation());
 }

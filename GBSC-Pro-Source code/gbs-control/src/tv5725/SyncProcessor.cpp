@@ -7,7 +7,7 @@
 
 #include "Adc.h"
 #include "Chip.h"
-#include "SerrationMeasurement.h"
+#include "EqualisationMeasurement.h"
 
 #include "../../gbs_types.h"
 
@@ -105,7 +105,7 @@ bool longPostCoast_ = true;
 // 107 through a 2200-sample line is the value measured to read PAL 576i. Below
 // 3.68% of the line the separator counts that source's serrations as lines and
 // reads 319 against a true 310.
-const uint16_t SerratedPulseIgnorePerThousand = 49;
+const uint16_t EqualisedPulseIgnorePerThousand = 49;
 
 // What a source with nothing in its vertical interval can take, which is less:
 // 4.9% lands inside the dither on 640x512@50 composite, where the whole band
@@ -113,16 +113,16 @@ const uint16_t SerratedPulseIgnorePerThousand = 49;
 // PC at 320x256@50 and 640x512@50 at both of its dividers, and the Wii at
 // 480p.
 // ../../../../docs/investigations/the-composite-count-dithers-where-the-ignore-nears-the-pulse.md
-const uint16_t UnserratedPulseIgnorePerThousand = 28;
+const uint16_t UnequalisedPulseIgnorePerThousand = 28;
 
 // Under the narrowest sync pulse the block can be counting while the divider is
 // not the line: 31 samples, a 7.3% pulse at half the 27 MHz reference.
 const uint8_t SearchPulseIgnore = 16;
 
-uint8_t pulseIgnoreFor(uint16_t divider, bool serrated)
+uint8_t pulseIgnoreFor(uint16_t divider, bool equalised)
 {
-    const uint16_t perThousand = serrated ? SerratedPulseIgnorePerThousand
-                                          : UnserratedPulseIgnorePerThousand;
+    const uint16_t perThousand = equalised ? EqualisedPulseIgnorePerThousand
+                                          : UnequalisedPulseIgnorePerThousand;
     return (uint8_t)((uint32_t)divider * perThousand / 1000u);
 }
 
@@ -228,7 +228,7 @@ uint8_t SyncProcessor::preCoastLines()
 {
     if (coastOverridden_)
         return preCoastOverride_;
-    if (!SerrationMeasurement::assumeSerrated())
+    if (!EqualisationMeasurement::assumeEqualisation())
         return 0;
     return CompositePreCoastLines;
 }
@@ -237,14 +237,14 @@ uint8_t SyncProcessor::postCoastLines()
 {
     if (coastOverridden_)
         return postCoastOverride_;
-    if (!SerrationMeasurement::assumeSerrated())
+    if (!EqualisationMeasurement::assumeEqualisation())
         return 0;
     return longPostCoast_ ? LongPostCoastLines : ShortPostCoastLines;
 }
 
-void SyncProcessor::applyPulseIgnore(uint16_t divider, bool serrated)
+void SyncProcessor::applyPulseIgnore(uint16_t divider, bool equalised)
 {
-    SP_H_PULSE_IGNOR::write(pulseIgnoreFor(divider, serrated));
+    SP_H_PULSE_IGNOR::write(pulseIgnoreFor(divider, equalised));
 }
 
 void SyncProcessor::overridePulseWidthDifference(uint16_t difference)
@@ -321,7 +321,7 @@ void SyncProcessor::applyDynamic(const Dynamic &source)
     // to be present because the fraction is of the LATCHED line.
     // ../../../../docs/investigations/the-pulse-ignore-outlived-the-channels-entry.md
     if (source.present)
-        applyPulseIgnore(source.divider, source.serrated);
+        applyPulseIgnore(source.divider, source.equalised);
 }
 
 void SyncProcessor::applyForOffsetCalibration()

@@ -187,7 +187,7 @@ static void seedBenchSource()
     // A source nothing has measured yet, which is what a seeded one is. The
     // answer is held statically, so without this each case inherits whichever
     // source the case above it probed.
-    SerrationMeasurement::forget();
+    EqualisationMeasurement::forget();
 }
 
 // Move the source to a different line count, leaving everything else as the
@@ -2977,9 +2977,9 @@ TEST_CASE("a reference install leaves the search's threshold in force")
 // it. The bench source is the RISC PC on composite sync, whose vertical
 // interval is a NOR with nothing in it.
 // ../docs/investigations/the-risc-pc-composite-sync-is-not-serrated.md
-static uint16_t serratedProbe(bool rejectsSerrations)
+static uint16_t equalisedProbe(bool rejectsEqualisation)
 {
-    return rejectsSerrations ? 310 : 319;
+    return rejectsEqualisation ? 310 : 319;
 }
 
 TEST_CASE("a solve re-places the pulse ignore for the divider it installs")
@@ -3014,7 +3014,7 @@ TEST_CASE("a serrated source solves to the threshold that rejects its interval")
     VideoPath engine(clock, sampling, framings, inputFormatter);
     VideoSourceAcquisition acquisition(sampling, engine);
     engine.useSyncTypeProbe(probeOwnVsync);
-    engine.useSerrationProbe(serratedProbe);
+    engine.useEqualisationProbe(equalisedProbe);
 
     g_hasOwnVsync = false;
     engine.setOutputMode(benchMode());
@@ -3043,7 +3043,7 @@ TEST_CASE("an unserrated source solves to no coast at all")
     engine.setOutputMode(benchMode());
     engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(acquisition));
-    REQUIRE_FALSE(SerrationMeasurement::isSerrated());
+    REQUIRE_FALSE(EqualisationMeasurement::carriesEqualisation());
 
     CHECK(SyncProcessor::SP_PRE_COAST::read() == 0);
     CHECK(SyncProcessor::SP_POST_COAST::read() == 0);
@@ -3058,13 +3058,13 @@ TEST_CASE("a serrated source keeps the hold either side of its interval")
     VideoPath engine(clock, sampling, framings, inputFormatter);
     VideoSourceAcquisition acquisition(sampling, engine);
     engine.useSyncTypeProbe(probeOwnVsync);
-    engine.useSerrationProbe(serratedProbe);
+    engine.useEqualisationProbe(equalisedProbe);
 
     g_hasOwnVsync = false;
     engine.setOutputMode(benchMode());
     engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(acquisition));
-    REQUIRE(SerrationMeasurement::isSerrated());
+    REQUIRE(EqualisationMeasurement::carriesEqualisation());
 
     CHECK(SyncProcessor::SP_PRE_COAST::read() == 7);
     CHECK(SyncProcessor::SP_POST_COAST::read() > 0);
@@ -3088,7 +3088,7 @@ TEST_CASE("a separate-sync source is not probed at all")
     engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(acquisition));
 
-    CHECK_FALSE(SerrationMeasurement::isSet());
+    CHECK_FALSE(EqualisationMeasurement::isSet());
 }
 
 // --- what a mode change looks like when the line count cannot show it ---------

@@ -410,13 +410,20 @@ public:
     // composite source, and how many after. COAST stops the PLL tracking the
     // reference and holds its output frequency.
     //
-    // **ONLY A SERRATED SOURCE IS COASTED, AND THE PRE LINES ARE WHY.** They
-    // are what carries the composite shear, so an unserrated source takes 0/0
-    // -- and 0/2 is not available as a half step, the count dithering far more
-    // there than at 0/0. Tv5725::SerrationMeasurement gates it, serrated until
-    // measured otherwise, because a serrated source at pre 0 dithers its count
-    // at every post coast until the engine drops it to absent.
+    // **THE PRE LINES CARRY THE COMPOSITE SHEAR**, so a source that can do
+    // without them takes 0/0 -- and 0/2 is not available as a half step, the
+    // count dithering far more there than at 0/0.
     // docs/investigations/the-composite-shear-is-the-coast.md
+    //
+    // **WHICH SOURCES CAN DO WITHOUT THEM IS NOT SETTLED, AND EQUALISATION
+    // ALONE DOES NOT ANSWER IT.** Tv5725::EqualisationMeasurement sees only
+    // half-line pulses, and the Wii at 480p carries none while still failing
+    // at 0/0 -- its count dithers and the sync pad cycles every ~2 s. The
+    // functional question is VideoPath::measureVerticalInterval()'s: whether
+    // the input formatter can still measure the interval uncoasted.
+    // Both are required here, because every state measured good satisfies
+    // both and dropping either admits one that is not.
+    // docs/investigations/the-equalisation-probe-cannot-see-serration.md
     //
     // **WITHIN THE HOLD THE POST LENGTH IS PER SOURCE**, because one value sits
     // on the edge of both measured bands: a source needing the hold needs at
@@ -490,7 +497,7 @@ public:
     // the line or more, and below the pulse is 2.81% or less.
     // docs/investigations/the-composite-count-dithers-where-the-ignore-nears-the-pulse.md
     // docs/investigations/the-pulse-ignore-is-a-fraction-of-the-line.md
-    static void applyPulseIgnore(uint16_t divider, bool serrated);
+    static void applyPulseIgnore(uint16_t divider, bool equalised);
 
     // The block parked so the ADC can measure its own black level: nothing
     // clamped, nothing coasting, no inversion anywhere, and the clamp window
@@ -503,7 +510,7 @@ public:
     //
     // Every fact is handed in: where the source is selected and what the engine
     // measured are not this block's to read, `serrated` included --
-    // Tv5725::SerrationMeasurement is what measures it. `pathSource` is a source whose sync carries no
+    // Tv5725::EqualisationMeasurement is what measures it. `pathSource` is a source whose sync carries no
     // broadcast vertical interval -- the RGBHV connector, or a component source
     // through the channel. `latched` is whether the block is counting the line
     // the divider describes, which is what decides the threshold below.
@@ -513,7 +520,7 @@ public:
         bool csync;
         bool pathSource;
         bool latched;
-        bool serrated;
+        bool equalised;
         uint16_t divider;
     };
 
