@@ -47,6 +47,14 @@ MDF = "/home/msharman/Projects/RiscPc/tools/video-source/RetroScaler-Acorn.mdf"
 # fraction of a scaler pixel. The vertical is 1125 at both ends and so is 1:1.
 ENCODER_TOTAL = 2200
 
+# And the output raster that total belongs to. Above about 62 Hz of source field
+# rate the engine falls back to a 1024p raster to stay under the clock ceiling,
+# at which point a dongle column is no longer a known fraction of a scaler pixel
+# and every figure below comes off the wrong ruler -- the green pair's own span
+# read 237 px wide of the card at 1024x768@70. A reading taken there is refused
+# rather than printed.
+ENCODER_LINES = 1125
+
 FIELDS = ["PLLAD_MD", "IF_HSYNC_RST", "IF_HB_SP2", "IF_HB_ST2",
           "IF_VB_SP", "IF_VB_ST", "VDS_HSCALE", "VDS_VSCALE",
           "VDS_HSYNC_RST", "VDS_VSYNC_RST", "VDS_DIS_HB_SP", "VDS_DIS_HB_ST",
@@ -143,6 +151,14 @@ def report(mode, field, geo, clip, h, v, clock):
     active_px, active_ln = int(h[3]), int(v[3])
     file_total, file_vtotal = sum(h), sum(v)
     frame_lines = field["STATUS_SYNC_PROC_VTOTAL"] + 1
+
+    out_lines = field["VDS_VSYNC_RST"] + 1
+    if out_lines != ENCODER_LINES:
+        print(f"{mode}\n  raster {out_total}x{out_lines}, not"
+              f" {ENCODER_LINES} lines: the engine fell back from 1080p and a"
+              f" dongle column is no longer a known fraction of a scaler"
+              f" pixel, so no margin here is comparable")
+        return
 
     # Dongle pixels per capture unit, and per captured line: the scale, then the
     # encoder resampling our line to its own total. The vertical is 1:1.
