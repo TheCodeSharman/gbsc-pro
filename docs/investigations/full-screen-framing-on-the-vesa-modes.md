@@ -23,25 +23,33 @@ repeatedly turned one fault into four.
 
 ## Where it stands
 
-**No mode passes.** Measured 2026-10-22 on `vga` into 1920x1080 under
-`RetroScaler-Acorn.mdf`, `card_edges.py` for the verdict and `full_margins.py`
-for the decomposition. Margins are output pixels at the near and far edge, `-`
-an edge the emitted frame does not carry:
+**No mode passes an acceptance stated in output pixels**, and the engine is
+nevertheless centred on its design -- which is the whole of what the section
+below is about. The five acceptance modes on separate sync, `card_edges.py` for
+the verdict, on `vga` under `RetroScaler-Acorn.mdf` with every stored entry
+forgotten. Margins are output pixels at the near and far edge, `-` an edge the
+emitted frame does not carry, and `displacement` is the sweep's own reading
+against that mode's design in source pixels:
 
-| mode | across | down |
-|---|---|---|
-| 320x256@50 | 4 \| 0 | 3 \| 1 |
-| 640x512@50 | - \| 6 | 1 \| 1 |
-| 640x480@60 | - \| 14 | 1 \| 4 |
-| 800x600@60 | - \| 0 | 0 \| 1 |
-| 1024x768@60 | - \| 136 | 1 \| 1 |
+| mode | emitted | across | whole | down | whole | displacement |
+|---|---|---|---|---|---|---|
+| 240x352@70 | 1280x1024 | - \| 8 | 0.00 \| 1.00 | 1 \| 3 | 0.97 \| 1.00 | +1.48 |
+| 320x256@50 | 1920x1080 | 4 \| 0 | 1.00 \| 0.58 | 3 \| 1 | 1.00 \| 0.99 | -0.71 |
+| 640x480@60 | 1920x1080 | - \| 12 | 0.00 \| 1.00 | 1 \| 4 | 0.50 \| 1.00 | -1.47 |
+| 640x512@50 | 1920x1080 | - \| 6 | 0.00 \| 1.00 | 1 \| 1 | 0.99 \| 1.00 | +2.04 |
+| 800x600@60 | 1920x1080 | 2 \| 0 | 0.49 \| 1.00 | 0 \| 1 | 1.00 \| 0.94 | -0.12 |
 
-**320x256@50's row is not a default framing.** Its key matches no published
-raster, so it was answered by the stored entry the table still held --
-`/sc?B` is queued for `loop()` and `gbs_unit.reset_framing()` can sample a
-framing that has not changed yet. The four DMT rows are defaults, because there
-the published active region IS the default. Check the console for
-`no framing stored` before believing any row of this table again.
+**640x480@60's near border is off the frame BY DESIGN**, DMT's raster being 6
+source pixels later than the one the machine emits, and judging each edge
+against what the design puts there is what stops that reading as a fault.
+Vertically four of the five already pass; the one failure is 640x480@60's top
+border at 0.50 of its source line, which is the wholeness threshold rather than
+a placement.
+
+**A ROW IS ONLY A DEFAULT FRAMING IF THE STORED ENTRY WAS FORGOTTEN.** An entry
+is recalled on acquisition, `/sc?B` is queued for `loop()`, and
+`gbs_unit.reset_framing()` can sample a framing that has not changed yet. Check
+the console for `no framing stored` before believing any row.
 
 ### The error is the ORIGIN, and both symptoms are one number
 
@@ -304,16 +312,13 @@ blanking does not open.
 is 87.1% of the line at the 1916-unit 50 Hz raster and 87.2% at the 1596-unit
 60 Hz one -- CEA's own active fraction -- and `produced` matches it to within
 1 px on both axes at both. `IF_HB_SP2` is where the published raster says, 228,
-274 and 316 against 229, 274 and 317. So the origin is the whole of it, and the
-work is in this order because each step decides what the next one may assume.
+274 and 316 against 229, 274 and 317. So the origin is the whole of it.
 
-**STEPS 1 AND 2 ARE DONE AND STEP 3 WAS A DIFFERENT THING ENTIRELY.** The
-origin is sound -- ten modes read within +0.8 source pixels of the raster they
-are emitting, mean, over a spread of 1.5 -- and what the framing error was is
-the engine matching the wrong published raster. "Every mode is emitting its
-monitor definition's raster" above has the measurements. **No correction
-constant was involved and none is wanted**, because there is no displacement
-left to take out.
+**THE ORIGIN IS SOUND AND NO CORRECTION CONSTANT IS WANTED**, because there is
+no displacement left to take out: ten modes read within +0.8 source pixels of
+the raster they are emitting, mean, over a spread of 1.5, and what the framing
+error was is the engine matching the wrong published raster. "Every mode is
+emitting its monitor definition's raster" above has the measurements.
 
 What shipped is two things. The generated monitor definition carries no VESA DMT
 set, so it is the file the machine actually runs -- that is the whole of why
@@ -329,48 +334,119 @@ across the revert because its polarity pair reaches the Acorn row. 640x480@60
 sits at 12, which is DMT answering by priority. 800x600@60 is 1 and unchanged,
 both authorities putting its picture at 216.
 
-1. **Size what is left, which is a pixel or two and may be quantisation.**
-   `IF_HB_SP2` moves in TWOS -- the low bit does nothing -- so the window's
-   start cannot be placed closer than half a granule to the border, which is
-   1.75 to 2.79 emitted pixels on the modes in the set. The acceptance allows 3
-   at the near edge, so rounding to the nearest granule is inside it while
-   rounding late cuts up to half the border and fails the `whole` test instead.
-   Measure which way each mode is rounding before reaching for a lever.
-   640x480@60 now overruns at the FAR edge, which is the opposite sign from
-   before and is its own question.
-2. **Then the vertical**, which is a different shape from the horizontal and
-   must not be merged with it. `v lead` reads -5.1, -5.1, -6.1, -1.2, -3.7,
-   -3.2, -5.1 and 0.0 lines across the eight conformant modes above, in the
-   table's own order, so unlike the horizontal it IS systematically early --
-   mean -3.7 lines, and never late. That is a term worth deriving, and a
-   measurement spanning both axes is what licenses one constant for both.
-   1024x768@60 reads -0.5 there, so **the source's horizontal displacement does
-   not reach its vertical** and the mode is usable for the vertical question.
-3. **A margin is the only lever that reaches a one-pixel border, and it is
-   charged four times over.** `Axis::captureMargin` is charged in `fitToRaster`,
-   in `minimumCapture` and in `maximumCapture` as well as at the capture start,
-   so raising it moves the scale, the zoom floor, the divider ceiling and the
-   memory window together -- which is why the 2 px it buys at 640x480@60 came
-   back as 40 at 800x600@60. **`TransmittedWindowDelayPx` is not a lever
-   either**: it slides `activeStop` and the divider ceiling is taken off it.
-   Pin whatever lands with a host test through the fake-Wire seam;
-   `card_edges.py` needs the bench and the suite does not.
-4. **Re-run the acceptance on both sync types**, and confirm the entry really
-   was forgotten before reading any row -- the console says `no framing stored`.
-   **1280x720@60 cannot pass until the CEA row exists** -- it is CEA 4 and the
-   `Cea` array holds only 480p and 576p, so it matches nothing and falls back to
-   the whole capturable region. Modes where a standard states the same
-   resolution carry their own by-design offset, which `published_rasters.py`
-   states per mode, so the acceptance has to allow it rather than read it as a
-   fault.
+### The engine is centred on its design, and what is left is the grid
+
+**THE DEFAULT FRAMING IS AT ITS QUANTISATION FLOOR, SO THERE IS NO TERM LEFT TO
+DERIVE.** 63 source modes swept at 1080p and judged off the emitted frame, of
+which the 27 whose matched row IS the raster the machine emits give, against
+that row's own stated picture area:
+
+| axis | mean | sd | range |
+|---|---|---|---|
+| horizontal | **+0.05 source px** | 1.61 | -6.04 .. +2.45 |
+| vertical | **-0.19 lines** | 0.79 | -2.21 .. +1.06 |
+
+Centred on both axes. The spread is 2 to 3 ADC samples, which is the capture
+granule plus the retime origin's own rounding, and **nothing predicts it**:
+sync duty, sampling density, line doubling, oversampling ratio, field rate,
+divider, sync polarity, magnification and the sync width's own measurement
+error were each regressed against it and the best R2 is 0.15. Two readings of
+one `SourceKey` differ by 1.1 samples, so about a sample of the spread is the
+instrument.
+
+**THE VERTICAL TERM THE PLAN ASKED FOR IS REFUTED. Do not derive a vertical
+constant.** The `v lead` figures that licensed it -- -5.1, -5.1, -6.1, -1.2,
+-3.7, -3.2, -5.1 and 0.0 lines, mean -3.7 and never late -- come from
+`full_margins.py` at FULL framing, whose absolute lead carries its own model.
+Measured off the emitted frame at the default framing the same quantity is
+-0.19 lines over 27 modes. The two instruments disagree by about three lines
+and the emitted frame is the one the acceptance reads.
+
+**A refit of `SourceVideoDelayPixels` is rejected.** The undoubled subset alone
+trends with sampling density -- 23 states, slope +1.46 samples per unit of
+pixelSamples, R2 0.51 -- and the four doubled states want the opposite sign, so
+a per-doubling refit is a two-parameter fit on four points at one end. A good
+fit is not evidence the quantities are what you think.
+
+**`SourceTiming::hsyncExtent()` is unused, and replacing the measured duty with
+it has no deficit to fix.** It states a published raster's own sync width
+exactly, which is the obvious replacement for the measured duty in
+`retimeStopFor()`; the measurement above says the measured duty is costing
+nothing. Noted so it is not reached for twice.
+
+**The sync width the engine uses is 2.6 samples narrower than the mode file
+states**, mean, sd 0.66 over the 27, where the raw `STATUS_SYNC_PROC_HLOW_LEN`
+reads about 1.3 samples WIDER. That is `InvertedPulseWidthSamples` = 5
+overshooting on a high-active source. It is nearly constant, so it is not what
+the spread is, and it moves the origin by the same 2.6 samples on every mode --
+which the centred mean says is already absorbed.
+
+**The one outlier is 896x352@60**, a doubled mode at 2.00 samples a pixel whose
+matched row is its own, reading -6.04 source px. It is four times the next
+worst and nothing explains it.
+
+### A wholeness verdict near its threshold is unresolved
+
+**`whole` IS REPEATABLE WITHIN AN ACQUISITION AND NOT ACROSS ONE**, so it
+carries about 0.3 of the source pixel that no framing change can remove.
+Twelve clips over three source-mode re-locks at 320x256@50 give
+`4 (4|0) whole 1.00|0.58` every time, to the pixel; the same state reads 0.84
+at the far edge after a different sequence, and 800x600@60 reads `0.49|1.00` on
+separate sync and `1.00|0.12` on composite with identical registers and
+identical margins. That is the sink's own sub-pixel landing, which is
+[the-transmitted-window.md](the-transmitted-window.md) again. **Take the
+margins as the measurement**, and read a wholeness figure within about 0.3 of
+its threshold as saying nothing either way.
+
+### What remains
+
+1. **State the acceptance's goal in CAPTURE UNITS.** The engine places on a
+   2-unit horizontal granule and a 1-line vertical one, so the allowance is a
+   property of the mode's sampling density rather than a constant in output
+   pixels: one granule is 3.8 emitted px at 800x600@60 and 5.6 at 320x256@50.
+   `/geometry` reports the window's extent in capture units beside the frame it
+   is magnified onto, so the conversion needs no register read and no model.
+   **The two criteria cannot both be met at a fixed size**: the allowance of 3
+   emitted px at a near edge and the separate requirement that 75% of the
+   outermost source pixel survive are 0.25 source px of clip, which is a sixth
+   of what the grid can cost at the coarsest mode. One budget per edge -- the
+   black beside the border plus the part of the border missing -- is what makes
+   them one statement.
+2. **Then re-run the acceptance on both sync types** and read the table out of
+   that one run. Confirm the stored entry really was forgotten before reading
+   any row -- the console says `no framing stored`. **1280x720@60 cannot pass
+   until the CEA row exists**: it is CEA 4 and the `Cea` array holds only 480p
+   and 576p, so it matches nothing and falls back to the whole capturable
+   region.
+
+**A margin is the only lever that reaches a one-pixel border and every one of
+them is spent.** `Axis::captureMargin` is charged in `fitToRaster`, in
+`minimumCapture` and in `maximumCapture` as well as at the capture start, so
+raising it moves the scale, the zoom floor, the divider ceiling and the memory
+window together -- which is why the 2 px it buys at 640x480@60 comes back as 40
+at 800x600@60. `TransmittedWindowDelayPx` is not a lever either: it slides
+`activeStop` and the divider ceiling is taken off it.
 
 Two things are NOT part of this and must not be folded into it: composite's
 horizontal repeat at 800x600@60 and 1024x768@60, and the whole-capturable-region
 default an unpublished source falls back to. Both are in `docs/known-issues.md`.
 
-## The instrument, and five ways it has lied
+## The instrument, and the ways it has lied
 
 Every one of these produced a confident wrong answer that reached a commit.
+
+**THE DECOMPOSITION'S ABSOLUTE TERMS CARRY TWO MODEL ERRORS**, the write-start
+constants and the encoder window, so `dCapture` is not a source-pixel
+measurement: it reads -4.0 source px at 320x256@50 where the emitted frame says
+-0.7. **Use the black counted at the emitted edges** -- `black_cols` -- for
+anything at the one-pixel level, and the decomposition for attribution only.
+
+**A MIRRORED CONSTANT WITH A TEST THAT COMPARES IT TO ITSELF IS WORSE THAN NO
+TEST.** `framing_decomposition`'s copy of `TransmittedWindowDelayPx` sat at 20
+against the firmware's 6 while the test asserted the modelled window against
+the copy, so the drift was invisible and two other tests had taken the stale
+answer as an absolute. Every `dModelApplied` verdict in a sweep taken before
+`firmware_constants.py` parsed the C++ is 14 raster units out.
 
 **`full_margins.py` IS A 1080p INSTRUMENT, AND IT SAYS NOTHING WHEN IT IS NOT
 AT 1080p.** `ENCODER_TOTAL` is hardcoded 2200, so a dongle column is a known

@@ -9416,9 +9416,17 @@ Measured after flashing, margins across with stored entries forgotten:
 | 1024x768@60 | - \| 136, out by 136 | - \| 0, out by **1** | AKF60 answers, its polarity pair differing from DMT's |
 | 640x480@60 | - \| 14, out by 14 | - \| 12, out by 12 | DMT answers by priority, the offset by design |
 | 800x600@60 | - \| 0, out by 1 | - \| 0, out by 1 | both authorities put its picture at 216 |
-**What is left is sub-source-pixel** and `IF_HB_SP2` moves in twos, so half a
-granule is 1.75 to 2.79 emitted pixels on these modes against an allowance of 3
--- quantisation is the first candidate for the residual, not a displacement.
+**WHAT IS LEFT IS THE CAPTURE GRID, MEASURED, AND THERE IS NO TERM TO DERIVE.**
+63 modes swept at 1080p and judged off the emitted frame put the engine at
+**+0.05 source px** horizontally, sd 1.61, and **-0.19 lines** vertically, sd
+0.79, over the 27 whose matched row IS the raster the machine emits -- centred
+on its design on both axes. The spread is 2 to 3 ADC samples, which is the
+placement granule plus the retime origin's own rounding, and sync duty,
+sampling density, line doubling, oversampling, field rate, divider, polarity
+and magnification each regress against it at an R2 of 0.15 or less. So the
+acceptance's allowance belongs on the engine's own grid rather than in a fixed
+number of output pixels.
+`investigations/full-screen-framing-on-the-vesa-modes.md`.
 
 **1280x720@60 cannot pass, and that one is fixable**: it is CEA 4 and the `Cea`
 array holds only 480p and 576p, so it matches nothing and falls back to the
