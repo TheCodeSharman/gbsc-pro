@@ -219,20 +219,24 @@ what the pair of states establishes: the picture went from visibly shimmering on
 static detail to shimmering only on moving sprites while those figures did not
 move. `the-frame-time-lock-saturates.md` is the loop and its residual.
 
-**The horizontal axis is where the emitted frame shows it**, measured with
-`picture_jitter.py` on the quieter of the two states, 90 frames, 4 bands:
+**A SCROLLING SOURCE CANNOT BE MEASURED BY THIS INSTRUMENT AT ALL**, and the
+horizontal axis is where it fails. The source was a side-scrolling game in its
+demo loop, so the playfield pans horizontally every frame and the correlation
+reports the pan. Three 60-frame clips back to back on one state:
 
-| axis | sd | p2p |
-|---|---|---|
-| horizontal | 0.0995 | **1.142 columns** |
-| vertical | 0.0130 | 0.107 |
+| run | horizontal sd | horizontal p2p | vertical sd |
+|---|---|---|---|
+| 1 | 0.8525 | 9.144 | 0.0159 |
+| 2 | 0.5080 | 9.778 | 0.0052 |
+| 3 | 0.5494 | 11.520 | 0.0078 |
 
-Eight times the vertical and a peak-to-peak over a whole dongle column, with
-every lit edge unmoved across all 89 frame pairs -- so the picture's extent is
-constant and what moves is where the content sits inside it. There is no camera
-in that path, so neither figure carries a beat or a rolling shutter and the
-horizontal one needs no control to be read.
+Against a repeatability of a few thousandths of a column on an untouched unit,
+so the horizontal figure is content and carries no information about the unit.
+The vertical axis stays at 0.005..0.016 throughout, which is the one reading
+that survives -- the picture is not moving vertically. Every lit edge is
+unmoved across all three, so the framing is identical and only the content
+differs.
 
-**A reading taken on a static screen understates it.** The source was a game in
-its demo loop, and the clip above caught a still screen; the shimmer was
-reported visible on sprite detail in the same state.
+**So a shimmer measurement needs a STATIC source**, and the game cannot provide
+one whatever is visible on it. `PATTERN CARD` with `ANIM OFF` can, at the cost
+of leaving the state the fault was seen in.

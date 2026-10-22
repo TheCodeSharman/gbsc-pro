@@ -164,3 +164,33 @@ range rather than in its steep part.
 size walked from phase 0 to 31 in order reads as a phase profile and is one
 reading per phase of the uptime instead. Candidate phases go A-B-A with the
 uptime logged, which is the shape `shearwatch.py` already uses.
+
+## The count dither is a content-free gate on whether the fault is live
+
+Round-robin over five phases, four rounds each, `/phase?sp=N` holding the phase
+through every solve and nothing frozen. Round-robin rather than a sweep so the
+uptime gradient is shared between candidates instead of being read as a profile:
+
+| phase | samples | off the divider | rate |
+|---|---|---|---|
+| 29, the engine's choice | 1143 | **0** | 0.00% |
+| 22 | 1139 | **0** | 0.00% |
+| 27 | 1139 | **0** | 0.00% |
+| 28 | 1138 | **0** | 0.00% |
+| 5 | 1141 | **0** | 0.00% |
+
+5700 samples, `STATUS_SYNC_PROC_HTOTAL` exactly 2200 in every one of them,
+including at the phase that read 4.8% earlier in the same boot.
+
+**THAT IS A VOID COMPARISON AND NOT A FINDING THAT THE PHASES ARE EQUAL.** The
+fault was absent while it ran, so there was nothing for a phase to be better or
+worse at; the picture had gone from shimmering on static detail to shimmering
+only on moving sprites over the same interval. A walk returning nothing across
+its whole range is a walk whose premise was wrong.
+
+**What it establishes instead is the gate every such experiment needs.** The
+dither rate is measured off the chip, needs no picture and no static source, and
+separates the two states by two orders of magnitude -- 4.8% of 1135 samples with
+the fault visible against 0 of 5700 without it. So a phase comparison is
+scheduled by polling it until the fault is live, rather than run when the bench
+is free and scored on whatever state it finds.
