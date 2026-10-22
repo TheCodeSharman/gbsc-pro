@@ -220,13 +220,18 @@ sync + porch + border whatever the split, and the card's frame marks the
 display, not the border. `published_rasters.py <file>` gives the expected offset
 per mode, and a measured offset equal to it is by design.
 
-**`RetroScaler-Acorn.mdf` CARRIES THE VESA DMT SET, EXACTLY AS THE STANDARD
-STATES IT**, and where an Acorn entry collides with a DMT one on resolution and
-field rate the Acorn one gives way, because `MODE` picks by X/Y/F alone. A
-source running a DMT entry has the raster the engine's published-raster
-arithmetic assumes, which is what makes a framing testable rather than merely
-plausible -- and is why a measurement taken under that file does not carry the
-offsets above.
+**`RetroScaler-Acorn.mdf` CARRIES NO VESA DMT SET, AND THE OFFSETS ABOVE APPLY
+UNDER IT.** It did carry one, and because `MODE` picks by X/Y/F alone the
+colliding Acorn entry was dropped to keep both nameable -- which made the
+generated file disagree with the definition installed on the machine, silently,
+since both spellings are the same X, Y and F and `MODES` lists names rather than
+timings. Every framing scored against the generated file was then scored against
+timings the machine does not emit, and 1024x768@60 read 71 source pixels out on
+that account alone. **So the machine emits Acorn's rasters, the engine places a
+source from the STANDARD where one states the same resolution, and the offset
+that costs is by design** -- `published_rasters.py <file>` states it per mode.
+The regenerated file is 63 entries against the 63 `MODES` reports, with no key
+in one and not the other.
 
 `MODE` replies with the mode read back from the hardware, never with the
 request, so a monitor definition that cannot do what was asked does not look
