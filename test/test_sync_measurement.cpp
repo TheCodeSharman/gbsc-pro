@@ -240,11 +240,19 @@ TEST_CASE("a source with its own V sync answers without waiting out a settle")
 
 TEST_CASE("a V sync that arrives late is still the source's own")
 {
-    // THE TAIL IS THE SYNC PROCESSOR REACQUIRING, NOT THE SOURCE. Timed from
-    // the moment the path moves, VSACT is high at 0 ms on three probes of four
-    // and 294 ms on the fourth -- the first after a detection cycle. The
-    // earlier distribution, taken 240 ms into a settle, reaches 443 ms by the
-    // same clock. OwnVsyncWindowMs covers that.
+    // THE TAIL IS THE SYNC PROCESSOR REACQUIRING, NOT THE SOURCE, AND THE
+    // WINDOW MUST KEEP COVERING IT. Timed from the moment the path moves,
+    // VSACT is high within 3 ms on ten probes of eleven and at 294 and 297 ms
+    // on the first probe after a disturbance -- a position reached every time
+    // a source arrives, not a rare one. The earlier distribution, taken 240 ms
+    // into a settle, reaches 443 ms by the same clock.
+    //
+    // **CUTTING THE WINDOW TO LET THE SEPARATOR ARBITRATE IS REFUTED, AND THIS
+    // TEST IS THE GUARD.** A missed window answers NoSource, which latches
+    // nothing and is correct -- but the re-probe is a whole pass away, measured
+    // at 2.5 s on separate sync and 6.9 s on composite, against the 0.55 s a
+    // short window saves per composite probe.
+    // ../docs/investigations/the-own-vsync-probe-answers-by-absence.md
     vsyncArrivesAt(400);
     CHECK(SyncMeasurement::hasOwnVsync(testClock) == SyncMeasurement::OwnVsync);
 }

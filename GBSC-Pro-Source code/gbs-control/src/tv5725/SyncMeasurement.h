@@ -67,6 +67,10 @@ public:
     // yields none, and the answer is NoSource, which latches nothing and is
     // probed again on the next pass. A false yes cannot happen at all, because
     // the bit only rises when V arrives.
+    //
+    // **CUTTING IT TO LET THE SEPARATOR ARBITRATE IS REFUTED**: that next pass
+    // is seconds away, which costs more than the window saves.
+    // ../../../../docs/investigations/the-own-vsync-probe-answers-by-absence.md
     static const uint16_t OwnVsyncWindowMs = 600;
 
     // How many frames the separator is asked for once no V arrived, and how
