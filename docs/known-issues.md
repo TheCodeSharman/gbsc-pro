@@ -9396,17 +9396,35 @@ right. Nothing here establishes which change moved it.
 and the order it has to be done in", with what each step decides for the next.
 The span is exact on every mode, so the scale and the output chain are out of it.
 
-**AND THE ORIGIN IS NOT IT EITHER, WHICH RETIRES THE LEVER THIS ENTRY POINTED
-AT.** Nine modes measured at a full framing, where the source's own blanking is
-on the frame at both ends: eight of them read within ±6 source pixels of the
-lead their raster states, mean +0.0 and sd 2.9 px, which is the size of the
-sync-width measurement the origin is placed from. **So there is no displacement
-for a correction constant to take out**, and this entry's near-edge failure is
-something else -- a border one source pixel wide, at a density that straddles
-it, is the first candidate. The ninth mode, 1024x768@60, is the SOURCE: it
-emits its active video 71 source pixels before the file's stated 296, flat
-across four held dividers in source pixels and moving 51% in ADC samples, so
-**its row above cannot pass and is evidence about the RISC PC**.
+**IT WAS THE ENGINE MATCHING THE WRONG PUBLISHED RASTER, AND THE ORIGIN WAS
+NEVER IN IT.** The RISC PC emits its monitor definition's timings and not the
+standard's for the same resolution, and `SourceTiming`'s Acorn array held AKF50
+alone while the matcher took the first authority that matched rather than the
+nearest row. Ten modes measured at a full framing read within +0.8 source
+pixels, mean, of the raster they are actually emitting, spread 1.5 -- so the
+counter's origin is correct and **no correction constant was ever the lever**.
+
+Fixed by matching the nearest raster by duty and carrying AKF60 through AKF92.
+Measured after flashing, margins across with stored entries forgotten:
+
+| mode | before | after |
+|---|---|---|
+| 640x480@60 | - \| 14, out by 14 | 2 \| -, out by 2 |
+| 800x600@60 | - \| 0, out by 1 | - \| 0, out by 1 |
+| 1024x768@60 | - \| 136, out by 136 | - \| 1, out by 1 |
+
+800x600@60 is unchanged because AKF50 and DMT both put its picture at 216.
+**What is left is sub-source-pixel** and `IF_HB_SP2` moves in twos, so half a
+granule is 1.75 to 2.79 emitted pixels on these modes against an allowance of 3
+-- quantisation is the first candidate for the residual, not a displacement.
+
+**Two modes in the set still cannot pass.** 360x480@60's duty sits 0.28 points
+from 640x480@60's against a measurement worth 0.30, so the key cannot separate
+them and it is framed from 640x480@60's raster, 34 source pixels out; Acorn
+spends a near-constant share of the line on sync across a resolution family, so
+no row fixes that. 1280x720@60 is CEA 4 and the `Cea` array holds only 480p and
+576p, so it matches nothing and falls back to the whole capturable region --
+that one is fixable by adding the row.
 `bench-sources.md`,
 `investigations/full-screen-framing-on-the-vesa-modes.md`.
 

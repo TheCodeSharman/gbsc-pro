@@ -67,46 +67,63 @@ So a picture "6 px NARROW" at 800x600@60 and "41 px narrow" at 1024x768@60 are
 one displacement each and not a magnification error. The scale account below is
 superseded.
 
-**1024x768@60 IS THE SOURCE, AND IT IS THE ONLY MODE THAT IS.** Its line total
-and frame match the file exactly, 1343.9 against 1344 and 806 against 806, and
-it starts its active video 71 source pixels before the stated 296 of
-`h_timings:136,160,0,1024,0,24`. The next section is the measurement; what
-follows from it is that the engine's origin is sound and this mode's published
-raster is not what the machine emits, so **no firmware constant reaches it** and
-a framing measurement taken on it is evidence about the RISC PC.
-`../bench-sources.md`.
+**1024x768@60 WAS THE ENGINE MATCHING THE WRONG PUBLISHED RASTER, AND SO WAS
+EVERY OTHER MODE'S ERROR.** The machine runs an Acorn monitor definition and
+emits its timings, not the standard's: AKF60 states 1024x768@60 as
+`128,36,60,1024,60,36` of 1344 at 65 MHz, picture at 224, where DMT 16 states
+`136,160,0,1024,0,24`, picture at 296. One total, one clock, one frame, 71
+pixels apart. `SourceTiming`'s Acorn array held AKF50 alone, which has no
+1024x768 at all, so the source matched DMT's row and the window opened 71
+source pixels late.
 
-### The origin is sound on every mode but one
+**A SOURCE IS NOT NON-CONFORMANT BECAUSE IT DISAGREES WITH THE RASTER THE
+ENGINE CHOSE FOR IT.** That reading was published here and is withdrawn. The
+divider measurement below stands and is what a wrong-raster match predicts --
+the displacement is a fixed time in the source's own clock, because it is the
+distance between two real rasters. `../bench-sources.md`.
 
-**EIGHT MODES AT 60 Hz READ WITHIN ±6 SOURCE PIXELS OF THEIR STATED LEAD, AND
-THERE IS NO SYSTEMATIC ERROR TO CORRECT.** Measured on `vga` into 1920x1080
-under `RetroScaler-Acorn.mdf`, separate sync, `full_margins.py` at a full
+### Every mode is emitting its monitor definition's raster, and the origin is sound
+
+Measured on `vga` into 1920x1080, separate sync, `full_margins.py` at a full
 framing so the source's own blanking is on the frame at both ends. Every span
-read exact and every output raster was 1125 lines:
+read exact and every output raster was 1125 lines. `h lead` is where the card's
+green frame actually starts, in the source's own pixels from the counter's
+origin; the row is what the machine turned out to be running:
 
-| mode | line total | units/px | `h lead` / file | error |
+| mode | units/px | `h lead` | the raster it is emitting | error |
 |---|---|---|---|---|
-| 320x480@60 | 400 | 3.18 | 68.5 / 68 | +0.5 |
-| 360x480@60 | 532 | 2.39 | 128.9 / 126 | +2.9 |
-| 640x480@60 | 800 | 1.52 | 138.4 / 144 | -5.6 |
-| 720x480@60 | 858 | 1.42 | 121.5 / 122 | -0.5 |
-| 640x512@60 | 870 | 1.67 | 172.9 / 170 | +2.9 |
-| 800x600@60 | 1056 | 1.27 | 216.4 / 216 | +0.4 |
-| 1280x480@60 | 1600 | 0.80 | 276.7 / 276 | +0.7 |
-| 1280x720@60 | 1650 | 0.88 | 258.1 / 260 | -1.9 |
-| **1024x768@60** | **1344** | **1.07** | **225.0 / 296** | **-71.0** |
+| 320x256@50 | 2.15 | 111.7 | AKF50, 110 | +1.7 |
+| 320x480@60 | 3.18 | 68.5 | AKF50, 68 | +0.5 |
+| 360x480@60 | 2.39 | 128.9 | AKF50, 126 | +2.9 |
+| 640x480@60 | 1.52 | 138.4 | AKF50, 138 | +0.4 |
+| 720x480@60 | 1.42 | 121.5 | CEA 2/3, 122 | -0.5 |
+| 640x512@60 | 1.67 | 172.9 | AKF91, 170 | +2.9 |
+| 800x600@60 | 1.27 | 216.4 | both state 216 | +0.4 |
+| 1280x480@60 | 0.80 | 276.7 | AKF50, 276 | +0.7 |
+| 1280x720@60 | 0.88 | 258.1 | CEA 4, 260 | -1.9 |
+| 1024x768@60 | 1.07 | 225.0 | AKF60, 224 | +1.0 |
 
-The eight span stated leads of 68 to 276, line totals of 400 to 1650, dividers
-of 1212 to 1444 and sampling densities of 0.80 to 3.18 units per source pixel,
-and their errors are scatter about zero -- mean +0.0, sd 2.9 px -- of the same
-size as the sync-width measurement the origin is placed from. **The
-LINE-DOUBLED path reads the same**: the bench's own 320x256@50 at `PLLAD_MD`
-2200 doubled reads `h lead` 111.7 against 110, +1.7 px, with `v lead` -1.0, so
-the result is not a property of the undoubled modes the table happens to hold.
+**THE ERROR AGAINST THE RIGHT RASTER IS +0.8 SOURCE PIXELS, MEAN, OVER A SPREAD
+OF 1.5** -- across stated leads of 68 to 276, line totals of 400 to 1650,
+dividers of 1212 to 2200, densities of 0.80 to 3.18 units per source pixel, and
+the line-doubled path as well as the undoubled one. So **the counter's origin is
+correct and there is no displacement for a correction constant to take out**.
+Every figure that read as an origin error was the engine placing the window from
+a raster the machine was not running.
 
-**So a single correction constant has nothing to correct**, and the acceptance
-failures on these modes are that scatter against a border one source pixel wide
-rather than a displacement a constant can take out.
+**WHAT MADE IT LOOK LIKE AN ENGINE FAULT IS THAT TWO MODES READ MUCH WORSE THAN
+THE REST.** 640x480@60 read -5.6 against DMT's 144 and 1024x768@60 read -71.0
+against DMT's 296, and those are exactly the two modes in the set where an
+Acorn entry exists and differs from the standard's. The eight that looked fine
+were the ones where the two authorities agree or where only one states the mode
+at all.
+
+**A MEASURED DUTY CANNOT SEPARATE TWO ACORN MODES IN ONE RESOLUTION FAMILY**, and
+360x480@60 is the case: Acorn spends a near-constant share of the line on sync
+across a family, so its 12.030% and 640x480@60's 11.750% sit 0.28 points apart
+against a measurement worth 0.30. The whole family is one key, which is what the
+`-- one key with` notes in `SourceTiming`'s Acorn array record. It is framed
+from 640x480@60's raster, 34 source pixels out, and no row can fix that.
 
 **WHAT SEPARATES THE SOURCE FROM A MISPLACED ORIGIN IS THE DIVIDER, because a
 source-side error is a constant in the SOURCE's own pixels and an origin error
@@ -288,21 +305,30 @@ is 87.1% of the line at the 1916-unit 50 Hz raster and 87.2% at the 1596-unit
 274 and 316 against 229, 274 and 317. So the origin is the whole of it, and the
 work is in this order because each step decides what the next one may assume.
 
-**STEPS 1 AND 2 ARE DONE, AND THEY REMOVE STEP 3 AS IT WAS WRITTEN.** The
-origin is sound: eight modes at 60 Hz read within ±6 source pixels of their
-stated lead with no systematic error, 1024x768@60 is the source, and both
-results are in "The origin is sound on every mode but one" above with the
-measurements behind them. **There is no displacement for a correction constant
-to take out**, so a step that puts one where the origin is derived would be
-fitting a constant to scatter.
+**STEPS 1 AND 2 ARE DONE AND STEP 3 WAS A DIFFERENT THING ENTIRELY.** The
+origin is sound -- ten modes read within +0.8 source pixels of the raster they
+are emitting, mean, over a spread of 1.5 -- and what the framing error was is
+the engine matching the wrong published raster. "Every mode is emitting its
+monitor definition's raster" above has the measurements. The fix was the nearest
+row by duty rather than the first authority that matched, plus 25 Acorn rows
+from AKF60 through AKF92; **no correction constant was involved and none is
+wanted**, because there is no displacement left to take out.
 
-1. **Find what the acceptance is actually failing on, now that the origin is
-   not it.** `card_edges.py` reads the near edge off the frame on modes whose
-   lead is within 2 source pixels of its stated value, so the border is being
-   lost to something other than where the window opens -- the one source pixel
-   itself, at a sampling density that straddles it, is the first candidate, and
-   the instrument's own `whole` reading is what sizes it. Measure before
-   reaching for a lever.
+Measured after flashing it, acceptance margins across with stored entries
+forgotten: 1024x768@60 from 136 output pixels of black at the far edge to 1,
+640x480@60 from out by 14 to out by 2, 800x600@60 unchanged at 1 because its
+two rows agree at 216. Nothing passes yet, and what is left is now
+sub-source-pixel.
+
+1. **Size what is left, which is a pixel or two and may be quantisation.**
+   `IF_HB_SP2` moves in TWOS -- the low bit does nothing -- so the window's
+   start cannot be placed closer than half a granule to the border, which is
+   1.75 to 2.79 emitted pixels on the modes in the set. The acceptance allows 3
+   at the near edge, so rounding to the nearest granule is inside it while
+   rounding late cuts up to half the border and fails the `whole` test instead.
+   Measure which way each mode is rounding before reaching for a lever.
+   640x480@60 now overruns at the FAR edge, which is the opposite sign from
+   before and is its own question.
 2. **Then the vertical**, which is a different shape from the horizontal and
    must not be merged with it. `v lead` reads -5.1, -5.1, -6.1, -1.2, -3.7,
    -3.2, -5.1 and 0.0 lines across the eight conformant modes above, in the
@@ -322,9 +348,11 @@ fitting a constant to scatter.
    `card_edges.py` needs the bench and the suite does not.
 4. **Re-run the acceptance on both sync types**, and confirm the entry really
    was forgotten before reading any row -- the console says `no framing stored`.
-   **1024x768@60 is out of scope for it**: the source does not emit the raster
-   the file publishes, so the mode cannot pass and its row is evidence about
-   the RISC PC.
+   **360x480@60 cannot pass and is not a defect to chase**: its duty is inside
+   the measurement's error of 640x480@60's, so the key cannot separate them.
+   1280x720@60 cannot pass either, for a reason that can be fixed -- it is
+   CEA 4 and the `Cea` array holds only 480p and 576p, so it matches nothing and
+   falls back to the whole capturable region.
 
 Two things are NOT part of this and must not be folded into it: composite's
 horizontal repeat at 800x600@60 and 1024x768@60, and the whole-capturable-region

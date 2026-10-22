@@ -173,28 +173,33 @@ the raster the engine derives its capture window from. Acorn's own entries do
 not, and where the two describe the same resolution and field rate that file
 drops the Acorn entry, since `MODE` selects by X/Y/F and cannot tell them apart.
 
-**EXCEPT AT 1024x768@60, WHERE THE MACHINE DOES NOT EMIT THE RASTER THE FILE
-PUBLISHES.** The entry is `h_timings:136,160,0,1024,0,24` and the machine keeps
-its line total and its frame exactly -- 1343.9 against 1344 and 806 against 806,
-at a measured 65.14 MHz -- while putting active video **71 source pixels before
-the stated 296**, with the same 71 appearing as front porch at the other end.
-The split it emits is about sync 130, back porch 95, active 1024, front porch
-95, which is close to centring the display in the non-sync part of the line.
+**BUT THE FILE ON THE MACHINE IS NOT THE FILE IN THIS REPO, AND IT KEEPS THE
+ACORN ENTRY WHERE THE REPO'S KEEPS DMT'S.** Measured on every mode where the two
+authorities differ, the machine emits the ACORN raster: 640x480@60 starts its
+picture at 138.4 where AKF50 states 138 and DMT states 144, and 1024x768@60 at
+225.0 where AKF60 states 224 and DMT states 296. 1024x768@60 is the extreme --
+`128,36,60,1024,60,36` against `136,160,0,1024,0,24`, one total, one 65 MHz
+clock, one frame of 806, and 71 pixels between the picture starts -- and its
+hsync is POSITIVE, which `STATUS_SYNC_PROC_HSPOL` confirms and DMT states
+negative.
 
-It is the source and not the scaler, and what says so is the divider: a
-source-side error is a constant in the source's own pixels and a misplaced
-counter origin is a constant in ADC samples, and across four held dividers from
-1200 to 1700 the error is flat in source pixels (-70.7 to -75.3) while moving
-51% in samples (-63.2 to -95.3). Eight other modes at 60 Hz, spanning stated
-leads of 68 to 276 and densities of 0.80 to 3.18 samples per source pixel, read
-within ±6 source pixels of their stated lead.
+**A mode list cannot tell which file is loaded**, because both candidates are
+`X1024 Y768 F60`: `MODES` returns 63 of the repo file's 80 entries, the 17
+missing being exactly the ones the machine refuses to clock, so the names match
+a file whose timings do not. Only a framing measurement separates them.
+
+**So a measurement scored through `full_margins.stated()`, which parses the
+repo's copy, is scored against the wrong reference wherever the two differ.**
+The firmware carries the Acorn definitions itself now, AKF50 through AKF92, and
+matches a source to the nearest published raster by duty rather than to the
+first authority that matches.
 `investigations/full-screen-framing-on-the-vesa-modes.md`.
 
-**So no firmware change reaches it, and a framing judged on it is evidence
-about the RISC PC.** Its vertical is unaffected, reading -0.5 lines, so the mode
-is still usable for the vertical question. The other three 1024x768 entries
-cannot be compared against it at one output: at 70 and 75 Hz the engine falls
-back to a 1024p raster and `full_margins.py` is a 1080p instrument.
+An earlier reading of this -- that the machine emits a raster nothing publishes
+and 1024x768@60 is therefore a non-conformant source -- is **withdrawn**. The
+divider measurement behind it stands and is what a wrong-raster match predicts:
+the displacement is a fixed time in the source's own clock because it is the
+distance between two real rasters.
 
 Two things about that file are worth knowing before reading a measurement taken
 on it.
