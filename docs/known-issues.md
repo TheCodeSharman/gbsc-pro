@@ -9295,6 +9295,119 @@ than a property of composite sync. It also makes the source identity move:
 type is not found from the other.
 `docs/source-identity-and-framing-lookup.md`.
 
+**THE ENGINE ADDS THE INTERVAL BACK NOW, AND THE PICTURE STILL FALLS APART.**
+`SourceMeasurement::countFrom()` takes the input formatter's frame wherever it
+sits within `VerticalSyncMaxLines` above the processor's count, so the key
+carries the published total on composite: measured 2026-10-22 at 800x600@60,
+`STATUS_SYNC_PROC_VTOTAL` 623 beside a stored key of `628@60.27/1198??` and a
+capture of 628 lines, and at 1024x768@60 a count of 799 beside `806@60.11/936??`.
+The raster therefore publishes and the vertical solve is right -- `down 2 (2|0)`
+on the emitted frame -- while the card still repeats about 2.4 times ACROSS it
+over heavy tearing, with every register holding still either side of the clip.
+
+So the undercount is corrected and the horizontal repeat is a separate fault
+that was hidden behind it. The count is no longer the root, and a reading of
+`STATUS_SYNC_PROC_VTOTAL` alone no longer says what the engine solved for.
+
+### The border acceptance fails on every mode measured, and the sync types agree except where composite falls apart
+
+Measured 2026-10-22 with `card_edges.py` on `vga` into 1920x1080, five modes
+under `RetroScaler-Acorn.mdf`, each leg entered with `SYNC n` then `/sc?~` so
+the engine probes the arrangement it is being judged on. The stored entry is
+forgotten per mode, so what is judged is the computed default. Margins are
+output pixels at the near and far edge, `-` an edge the emitted frame does not
+carry:
+
+| mode | separate across | composite across | separate down | composite down |
+|---|---|---|---|---|
+| 320x256@50 | 4 \| 0 | 4..6 \| 0..1 | 3 \| 1 | 3 \| 1 |
+| 640x512@50 | - \| 6 | - \| 2 | 1 \| 1 | - \| 9 |
+| 640x480@60 | - \| 14 | - \| 14 | 1 \| 4 | 3 \| 1 |
+| 800x600@60 | - \| 0 | 108 \| 342 | 0 \| 1 | 2 \| 0 |
+| 1024x768@60 | - \| 136 | 50 \| 62 | 1 \| 1 | 28 \| 56 |
+
+**THE TWO SYNC TYPES AGREE TO ABOUT TWO PIXELS WHERE COMPOSITE WORKS AT ALL**,
+which is what says the separator's origin correction is the right size rather
+than merely present. `IF_HB_SP2` is 236 separate against 194 composite at
+320x256@50, 274 against 183 at 800x600@60 -- a shift of 18 to 91 ADC samples,
+within five samples of the measured sync width less 66 on every mode -- and the
+emitted border lands within one or two pixels of the same column either way.
+`investigations/the-separator-moves-the-counters-origin.md`.
+
+The two modes that disagree are the two where composite does not produce a
+picture: at 800x600@60 the card repeats about 2.4 times across the frame over
+heavy tearing, which is the undercount entry's symptom above, and the margins
+are measurements of a torn frame rather than of a framing.
+
+**WHAT FAILS ON BOTH ARRANGEMENTS IS THE NEAR EDGE.** On four of five modes the
+card's left green column is not on the emitted frame at any framing while the
+right one is, with black beyond it -- the window is shifted later and cuts the
+source's first pixel. 320x256@50 is the mode that keeps all four borders, and it
+carries 4 columns of black before the left one.
+
+That is a change against
+`investigations/full-screen-framing-on-the-vesa-modes.md`, which records
+640x480@60 meeting the goal at `across 0 (0|0)` with
+`OutputMode::TransmittedWindowDelayPx` at 3. The constant is 6 now and banded by
+field rate, and the same mode reads the left column off the frame with 14 at the
+right. Nothing here establishes which change moved it.
+
+### The acceptance's two-pixel spread is composite's count dither, not the solve
+
+`card_edges.SPREAD` is 2 output pixels for what the solve lands apart between
+runs, on top of `FLUSH` 1 for the instrument. Measured over six whole re-solves
+per leg -- away to another mode, back, forget the entry, re-declare the shape --
+the solve does not move on separate sync at all:
+
+| | `IF_HB_SP2` | `VDS_HSCALE` | `VDS_VSCALE` | `PLLAD_MD` | count | margins |
+|---|---|---|---|---|---|---|
+| 320x256@50 separate | 236 x6 | 422 x6 | 488 x6 | 2200 x6 | 311 x6 | across 3..4 \| 0..1, down 3 \| 1 |
+| 640x480@60 separate | 228 x6 | 747 x6 | 457 x6 | 1272 x6 | 524 x6 | across - \| 14, down 1 \| 4 |
+| 320x256@50 composite | 194 x6 | **422..425** | 488 x6 | 2200 x6 | **308..309** | across 4..6 \| 0..1, down 3 \| 0..1 |
+
+Every register is identical across six separate-sync re-solves on both modes,
+and every margin the instrument reads at 640x480@60 repeats exactly. What moves
+there is one pixel at 320x256@50, which is the one-source-pixel border landing
+on a fraction of an output pixel and is what `FLUSH` already covers.
+
+**The spread is real only on composite**, where the count dithers 308/309 and
+`VDS_HSCALE` follows it by three. So the term is a composite defect charged to
+every source: tightening the allowance to `FLUSH` alone costs nothing on
+separate sync and would stop the bar hiding the 4 columns at 320x256@50's left
+edge, at the cost of failing composite on the dither.
+
+**The instrument answers nothing on three of six runs at 640x480@60**, every
+margin `-` with the registers identical to the runs that read. The dongle needs
+about ten seconds to deliver a usable frame after a re-lock and the harness
+waits two, so a run taken too early is black. A reading is evidence; its absence
+is not.
+
+### The composite and separate keys of one source are more than `SyncWidthIdentity` apart
+
+The offset the tolerance is sized for is 14 ten-thousandths at the bench mode,
+and it is not that at every divider. Both legs above, the duty taken as
+`STATUS_SYNC_PROC_HLOW_LEN / PLLAD_MD`:
+
+| mode | `PLLAD_MD` | separate | composite | apart | pulse apart, samples |
+|---|---|---|---|---|---|
+| 320x256@50 | 2200 | 709.1 | 695.5 | 13.6 | 3.0 |
+| 640x512@50 | 1424 | 632.0 | 611.0 | 21.0 | 3.0 |
+| 640x480@60 | 1272 | 1155.7 | 1163.5 | **-7.8** | -1.0 |
+| 800x600@60 | 1342 | 1222.1 | 1199.7 | 22.4 | 3.0 |
+| 1024x768@60 | 1440 | 965.3 | 936.2 | 29.1 | 4.2 |
+
+`SourceKey::SyncWidthIdentity` allows 20, and three of the five exceed it. So a
+framing tuned on one sync type is not found from the other on those modes, and
+`/framing.txt` carries both entries separately -- `628@60.32/1219++` beside
+`628@60.27/1198??`, `806@60.14/965++` beside `806@60.11/936??`.
+
+**IT IS NEARER A CONSTANT SAMPLE COUNT THAN A CONSTANT SHARE**, which is what
+the two-divider question asks: as a share of the line it spans 7.8 to 29.1 over
+a 1.7x range of divider, where as a pulse it is 3.0 samples on three of five and
+4.2 on a fourth. 640x480@60 dissents in SIGN and is unexplained; it is also the
+mode whose separate-sync duty sits furthest from its published raster, 1155.7
+against DMT's 1212.
+
 ### A stopped count has no instrument left to report it, because the second one is gated off
 
 `VideoSourceAcquisition::sourceMoved()` distinguishes a sync processor that has
