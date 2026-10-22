@@ -173,6 +173,29 @@ the raster the engine derives its capture window from. Acorn's own entries do
 not, and where the two describe the same resolution and field rate that file
 drops the Acorn entry, since `MODE` selects by X/Y/F and cannot tell them apart.
 
+**EXCEPT AT 1024x768@60, WHERE THE MACHINE DOES NOT EMIT THE RASTER THE FILE
+PUBLISHES.** The entry is `h_timings:136,160,0,1024,0,24` and the machine keeps
+its line total and its frame exactly -- 1343.9 against 1344 and 806 against 806,
+at a measured 65.14 MHz -- while putting active video **71 source pixels before
+the stated 296**, with the same 71 appearing as front porch at the other end.
+The split it emits is about sync 130, back porch 95, active 1024, front porch
+95, which is close to centring the display in the non-sync part of the line.
+
+It is the source and not the scaler, and what says so is the divider: a
+source-side error is a constant in the source's own pixels and a misplaced
+counter origin is a constant in ADC samples, and across four held dividers from
+1200 to 1700 the error is flat in source pixels (-70.7 to -75.3) while moving
+51% in samples (-63.2 to -95.3). Eight other modes at 60 Hz, spanning stated
+leads of 68 to 276 and densities of 0.80 to 3.18 samples per source pixel, read
+within ±6 source pixels of their stated lead.
+`investigations/full-screen-framing-on-the-vesa-modes.md`.
+
+**So no firmware change reaches it, and a framing judged on it is evidence
+about the RISC PC.** Its vertical is unaffected, reading -0.5 lines, so the mode
+is still usable for the vertical question. The other three 1024x768 entries
+cannot be compared against it at one output: at 70 and 75 Hz the engine falls
+back to a 1024p raster and `full_margins.py` is a 1080p instrument.
+
 Two things about that file are worth knowing before reading a measurement taken
 on it.
 

@@ -67,14 +67,82 @@ So a picture "6 px NARROW" at 800x600@60 and "41 px narrow" at 1024x768@60 are
 one displacement each and not a magnification error. The scale account below is
 superseded.
 
-**1024x768@60 IS NOT ON THE SAME CURVE AS ITS NEIGHBOURS.** Its two neighbours
-sit within 4 source pixels of their stated start and it is 71 out, and all three
-are DMT rows declaring zero border -- `h_timings:136,160,0,1024,0,24`. Its line
-total and frame match the file exactly, 1343.9 against 1344 and 806 against 806,
-while its measured sync reads 129.6 against 136. So the machine keeps the total
-and spends the blanking differently, or the counter's origin is wrong at that
-mode, and nothing measured here separates those. Pass-through is what does:
-it carries the source's own timing and opens no capture window.
+**1024x768@60 IS THE SOURCE, AND IT IS THE ONLY MODE THAT IS.** Its line total
+and frame match the file exactly, 1343.9 against 1344 and 806 against 806, and
+it starts its active video 71 source pixels before the stated 296 of
+`h_timings:136,160,0,1024,0,24`. The next section is the measurement; what
+follows from it is that the engine's origin is sound and this mode's published
+raster is not what the machine emits, so **no firmware constant reaches it** and
+a framing measurement taken on it is evidence about the RISC PC.
+`../bench-sources.md`.
+
+### The origin is sound on every mode but one
+
+**EIGHT MODES AT 60 Hz READ WITHIN ±6 SOURCE PIXELS OF THEIR STATED LEAD, AND
+THERE IS NO SYSTEMATIC ERROR TO CORRECT.** Measured on `vga` into 1920x1080
+under `RetroScaler-Acorn.mdf`, separate sync, `full_margins.py` at a full
+framing so the source's own blanking is on the frame at both ends. Every span
+read exact and every output raster was 1125 lines:
+
+| mode | line total | units/px | `h lead` / file | error |
+|---|---|---|---|---|
+| 320x480@60 | 400 | 3.18 | 68.5 / 68 | +0.5 |
+| 360x480@60 | 532 | 2.39 | 128.9 / 126 | +2.9 |
+| 640x480@60 | 800 | 1.52 | 138.4 / 144 | -5.6 |
+| 720x480@60 | 858 | 1.42 | 121.5 / 122 | -0.5 |
+| 640x512@60 | 870 | 1.67 | 172.9 / 170 | +2.9 |
+| 800x600@60 | 1056 | 1.27 | 216.4 / 216 | +0.4 |
+| 1280x480@60 | 1600 | 0.80 | 276.7 / 276 | +0.7 |
+| 1280x720@60 | 1650 | 0.88 | 258.1 / 260 | -1.9 |
+| **1024x768@60** | **1344** | **1.07** | **225.0 / 296** | **-71.0** |
+
+The eight span stated leads of 68 to 276, line totals of 400 to 1650, dividers
+of 1212 to 1444 and sampling densities of 0.80 to 3.18 units per source pixel,
+and their errors are scatter about zero -- mean +0.0, sd 2.9 px -- of the same
+size as the sync-width measurement the origin is placed from. **The
+LINE-DOUBLED path reads the same**: the bench's own 320x256@50 at `PLLAD_MD`
+2200 doubled reads `h lead` 111.7 against 110, +1.7 px, with `v lead` -1.0, so
+the result is not a property of the undoubled modes the table happens to hold.
+
+**So a single correction constant has nothing to correct**, and the acceptance
+failures on these modes are that scatter against a border one source pixel wide
+rather than a displacement a constant can take out.
+
+**WHAT SEPARATES THE SOURCE FROM A MISPLACED ORIGIN IS THE DIVIDER, because a
+source-side error is a constant in the SOURCE's own pixels and an origin error
+is a constant in ADC SAMPLES.** `/sampleclock?hold=` pins the divider and the
+whole engine solves around it, so each row is a complete solve rather than a
+hand-set subset. One source mode, 1024x768@60, four dividers:
+
+| held `PLLAD_MD` | units/px | error, source px | error, ADC samples | read with |
+|---|---|---|---|---|
+| 1200 | 0.893 | -70.7 | -63.2 | `full_margins` |
+| 1440 (the engine's) | 1.072 | -71.0 | -76.1 | `full_margins` |
+| 1440 | 1.072 | -73.3 | -78.6 | `counter_origin` |
+| 1550 | 1.154 | -72.9 | -84.1 | `full_margins` |
+| 1700 | 1.265 | -75.3 | -95.3 | `counter_origin` |
+
+The source-pixel column is flat to 4.6 px across a 42% change of divider, and
+to about 2 px within each instrument taken alone; the sample column tracks the
+divider, ×1.51 against ×1.42. **A constant in ADC samples is disconfirmed** --
+so the displacement is a fixed time in the source's own clock, about 1.13 µs at
+its 65 MHz, and not a counter placed wrong.
+
+`counter_origin.py`, which carries no anchor at all, agrees with the anchored
+reading where the two overlap: -73.3 px against `full_margins.py`'s -71.0 at
+the engine's own divider. **So the dongle anchor is not in it either.** The two
+instruments overlap at that divider alone -- `counter_origin.py`'s creep is
+flaky at this mode's density, landing at 1440 and 1700 and refusing 1200, 1550,
+1620 and 1850 on its own `NEVER FULL` and frame-not-found checks, where
+`full_margins.py` reads the pair from one capture and landed at 1200, 1440 and
+1550. Each table row above is one instrument's reading, not both.
+
+Nothing in the sync processor is mode-specific. Read in one pass at 800x600@60
+and at 1024x768@60, all 127 fields of `SP_*`, `STATUS_SYNC_PROC_*`, `IF_H*`,
+`IF_V*`, `PLLAD_*` and the decimators are identical but for the values derived
+from the divider and the count -- `PLLAD_MD`, `IF_HSYNC_RST`, `IF_HB_SP2`,
+`IF_HB_ST2`, `IF_VB_ST`, `SP_RT_HS_SP`, `SP_H_CST_SP`, `SP_H_PULSE_IGNOR`,
+`SP_CS_CLP_ST`/`SP`, `PLLAD_FS` and the three status counts.
 
 ### The state the aperture walk below was taken at
 
@@ -220,38 +288,63 @@ is 87.1% of the line at the 1916-unit 50 Hz raster and 87.2% at the 1596-unit
 274 and 316 against 229, 274 and 317. So the origin is the whole of it, and the
 work is in this order because each step decides what the next one may assume.
 
-1. **Settle whether 1024x768@60's 71 source pixels are the source or the
-   engine**, in pass-through, which carries the source's own timing and opens no
-   capture window. Horizontal only -- bypass has a vertical fault of its own.
-   Cross-check with `counter_origin.py`, which carries no anchor, so a
-   disagreement is the anchor rather than the source. Until this is answered the
-   fix is either one constant or two and nothing can tell which.
-2. **Size the lead error across at least six modes** spanning the divider range,
-   in source pixels AND in ADC samples. The two columns are the question: a
-   constant in samples is a time, a constant in source pixels is a lag in the
-   source's own clock, and `SourceTiming::pixelSamples()` makes the second
-   computable. Three points barely disconfirm a line. Take `v lead` in the same
-   pass -- -6.1, -3.2 and -0.5 lines so far -- so the vertical needs no second
-   bench run.
-3. **Put the correction where the origin is derived**, once. A per-mode table
-   keyed on one machine's modes is not a mechanism this firmware has.
-   **`TransmittedWindowDelayPx` is not the lever**: it slides `activeStop` and
-   the divider ceiling is taken off it, so moving it moves the capture, the
-   scale, the stride and the write origin together. Pin the arithmetic with a
-   host test through the fake-Wire seam; `card_edges.py` needs the bench and the
-   suite does not.
+**STEPS 1 AND 2 ARE DONE, AND THEY REMOVE STEP 3 AS IT WAS WRITTEN.** The
+origin is sound: eight modes at 60 Hz read within ±6 source pixels of their
+stated lead with no systematic error, 1024x768@60 is the source, and both
+results are in "The origin is sound on every mode but one" above with the
+measurements behind them. **There is no displacement for a correction constant
+to take out**, so a step that puts one where the origin is derived would be
+fitting a constant to scatter.
+
+1. **Find what the acceptance is actually failing on, now that the origin is
+   not it.** `card_edges.py` reads the near edge off the frame on modes whose
+   lead is within 2 source pixels of its stated value, so the border is being
+   lost to something other than where the window opens -- the one source pixel
+   itself, at a sampling density that straddles it, is the first candidate, and
+   the instrument's own `whole` reading is what sizes it. Measure before
+   reaching for a lever.
+2. **Then the vertical**, which is a different shape from the horizontal and
+   must not be merged with it. `v lead` reads -5.1, -5.1, -6.1, -1.2, -3.7,
+   -3.2, -5.1 and 0.0 lines across the eight conformant modes above, in the
+   table's own order, so unlike the horizontal it IS systematically early --
+   mean -3.7 lines, and never late. That is a term worth deriving, and a
+   measurement spanning both axes is what licenses one constant for both.
+   1024x768@60 reads -0.5 there, so **the source's horizontal displacement does
+   not reach its vertical** and the mode is usable for the vertical question.
+3. **A margin is the only lever that reaches a one-pixel border, and it is
+   charged four times over.** `Axis::captureMargin` is charged in `fitToRaster`,
+   in `minimumCapture` and in `maximumCapture` as well as at the capture start,
+   so raising it moves the scale, the zoom floor, the divider ceiling and the
+   memory window together -- which is why the 2 px it buys at 640x480@60 came
+   back as 40 at 800x600@60. **`TransmittedWindowDelayPx` is not a lever
+   either**: it slides `activeStop` and the divider ceiling is taken off it.
+   Pin whatever lands with a host test through the fake-Wire seam;
+   `card_edges.py` needs the bench and the suite does not.
 4. **Re-run the acceptance on both sync types**, and confirm the entry really
    was forgotten before reading any row -- the console says `no framing stored`.
-5. **Then the vertical**, which is the same shape and smaller. Do not merge the
-   two into one constant without a measurement spanning both axes.
+   **1024x768@60 is out of scope for it**: the source does not emit the raster
+   the file publishes, so the mode cannot pass and its row is evidence about
+   the RISC PC.
 
 Two things are NOT part of this and must not be folded into it: composite's
 horizontal repeat at 800x600@60 and 1024x768@60, and the whole-capturable-region
 default an unpublished source falls back to. Both are in `docs/known-issues.md`.
 
-## The instrument, and four ways it has lied
+## The instrument, and five ways it has lied
 
 Every one of these produced a confident wrong answer that reached a commit.
+
+**`full_margins.py` IS A 1080p INSTRUMENT, AND IT SAYS NOTHING WHEN IT IS NOT
+AT 1080p.** `ENCODER_TOTAL` is hardcoded 2200, so a dongle column is a known
+fraction of a scaler pixel only while the sink is locked to the 1125-line
+raster. Above about 62 Hz of source field rate the engine falls back to 1024p
+to stay under the clock ceiling and the raster becomes 1066 lines -- measured
+1446x1066 at 1024x768@70 and 1344x1066 at @75 -- and every figure the tool
+prints then comes off the wrong ruler. It reports it: the green pair's `span
+off` read +237.7 px and +207.3 px on those two, and `v active` read 809.9
+against 768. **Read `out` and the span residual before reading a margin**, and
+compare only within one output raster. `../known-issues.md` carries the
+unrecorded fallback itself.
 
 **A NEAR MARGIN CANNOT BE JUDGED WITH AUTOMATION FROZEN, because the transmitted
 window's start is latched at link-up and a register poke does not re-lock it.**

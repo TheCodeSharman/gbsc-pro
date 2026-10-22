@@ -9394,8 +9394,21 @@ right. Nothing here establishes which change moved it.
 
 **THE ORDER THIS HAS TO BE WORKED IN IS ON THAT PAGE**, under "What remains,
 and the order it has to be done in", with what each step decides for the next.
-The span is exact on every mode, so the scale and the output chain are out of
-it and the origin is the whole of it.
+The span is exact on every mode, so the scale and the output chain are out of it.
+
+**AND THE ORIGIN IS NOT IT EITHER, WHICH RETIRES THE LEVER THIS ENTRY POINTED
+AT.** Nine modes measured at a full framing, where the source's own blanking is
+on the frame at both ends: eight of them read within ±6 source pixels of the
+lead their raster states, mean +0.0 and sd 2.9 px, which is the size of the
+sync-width measurement the origin is placed from. **So there is no displacement
+for a correction constant to take out**, and this entry's near-edge failure is
+something else -- a border one source pixel wide, at a density that straddles
+it, is the first candidate. The ninth mode, 1024x768@60, is the SOURCE: it
+emits its active video 71 source pixels before the file's stated 296, flat
+across four held dividers in source pixels and moving 51% in ADC samples, so
+**its row above cannot pass and is evidence about the RISC PC**.
+`bench-sources.md`,
+`investigations/full-screen-framing-on-the-vesa-modes.md`.
 
 ### The acceptance's two-pixel spread is composite's count dither, not the solve
 
