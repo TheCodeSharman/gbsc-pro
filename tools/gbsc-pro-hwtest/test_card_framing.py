@@ -55,6 +55,19 @@ and 16:9 give the same four edges to the pixel, `across 0.86|0.00 down 3|1
 0.89|0.89`, at one `oh`, `eh` and `ch`. So the shape the bench runs in is the
 shape the acceptance is taken in, and no reading here is of our own bars.
 
+**AND THE GOAL IS WHERE THE ENGINE'S CHOSEN RASTER PUTS THE PICTURE, WHICH IS
+FLUSH ON EVERY MODE BUT THE ONES TWO AUTHORITIES STATE.** A machine running a
+mode file's own variant of a standard mode -- VESA's line total and sync width
+with the display starting a few pixels earlier and the difference spent as
+border -- is framed where the STANDARD puts it, because a border is black active
+video and a porch is nothing, identical on the wire, so the chip forms the same
+key either way. The mode file states each mode's own picture area and /geometry
+states the proportions the engine placed, and the difference is that offset,
+per mode and per edge: expected_framing.py computes it and card_edges judges
+each edge against it. It is not a tolerance -- a picture flush where the design
+shows black is as far out as one with twice the black.
+../../docs/bench-sources.md
+
 Changes the SOURCE mode and its sync type and resets the framing, so it needs
 --modeserv and --source, and it puts the bench mode, the sync type, the output
 and the shape back however the module ends. Each case costs about forty
@@ -70,9 +83,11 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import card_edges
+import expected_framing
 import framing_decomposition
 import gbs_unit
 import hdmi_capture
+import mdf_modes
 import picture_stability
 
 BENCH_MODE = "X320 Y256 C256 F50"
@@ -208,6 +223,17 @@ def judged_at(request, host):
     gbs_unit.autosave(host, True)
 
 
+def entry_running(request, mode):
+    """The mode file entry the source is running, as MODE picks it.
+
+    Read per case rather than once: the file is the authority on what the
+    machine emits, and the acceptance is judged against the mode's own picture
+    area. docs/bench-sources.md
+    """
+    return expected_framing.entry_for(
+        mdf_modes.parse(request.config.getoption("--mdf")), mode)
+
+
 def state_of(host):
     """What a verdict has to be read against: the divider the capture was
     sampled at, whether a shape is narrowing the room, and the capture itself.
@@ -287,6 +313,16 @@ def test_the_default_framing_puts_the_card_flush_to_the_emitted_edges(
     # test, so one capture reports the edge missing.
     clip = hdmi_capture.frames(card_edges.CLIP_FRAMES, capture_device,
                                width=emitted[0], height=emitted[1])
+    # WHAT THE DESIGN PUTS AT EACH EDGE, from the engine's own placed
+    # proportions against the mode file's own picture area. Zero on every mode
+    # the engine placed from its own raster; not zero where a standard answers
+    # for a mode file entry that states the same resolution differently.
+    want = expected_framing.margins(
+        entry_running(request, mode),
+        gbs_unit.get_json(host, "/geometry")[1], emitted)
+    assert want is not None, (
+        "the monitor definition states no timings for this mode, so what the "
+        "design puts at an edge is unknown and a verdict would be against zero")
     # **AN UNSTABLE PICTURE IS NOT A FRAMING, AND card_edges CANNOT SAY SO.** It
     # reduces the clip to its greenest frame, which is what the flashing ring
     # needs and what collapses a rolling picture into a plausible set of edges.
@@ -295,7 +331,7 @@ def test_the_default_framing_puts_the_card_flush_to_the_emitted_edges(
     # picture_jitter.py is what resolves a sub-pixel shimmer, and the share
     # stands without a span this clip cannot supply.
     held = picture_stability.judge(picture_stability.row_luma(clip), None)
-    found = {name: card_edges.judge(clip, axis, card_edges.ALLOWANCE)
+    found = {name: card_edges.judge(clip, axis, card_edges.ALLOWANCE, want[name])
              for name, axis in (("across", 1), ("down", 0))}
 
     whys = [f"{name}: {judged.why}" for name, judged in found.items()
@@ -311,6 +347,10 @@ def test_the_default_framing_puts_the_card_flush_to_the_emitted_edges(
     read += (f"   still {held.displaced}+{held.lost}/{held.frames} "
              f"worst {held.worst}")
     read += f"   {emitted[0]}x{emitted[1]} {state_of(host)}"
+    # The design beside the reading, so a row of this table says whether an
+    # edge was judged against flush or against an offset.
+    read += ("   by design across {:+.1f}|{:+.1f} down {:+.1f}|{:+.1f}"
+             .format(*want["across"], *want["down"]))
     # EVERY CASE, not only the ones that fail. A verdict records nothing a later
     # run can be compared against, and the size is the whole point of out_by:
     # a case that passes at 2 and one that passes at 0 are a drift in progress.

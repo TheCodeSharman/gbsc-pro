@@ -223,3 +223,45 @@ def test_the_cards_own_green_is_not_the_reference():
     clip[0, :, 10:10 + len(BENCH_SMEAR), 1] = 0
     out = card_edges.judge(clip, ACROSS, card_edges.FLUSH)
     assert out.whole == (0.0, 1.0)
+
+
+# --- what the design puts at an edge ---------------------------------------------
+
+def test_an_edge_the_design_clips_is_not_a_deficit():
+    """Where two authorities state one resolution the standard answers, so the
+    mode file's own border is never captured -- and nothing on the chip can see
+    the difference, a border being black active video. The displacement shows
+    as black at the far end, which is where it is judged."""
+    out = card_edges.judge(across(None, WIDTH - 1 - 18), ACROSS,
+                           card_edges.FLUSH, expected=(-18.0, 18.0))
+    assert out.margins == (None, 18)
+    assert out.out_by == 0
+    assert out.why is None
+
+
+def test_the_design_is_the_goal_rather_than_flush_where_it_puts_black():
+    # 18 columns expected at the far edge: 18 is on design, 24 is six out.
+    on_design = card_edges.judge(across(None, WIDTH - 1 - 18), ACROSS,
+                                 card_edges.FLUSH, expected=(-18.0, 18.0))
+    adrift = card_edges.judge(across(None, WIDTH - 1 - 24), ACROSS,
+                              card_edges.FLUSH, expected=(-18.0, 18.0))
+    assert on_design.why is None
+    assert adrift.out_by == 6
+    assert "against 18 by design" in adrift.why
+
+
+def test_a_flush_edge_where_the_design_wants_black_is_still_out_by_it():
+    """The offset is not a budget to spend: a picture that reaches the frame's
+    edge where the design shows black is as far from the design as one that
+    leaves twice the black."""
+    out = card_edges.judge(across(None, WIDTH - 1), ACROSS, card_edges.FLUSH,
+                           expected=(-18.0, 18.0))
+    assert out.out_by == 18
+    assert out.why is not None
+
+
+def test_no_expectation_is_the_goal_itself():
+    plain = judged(0, WIDTH - 1)
+    stated = card_edges.judge(across(0, WIDTH - 1), ACROSS, card_edges.FLUSH,
+                              expected=(0.0, 0.0))
+    assert plain == stated

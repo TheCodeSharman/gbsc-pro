@@ -99,6 +99,21 @@ def pytest_addoption(parser):
         "else can put a VESA raster on the input.",
     )
     group.addoption(
+        "--mdf",
+        action="store",
+        default=os.environ.get("GBSC_MDF",
+                               "/home/msharman/Projects/RiscPc/tools/video-source/"
+                               "RetroScaler-Acorn.mdf"),
+        help="the monitor definition the SOURCE is running. It states each "
+        "mode's own picture area, which is what says whether an offset the "
+        "engine's chosen raster costs that mode is by design: where two "
+        "authorities state one resolution the standard answers, and no "
+        "measurement on this chip can separate a border from a porch. Defaults "
+        "to the bench's own; it is checked against MODES, so a file the machine "
+        "is not running refuses rather than scoring a framing against timings "
+        "nobody is emitting.",
+    )
+    group.addoption(
         "--all-modes",
         action="store_true",
         default=False,

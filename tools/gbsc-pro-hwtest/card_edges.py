@@ -279,7 +279,10 @@ QUARTER = 4
 # **`out_by` IS THE DISTANCE FROM THE GOAL, NOT THE AMOUNT BY WHICH A THRESHOLD
 # WAS MISSED**, so it is reported whether the verdict passes or fails: raising
 # the allowance to cover the pixel or two the solve lands apart between runs
-# then cannot hide a drift that is still growing.
+# then cannot hide a drift that is still growing. The goal is flush unless the
+# design puts black or a clip at an edge, in which case it is the distance from
+# THAT -- an offset the engine's chosen raster costs the mode is not a deficit
+# and not a budget to spend either.
 #
 # None for `shown` or a `margins` entry is an edge off the frame; None for
 # `out_by` is an error no feature in the frame bounds.
@@ -289,8 +292,22 @@ Judgement = collections.namedtuple("Judgement",
 ENDS = ("near", "far")
 
 
-def judge(clip, axis, allowance):
-    """What the green frame says about the window on this axis."""
+def judge(clip, axis, allowance, expected=(0.0, 0.0)):
+    """What the green frame says about the window on this axis.
+
+    `expected` is what the DESIGN puts at (near, far) in output pixels, signed:
+    positive is black the design shows, negative is how much of the outermost
+    source pixel the design does not capture. It is (0, 0) for a source the
+    engine placed from its own raster, which is every mode that reaches the
+    goal; it is not zero where two authorities state one resolution and the
+    standard answers, and there the mode file's own border is off the frame with
+    nothing on this chip able to see it.
+    expected_framing.py, ../../docs/bench-sources.md.
+
+    An edge the design clips is judged on the OTHER end's margin, which is where
+    the same displacement shows as black -- and its surviving pixel is not
+    asked for, the design having spent it.
+    """
     greenest = greenest_along(clip, axis)
     extent = clip.shape[1 + axis]
     runs = runs_in(greenest)
@@ -308,14 +325,23 @@ def judge(clip, axis, allowance):
     # vertical edges are flush, and only the far edge carries the parity. A span
     # test passes a picture that is short at one end and over at the other.
     out_by, over = 0, []
-    for end, margin, limit, surviving in zip(ENDS, margins,
-                                             (allowance, allowance + PARITY),
-                                             whole):
-        from_flush = OFF_FRAME_LEAST if margin is None else margin
+    for end, margin, limit, surviving, want in zip(ENDS, margins,
+                                                   (allowance, allowance + PARITY),
+                                                   whole, expected):
+        # An edge the design does not capture is not judged here at all:
+        # neither the absent border nor the margin beside it is a deficit, and
+        # the displacement that cost it shows as black at the other end, where
+        # it IS judged.
+        if -want > FLUSH:
+            continue
+        black = max(0.0, want)
+        from_flush = (OFF_FRAME_LEAST if margin is None
+                      else int(round(abs(margin - black))))
         out_by = max(out_by, from_flush)
         if from_flush > limit:
+            against = f" against {black:.0f} by design" if black else ""
             over.append(f"the {end} edge is off the frame" if margin is None
-                        else f"{margin} at the {end} edge")
+                        else f"{margin} at the {end} edge{against}")
         elif surviving < WHOLE_ENOUGH:
             over.append(f"{surviving:.2f} of the {end} edge's source pixel")
     shown = None if None in margins else margins[0] + margins[1]
