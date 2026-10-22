@@ -146,3 +146,58 @@ Nothing re-probes on a sync-type change, because the line count does not move
 when a RiscPC changes its sync type. The cheaper the probe, the weaker the
 argument for holding a stale answer across a mode change at all.
 ../../docs/investigations/a-stale-sync-type-leaves-a-composite-source-uncoasted.md
+
+## Cutting the window to 50 ms -- REFUTED
+
+The remaining proposal was to cut `OwnVsyncWindowMs` from 600 to about 50 and
+let the separator test arbitrate, on the strength of the tail being 294 ms on
+one probe of four. **The tail reproduces, and the extra pass it would cost is
+between five and thirteen times the saving.**
+
+Eleven probes on `vga`, separate sync, read off the console as
+`own V sync YES, separate H/V after Nms`, two modes:
+
+| mode | probes | answered |
+|---|---|---|
+| 1280x720@60, pass-through | 8 | 2, 2, 2, 2, 3, 2, 2, 3 ms |
+| 320x256@50, scaled | 3 | **297**, 2, 3 ms |
+
+The 297 ms probe is the first after the source's sync type changed, which is the
+same position as the 294 ms reading -- the first after a disturbance. So the
+tail is a property of that position rather than of one mode, and it is reached
+every time that position is.
+
+**What a missed window costs is a whole pass, and the pass is seconds.**
+Measured on composite at 320x256@50, from `/sc?~`:
+
+| | probe ran | answered | cost |
+|---|---|---|---|
+| first | 4.05 s | `UNKNOWN, nothing to separate after 601ms` | 1.10 s, latched nothing |
+| second | **12.03 s** | `no, the separator finds V after 600ms` | 0.93 s, latched |
+
+6.9 s between the two. The same gap on separate sync at the same mode is 2.5 s.
+So the trade is **0.55 s saved per composite probe against 2.5 to 6.9 s of
+holding no answer** whenever a separate-sync source lands in the tail position.
+
+**The host suite already refuses it.** Set the constant to 50 and
+`a V sync that arrives late is still the source's own` fails, returning
+`NoSource` where the late V sync is genuinely the source's own -- which is the
+guard working rather than a test to relax.
+
+## The window is not where the composite time goes
+
+The composite acquisitions above took 15.4 s and 13.2 s from `/sc?~` to
+`sync pad: driven`, of which the probe window is 0.6 s. The dominant costs are
+elsewhere, and both are visible in the first run:
+
+- **The first probe is taken against a source that is not there yet.** At
+  4.05 s the counts on the console were 255 lines at 0.00 Hz, 512 at 17.57 and
+  987 at 12.52 -- so the separator had nothing to extract and the probe
+  correctly answered `NoSource`. The three-state answer makes that safe; it
+  does not make it cheap.
+- **The retry is 6.9 s away**, which is the acquisition ladder's own cadence.
+
+So the lever on composite is WHEN the probe is taken, not how long it waits.
+A probe deferred until the count is steady would have answered first time and
+retired the whole 6.9 s, which is an order of magnitude more than the window
+can offer. ../../docs/investigations/a-stale-sync-type-leaves-a-composite-source-uncoasted.md
