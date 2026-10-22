@@ -201,3 +201,29 @@ So the lever on composite is WHEN the probe is taken, not how long it waits.
 A probe deferred until the count is steady would have answered first time and
 retired the whole 6.9 s, which is an order of magnitude more than the window
 can offer. ../../docs/investigations/a-stale-sync-type-leaves-a-composite-source-uncoasted.md
+
+## The tail is deterministic on the first probe of a boot
+
+The readings above are the first probe after a detection cycle (294 ms) and
+after a sync-type change (297 ms), one each. Eight consecutive boots of the same
+source put a tighter figure on it, read from `/bootlog` with
+`BOOTLOG_BYTES=2048` and no console attached:
+
+| boot | first probe | second probe |
+|---|---|---|
+| 0 | 240 ms | 2 ms |
+| 1 | 243 ms | 2 ms |
+| 2 | 242 ms | 3 ms |
+| 3 | 239 ms | 2 ms |
+| 4 | 241 ms | 2 ms |
+| 5 | 241 ms | 2 ms |
+| 6 | 242 ms | 2 ms |
+| 7 | 242 ms | 2 ms |
+
+**Eight of eight in a 4 ms band, and the second probe of every boot is 2 to
+3 ms.** So the tail is not a rare excursion to be traded against -- it is what
+the first probe of every boot costs, and a window that does not cover it misses
+that probe every time the unit starts. The spread across all eleven readings of
+the first-probe position is 239 to 297 ms.
+
+`vga`, separate sync, 320x256@50, `/restart` between each.

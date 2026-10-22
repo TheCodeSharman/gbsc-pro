@@ -7627,6 +7627,61 @@ loop the rate re-solve and the terminal reference-retry cycle are made of.
 `investigations/the-sync-width-is-bimodal-on-sync-on-green.md`.
 
 
+### A rate-only move re-solves and blanks the output, and it will not reproduce
+
+A solve whose count and divider are unchanged and whose field rate moved by more
+than `RateCorroborationPerThousand` arms a full mode change, which takes the
+sync pad away for the encoder relook. Measured once on the bench loading a game
+from the 720p desktop, two solves 11 s apart on one source:
+
+```
+59.07  TIMINGS change (unsettled count), 380 lines, solved 750
+59.92  measured: 312 lines x 50.27 Hz -> installing divider 2200
+60.73  sync pad: driven                                   1.58 s
+
+71.93  TIMINGS change (rate), 312 lines, solved 312
+72.55  measured: 312 lines x 50.47 Hz -> installing divider 2200
+73.10  sync pad: driven                                   1.13 s
+```
+
+Count 312 both times, `PLLAD_MD` 2200 both times, the display clock moving
+0.03%. The first reading is the wrong one -- taken 0.77 s after the source left,
+against a settled 50.47.
+
+**THE BLANKING IS NOT THE GRATUITOUS PART, AND THE OBVIOUS FIX IS REFUTED.**
+Making the arm report instead of blanking rests on the raster being unchanged at
+an unchanged count, and it is not: `Mode1080p.solve()` gives htotal **1910** at
+50.27 Hz and **1902** at 50.47, so `VideoPath::solveRaster()` calls
+`takeOutputAway()` on its own comparison against what the encoder holds. The
+encoder relook is owed. What is not owed is the re-solve, because the rate that
+armed it was never the source's.
+
+**It does not reproduce on the current build.** Fourteen transitions, every one
+of them taking the correct rate on the first solve, with no rate arm and no
+second solve:
+
+| transition | attempts | first-solve rate |
+|---|---|---|
+| boot, `/restart`, 320x256@50 | 8 | 50.08 Hz every time |
+| mode change 720p <-> 320x256@50 | 6 | 50.08 and 60.01 Hz, correct each way |
+
+Intermediate garbage appears and is correctly refused -- `188 lines x 50.10 Hz
+-> line rate 0`, `392 lines x 50.13 Hz`, counts of 376, 380 and 394 across the
+changes -- so the steadiness gating is doing its job on every attempt.
+
+**So what distinguishes the one bad reading is unmeasured, and the trigger may
+be the one thing not reproduced**: a mode change driven by the source's own OS
+loading a game, rather than by a `MODE` command. `rateConfirmed()` is per boot,
+so a mode change later in a boot compares at
+`RateCorroborationPerThousand` rather than the wider boot tolerance, which is
+what lets a 4-per-thousand error arm.
+
+What would settle it: the same capture across a game load, which is the only
+transition in the original observation that a session cannot drive.
+`investigations/the-first-solve-of-a-boot-cannot-be-corroborated.md` is the
+same error measured on boots, where it is bounded by the confirmation.
+
+
 ## Fixed, kept here until the next session has seen them
 
 ### A composite source passed through could not leave a reference clock -- FIXED
