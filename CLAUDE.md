@@ -1196,11 +1196,18 @@ twelve tables while they existed, which is what `BringUp` was built from.
   is the state that reaches it. `docs/known-issues.md`,
   `docs/investigations/the-formatters-frame-is-gated-off-when-the-count-stops.md`.
 
-  **The pattern is worth naming, because three of these have now cost time.**
-  `STATUS_MISC_PLLAD_LOCK`, `STATUS_SYNC_PROC_VSACT` and `STATUS_IF_VT_OK` all
-  read like verdicts and are none of them a verdict: one is a duty cycle, one
-  reports the sync path already chosen, and one reports a measurement this sync
-  type never completes. **A status bit is a measurement of a block, not a
+  **The pattern is worth naming, because four of these have now cost time.**
+  `STATUS_MISC_PLLAD_LOCK`, `STATUS_SYNC_PROC_VSACT`, `STATUS_IF_VT_OK` and
+  `STATUS_SYNC_PROC_HLOW_LEN` all read like verdicts and are none of them a
+  verdict: one is a duty cycle, one reports the sync path already chosen, one
+  reports a measurement this sync type never completes, and the last reports a
+  pulse width the block only measures once it has LOCKED -- so the vertical
+  interval's broad pulse, which is present on composite sync and absent on
+  separate, cannot be used to CHOOSE the sync type. Measured as a 2x2, it
+  false-positives on 41% of readings on a separate-sync source in the csync
+  arrangement and finds the pulse 3 times in 2736 on a composite source in the
+  separate one.
+  `docs/investigations/the-own-vsync-probe-answers-by-absence.md`. **A status bit is a measurement of a block, not a
   judgement of the unit** -- ask what the bit is counting before quoting it as
   evidence, and prefer a comparison that has a right answer, such as
   `STATUS_SYNC_PROC_HTOTAL` against the divider.
