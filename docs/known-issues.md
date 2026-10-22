@@ -9379,22 +9379,23 @@ picture: at 800x600@60 the card repeats about 2.4 times across the frame over
 heavy tearing, which is the undercount entry's symptom above, and the margins
 are measurements of a torn frame rather than of a framing.
 
-**WHAT FAILS ON BOTH ARRANGEMENTS IS THE NEAR EDGE.** On four of five modes the
-card's left green column is not on the emitted frame at any framing while the
-right one is, with black beyond it -- the window is shifted later and cuts the
-source's first pixel. 320x256@50 is the mode that keeps all four borders, and it
-carries 4 columns of black before the left one.
+**WHAT FAILS ON BOTH ARRANGEMENTS IS THE NEAR EDGE, ON TWO MODES OF FIVE.**
+240x352@70 and 640x512@50 put the card's left green column off the emitted
+frame with black beyond the right one -- the window placed late by about 8 and
+3 capture units, with no by-design offset to account for either. Both are
+beyond the 2-unit placement granule, so neither is the quantisation the rest of
+the set is at. The other three pass on both sync types with the acceptance
+stated on each mode's own capture grid, 640x480@60's near border being off the
+frame by design.
 
-That is a change against
-`investigations/full-screen-framing-on-the-vesa-modes.md`, which records
-640x480@60 meeting the goal at `across 0 (0|0)` with
-`OutputMode::TransmittedWindowDelayPx` at 3. The constant is 6 now and banded by
-field rate, and the same mode reads the left column off the frame with 14 at the
-right. Nothing here establishes which change moved it.
+240x352@70's near edge moves between acquisitions: the 63-mode sweep reads it
+at 1 column of black with 9 at the far edge where the acceptance reads it off
+the frame with 10, which is the sink's own sub-pixel landing either side of a
+threshold.
 
-**THE ORDER THIS HAS TO BE WORKED IN IS ON THAT PAGE**, under "What remains,
-and the order it has to be done in", with what each step decides for the next.
-The span is exact on every mode, so the scale and the output chain are out of it.
+**WHAT IS LEFT IS ON THAT PAGE**, under "What the error turned out to be, and
+what is left". The span is exact on every mode, so the scale and the output
+chain are out of it.
 
 **IT WAS THE ENGINE MATCHING THE WRONG PUBLISHED RASTER, AND THE ORIGIN WAS
 NEVER IN IT.** The RISC PC emits its monitor definition's timings and not the

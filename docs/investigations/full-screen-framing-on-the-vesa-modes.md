@@ -23,28 +23,44 @@ repeatedly turned one fault into four.
 
 ## Where it stands
 
-**No mode passes an acceptance stated in output pixels**, and the engine is
-nevertheless centred on its design -- which is the whole of what the section
-below is about. The five acceptance modes on separate sync, `card_edges.py` for
-the verdict, on `vga` under `RetroScaler-Acorn.mdf` with every stored entry
-forgotten. Margins are output pixels at the near and far edge, `-` an edge the
-emitted frame does not carry, and `displacement` is the sweep's own reading
-against that mode's design in source pixels:
+**SIX OF THE TEN ACCEPTANCE CASES PASS, AND EVERY FAILURE IS ONE SYMPTOM: THE
+NEAR GREEN COLUMN IS NOT ON THE EMITTED FRAME AT ALL.** Five modes on each sync
+type, `card_edges.py` for the verdict, on `vga` under `RetroScaler-Acorn.mdf`
+with every stored entry forgotten and the allowance taken from each mode's own
+capture grid. Margins are output pixels at the near and far edge, `-` an edge
+the emitted frame does not carry, `out by` is the worst edge's distance from
+the design, and `design` is what the design itself puts across:
 
-| mode | emitted | across | whole | down | whole | displacement |
-|---|---|---|---|---|---|---|
-| 240x352@70 | 1280x1024 | - \| 8 | 0.00 \| 1.00 | 1 \| 3 | 0.97 \| 1.00 | +1.48 |
-| 320x256@50 | 1920x1080 | 4 \| 0 | 1.00 \| 0.58 | 3 \| 1 | 1.00 \| 0.99 | -0.71 |
-| 640x480@60 | 1920x1080 | - \| 12 | 0.00 \| 1.00 | 1 \| 4 | 0.50 \| 1.00 | -1.47 |
-| 640x512@50 | 1920x1080 | - \| 6 | 0.00 \| 1.00 | 1 \| 1 | 0.99 \| 1.00 | +2.04 |
-| 800x600@60 | 1920x1080 | 2 \| 0 | 0.49 \| 1.00 | 0 \| 1 | 1.00 \| 0.94 | -0.12 |
+| mode | emitted | across | whole | out by | down | whole | out by | design, across |
+|---|---|---|---|---|---|---|---|---|
+| 240x352@70 sep | 1280x1024 | - \| 10 | 0.00 \| 1.00 | 10.0 | 1 \| 3 | 0.97 \| 1.00 | 1.0 | -0.4 \| -0.1 |
+| 320x256@50 sep | 1920x1080 | 4 \| 0 | 1.00 \| 0.55 | 3.8 | 3 \| 1 | 1.00 \| 0.99 | 3.3 | -1.4 \| +1.1 |
+| 640x480@60 sep | 1920x1080 | - \| 12 | 0.00 \| 1.00 | 5.0 | 1 \| 4 | 0.50 \| 1.00 | 0.6 | -17.8 \| +17.0 |
+| 640x512@50 sep | 1920x1080 | - \| 6 | 0.00 \| 1.00 | 6.0 | 1 \| 1 | 0.99 \| 1.00 | 1.1 | +0.3 \| +0.0 |
+| 800x600@60 sep | 1920x1080 | 2 \| 0 | 0.48 \| 1.00 | 3.2 | 0 \| 1 | 1.00 \| 0.91 | 1.0 | -0.6 \| -0.1 |
+| 240x352@70 cs | 1280x1024 | - \| 6 | 0.00 \| 1.00 | 6.0 | 6 \| - | 1.00 \| 0.00 | 6.0 | -0.4 \| -0.1 |
+| 320x256@50 cs | 1920x1080 | 6 \| 1 | 1.00 \| 0.10 | 5.5 | 3 \| 1 | 1.00 \| 0.99 | 3.3 | -1.4 \| +1.1 |
+| 640x480@60 cs | 1920x1080 | - \| 12 | 0.00 \| 1.00 | 5.0 | 3 \| 1 | 1.00 \| 0.56 | 4.5 | -17.8 \| +17.0 |
+| 640x512@50 cs | 1920x1080 | - \| 6 | 0.00 \| 1.00 | 6.0 | 30 \| 79 | 0.99 \| 1.00 | 76.9 | +0.3 \| +0.0 |
+| 800x600@60 cs | 1920x1080 | 2 \| 0 | 1.00 \| 0.11 | 2.1 | 0 \| 0 | 1.00 \| 1.00 | 1.8 | -0.6 \| -0.1 |
 
 **640x480@60's near border is off the frame BY DESIGN**, DMT's raster being 6
-source pixels later than the one the machine emits, and judging each edge
-against what the design puts there is what stops that reading as a fault.
-Vertically four of the five already pass; the one failure is 640x480@60's top
-border at 0.50 of its source line, which is the wholeness threshold rather than
-a placement.
+source pixels later than the one the machine emits, so both its cases pass:
+judging each edge against what the design puts there is what stops that
+reading as a fault.
+
+**WHAT FAILS IS 240x352@70 AND 640x512@50, ON BOTH SYNC TYPES, AND NEITHER HAS
+A BY-DESIGN OFFSET.** Their near border is off the frame with black at the far
+edge, which is a window placed late -- 6 output pixels at 640x512@50 is about
+3 capture units and 10 at 240x352@70 is about 8. Both are beyond the granule,
+so neither is the quantisation the rest of the set is at. 640x512@50 on
+composite additionally rolls in 30 of 40 frames, which is the composite
+instability in `../known-issues.md` and not a framing.
+
+**240x352@70's NEAR EDGE MOVES BETWEEN ACQUISITIONS.** The 63-mode sweep reads
+it at 1 column of black with 9 at the far edge, where the acceptance reads it
+off the frame with 10 -- the same window, the sink's own sub-pixel landing
+either side of a threshold.
 
 **A ROW IS ONLY A DEFAULT FRAMING IF THE STORED ENTRY WAS FORGOTTEN.** An entry
 is recalled on acquisition, `/sc?B` is queued for `loop()`, and
@@ -306,7 +322,7 @@ blanking does not open.
   worth nothing without the write origin staying put**, which is what separates
   the hand-set register from the constant that appears to do the same thing.
 
-## What remains, and the order it has to be done in
+## What the error turned out to be, and what is left
 
 **The scale is not in it and neither is the output chain.** The display window
 is 87.1% of the line at the 1916-unit 50 Hz raster and 87.2% at the 1596-unit
@@ -337,14 +353,20 @@ both authorities putting its picture at 216.
 ### The engine is centred on its design, and what is left is the grid
 
 **THE DEFAULT FRAMING IS AT ITS QUANTISATION FLOOR, SO THERE IS NO TERM LEFT TO
-DERIVE.** 63 source modes swept at 1080p and judged off the emitted frame, of
-which the 27 whose matched row IS the raster the machine emits give, against
-that row's own stated picture area:
+DERIVE.** 63 source modes swept at 1080p and judged off the emitted frame,
+`framing_residuals.py`, pooling each axis over the states whose matched row on
+THAT axis is the raster the machine emits -- against that row's own stated
+picture area, and the design's own offset taken off first:
 
-| axis | mean | sd | range |
-|---|---|---|---|
-| horizontal | **+0.05 source px** | 1.61 | -6.04 .. +2.45 |
-| vertical | **-0.19 lines** | 0.79 | -2.21 .. +1.06 |
+| axis | states | displacement | sd | range | per edge, capture units |
+|---|---|---|---|---|---|
+| horizontal | 27 | **+0.05 source px** | 1.61 | -6.04 .. +2.45 | +1.39, sd 1.63 |
+| vertical | 21 | **-0.04 lines** | 0.79 | -2.21 .. +1.06 | +0.16, sd 0.72 |
+
+**THE AXES ARE POOLED SEPARATELY BECAUSE THE TWO AUTHORITIES CAN DISAGREE ON
+ONE OF THEM**: 1024x768@60 is 71 source pixels out across and half a line down,
+so one verdict for both axes throws away every such mode's good axis. Pooling
+the vertical over the horizontal filter is what reads it as -0.19.
 
 Centred on both axes. The spread is 2 to 3 ADC samples, which is the capture
 granule plus the retime origin's own rounding, and **nothing predicts it**:
@@ -359,7 +381,7 @@ constant.** The `v lead` figures that licensed it -- -5.1, -5.1, -6.1, -1.2,
 -3.7, -3.2, -5.1 and 0.0 lines, mean -3.7 and never late -- come from
 `full_margins.py` at FULL framing, whose absolute lead carries its own model.
 Measured off the emitted frame at the default framing the same quantity is
--0.19 lines over 27 modes. The two instruments disagree by about three lines
+-0.04 lines over 21 modes. The two instruments disagree by about three lines
 and the emitted frame is the one the acceptance reads.
 
 **A refit of `SourceVideoDelayPixels` is rejected.** The undoubled subset alone
@@ -375,7 +397,7 @@ exactly, which is the obvious replacement for the measured duty in
 nothing. Noted so it is not reached for twice.
 
 **The sync width the engine uses is 2.6 samples narrower than the mode file
-states**, mean, sd 0.66 over the 27, where the raw `STATUS_SYNC_PROC_HLOW_LEN`
+states**, mean, sd 0.66, where the raw `STATUS_SYNC_PROC_HLOW_LEN`
 reads about 1.3 samples WIDER. That is `InvertedPulseWidthSamples` = 5
 overshooting on a high-active source. It is nearly constant, so it is not what
 the spread is, and it moves the origin by the same 2.6 samples on every mode --
@@ -398,26 +420,29 @@ identical margins. That is the sink's own sub-pixel landing, which is
 margins as the measurement**, and read a wholeness figure within about 0.3 of
 its threshold as saying nothing either way.
 
-### What remains
+### The acceptance is stated on that grid, and what it leaves
 
-1. **State the acceptance's goal in CAPTURE UNITS.** The engine places on a
-   2-unit horizontal granule and a 1-line vertical one, so the allowance is a
-   property of the mode's sampling density rather than a constant in output
-   pixels: one granule is 3.8 emitted px at 800x600@60 and 5.6 at 320x256@50.
-   `/geometry` reports the window's extent in capture units beside the frame it
-   is magnified onto, so the conversion needs no register read and no model.
-   **The two criteria cannot both be met at a fixed size**: the allowance of 3
-   emitted px at a near edge and the separate requirement that 75% of the
-   outermost source pixel survive are 0.25 source px of clip, which is a sixth
-   of what the grid can cost at the coarsest mode. One budget per edge -- the
-   black beside the border plus the part of the border missing -- is what makes
-   them one statement.
-2. **Then re-run the acceptance on both sync types** and read the table out of
-   that one run. Confirm the stored entry really was forgotten before reading
-   any row -- the console says `no framing stored`. **1280x720@60 cannot pass
-   until the CEA row exists**: it is CEA 4 and the `Cea` array holds only 480p
-   and 576p, so it matches nothing and falls back to the whole capturable
-   region.
+**THE GOAL IS NOW IN CAPTURE UNITS.** `card_edges.allowance_for()` takes
+`Axis::captureGranularity` out of the C++ and magnifies it by the window's own
+extent against the frame it became, so the allowance follows the mode's
+sampling density: one granule is 3.8 emitted px at 800x600@60 and 5.6 at
+320x256@50. The margin and the surviving fraction of the border are ONE budget
+per edge, because they cannot both be met at a fixed size -- 3 emitted px of
+black and 0.25 source px of clip are the same allowance only where one source
+pixel is twelve -- and an edge off the frame fails whatever the allowance,
+that being the goal itself.
+
+What is left is the two modes in the table above, on both sync types, whose
+window is placed 3 and 8 capture units late with no by-design offset to
+account for it. Both are beyond the granule, so neither is the quantisation
+the rest of the set is at, and **the question is what those two modes have
+that the others do not** -- 240x352@70 is the shortest source line in the file
+and the only case emitting at 1280x1024, and 640x512@50 is the only undoubled
+50 Hz key.
+
+**1280x720@60 still cannot pass**: it is CEA 4 and the `Cea` array holds only
+480p and 576p, so it matches nothing and falls back to the whole capturable
+region. Adding the row is what reaches it.
 
 **A margin is the only lever that reaches a one-pixel border and every one of
 them is spent.** `Axis::captureMargin` is charged in `fitToRaster`, in
