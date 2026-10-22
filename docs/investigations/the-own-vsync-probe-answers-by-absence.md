@@ -84,6 +84,51 @@ made positive there, and the separator-IN test that does say it positively needs
 the separator to acquire first -- which is why it stays second, after the cheap
 poll that costs a separate-sync source nothing.
 
+## A second candidate: the broad pulse in `STATUS_SYNC_PROC_HLOW_LEN` -- REFUTED
+
+The vertical interval's long low period appears in `HLOW_LEN` on composite sync
+and never on separate sync, which reads as a positive composite test needing no
+path change at all -- no separator flip, so no settle and no self-inflicted SOG
+switch to acknowledge. **It is circular, and the 2x2 is what shows it.**
+
+Both sync types in both arrangements, the arrangement held across a source sync
+change because a sync-type change arms no probe. `vga`, 320x256@50, read with
+`/samplinglog?width=500&lo=0&hi=400`, which bursts eight reads per poll,
+histograms them and rejects the two-byte tearing crossings itself:
+
+| arrangement | source | readings | above the band | lowest | highest | sync processor |
+|---|---|---|---|---|---|---|
+| csync | composite | 16448 | 39 | 118 | **2730** | HSACT 1, VTOTAL 308 |
+| csync | separate | 1808 | **733** | 2 | 4029 | HSACT 0, VTOTAL 98 |
+| separate | separate | 17704 | **0** | 155 | 156 | HSACT 1, VTOTAL 311 |
+| separate | composite | 2736 | **3** | 80 | 560 | HTOTAL 2892 against divider 1446, VTOTAL 475..1944 |
+
+The two MATCHED cells reproduce the signature exactly -- the broad pulse at
+2730 on composite, and 155 or 156 in every one of 17704 readings on separate
+sync with nothing above the band ever. The two MISMATCHED cells destroy it: it
+false-positives on **41% of readings** on a separate-sync source, and finds the
+broad pulse in 3 readings of 2736 on a composite one.
+
+**The signature is downstream of LOCK, and lock is downstream of the
+arrangement.** In both mismatched cells the sync processor is not counting the
+source -- HSACT 0 beside VTOTAL 98 in one, HTOTAL at twice the divider with the
+count wandering 475 to 1944 in the other -- so the register holds noise spanning
+2 to 4029 rather than a pulse width. **A reading that needs the arrangement to be
+right already cannot be what chooses the arrangement.**
+
+So `HLOW_LEN` joins the family of status fields that read like verdicts and are
+none of them a verdict: `STATUS_MISC_PLLAD_LOCK` is a duty cycle,
+`STATUS_SYNC_PROC_VSACT` reports the path already configured, `STATUS_IF_VT_OK`
+reports a measurement separate sync never completes, and this one reports a
+pulse width the block only measures once it has locked.
+
+**What survives is the structure the probe already has.** The only non-circular
+tests are the ones that CHANGE the arrangement and observe the result, which is
+what moving the separator in and out does. No register read in a single
+arrangement can answer it, and that now covers both candidates: the count reads
+0 in the probe's own configuration, and the pulse width reads noise in the wrong
+one.
+
 ## What the mirror test is still good for
 
 Forcing the separator IN and timing how long until `VTOTAL` becomes a plausible
