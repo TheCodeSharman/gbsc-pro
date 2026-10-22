@@ -118,12 +118,14 @@ Acorn entry exists and differs from the standard's. The eight that looked fine
 were the ones where the two authorities agree or where only one states the mode
 at all.
 
-**A MEASURED DUTY CANNOT SEPARATE TWO ACORN MODES IN ONE RESOLUTION FAMILY**, and
-360x480@60 is the case: Acorn spends a near-constant share of the line on sync
-across a family, so its 12.030% and 640x480@60's 11.750% sit 0.28 points apart
-against a measurement worth 0.30. The whole family is one key, which is what the
-`-- one key with` notes in `SourceTiming`'s Acorn array record. It is framed
-from 640x480@60's raster, 34 source pixels out, and no row can fix that.
+**A MEASURED DUTY CANNOT SEPARATE TWO ACORN MODES IN ONE RESOLUTION FAMILY.**
+Acorn spends a near-constant share of the line on sync across a family, so
+360x480@60's 12.030% and 640x480@60's 11.750% sit 0.28 points apart against a
+measurement worth 0.30. The whole family is one key, which is what the
+`-- one key with` notes in `SourceTiming`'s Acorn array record. 360x480's rows
+are gone for a sharper reason -- its duty is nearer DMT's 640x480@60 than
+AKF50's own is, so the only source that could reach it was one running the
+standard, framed 45 pixels out. `../known-issues.md`.
 
 **WHAT SEPARATES THE SOURCE FROM A MISPLACED ORIGIN IS THE DIVIDER, because a
 source-side error is a constant in the SOURCE's own pixels and an origin error
@@ -309,16 +311,23 @@ work is in this order because each step decides what the next one may assume.
 origin is sound -- ten modes read within +0.8 source pixels of the raster they
 are emitting, mean, over a spread of 1.5 -- and what the framing error was is
 the engine matching the wrong published raster. "Every mode is emitting its
-monitor definition's raster" above has the measurements. The fix was the nearest
-row by duty rather than the first authority that matched, plus 25 Acorn rows
-from AKF60 through AKF92; **no correction constant was involved and none is
-wanted**, because there is no displacement left to take out.
+monitor definition's raster" above has the measurements. **No correction
+constant was involved and none is wanted**, because there is no displacement
+left to take out.
 
-Measured after flashing it, acceptance margins across with stored entries
-forgotten: 1024x768@60 from 136 output pixels of black at the far edge to 1,
-640x480@60 from out by 14 to out by 2, 800x600@60 unchanged at 1 because its
-two rows agree at 216. Nothing passes yet, and what is left is now
-sub-source-pixel.
+What shipped is two things. The generated monitor definition carries no VESA DMT
+set, so it is the file the machine actually runs -- that is the whole of why
+1024x768@60 read 71 pixels out, and `../bench-sources.md` has it. And the
+firmware carries the Acorn definitions past AKF50, which answer where no
+standard states a mode or states it with a different polarity pair.
+**The standard keeps priority where one states the same resolution**, and the
+offset that costs is known per mode rather than guessed at.
+
+Measured after flashing, margins across with stored entries forgotten:
+1024x768@60 from 136 output pixels of black at the far edge to **1**, held
+across the revert because its polarity pair reaches the Acorn row. 640x480@60
+sits at 12, which is DMT answering by priority. 800x600@60 is 1 and unchanged,
+both authorities putting its picture at 216.
 
 1. **Size what is left, which is a pixel or two and may be quantisation.**
    `IF_HB_SP2` moves in TWOS -- the low bit does nothing -- so the window's
@@ -348,11 +357,12 @@ sub-source-pixel.
    `card_edges.py` needs the bench and the suite does not.
 4. **Re-run the acceptance on both sync types**, and confirm the entry really
    was forgotten before reading any row -- the console says `no framing stored`.
-   **360x480@60 cannot pass and is not a defect to chase**: its duty is inside
-   the measurement's error of 640x480@60's, so the key cannot separate them.
-   1280x720@60 cannot pass either, for a reason that can be fixed -- it is
-   CEA 4 and the `Cea` array holds only 480p and 576p, so it matches nothing and
-   falls back to the whole capturable region.
+   **1280x720@60 cannot pass until the CEA row exists** -- it is CEA 4 and the
+   `Cea` array holds only 480p and 576p, so it matches nothing and falls back to
+   the whole capturable region. Modes where a standard states the same
+   resolution carry their own by-design offset, which `published_rasters.py`
+   states per mode, so the acceptance has to allow it rather than read it as a
+   fault.
 
 Two things are NOT part of this and must not be folded into it: composite's
 horizontal repeat at 800x600@60 and 1024x768@60, and the whole-capturable-region

@@ -9404,27 +9404,32 @@ nearest row. Ten modes measured at a full framing read within +0.8 source
 pixels, mean, of the raster they are actually emitting, spread 1.5 -- so the
 counter's origin is correct and **no correction constant was ever the lever**.
 
-Fixed by matching the nearest raster by duty and carrying AKF60 through AKF92.
+Two things fixed it. The generated monitor definition carries no VESA DMT set,
+so it is the file the machine runs; and the firmware carries the Acorn
+definitions past AKF50, which answer where no standard states a mode or states
+it with a different polarity pair. **The standard keeps priority** where one
+states the same resolution, the offset that costs being known per mode.
 Measured after flashing, margins across with stored entries forgotten:
 
-| mode | before | after |
-|---|---|---|
-| 640x480@60 | - \| 14, out by 14 | 2 \| -, out by 2 |
-| 800x600@60 | - \| 0, out by 1 | - \| 0, out by 1 |
-| 1024x768@60 | - \| 136, out by 136 | - \| 1, out by 1 |
-
-800x600@60 is unchanged because AKF50 and DMT both put its picture at 216.
+| mode | before | after | |
+|---|---|---|---|
+| 1024x768@60 | - \| 136, out by 136 | - \| 0, out by **1** | AKF60 answers, its polarity pair differing from DMT's |
+| 640x480@60 | - \| 14, out by 14 | - \| 12, out by 12 | DMT answers by priority, the offset by design |
+| 800x600@60 | - \| 0, out by 1 | - \| 0, out by 1 | both authorities put its picture at 216 |
 **What is left is sub-source-pixel** and `IF_HB_SP2` moves in twos, so half a
 granule is 1.75 to 2.79 emitted pixels on these modes against an allowance of 3
 -- quantisation is the first candidate for the residual, not a displacement.
 
-**Two modes in the set still cannot pass.** 360x480@60's duty sits 0.28 points
-from 640x480@60's against a measurement worth 0.30, so the key cannot separate
-them and it is framed from 640x480@60's raster, 34 source pixels out; Acorn
-spends a near-constant share of the line on sync across a resolution family, so
-no row fixes that. 1280x720@60 is CEA 4 and the `Cea` array holds only 480p and
-576p, so it matches nothing and falls back to the whole capturable region --
-that one is fixable by adding the row.
+**1280x720@60 cannot pass, and that one is fixable**: it is CEA 4 and the `Cea`
+array holds only 480p and 576p, so it matches nothing and falls back to the
+whole capturable region. Adding the row is what reaches it.
+
+**A ROW ONLY THE WRONG SOURCE CAN REACH IS WORSE THAN ABSENT.** 360x480's two
+rows are removed for that reason rather than for sharing a key: its duty is
+12.030% where DMT's 640x480@60 is 12.000% and AKF50's own is 11.750%, so
+640x480@60 answers for the mode it describes and nothing reaches it
+legitimately -- while a source running DMT's 640x480@60 whose duty reads three
+hundredths of a point high lands on it and is framed 45 source pixels out.
 `bench-sources.md`,
 `investigations/full-screen-framing-on-the-vesa-modes.md`.
 
