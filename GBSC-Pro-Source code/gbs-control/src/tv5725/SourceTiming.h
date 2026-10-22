@@ -107,9 +107,10 @@ private:
     static const uint16_t AcornCount;
 
     static const Raster *lookUp(const SourceKey &measured);
-    static const Raster *firstMatch(const SourceKey &measured, bool onPolarity);
-    static const Raster *lookUpIn(const Raster *rasters, uint16_t count,
-                                  const SourceKey &measured, bool onPolarity);
+    static const Raster *nearestMatch(const SourceKey &measured, bool onPolarity);
+    static void nearestIn(const Raster *rasters, uint16_t count,
+                          const SourceKey &measured, bool onPolarity,
+                          const Raster **found, float *nearest);
 
     uint16_t lineFor(uint16_t statedLine, uint16_t frameLines) const;
 

@@ -184,18 +184,17 @@ TEST_CASE("an Acorn mode no standard states is published from the mode file")
     CHECK_NEAR(akf.activeExtent(AxisVertical), 200.0f / 262.0f, 0.0005f);
 }
 
-TEST_CASE("a standard's raster wins over a mode file describing the same one")
+TEST_CASE("a standard answers for a mode file stating the same sync width")
 {
-    // AKF50 states 640x480@60 as well, spending 94 pixels of 800 on sync where
-    // DMT spends 96 -- a quarter of a point apart, which is inside what the
-    // sync width can be measured to. A source running either reads as both, and
-    // what it is EMITTING is the standard: the mode file is one machine's
-    // description of it, and its borders are placed differently.
-    SourceTiming akf = SourceTiming::matching(
-        SourceKey(525, 60.0f, 94.0f / 800.0f, SourceKey::Negative, SourceKey::Negative));
+    // AKF50's 800x600@60 is 128,48,40,800,40,0 and DMT's is 128,88,0,800,0,40:
+    // one total, one sync width, and the 40-pixel borders sitting in the porches
+    // put the picture at 216 either way. Nothing can tell those two rows apart,
+    // so the array order does, and of the two it is the standard that answers.
+    SourceTiming both = SourceTiming::matching(
+        SourceKey(628, 60.32f, 128.0f / 1056.0f, SourceKey::Positive, SourceKey::Positive));
 
-    REQUIRE(akf.published());
-    CHECK_NEAR(akf.activeStart(AxisHorizontal), 144.0f / 800.0f, 0.0005f);
+    REQUIRE(both.published());
+    CHECK_NEAR(both.activeStart(AxisHorizontal), 216.0f / 1056.0f, 0.0005f);
 }
 
 // VESA DMT 640x350@85 and 640x400@85 share one horizontal raster, one frame of
@@ -324,5 +323,114 @@ TEST_CASE("a published raster says how wide one of the source's pixels is")
 
     SUBCASE("nor does a divider nothing is sampling at") {
         CHECK(akf.pixelSamples(0) == 0.0f);
+    }
+}
+
+
+// --- Which row, where two authorities describe one key
+//
+// The bench RISC PC runs an Acorn monitor definition, and its entries share a
+// frame, a field rate and very nearly a sync width with the VESA DMT entry for
+// the same resolution while putting active video somewhere else. Measured on
+// `vga` into 1920x1080 at a full framing, the emitted raster is the ACORN one
+// on every mode where the two differ.
+// docs/investigations/full-screen-framing-on-the-vesa-modes.md
+
+TEST_CASE("the nearer sync width decides between two rasters on one key")
+{
+    // AKF50's 640x480@60 spends 94 pixels of 800 on sync and starts its picture
+    // at 138; DMT spends 96 and starts at 144. Measured on the bench, the duty
+    // reads 11.547% -- 0.203 points from AKF50 and 0.453 from DMT -- and the
+    // emitted picture starts at 138.4. So the nearer row is the one the source
+    // is running, and the authority it came from says nothing about that.
+    SourceTiming akf = SourceTiming::matching(
+        SourceKey(525, 59.94f, 0.11547f, SourceKey::Negative, SourceKey::Negative));
+
+    REQUIRE(akf.published());
+    CHECK_NEAR(akf.activeStart(AxisHorizontal), 138.0f / 800.0f, 0.0005f);
+}
+
+TEST_CASE("the bench RISC PC at 1024x768@60 is placed from its own mode file")
+{
+    // AKF60 states 128,36,60,1024,60,36 of 1344 at 65 MHz -- picture at 224,
+    // positive on both pulses -- where DMT 16 states 136,160,0,1024,0,24 and
+    // negative on both. One total, one clock, one frame, and 71 pixels between
+    // the two picture starts.
+    //
+    // Measured on `vga` into 1920x1080 at a full framing: the card's green
+    // frame spans 1024.0 source pixels starting at 225.0, the line totals
+    // 1343.9 at 65.14 MHz over 806 lines, the duty reads 9.644% against AKF60's
+    // 9.524% and DMT's 10.119%, and STATUS_SYNC_PROC_HSPOL reads positive. So
+    // the machine is running the mode file and not the standard.
+    SourceTiming akf = SourceTiming::matching(
+        SourceKey(806, 60.0f, 0.09644f, SourceKey::Positive, SourceKey::Positive));
+
+    REQUIRE(akf.published());
+    CHECK_NEAR(akf.activeStart(AxisHorizontal), 224.0f / 1344.0f, 0.0005f);
+}
+
+TEST_CASE("a sync width further off than the measurement can be matches nothing")
+{
+    // The bound is what the DUTY MEASUREMENT can be wrong by, because that is
+    // the only thing the chip can tell two rasters apart with. Measured on
+    // `vga` across ten modes at a full framing, the reading sits 0.085 points
+    // from the raster the source is emitting on average, sd 0.164, worst 0.300;
+    // composite sync adds the separator's own offset, about 3 ADC samples, or
+    // 0.23 points at the bench's dividers.
+    //
+    // A point away is none of that, so it is not this source's raster and
+    // placing the window from it would crop picture. DMT's 640x480@60 states
+    // 12.00%.
+    CHECK_FALSE(SourceTiming::matching(
+        SourceKey(525, 59.94f, 0.130f, SourceKey::Negative, SourceKey::Negative)).published());
+}
+
+// Every mode measured on the bench RISC PC under its loaded monitor
+// definition, `vga` into 1920x1080 at a full framing with the card's green
+// frame read off the USB capture. `duty` and `start` are the measurement; the
+// row is what the source turned out to be running. The polarity is the mode
+// file's, and at 1024x768@60 it was confirmed against STATUS_SYNC_PROC_HSPOL.
+//
+// 1280x720@60 is absent because it is CEA 4 and the Cea array holds only 480p
+// and 576p -- it measured 258.1 against the standard's 260 and is still
+// unpublished. 360x480@60 is absent for a reason no row can fix: Acorn spends
+// a near-constant share of the line on sync across a resolution family, so its
+// 12.030% and 640x480@60's 11.750% are 0.28 points apart against a measurement
+// worth 0.30, and the whole family is one key. docs/known-issues.md
+namespace {
+
+struct Measured {
+    uint16_t lines;
+    float rateHz;
+    float duty;
+    SourceKey::Polarity hsync;
+    SourceKey::Polarity vsync;
+    float start;        // the fraction of the line the raster states
+    const char *mode;
+};
+
+const Measured BenchModes[] = {
+    { 312, 50.08f, 0.07084f, SourceKey::Positive, SourceKey::Positive, 110.0f / 512.0f,  "320x256@50 AKF50" },
+    { 525, 60.00f, 0.10297f, SourceKey::Negative, SourceKey::Negative,  68.0f / 400.0f,  "320x480@60 AKF50" },
+    { 525, 59.94f, 0.11547f, SourceKey::Negative, SourceKey::Negative, 138.0f / 800.0f,  "640x480@60 AKF50" },
+    { 525, 59.94f, 0.11547f, SourceKey::Negative, SourceKey::Negative, 276.0f / 1600.0f, "1280x480@60 AKF50" },
+    { 525, 59.94f, 0.06926f, SourceKey::Negative, SourceKey::Negative, 122.0f / 858.0f,  "720x480@60 CEA 2/3" },
+    { 615, 60.00f, 0.07189f, SourceKey::Negative, SourceKey::Negative, 170.0f / 870.0f,  "640x512@60 AKF91" },
+    { 628, 60.32f, 0.12212f, SourceKey::Positive, SourceKey::Positive, 216.0f / 1056.0f, "800x600@60 AKF50" },
+    { 806, 60.00f, 0.09644f, SourceKey::Positive, SourceKey::Positive, 224.0f / 1344.0f, "1024x768@60 AKF60" },
+};
+
+}  // namespace
+
+TEST_CASE("every mode the bench emits resolves to the raster it is emitting")
+{
+    for (unsigned i = 0; i < sizeof(BenchModes) / sizeof(BenchModes[0]); ++i) {
+        const Measured &want = BenchModes[i];
+        INFO(want.mode);
+        SourceTiming got = SourceTiming::matching(
+            SourceKey(want.lines, want.rateHz, want.duty, want.hsync, want.vsync));
+
+        REQUIRE(got.published());
+        CHECK_NEAR(got.activeStart(AxisHorizontal), want.start, 0.0005f);
     }
 }

@@ -70,7 +70,10 @@ const SourceTiming::Raster SourceTiming::Dmt[] = {
 
 const uint16_t SourceTiming::DmtCount = sizeof(Dmt) / sizeof(Dmt[0]);
 
-// Every AKF50 mode, transcribed from the monitor definition.
+// The Acorn monitor definitions, transcribed: every AKF50 mode, then what the
+// faster definitions add. A RISC PC emits these and not the standard's own
+// timings for the same resolution, so this is the authority for that machine
+// rather than a fallback for rasters no standard states.
 //
 // **MOST OF THEM SHARE A KEY WITH AN EARLIER ROW AND CANNOT BE REACHED.** The
 // match is on the frame, the field rate, the sync duty and the polarity pair;
@@ -113,15 +116,55 @@ const SourceTiming::Raster SourceTiming::Acorn[] = {
     {  520,   73,    1664,   96,    326,   1280,    3,      31,     480, N, N, F43},  // 1280x480@73 37.9 kHz  -- one key with 320x480
     {  628,   60,    1056,  128,    216,    800,    4,      27,     600, P, P, F43},  // 800x600@60 37.9 kHz
     {  628,   60,    2112,  256,    432,   1600,    4,      27,     600, P, P, F43},  // 1600x600@60 37.9 kHz  -- one key with 800x600
+
+    // --- What the faster monitor definitions add, AKF60 through AKF92.
+    //
+    // AKF50 stops at 37.9 kHz, so without these a machine on a faster
+    // definition emits a raster this table does not hold and falls through to
+    // whichever standard shares its frame and rate -- which is a DIFFERENT
+    // raster, not a looser description of the same one. AKF60's 1024x768@60 is
+    // the worst of them: one total, one clock, one frame with DMT 16, and 71
+    // pixels between the two picture starts.
+    //
+    // Ordered by line rate as the block above is. The order decides nothing
+    // but an exact tie now that the duty picks the row.
+    {  449,   60,     312,   20,     56,    240,    2,     60,     352, P, N, F43},  // 240x352@60 AKF91 26.9 kHz
+    {  449,   69,     608,   20,     92,    480,    2,     60,     352, P, N, F43},  // 480x352@69 AKF70 30.9 kHz
+    {  449,   70,     400,   36,     62,    320,    2,    111,     250, P, N, F43},  // 320x250@70 AKF60 31.5 kHz
+    {  449,   70,     400,   36,     62,    320,    2,    108,     256, P, N, F43},  // 320x256@70 AKF60 31.5 kHz  -- one key with 320x250
+    {  449,   70,     800,   88,    132,    640,    2,    136,     200, P, N, F43},  // 640x200@70 AKF60 31.5 kHz
+    {  449,   70,     800,   88,    132,    640,    2,    111,     250, P, N, F43},  // 640x250@70 AKF60 31.5 kHz  -- one key with 640x200
+    {  449,   70,     800,   88,    132,    640,    2,    108,     256, P, N, F43},  // 640x256@70 AKF60 31.5 kHz  -- one key with 640x200
+    {  449,   70,     800,   88,    132,    640,    2,     60,     352, P, N, F43},  // 640x352@70 AKF60 31.5 kHz  -- one key with 640x200
+    {  525,   61,    1580,  188,    256,   1280,    2,     34,     480, N, N, F43},  // 1280x480@61 AKF91 31.9 kHz
+    {  597,   56,     400,   36,     62,    320,    2,     54,     512, N, N, F43},  // 320x512@56 AKF91 33.4 kHz
+    {  520,   70,     448,   24,     80,    320,    3,     31,     480, N, N, F43},  // 320x480@70 AKF91 36.2 kHz
+    {  615,   60,     870,   64,    170,    640,    3,     59,     512, N, N, F43},  // 640x512@60 AKF91 36.8 kHz
+    {  525,   70,     472,   50,     96,    360,    2,     34,     480, P, P, F43},  // 360x480@70 AKF70 36.9 kHz
+    {  540,   69,    1712,   96,    300,   1280,    3,     41,     480, N, N, F43},  // 1280x480@69 AKF91 37.4 kHz
+    {  525,   71,     800,   94,    138,    640,    2,     34,     480, N, N, F43},  // 640x480@71 AKF91 37.5 kHz
+    {  615,   70,     870,   64,    170,    640,    3,     59,     512, N, N, F43},  // 640x512@70 AKF91 43.1 kHz
+    {  625,   75,    2112,  160,    336,   1600,    3,     24,     600, P, P, F43},  // 1600x600@75 AKF60 46.9 kHz
+    {  625,   75,    1056,   80,    168,    800,    3,     24,     600, P, P, F43},  // 800x600@75 AKF60 46.9 kHz  -- one key with 1600x600, and an exact tie with DMT 11, which answers
+    {  666,   72,    2080,  176,    328,   1600,    6,     29,     600, P, P, F43},  // 1600x600@72 AKF60 48.1 kHz
+    {  666,   72,    1040,   88,    164,    800,    6,     29,     600, P, P, F43},  // 800x600@72 AKF60 48.1 kHz  -- one key with 1600x600
+    {  806,   60,    1344,  128,    224,   1024,    6,     35,     768, P, P, F43},  // 1024x768@60 AKF60 48.4 kHz
+    {  806,   70,    1328,  124,    232,   1024,    6,     35,     768, P, P, F43},  // 1024x768@70 AKF80 56.5 kHz
+    {  800,   75,    1338,  122,    238,   1024,    3,     31,     768, P, P, F43},  // 1024x768@75 AKF80 60.0 kHz
+    { 1163,   54,    1736,  166,    396,   1280,    3,     85,    1024, P, P, F54},  // 1280x1024@54 AKF91 63.4 kHz
+    { 1062,   60,    1728,  166,    352,   1280,    3,     35,    1024, P, P, F54},  // 1280x1024@60 AKF80 63.7 kHz
 };
 
 const uint16_t SourceTiming::AcornCount = sizeof(Acorn) / sizeof(Acorn[0]);
 
 namespace {
 
-// The bench reads 11.57% where DMT states 12.00%, so the match cannot be exact;
-// the standards it has to tell apart are 4.8 points away from each other.
-const float SyncDutyTolerance = 0.015f;
+// How far the DUTY MEASUREMENT may be wrong, which is the whole of what this
+// bounds: the nearest row is what gets picked, so this only refuses a row that
+// is not the source's raster at all. Measured worst case is 0.30 points on
+// separate sync and the separator adds about 0.23 more on composite.
+// ../../../docs/investigations/full-screen-framing-on-the-vesa-modes.md
+const float SyncDutyTolerance = 0.008f;
 
 // How far a real source may sit from the rate the standard states. NOT a
 // measurement tolerance -- the instrument is exact to better than 0.002%, and
@@ -148,28 +191,37 @@ const SourceTiming::Raster *SourceTiming::lookUp(const SourceKey &measured)
     if (!measured.valid() || measured.syncWidth() <= 0.0f)
         return 0;
 
-    // The polarity pair first, because two standards can share a frame, a rate
-    // and a sync width and differ in nothing else. A key stating no polarity,
-    // or one no row carries, still takes the first raster on the key.
-    const Raster *found = firstMatch(measured, true);
-    return found != 0 ? found : firstMatch(measured, false);
+    // The polarity pair first, because it is a BIT rather than a measurement:
+    // where it separates two rows it is stronger evidence than a nearer duty.
+    // A key stating no polarity, or one no row carries, falls back to the duty
+    // alone.
+    const Raster *found = nearestMatch(measured, true);
+    return found != 0 ? found : nearestMatch(measured, false);
 }
 
-const SourceTiming::Raster *SourceTiming::firstMatch(const SourceKey &measured,
-                                                     bool onPolarity)
+// THE NEAREST ROW, NOT THE FIRST AUTHORITY THAT MATCHES. Two authorities
+// describe the same resolution with different porches, and the duty is the only
+// thing on the chip that can tell them apart -- so the authority an entry came
+// from says nothing about which one a source is running, and taking the
+// standard's row for a machine running its own monitor definition places the
+// window where the source is not.
+// ../../../docs/investigations/full-screen-framing-on-the-vesa-modes.md
+const SourceTiming::Raster *SourceTiming::nearestMatch(const SourceKey &measured,
+                                                       bool onPolarity)
 {
-    const Raster *found = lookUpIn(Cea, CeaCount, measured, onPolarity);
-    if (found == 0)
-        found = lookUpIn(Dmt, DmtCount, measured, onPolarity);
-    if (found == 0)
-        found = lookUpIn(Acorn, AcornCount, measured, onPolarity);
+    const Raster *found = 0;
+    float nearest = 0.0f;
+    nearestIn(Cea, CeaCount, measured, onPolarity, &found, &nearest);
+    nearestIn(Dmt, DmtCount, measured, onPolarity, &found, &nearest);
+    nearestIn(Acorn, AcornCount, measured, onPolarity, &found, &nearest);
     return found;
 }
 
-const SourceTiming::Raster *SourceTiming::lookUpIn(const Raster *rasters,
-                                                   uint16_t count,
-                                                   const SourceKey &measured,
-                                                   bool onPolarity)
+// The array order breaks a tie, which is what leaves a standard answering for
+// a mode file that states the same raster.
+void SourceTiming::nearestIn(const Raster *rasters, uint16_t count,
+                             const SourceKey &measured, bool onPolarity,
+                             const Raster **found, float *nearest)
 {
     for (uint16_t i = 0; i < count; ++i) {
         const Raster &raster = rasters[i];
@@ -178,18 +230,19 @@ const SourceTiming::Raster *SourceTiming::lookUpIn(const Raster *rasters,
                 > (float)StandardRateDeviationPerThousand * (float)raster.rateHz))
             continue;
 
-        const float duty = (float)raster.syncPixels / (float)raster.totalPixels;
-        if (fabsf(duty - measured.syncWidth()) > SyncDutyTolerance)
-            continue;
-
         if (onPolarity
             && (raster.hsync != measured.hsyncPolarity()
                 || raster.vsync != measured.vsyncPolarity()))
             continue;
 
-        return &raster;
+        const float duty = (float)raster.syncPixels / (float)raster.totalPixels;
+        const float apart = fabsf(duty - measured.syncWidth());
+        if (apart > SyncDutyTolerance || (*found != 0 && apart >= *nearest))
+            continue;
+
+        *found = &raster;
+        *nearest = apart;
     }
-    return 0;
 }
 
 float SourceTiming::fieldRateHz() const { return fieldRateHz_; }

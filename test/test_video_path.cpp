@@ -127,7 +127,14 @@ static void seedPassThroughSource()
 // carries. Modelled rather than seeded as a count, because the sync processor
 // counts in ADC clocks: pin the count and the share moves with every divider
 // the engine chooses, which no source does.
-static const float BenchSyncWidth = 181.0f / 2250.0f;
+//
+// **A COUNT IS ONLY A DUTY WITH THE DIVIDER IT WAS COUNTED AT.** This was
+// 181/2250, and the 181 was measured at a divider of 2553 -- 8.044% against the
+// source's 7.09%, a whole point out, which put it nearer AKF50's 768x288@50
+// than its own 320x256@50. Measured two ways and they agree: 181 of 2553, and
+// 36.3 source pixels at 4.297 samples each of 2200, both 7.09%, against the
+// monitor definition's 36 of 512. The live unit's framing keys read 695 to 709.
+static const float BenchSyncWidth = 160.0f / 2250.0f;
 
 // The bench source's sync polarities, the rest of what the key carries beyond
 // the count and the rate. `sync_pol:0` in the monitor definition, which reads 1
@@ -141,7 +148,12 @@ static void seedSourceMeasurement()
     // source this fixture is not describing.
     Tv5725::SyncMeasurement::set(false);
 
-    Wire.sourceHsync(181, 2250, true);
+    // 160 of 2250 is 7.111%, the source's measured duty read through the
+    // divider this fixture leaves in force. It was 181 of 2250 -- the 181 was
+    // counted at a divider of 2553, so pairing it with 2250 made the duty
+    // 8.044% against the source's 7.09% and put the key nearer AKF50's
+    // 768x288@50 than its own 320x256@50.
+    Wire.sourceHsync(160, 2250, true);
     seedField(0, 0x1B, 0, 11, 311);    // STATUS_SYNC_PROC_VTOTAL
     // The bench source's hsync is positive-going, which is what puts the pulse
     // at the head of the line. Unseeded this reads 0, the inverted case, and
@@ -249,14 +261,19 @@ static void checkBenchGeometry()
     // The sampling divider in its three registers: IF_HSYNC_RST is PLLAD_MD/2,
     // and SP_RT_HS_SP is the divider less the sync width the source measured
     // through it, plus the origin the retiming module adds. The bench source is
-    // high-active, so InvertedPulseWidthSamples comes off the pulse first: 177
-    // samples read, 172 after it, so 2200 - 172 + 63 + 14. The 14 is the
+    // high-active, so InvertedPulseWidthSamples comes off the pulse first: 156
+    // samples read, 151 after it, so 2200 - 151 + 63 + 14. The 14 is the
     // source's video lag in the SOURCE's own pixels, which this raster being
     // published is what makes computable: 2200 samples across its 512 pixels.
     // One quantity, never read back.
+    //
+    // 2126 is what the LIVE unit writes, read back at this mode on the bench.
+    // It was asserted at 2105, which is the same arithmetic over the fixture's
+    // mis-paired 8.044% duty -- so the test was wrong here and the firmware was
+    // not. BenchSyncWidth above carries what that was.
     CHECK(Adc::PLLAD_MD::read() == 2200);
     CHECK(InputFormatter::IF_HSYNC_RST::read() == 1100);
-    CHECK(SyncProcessor::SP_RT_HS_SP::read() == 2105);
+    CHECK(SyncProcessor::SP_RT_HS_SP::read() == 2126);
 
     // PLLAD_LAT is the rising edge that loads MD into the PLL, so a divider
     // written after it leaves the ADC clocking at the old one. VCORST released,
