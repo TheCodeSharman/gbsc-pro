@@ -27,6 +27,15 @@ def test_the_mode_listing_yields_each_256_colour_mode_once():
                                              "X800 Y600 C256 F60"]
 
 
+def test_a_mode_the_machine_cannot_drive_is_never_offered():
+    """A monitor definition may state a mode VIDC20 cannot clock. Asked for it
+    the machine lands somewhere else entirely and the scaler then measures a
+    raster nobody chose, so the listing every sweep is built from leaves it
+    out."""
+    listing = LISTING + "X1920 Y1080 C256 F50\nX1920 Y1080 C256 F60\n"
+    assert gbs_unit.parse_modes(listing) == gbs_unit.parse_modes(LISTING)
+
+
 def test_an_empty_listing_yields_no_modes():
     assert gbs_unit.parse_modes("") == []
     assert gbs_unit.parse_modes("OK MODES 0\n") == []

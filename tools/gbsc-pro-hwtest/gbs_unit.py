@@ -886,12 +886,27 @@ def modeserv_ok(reply):
     return bool(reply) and reply.startswith("OK")
 
 
+# RESOLUTIONS THE MACHINE CANNOT DRIVE, whatever a monitor definition states.
+# A mode file is a list of timings the MONITOR will accept, and nothing in it
+# says VIDC20 can clock them -- asked for 1920x1080 at 50 or 60 Hz the RISC PC
+# lands at 24, which MODE reports back honestly and no sweep reads. The scaler
+# then measures a raster nobody chose, and the machine is left out of spec
+# until someone issues a mode it can hold.
+#
+# Keyed on X and Y, because the field rate asked for is not the one that
+# arrives. ../../docs/bench-sources.md
+UNDRIVABLE = (("X1920", "Y1080"),)
+
+
 def parse_modes(listing):
-    """The 256-colour modes a MODES listing offers, each once, in its order."""
+    """The 256-colour modes a MODES listing offers, each once, in its order,
+    less the ones the machine cannot drive."""
     seen, modes = set(), []
     for line in (listing or "").splitlines():
         parts = line.split()
         if len(parts) == 4 and parts[2] == "C256":
+            if (parts[0], parts[1]) in UNDRIVABLE:
+                continue
             key = (parts[0], parts[1], parts[3])
             if key not in seen:
                 seen.add(key)
