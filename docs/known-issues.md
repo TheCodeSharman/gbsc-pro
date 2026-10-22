@@ -9462,8 +9462,10 @@ on a fraction of an output pixel and is what `FLUSH` already covers.
 **The spread is real only on composite**, where the count dithers 308/309 and
 `VDS_HSCALE` follows it by three. So the term is a composite defect charged to
 every source: tightening the allowance to `FLUSH` alone costs nothing on
-separate sync and would stop the bar hiding the 4 columns at 320x256@50's left
-edge, at the cost of failing composite on the dither.
+separate sync, at the cost of failing composite on the dither. It is the one
+part of the allowance that belongs in OUTPUT pixels, being a scale that moved
+rather than a window placed -- the rest is the capture grid, which is a
+property of the mode.
 
 **The instrument answers nothing on three of six runs at 640x480@60**, every
 margin `-` with the registers identical to the runs that read. The dongle needs
