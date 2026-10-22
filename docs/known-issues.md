@@ -9309,6 +9309,46 @@ So the undercount is corrected and the horizontal repeat is a separate fault
 that was hidden behind it. The count is no longer the root, and a reading of
 `STATUS_SYNC_PROC_VTOTAL` alone no longer says what the engine solved for.
 
+### A source matching no published raster is framed to the whole capturable region, and the picture visibly wobbles
+
+The bench's everyday mode is one of them. The console says so on every solve:
+`source key: 312@50.08/709++, no framing stored, shape 13333` -- no raster
+matches, so the shape falls back to 4:3 and the framing to `oh`/`ov` sitting
+exactly on `fh`/`fv`, the floor. The emitted frame then carries the source's
+own blanking at every edge, the picture shrunk and pillarboxed inside it, and
+the captured vertical interval along the top.
+
+**That top band is not still, and it reads as a wobble on the panel.** Measured
+2026-10-22 at 320x256@50 into 1920x1080 with `picture_jitter.py`, 120 frames:
+
+| framing | horizontal sd | vertical sd | vertical p2p |
+|---|---|---|---|
+| whole capturable region | 0.0030 | **0.8401** | 11.11 |
+| the stored entry restored | 0.0044 | **0.0003** | 0.005 |
+
+Nothing in the machine is moving under it. `Tv5725::SamplingLog` at 25 ms over
+30 s reads `STATUS_SYNC_PROC_VTOTAL` 311 in 1139 of 1139 at sd 0.00, htotal
+equal to the divider in 99.9%, and the frame time lock is parked -- phase
+811262..811324, clock held, in and out both 50080 mHz. The source is steady and
+the lock is steady; what moves is the vertical interval the framing chose to
+capture.
+
+**So the default for an unpublished source is unusable rather than merely
+loose**, and it is reached by ordinary means: `/sc?B` on a source whose entry is
+the only thing framing it. A default that captures the whole region can never
+pass the border acceptance either, since the card's frame then sits well inside
+the picture at every edge.
+
+What it needs is a default that frames the picture where no raster states where
+the picture is -- which is the one thing the chip cannot measure, a border being
+black active video. `docs/investigations/full-screen-framing-on-the-vesa-modes.md`
+carries the published-raster path this falls off.
+
+**A STORED ENTRY HIDES IT COMPLETELY**, which is why it has not been seen: with
+`312@50.08/709++` in the table the same source frames correctly and reads 4 | 0
+across and 3 | 1 down. Restoring the file and restarting is what put the bench
+back.
+
 ### The border acceptance fails on every mode measured, and the sync types agree except where composite falls apart
 
 Measured 2026-10-22 with `card_edges.py` on `vga` into 1920x1080, five modes

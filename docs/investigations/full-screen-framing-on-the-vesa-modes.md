@@ -23,7 +23,64 @@ repeatedly turned one fault into four.
 
 ## Where it stands
 
-Measured on the USB capture, 640x480@60 into 1080p at a default framing. The
+**No mode passes.** Measured 2026-10-22 on `vga` into 1920x1080 under
+`RetroScaler-Acorn.mdf`, `card_edges.py` for the verdict and `full_margins.py`
+for the decomposition. Margins are output pixels at the near and far edge, `-`
+an edge the emitted frame does not carry:
+
+| mode | across | down |
+|---|---|---|
+| 320x256@50 | 4 \| 0 | 3 \| 1 |
+| 640x512@50 | - \| 6 | 1 \| 1 |
+| 640x480@60 | - \| 14 | 1 \| 4 |
+| 800x600@60 | - \| 0 | 0 \| 1 |
+| 1024x768@60 | - \| 136 | 1 \| 1 |
+
+**320x256@50's row is not a default framing.** Its key matches no published
+raster, so it was answered by the stored entry the table still held --
+`/sc?B` is queued for `loop()` and `gbs_unit.reset_framing()` can sample a
+framing that has not changed yet. The four DMT rows are defaults, because there
+the published active region IS the default. Check the console for
+`no framing stored` before believing any row of this table again.
+
+### The error is the ORIGIN, and both symptoms are one number
+
+**THE SPAN IS EXACT ON EVERY MODE**, so nothing is narrow and there is no scale
+to chase: `full_margins.py` reads the card's green frame as 640.0/640,
+800.0/800 and 1024.0/1024 source pixels. What is wrong is where the window
+OPENS, and the source's active video does not arrive where the published raster
+states it does:
+
+| mode | `h lead` measured / file | error, source px | far margin predicted | measured |
+|---|---|---|---|---|
+| 640x480@60 | 140.1 / 144 | -3.9 | 11.7 | 14 |
+| 800x600@60 | 216.4 / 216 | +0.4 | ~1 | 0 |
+| 1024x768@60 | 225.1 / 296 | **-70.9** | 133 | 136 |
+
+The window opens at the stated start, so the early part of the framebuffer is
+before it -- the card's left green column among it -- and the same amount of the
+source's own blanking is shown at the right. **The missing border and the black
+at the far edge are the same error twice**: the far margin is the lead error
+multiplied by the emitted pixels one source pixel occupies.
+
+So a picture "6 px NARROW" at 800x600@60 and "41 px narrow" at 1024x768@60 are
+one displacement each and not a magnification error. The scale account below is
+superseded.
+
+**1024x768@60 IS NOT ON THE SAME CURVE AS ITS NEIGHBOURS.** Its two neighbours
+sit within 4 source pixels of their stated start and it is 71 out, and all three
+are DMT rows declaring zero border -- `h_timings:136,160,0,1024,0,24`. Its line
+total and frame match the file exactly, 1343.9 against 1344 and 806 against 806,
+while its measured sync reads 129.6 against 136. So the machine keeps the total
+and spends the blanking differently, or the counter's origin is wrong at that
+mode, and nothing measured here separates those. Pass-through is what does:
+it carries the source's own timing and opens no capture window.
+
+### The state the aperture walk below was taken at
+
+Measured on the USB capture, 640x480@60 into 1080p at a default framing, with
+`OutputMode::TransmittedWindowDelayPx` at 3 and the left green column ON the
+frame -- which is not the state above. The
 divider varies between acquisitions on one build, and the capture and the
 framing go with it, so this is the state the aperture walk below was taken at
 rather than a figure to compare a later reading against:
@@ -55,6 +112,12 @@ when the aperture moves LATER:
 | the chain carrying window our aperture blanks | grows -- **observed** |
 | the aperture opening before the picture starts | shrinks to nothing, then clips picture |
 
+**640x480@60 MET THE GOAL AT `TransmittedWindowDelayPx` 3 AND DOES NOT NOW.**
+The constant is 6 and banded by field rate, and the same mode reads its left
+column off the frame with 14 at the right. Nothing establishes which change
+moved it, and the delay is a suspect rather than a lever: it slides
+`activeStop`, and the divider ceiling is taken off it.
+
 **640x480@60 MEETS THE GOAL FROM THE ENGINE'S OWN SOLVE**, with no hand-set
 register: `card_edges.py` reports `across 0 (0|0) down 0 (0|0)`, and the emitted
 frame carries no blank column at any edge. Two placement constants get it there,
@@ -65,6 +128,10 @@ frame carries no blank column at any edge. Two placement constants get it there,
 | 640x480@60 | 0 \| 0 | passes |
 | 800x600@60 | 0 \| 6 | the picture is 6 px NARROW |
 | 1024x768@60 | 38 \| 3 | the picture is 41 px narrow |
+
+**SUPERSEDED BY THE SPAN MEASUREMENT ABOVE, WHICH READS EVERY MODE'S ACTIVE
+COUNT EXACT.** What follows was the reading when the deficit was taken from the
+emitted margins alone, which cannot tell a short picture from a displaced one.
 
 **THE PLACEMENT CONSTANTS GENERALISE AND THE SPAN DOES NOT.** One value of
 `HsyncStartPx` brought the near edge flush on 640x480@60 and on 800x600@60, the
@@ -143,6 +210,44 @@ blanking does not open.
   `VDS_HB_SP` 66 to 62 and the divider 1456 to 1454. **The capture start is
   worth nothing without the write origin staying put**, which is what separates
   the hand-set register from the constant that appears to do the same thing.
+
+## What remains, and the order it has to be done in
+
+**The scale is not in it and neither is the output chain.** The display window
+is 87.1% of the line at the 1916-unit 50 Hz raster and 87.2% at the 1596-unit
+60 Hz one -- CEA's own active fraction -- and `produced` matches it to within
+1 px on both axes at both. `IF_HB_SP2` is where the published raster says, 228,
+274 and 316 against 229, 274 and 317. So the origin is the whole of it, and the
+work is in this order because each step decides what the next one may assume.
+
+1. **Settle whether 1024x768@60's 71 source pixels are the source or the
+   engine**, in pass-through, which carries the source's own timing and opens no
+   capture window. Horizontal only -- bypass has a vertical fault of its own.
+   Cross-check with `counter_origin.py`, which carries no anchor, so a
+   disagreement is the anchor rather than the source. Until this is answered the
+   fix is either one constant or two and nothing can tell which.
+2. **Size the lead error across at least six modes** spanning the divider range,
+   in source pixels AND in ADC samples. The two columns are the question: a
+   constant in samples is a time, a constant in source pixels is a lag in the
+   source's own clock, and `SourceTiming::pixelSamples()` makes the second
+   computable. Three points barely disconfirm a line. Take `v lead` in the same
+   pass -- -6.1, -3.2 and -0.5 lines so far -- so the vertical needs no second
+   bench run.
+3. **Put the correction where the origin is derived**, once. A per-mode table
+   keyed on one machine's modes is not a mechanism this firmware has.
+   **`TransmittedWindowDelayPx` is not the lever**: it slides `activeStop` and
+   the divider ceiling is taken off it, so moving it moves the capture, the
+   scale, the stride and the write origin together. Pin the arithmetic with a
+   host test through the fake-Wire seam; `card_edges.py` needs the bench and the
+   suite does not.
+4. **Re-run the acceptance on both sync types**, and confirm the entry really
+   was forgotten before reading any row -- the console says `no framing stored`.
+5. **Then the vertical**, which is the same shape and smaller. Do not merge the
+   two into one constant without a measurement spanning both axes.
+
+Two things are NOT part of this and must not be folded into it: composite's
+horizontal repeat at 800x600@60 and 1024x768@60, and the whole-capturable-region
+default an unpublished source falls back to. Both are in `docs/known-issues.md`.
 
 ## The instrument, and four ways it has lied
 
