@@ -242,10 +242,13 @@ TEST_CASE("a V sync that arrives late is still the source's own")
 {
     // THE TAIL IS THE SYNC PROCESSOR REACQUIRING, NOT THE SOURCE, AND THE
     // WINDOW MUST KEEP COVERING IT. Timed from the moment the path moves,
-    // VSACT is high within 3 ms on ten probes of eleven and at 294 and 297 ms
-    // on the first probe after a disturbance -- a position reached every time
-    // a source arrives, not a rare one. The earlier distribution, taken 240 ms
-    // into a settle, reaches 443 ms by the same clock.
+    // VSACT is high within 3 ms on every probe but the first of a boot or a
+    // disturbance, and that one is 239 to 297 ms across eleven readings --
+    // eight consecutive boots landing in a 4 ms band at 239 to 243, with the
+    // second probe of every one of them at 2 to 3 ms. So the tail is what the
+    // first probe of EVERY boot costs, not a rare excursion. The earlier
+    // distribution, taken 240 ms into a settle, reaches 443 ms by the same
+    // clock.
     //
     // **CUTTING THE WINDOW TO LET THE SEPARATOR ARBITRATE IS REFUTED, AND THIS
     // TEST IS THE GUARD.** A missed window answers NoSource, which latches
