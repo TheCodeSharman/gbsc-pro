@@ -2464,6 +2464,27 @@ firmware C++.
   ```
 
   One line out means one kind, which is the rule. More than one means split it.
+- **STOP FOR REVIEW AT ANY COMMIT TOUCHING C++**, which is `*.cpp`, `*.h`,
+  `*.hpp`, `*.c` or `*.ino`. Everything else -- Python tooling, snapshots,
+  `docs/`, `project:` policy commits -- goes straight through. The engine is
+  the part worth reading and the Python tooling is deliberately skipped.
+  **GATE ON THE FILE LIST, NEVER THE SUBJECT PREFIX.** Measured across the
+  branch: no commit says `firmware:` without touching C++, but 8 of 10
+  C++-touching commits were labelled `tv5725:`, `input:`, `gbs-control:`,
+  `docs:` or `tools:`, so the prefix alone would have skipped the 68-file
+  preset-table deletion. Upstream provenance selects nothing either -- it was
+  tried as "stop only at files present at `upstream/main`", and that waved the
+  entire geometry engine past unreviewed, `src/tv5725/` being new in this fork.
+
+  ```sh
+  for h in $(git log --format=%h --reverse main..dev); do
+    git diff-tree --no-commit-id --name-only -r "${h}" | grep -qE '\.(cpp|h|hpp|c|ino)$' \
+      && echo "$h $(git log -1 --format=%s ${h})"
+  done
+  ```
+
+  Use `"${h}"`, not `"$h:path"` -- zsh applies its `:t` modifier inside the
+  quotes and silently mangles the argument.
 - **WORK THE ONE ISSUE THAT WAS NAMED.** Several faults on this board look
   related and are not, so a session chasing two at once cannot tell which
   change moved which symptom -- cropping and corruption at a high sampling
@@ -2542,5 +2563,10 @@ firmware C++.
   how far it runs, and the default is the placement the solve computes for the
   source, not four zeroes. Reset once, note what it lands on, and compare with
   that. The route is behind `GBS_DEBUG`, so a 404 is a build without it.
-- The Makefile never shells out to nix; entering the dev shell is the caller's
-  job, so the rules work outside NixOS.
+- **A BUILD ENTRY POINT IS A MAKEFILE, NEVER A BASH SCRIPT, AND IT NEVER SHELLS
+  OUT TO NIX.** Provisioning the environment inside the build pulls unpinned
+  tools from whatever channel is configured, pays shell-startup cost per step
+  and makes the script NixOS-only; entering the dev shell is the caller's job,
+  so the rules work on any host that supplies the tools. The flake's devShell
+  pins them and the Makefile calls them off PATH, guarded so a missing one says
+  to run `nix develop`. Invocation is `nix develop -c make -C build`.
