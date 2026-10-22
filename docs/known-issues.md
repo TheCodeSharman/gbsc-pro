@@ -9392,6 +9392,11 @@ That is a change against
 field rate, and the same mode reads the left column off the frame with 14 at the
 right. Nothing here establishes which change moved it.
 
+**THE ORDER THIS HAS TO BE WORKED IN IS ON THAT PAGE**, under "What remains,
+and the order it has to be done in", with what each step decides for the next.
+The span is exact on every mode, so the scale and the output chain are out of
+it and the origin is the whole of it.
+
 ### The acceptance's two-pixel spread is composite's count dither, not the solve
 
 `card_edges.SPREAD` is 2 output pixels for what the solve lands apart between
