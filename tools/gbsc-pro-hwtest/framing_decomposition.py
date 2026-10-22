@@ -315,9 +315,15 @@ def judge(pos, window, slope, black):
 
 def remodel(record):
     """A record's model, slope and card positions re-derived for the mode its
-    registers carry, where that is not the mode it was modelled as."""
+    registers carry.
+
+    ALWAYS, not only where the carried mode differs from the one asked for: the
+    model's own constants move, and a record whose card positions were converted
+    through a window the model has since corrected carries that error into every
+    term. Only the registers, the geometry and the card's COLUMNS are raw.
+    """
     carried = carried_output(record["registers"])
-    if carried is None or carried == record.get("carried", record["output"]):
+    if carried is None:
         record.setdefault("carried", record["output"])
         return
     regs, geometry, window = record["registers"], record["geometry"], record["window"]

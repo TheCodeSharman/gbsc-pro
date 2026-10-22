@@ -338,3 +338,27 @@ def test_a_record_modelled_as_the_mode_asked_is_remodelled_as_the_mode_carried()
     assert abs(record["positions"]["h"]["C0"] - fd.columns_to_units(4.0, 320.5, cols)) < 1e-9
     assert abs(record["positions"]["v"]["C1"] - fd.columns_to_units(1070.0, want["V0m"], rows)) < 1e-9
     assert record["positions"]["v"]["C0"] is None
+
+
+def test_a_record_written_under_an_older_model_is_remodelled_too():
+    """A record of the mode it ASKED for still has its positions re-derived.
+
+    This is what a conditional remodel could not do: the delay constant moved
+    and every sweep record kept card positions converted through a window 14
+    units late, so the capture term carried the model's own error.
+    """
+    regs = dict(REGS, VDS_VSYNC_RST=1124, VDS_HSYNC_RST=1599,
+                STATUS_SYNC_PROC_VTOTAL=524)
+    geometry = dict(GEOMETRY, lineRateHz=31500)
+    rate = fd.field_rate_of(regs, geometry)
+    stale = dict(fd.predicted_window("1080p", 1600, rate))
+    stale["E0m"] += 14
+    record = dict(output="1080p", registers=regs, geometry=geometry,
+                  window=dict(stale, E0=None, E1=None, V0=None, V1=None),
+                  slope=dict(h_pred=2200 / 1600, v_pred=1.0),
+                  positions=fd.positions(regs, geometry),
+                  card=dict(h=(0.0, 1919.0, 0.0), v=(0.0, 1079.0, 0.0)))
+    fd.remodel(record)
+    want = fd.predicted_window("1080p", 1600, rate)
+    assert record["window"]["E0m"] == want["E0m"]
+    assert record["positions"]["h"]["C0"] == want["E0m"]
