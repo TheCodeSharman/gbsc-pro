@@ -121,3 +121,46 @@ controls a monotonic trend and does not rescue counts this small.
   intervals.
 - **Whether 26..29 is bad as well as detectable.** It has never been run for
   shears; it is only where the metric speaks.
+
+## A phase inside the clean run dithers at 4.8%, and 20 samples cannot see it
+
+The inference this page opens by naming -- that the scan establishes only where
+the band is, and nothing about the rest of the field -- now has a figure against
+it on separate sync.
+
+`vga`, separate sync, 320x256@50 at 50.474 Hz, `PLLAD_MD` 2200,
+`STATUS_SYNC_PROC_VTOTAL` 311 with **0 transitions**, read with
+`/samplinglog?ms=25&for=30000`:
+
+| field | readings | distinct | transitions | values |
+|---|---|---|---|---|
+| `STATUS_SYNC_PROC_HTOTAL` | 1135 | 3 | 100 | 2200 x1080, **2199 x34, 2201 x21** |
+| `PLLAD_MD` | 1135 | 1 | 0 | 2200 |
+| `STATUS_SYNC_PROC_HLOW_LEN` | 1135 | 2 | 70 | 165 x1100, 166 x35 |
+
+So the engine's own choice -- `PA_SP_S` 29, reached because the band covered
+`MidField` and `middleOfWidestCleanRun()` answered -- departs from the divider
+in **55 of 1135 samples, 4.8%**, where the separate-sync band this page records
+is 11..19 and 29 sits in the clean run. The picture shimmered visibly on sprite
+detail in that state.
+
+**The dither is real rather than the two-byte tearing artefact.** 2199, 2200 and
+2201 are `0x897`, `0x898` and `0x899` -- one high nibble and three adjacent low
+bytes -- and a field whose high byte never moves cannot tear into a different
+value. `a-wide-status-field-tears-across-its-two-bytes.md`.
+
+**The scan cannot resolve a dither of that size, and the arithmetic bounds it.**
+`SamplesPerPhase` is 20 and a phase scores clean only when every sample has
+`off == 0`, so a phase dithering at 4.8% reads clean with probability
+`0.952^20 = 0.37`. More than a third of the time such a phase joins the clean
+run, which is what the run's middle is then chosen from.
+
+**The reading is late in a boot, which is the direction that strengthens it.**
+The uptime gradient recorded above is eightfold and downward, so a figure taken
+more than twenty minutes after the last restart sits near the bottom of that
+range rather than in its steep part.
+
+**AND IT IS WHY A PHASE SWEEP MUST BE INTERLEAVED.** A monotonic trend of that
+size walked from phase 0 to 31 in order reads as a phase profile and is one
+reading per phase of the uptime instead. Candidate phases go A-B-A with the
+uptime logged, which is the shape `shearwatch.py` already uses.

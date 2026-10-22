@@ -8087,6 +8087,27 @@ no new instrument.
 
 ## Costs time rather than correctness
 
+### `BOOTLOG_BYTES=2048` takes the heap below the filesystem routes, and they fail silently
+
+The boot log and the `/fs/*` routes cannot both be had. Measured on the bench
+unit, one source state, the two builds differing only in that flag:
+
+| build | `Global variables use` | live free heap | `/fs/dir` |
+|---|---|---|---|
+| `BOOTLOG_BYTES=2048` | 56520 | **9696..9880** | `{"error":"low heap","free":9880,"needs":10000}` |
+| `BOOTLOG_BYTES=0` | 54472 | above 10000 | lists the four files |
+
+**The route that says so is the only one that says anything.** `/fs/dir` and
+`/fs/download` name the cause; `/framing.txt` returns an EMPTY BODY with a 200,
+and `gbs_unit.read_settings()` returns `None` off the same read. So the
+preferences and the stored framing read as absent rather than as unreachable,
+which is the signature of a wiped filesystem and is diagnosed as one -- and
+`CLAUDE.md` already warns that a short preferences read yields a full set of
+defaults and costs an evening.
+
+So the boot log is for the first fifteen seconds of a boot and nothing else.
+Read it, then reflash without it before asking the filesystem anything.
+
 ### The acquisition acceptance test asks whether the source was ever acquired, not whether it is held
 
 `test_acquires_every_source.py` waits for one reading of `state: acquired` at

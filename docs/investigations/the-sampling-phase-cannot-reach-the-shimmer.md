@@ -191,3 +191,48 @@ they compare within a framing and not across one.
 blob at columns 1880..1899, peak luma 44.8 with dead black either side, puts the
 reported right margin at 35 where the card's content ends at column 1588 and the
 true margin is 331.
+
+## The frame time lock's limit cycle is not the shimmer either
+
+The lock was already refuted twice by turning it off. The third refutation is
+stronger, because it does not need the lock stopped: its misbehaviour is the
+same in a shimmering state and a clean one.
+
+Read off the console, `vga`, 320x256@50 at 50.474 Hz, scaling path, the lock
+armed and driving, two states of the same source minutes apart:
+
+| | shimmering, 200 s | clean, 220 s |
+|---|---|---|
+| phase error span | 220168 | 223532 |
+| display clock span | 28496 Hz | 28936 Hz |
+| slams, abs d err > 50000 | 6 | 4 |
+| measured input rate | 50474 mHz, one value | 50474 mHz, one value |
+
+The cycle itself: the error creeps a couple of ticks a sample with the clock
+parked and the correction rounding to no change, then one phase reading lands
+about 200000 ticks off trend, the loop acts on it at full gain and yanks the
+clock by 26 kHz, and about 23 s of reconvergence follows. It repeats on roughly
+a 48 s period.
+
+**So it is a defect of the lock and it is not what the eye sees here**, which is
+what the pair of states establishes: the picture went from visibly shimmering on
+static detail to shimmering only on moving sprites while those figures did not
+move. `the-frame-time-lock-saturates.md` is the loop and its residual.
+
+**The horizontal axis is where the emitted frame shows it**, measured with
+`picture_jitter.py` on the quieter of the two states, 90 frames, 4 bands:
+
+| axis | sd | p2p |
+|---|---|---|
+| horizontal | 0.0995 | **1.142 columns** |
+| vertical | 0.0130 | 0.107 |
+
+Eight times the vertical and a peak-to-peak over a whole dongle column, with
+every lit edge unmoved across all 89 frame pairs -- so the picture's extent is
+constant and what moves is where the content sits inside it. There is no camera
+in that path, so neither figure carries a beat or a rolling shutter and the
+horizontal one needs no control to be read.
+
+**A reading taken on a static screen understates it.** The source was a game in
+its demo loop, and the clip above caught a still screen; the shimmer was
+reported visible on sprite detail in the same state.
