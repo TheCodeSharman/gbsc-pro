@@ -112,11 +112,18 @@ CLIP_FRAMES = 40
 # captured edge is a column either way.
 FLUSH = 1
 
-# What the SOLVE lands apart from one run to the next, in output pixels. With
-# no declared shape the picture fills the raster exactly, so rounding at either
-# end moves the outermost green column a pixel or two and can take it off the
-# frame altogether -- which is why one mode reads flush in one run and two
-# pixels in at the near edge in the next.
+# What the solve lands apart from one run to the next, in output pixels.
+#
+# **IT IS COMPOSITE'S COUNT DITHER AND NOT THE SOLVE**, so on separate sync this
+# is spending two pixels on nothing. Over six whole re-solves per leg -- away to
+# another mode, back, forget the entry, re-declare the shape -- every register
+# repeats exactly on separate sync at 320x256@50 and 640x480@60, and so does
+# every margin the instrument reads at the second. On composite the count
+# dithers 308/309 and VDS_HSCALE follows it by three.
+#
+# Kept at 2 because tightening it fails composite on that dither. It is what
+# lets 320x256@50 pass with 4 columns of black before its left border.
+# ../../docs/known-issues.md
 SPREAD = 2
 
 # What a framing is judged at, and the default both the sweep and the
