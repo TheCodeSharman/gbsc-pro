@@ -297,6 +297,16 @@ about the scaler, and the board is the better of the two sinks -- it recovers
 clean frames from a signal the monitor cannot hold at all. 1280x720 at
 74.25 MHz is what the acceptance work uses.
 
+**SO NO SWEEP ASKS FOR IT.** `gbs_unit.parse_modes()` drops 1920x1080 from the
+listing every sweep is built from, which is the one place `card_edges.py`,
+`framing_sweep.py` and the acceptance all go through. **Asking for it LEAVES
+the machine out of spec**: `MODE X1920 Y1080 C256 F50` lands at 24 Hz and
+reports that back honestly, and a sweep that ends there leaves the source
+driving a raster the scaler reads as `state: absent` until someone issues a
+mode the machine can hold. That reads exactly like a dead board. A mode file
+lists timings the MONITOR will accept and says nothing about what VIDC20 can
+clock, so the generator cannot be the thing that knows.
+
 ### It is the only source that can put ONE divider under two line rates
 
 The engine halves `PLLAD_MD` when the line rate doubles, and at 1096 the ADC PLL
