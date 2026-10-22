@@ -17,34 +17,37 @@ and the black at the left edge is an identity whose terms each have one owner:
             + (E0m - E0)  the model of the encoder is wrong
 
 The output side is a port of OutputMode::solve() and OutputMode::horizontal-
-TotalFor(), pinned by test_framing_decomposition.py to the values
-test/test_output_mode.cpp asserts. It is the PREDICTED column of a record, not
-a specification: when a constant moves in the C++ it moves here in the same
-commit. src/tv5725/OutputMode.cpp, src/tv5725/OutputWindow.cpp.
+TotalFor(). It is the PREDICTED column of a record, not a specification, and
+every constant in it is READ OUT OF THE C++ by firmware_constants rather than
+restated: a copy drifts in silence, and a delay constant that sat at 20 against
+the firmware's 6 put the modelled window 14 units late through a whole campaign.
+src/tv5725/OutputMode.cpp, src/tv5725/OutputWindow.cpp.
 """
 
 from collections import namedtuple
 
-# OutputMode.h
-WORKING_CEILING_HZ = 129_600_000
-ENGINE_CEILING_HZ = 108_000_000
-ENCODER_CEILING_HZ = 165_000_000
-MAX_HORIZONTAL_TOTAL = 2450
-FRONT_PORCH_MIN_PX = 16
-TRANSMITTED_WINDOW_DELAY_PX = 20
-HSYNC_START_PX = 13
-HORIZONTAL_TOTAL_MAX = 4096
+import firmware_constants as fc
 
-# DisplayClock.cpp, ascending
-SEEDS_HZ = (40_500_000, 54_000_000, 64_800_000, 81_000_000,
-            108_000_000, 129_600_000, 162_000_000)
+_H = fc.OUTPUT_MODE_H
+WORKING_CEILING_HZ = fc.integer(_H, "WorkingCeilingHz")
+ENGINE_CEILING_HZ = fc.integer(_H, "EngineCeilingHz")
+ENCODER_CEILING_HZ = fc.integer(_H, "EncoderCeilingHz")
+MAX_HORIZONTAL_TOTAL = fc.integer(_H, "MaxHorizontalTotal")
+FRONT_PORCH_MIN_PX = fc.integer(_H, "FrontPorchMinPx")
+TRANSMITTED_WINDOW_DELAY_PX = fc.integer(_H, "TransmittedWindowDelayPx")
+HSYNC_START_PX = fc.integer(_H, "HsyncStartPx")
+HORIZONTAL_TOTAL_MAX = fc.integer(_H, "HorizontalTotalMax")
 
-# OutputWindow.cpp: the write start, VDS_?B_SP + constant + perMagnification x m
-WRITE_START_H = (55.0, 25.0)
-WRITE_START_V = (0.2, 0.8)
-CAPTURE_MARGIN_H = 1
-CAPTURE_MARGIN_V = 2
-SCALE_UNITY = 1024
+SEEDS_HZ = fc.clock_seeds()
+
+# The write start, VDS_?B_SP + constant + perMagnification x m. The floor the
+# struct carries is not used here: the model asks where the write STARTS, which
+# placePicture() has already clamped by the time a register records it.
+WRITE_START_H = fc.write_start("Horizontal")[:2]
+WRITE_START_V = fc.write_start("Vertical")[:2]
+CAPTURE_MARGIN_H = fc.axis("Horizontal")[1]
+CAPTURE_MARGIN_V = fc.axis("Vertical")[1]
+SCALE_UNITY = fc.integer(fc.SCALE_H, "Unity")
 
 # The dongle's frame, whatever the HDMI mode: it rescales to this.
 CAPTURE_WIDTH, CAPTURE_HEIGHT = 1920, 1080
@@ -52,15 +55,9 @@ CAPTURE_WIDTH, CAPTURE_HEIGHT = 1920, 1080
 Mode = namedtuple("Mode", "active_lines sync_px back_porch_px active_px carried_px "
                           "total_px standard_hz vsync v_back_porch v_front_porch")
 
-# OutputMode.cpp's table, one row per mode, in its argument order.
-MODES = {
-    "1080p": Mode(1080, 44, 148, 1920, 1920, 2200, 148_500_000, 5, 36, 4),
-    "1024p": Mode(1024, 112, 248, 1280, 1280, 1688, 108_000_000, 3, 38, 1),
-    "960p":  Mode(960, 112, 312, 1280, 1280, 1800, 108_000_000, 3, 36, 1),
-    "720p":  Mode(720, 40, 220, 1280, 1280, 1650, 74_250_000, 5, 20, 5),
-    "576p":  Mode(600, 64, 68, 720, 679, 864, 27_000_000, 5, 19, 1),
-    "480p":  Mode(480, 62, 60, 720, 690, 858, 27_000_000, 6, 30, 9),
-}
+# OutputMode.cpp's own table, read from it, one row per mode in the
+# constructor's argument order.
+MODES = {name: Mode(*row) for name, row in fc.output_modes().items()}
 
 # The HDMI active height the encoder emits for each mode, which the dongle
 # stretches to CAPTURE_HEIGHT. Ours for the four the campaign runs; the two SD

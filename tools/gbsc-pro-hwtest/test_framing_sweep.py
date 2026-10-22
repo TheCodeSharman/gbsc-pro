@@ -57,14 +57,17 @@ def synthetic_clip(left_green, right_green, top_green, bottom_green):
 
 
 def test_the_analysis_places_the_card_in_raster_units_through_the_window():
-    # 1080p, T 1600: the model's window opens at 160 and 1920 columns span
-    # 1600 x 1920 / 2200 = 1396.4 units, 1.375 columns each. A green column at
-    # 0 is unit 160; one at 1919 is unit 160 + 1919 / 1.375.
+    # 1080p, T 1600 at 108 MHz: CEA's 44 and 148 scale to 32 and 108, so the
+    # model's window opens at 140 plus the transmitted window's delay, and 1920
+    # columns span 1600 x 1920 / 2200 = 1396.4 units, 1.375 columns each. A
+    # green column at 0 is the window's own start; one at 1919 is 1919 / 1.375
+    # units past it.
+    opens = 140 + fd.TRANSMITTED_WINDOW_DELAY_PX
     got = fs.analyse_default("1080p", REGS, GEOMETRY, synthetic_clip(0, 1919, 0, 1079))
-    assert got["window"]["E0m"] == 160
+    assert got["window"]["E0m"] == opens
     assert abs(got["slope"]["h_pred"] - 2200 / 1600) < 1e-9
-    assert abs(got["positions"]["h"]["C0"] - 160.0) < 1e-6
-    assert abs(got["positions"]["h"]["C1"] - (160.0 + 1919 / 1.375)) < 1e-6
+    assert abs(got["positions"]["h"]["C0"] - opens) < 1e-6
+    assert abs(got["positions"]["h"]["C1"] - (opens + 1919 / 1.375)) < 1e-6
     assert got["positions"]["v"]["C0"] == 41.0
     assert abs(got["positions"]["v"]["C1"] - (41.0 + 1079)) < 1e-6
 

@@ -72,10 +72,12 @@ def test_1080p_at_129_6mhz_widens_the_raster_and_the_window():
 
 def test_the_window_is_placed_for_a_total_read_off_the_chip():
     # The sweep has the raster the ENGINE solved, VDS_HSYNC_RST + 1, and the
-    # model is asked where the window sits inside THAT line.
+    # model is asked where the window sits inside THAT line. 1916 units at
+    # 50.08 Hz is 107.95 MHz, where CEA's 44 and 148 scale to 32 and 108.
     window = fd.predicted_window("1080p", 1916, 50.08)
-    assert window["E0m"] == 160
-    assert window["E1m"] == 160 + (1916 * 1920) // 2200
+    start = 140 + fd.TRANSMITTED_WINDOW_DELAY_PX
+    assert window["E0m"] == start
+    assert window["E1m"] == start + (1916 * 1920) // 2200
 
 
 def test_above_the_rate_where_the_porch_no_longer_fits_the_start_gives_way():
