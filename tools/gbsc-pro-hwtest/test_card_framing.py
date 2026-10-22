@@ -14,7 +14,12 @@ below is one mode per behaviour the solve actually has; `--all-modes` sweeps the
 rest, for when the question is the monitor definition rather than the engine.
 
 The measurement is `card_edges`', shared with the tool that sweeps
-interactively, so there is one statement of what flush means.
+interactively, so there is one statement of what flush means. **THAT STATEMENT
+IS IN CAPTURE UNITS**: the engine places a window on a 2-unit horizontal
+granule and a 1-line vertical one, so what an edge is allowed is a property of
+the mode's sampling density rather than a number of output pixels, and the
+black beside the border and the part of the border missing are one budget
+against it. card_edges.allowance_for().
 
 **IT ASSERTS THE GOAL AND IT FAILS UNTIL THE GOAL IS MET.** Every edge of every
 case carries green, and no edge carries black between that green and the frame's
@@ -41,10 +46,11 @@ size beside the reading.
 
 **THE DONGLE RESCALES RATHER THAN REFUSING**, which is what makes that worth
 doing: a 1024p frame asked for at 1920x1080 comes back as a plausible 1905x1076
-picture with every absolute figure 1.5x and ALLOWANCE, stated in capture
-columns, tightened by the same factor. Measured both ways on one state, the far
-margin reads 9 natively and 14 upscaled, and a one-row margin smears from 1,3
-to 2,2. docs/investigations/the-encoder-ceiling-is-the-raster-floor.md
+picture with every absolute figure 1.5x -- and the allowance follows it, being
+the capture window's extent magnified onto whatever frame arrives. Measured
+both ways on one state, the far margin reads 9 natively and 14 upscaled, and a
+one-row margin smears from 1,3 to 2,2.
+docs/investigations/the-encoder-ceiling-is-the-raster-floor.md
 
 **16:9 NARROWS NOTHING AT 1080p, SO IT IS NOT THE 4:3 TRAP.** A declared shape
 narrows the room and the bars it pillarboxes with are OUR blanking, so a strip
@@ -320,6 +326,7 @@ def test_the_default_framing_puts_the_card_flush_to_the_emitted_edges(
     want = expected_framing.margins(
         entry_running(request, mode),
         gbs_unit.get_json(host, "/geometry")[1], emitted)
+
     assert want is not None, (
         "the monitor definition states no timings for this mode, so what the "
         "design puts at an edge is unknown and a verdict would be against zero")
@@ -331,7 +338,15 @@ def test_the_default_framing_puts_the_card_flush_to_the_emitted_edges(
     # picture_jitter.py is what resolves a sub-pixel shimmer, and the share
     # stands without a span this clip cannot supply.
     held = picture_stability.judge(picture_stability.row_luma(clip), None)
-    found = {name: card_edges.judge(clip, axis, card_edges.ALLOWANCE, want[name])
+    # AT THE MODE'S OWN CAPTURE GRID. The engine places on a 2-unit horizontal
+    # granule and a 1-line vertical one, which is 3.8 emitted px at 800x600@60
+    # and 5.6 at 320x256@50 -- so a goal stated in output pixels is loose on one
+    # mode and unreachable on the other.
+    geometry = gbs_unit.get_json(host, "/geometry")[1]
+    found = {name: card_edges.judge(
+                 clip, axis,
+                 card_edges.allowance_for(geometry, emitted, axis),
+                 want[name], card_edges.source_pixel_px(mode, clip, axis))
              for name, axis in (("across", 1), ("down", 0))}
 
     whys = [f"{name}: {judged.why}" for name, judged in found.items()

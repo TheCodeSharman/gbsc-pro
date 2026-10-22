@@ -36,6 +36,17 @@ MODES = ("X800 Y600 C256 F60", "X640 Y480 C256 F60")
 
 SYNC_TYPES = ((False, "separate"), (True, "composite"))
 
+# How much of the source's OUTERMOST PIXEL has to survive on the emitted frame.
+# It lives here rather than in card_edges because the scaling path's budget is
+# sized by the capture grid the engine places on, and this path has no capture
+# window at all -- video routes around the input formatter, one source pixel is
+# one emitted pixel, and the border is a single column read directly.
+#
+# One edge of a pair reads 1.00 by construction and the other carries whatever
+# the two ends differ by with neither clipped, so the quarter this allows is
+# mostly the pixel rather than the instrument.
+WHOLE_ENOUGH = 0.75
+
 # A mode change is followed by seconds of readings inside no standard at all,
 # and the encoder needs a further moment to lock to a raster that just moved.
 SETTLE_SECONDS = 16.0
@@ -214,12 +225,14 @@ def test_the_passed_through_card_reaches_every_emitted_edge(
 
     # One source pixel is one emitted pixel on this path: the channel passes the
     # raster rather than magnifying it, so the border is a single column and the
-    # wholeness measure reads it directly.
+    # wholeness measure reads it directly. That is also why the threshold lives
+    # here rather than in card_edges, whose budget is sized by the capture grid
+    # the scaling path places on and this path has none of.
     whys = []
     for name, axis in (("across", 1), ("down", 0)):
         judged = card_edges.judge(clip, axis, card_edges.ALLOWANCE)
         for end, surviving in zip(card_edges.ENDS, judged.whole):
-            if surviving < card_edges.WHOLE_ENOUGH:
+            if surviving < WHOLE_ENOUGH:
                 whys.append(f"{name} {end}: {surviving:.2f} of the border, "
                             f"margins {judged.margins}")
     print(f"\n{mode} {'composite' if csync else 'separate'}: emitted "

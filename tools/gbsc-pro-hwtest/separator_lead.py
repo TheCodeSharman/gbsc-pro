@@ -168,7 +168,10 @@ def leg(host, where, device, mode, csync):
                                width=emitted[0], height=emitted[1])
     px = {name: card_edges.source_pixel_px(mode, clip, axis)
           for name, axis in Axes}
-    found = {name: card_edges.judge(clip, axis, card_edges.ALLOWANCE)
+    found = {name: card_edges.judge(
+                 clip, axis,
+                 card_edges.allowance_for(geometry, emitted, axis),
+                 source_px=px[name])
              for name, axis in Axes}
     return {"why": None, "registers": registers, "geometry": geometry,
             "emitted": emitted, "found": found, "px": px}

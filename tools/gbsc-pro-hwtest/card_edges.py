@@ -14,15 +14,24 @@ outermost pixel on the emitted frame, and leaves as little black beside it as
 that costs. Two readings per edge, and they answer different questions:
 
     whole   how much of the outermost SOURCE pixel survives, against what the
-            OPPOSITE edge of the same frame carries, WHOLE_ENOUGH of it being
-            the acceptance. The border's captured size and amplitude vary
-            between edges and modes and none of that is a deficit
-    margin  how much black is between it and the frame's edge, bounded by the
-            allowance. It is the cost, so it is kept small rather than spent
+            OPPOSITE edge of the same frame carries. The border's captured size
+            and amplitude vary between edges and modes and none of that is a
+            deficit
+    margin  how much black is between it and the frame's edge
 
 A margin cannot answer the first: a border sitting wholly on row 0 and one
 half off the frame above it both read 0, which is a verdict reading as perfect
 on an axis where the pixel is nearly all gone.
+
+**THEY ARE ONE BUDGET AND NOT TWO THRESHOLDS.** A window a granule late cuts
+the border and shows no black, one a granule early shows black and cuts
+nothing, and the two cost the same thing -- so an edge is out by their sum, in
+the emitted frame's own pixels, against ONE allowance. Held separately the two
+cannot both be met: three output pixels of black and a quarter of a source
+pixel of clip are the same size only where one source pixel is twelve.
+
+**THAT ALLOWANCE IS THE ENGINE'S OWN CAPTURE GRID**, so it is a property of the
+mode rather than a constant -- allowance_for().
 
 `docs/investigations/full-screen-framing-on-the-vesa-modes.md` is the goal and
 what has been measured against it.
@@ -82,6 +91,7 @@ import time
 
 import numpy as np
 
+import firmware_constants as fc
 import gbs_unit
 import hdmi_capture
 
@@ -121,34 +131,59 @@ FLUSH = 1
 # every margin the instrument reads at the second. On composite the count
 # dithers 308/309 and VDS_HSCALE follows it by three.
 #
-# Kept at 2 because tightening it fails composite on that dither. It is what
-# lets 320x256@50 pass with 4 columns of black before its left border.
-# ../../docs/known-issues.md
+# Kept at 2 because tightening it fails composite on that dither. It is the one
+# part of the allowance that belongs in OUTPUT pixels, being a scale that moved
+# rather than a window placed. ../../docs/known-issues.md
 SPREAD = 2
 
-# What a framing is judged at, and the default both the sweep and the
-# acceptance suite use, so there is one statement of what flush means. The
-# magnitude is reported whatever this is, so widening it cannot hide a drift
-# that is still growing.
+# What an edge is allowed WHEREVER THE ENGINE'S OWN GRID IS NOT KNOWN: the
+# instrument and the solve, and nothing for the placement. Pass-through routes
+# video around the input formatter, so there is no capture window there and no
+# granule to charge. allowance_for() is what the scaling path is judged at.
 ALLOWANCE = FLUSH + SPREAD
+
+# The grid the engine places a capture window on, in CAPTURE UNITS, per axis --
+# Axis::captureGranularity, read out of the C++ rather than copied. Horizontally
+# it is the low bit of IF_HB_SP2, which the hardware ignores; vertically it is a
+# line. ../../docs/investigations/full-screen-framing-on-the-vesa-modes.md
+CAPTURE_GRANULE = {1: fc.axis("Horizontal")[0], 0: fc.axis("Vertical")[0]}
+
+# Per axis, what /geometry calls the capture window's extent and which of the
+# emitted frame's two sizes that extent was magnified onto. ACROSS is axis 1
+# and DOWN is axis 0.
+CAPTURE_EXTENT = {1: ("eh", 0), 0: ("ev", 1)}
+
+
+def capture_unit_px(geometry, emitted, axis):
+    """How many output pixels one CAPTURE unit occupies on `axis`.
+
+    The window's extent magnified onto the frame, so it needs no register read
+    and no model: /geometry states the extent in the units the engine places
+    in, and at a default framing the frame IS what that extent became.
+    """
+    units, size = CAPTURE_EXTENT[axis]
+    return emitted[size] / float(geometry[units])
+
+
+def allowance_for(geometry, emitted, axis):
+    """What an edge is allowed at this mode, in the emitted frame's pixels.
+
+    **THE GOAL BELONGS ON THE GRID THE ENGINE CAN PLACE ON**, which is a
+    property of the mode's sampling density and not a number of output pixels:
+    one granule is 3.8 emitted px where a source line is sampled 1.27 times a
+    pixel and 5.6 where it is sampled 2.15 times. Stated as a constant the same
+    allowance is loose on one mode and unreachable on the other -- measured
+    over 63 modes the engine is centred on its design to +0.05 source px with a
+    spread of 2 to 3 ADC samples, which IS the granule plus the retime origin's
+    own rounding, so what is left to assert is the grid.
+    ../../docs/investigations/full-screen-framing-on-the-vesa-modes.md
+    """
+    return ALLOWANCE + (CAPTURE_GRANULE[axis]
+                        * capture_unit_px(geometry, emitted, axis))
 
 # The far edge additionally carries the width parity, which the HSCALE
 # corruption workaround can leave a pixel of.
 PARITY = 1
-
-# How much of the source's OUTERMOST PIXEL has to survive on the emitted frame.
-# The border's captured size may vary between edges and modes -- the filter
-# spreads it and the magnification differs per axis -- and none of that is a
-# deficit. What is a deficit is the pixel being mostly invisible.
-#
-# It is the acceptance, not a tolerance to widen: an inset buys the pixel at
-# the cost of black at the edge, so it is paid only as far as this requires.
-# One edge of a pair reads 1.00 by construction and the other carries whatever
-# the two ends differ by with neither clipped -- within 6% on every mode
-# measured, so the quarter this allows is mostly the pixel rather than the
-# instrument.
-WHOLE_ENOUGH = 0.75
-
 
 def greenest_along(clip, axis):
     """Each position's greenest moment across the clip, so the phase where the
@@ -258,23 +293,15 @@ def runs_in(greenest):
     return runs
 
 
-# WHAT AN EDGE OFF THE FRAME IS OUT BY, in output pixels, where the opposite
-# edge is flush. The green column is simply not in the capture, so nothing in
-# the frame sizes the overrun directly -- what sizes it is the margin at the
-# edge still ON the frame, because a shift moves the two ends together. Gone at
-# one end and flush at the other leaves only the width, and a width wrong by
-# more than the allowance puts BOTH columns off, which is the verdict that
-# bounds nothing and fails whatever the allowance is.
-OFF_FRAME_LEAST = 1
-
 # A frame's two edges are near the two ends of the picture. Green anywhere else
 # is the card's own blocks, and two runs a few columns apart are one edge read
 # twice -- both of which read as a frame spanning almost nothing.
 QUARTER = 4
 
 # `shown` is what the two margins leave, `margins` is each edge's own, `out_by`
-# is the worst edge's distance from flush in output pixels, and `why` is None
-# where every edge is inside the allowance.
+# is the worst edge's distance from the design in output pixels -- the black
+# beside its border plus the part of the border the frame did not carry -- and
+# `why` is None where every edge is inside the allowance.
 #
 # **`out_by` IS THE DISTANCE FROM THE GOAL, NOT THE AMOUNT BY WHICH A THRESHOLD
 # WAS MISSED**, so it is reported whether the verdict passes or fails: raising
@@ -292,8 +319,14 @@ Judgement = collections.namedtuple("Judgement",
 ENDS = ("near", "far")
 
 
-def judge(clip, axis, allowance, expected=(0.0, 0.0)):
+def judge(clip, axis, allowance, expected=(0.0, 0.0), source_px=1.0):
     """What the green frame says about the window on this axis.
+
+    `source_px` is how many output pixels one SOURCE pixel occupies, which is
+    what puts the black beside the border and the part of the border missing
+    into ONE currency. source_pixel_px() computes it off the mode and the clip;
+    1.0 is pass-through, where the channel passes the raster rather than
+    magnifying it.
 
     `expected` is what the DESIGN puts at (near, far) in output pixels, signed:
     positive is black the design shows, negative is how much of the outermost
@@ -324,7 +357,7 @@ def judge(clip, axis, allowance, expected=(0.0, 0.0)):
     # Each edge on its own, because the goal is per-edge: the near edge and both
     # vertical edges are flush, and only the far edge carries the parity. A span
     # test passes a picture that is short at one end and over at the other.
-    out_by, over = 0, []
+    out_by, over = 0.0, []
     for end, margin, limit, surviving, want in zip(ENDS, margins,
                                                    (allowance, allowance + PARITY),
                                                    whole, expected):
@@ -335,34 +368,47 @@ def judge(clip, axis, allowance, expected=(0.0, 0.0)):
         if -want > FLUSH:
             continue
         black = max(0.0, want)
-        from_flush = (OFF_FRAME_LEAST if margin is None
-                      else int(round(abs(margin - black))))
-        out_by = max(out_by, from_flush)
-        if from_flush > limit:
+        # ONE BUDGET PER EDGE. A window a granule late cuts the border and
+        # shows no black, one a granule early shows black and cuts nothing, and
+        # the two cost the same thing -- so they are added rather than held to
+        # thresholds of their own. Two thresholds cannot be met at once: three
+        # output pixels of black and a quarter of a source pixel of clip are
+        # the same allowance only where one source pixel is twelve.
+        lost = max(0.0, 1.0 - surviving) * source_px
+        from_design = lost if margin is None else abs(margin - black) + lost
+        out_by = max(out_by, from_design)
+        if margin is None:
+            # The border is not on the frame at all, which is the goal itself
+            # failing -- no allowance covers it, and the shift that cost it is
+            # sized at the other end.
+            over.append(f"the {end} edge is off the frame")
+        elif from_design > limit:
             against = f" against {black:.0f} by design" if black else ""
-            over.append(f"the {end} edge is off the frame" if margin is None
-                        else f"{margin} at the {end} edge{against}")
-        elif surviving < WHOLE_ENOUGH:
-            over.append(f"{surviving:.2f} of the {end} edge's source pixel")
+            cut = (f" and {1.0 - surviving:.2f} of its source pixel"
+                   if surviving < 1.0 else "")
+            over.append(f"{margin} at the {end} edge{against}{cut}")
     shown = None if None in margins else margins[0] + margins[1]
     if over:
         return Judgement(shown, margins, out_by,
-                         f"out by {out_by}: " + ", ".join(over), whole)
+                         f"out by {out_by:.1f}: " + ", ".join(over), whole)
     return Judgement(shown, margins, out_by, None, whole)
 
 
 def reading(judged):
     """One axis' verdict as a report prints it: the span the two margins leave,
-    then each edge's own, then the distance from flush. A dash is an edge the
-    emitted frame does not carry, which bounds nothing on its own."""
+    then each edge's own, then the distance from the design. A dash is an edge
+    the emitted frame does not carry, which bounds nothing on its own."""
     def px(value):
         return "-" if value is None else str(value)
+    out_by = "-" if judged.out_by is None else f"{judged.out_by:.1f}"
     return (f"{px(judged.shown)} ({px(judged.margins[0])}|"
-            f"{px(judged.margins[1])}) out by {px(judged.out_by)} "
+            f"{px(judged.margins[1])}) out by {out_by} "
             f"whole {judged.whole[0]:.2f}|{judged.whole[1]:.2f}")
 
 
 def sweep_mode(host, dev, source, mode, allowance, keep_framing):
+    """One mode judged. `allowance` overrides the mode's own grid where it is
+    given, so a run can ask what a tighter or wider edge would have said."""
     reply = gbs_unit.mode_serv(source, f"MODE {mode}")
     if not reply or not reply.startswith("OK"):
         return None, f"source refused the mode: {reply!r}"
@@ -382,7 +428,15 @@ def sweep_mode(host, dev, source, mode, allowance, keep_framing):
     # A clip rather than a frame: the card flashes twice a second, so a single
     # capture can miss a green edge entirely. CLIP_FRAMES spans both phases.
     clip = hdmi_capture.frames(CLIP_FRAMES, dev)
-    found = {name: judge(clip, axis, allowance)
+    # THE GRID THE ENGINE PLACED ON, read after the framing has settled: the
+    # window's extent is what the frame was magnified from, so the allowance
+    # and the source pixel both follow this mode rather than a constant.
+    _, geometry = gbs_unit.get_json(host, "/geometry")
+    emitted = (clip.shape[2], clip.shape[1])
+    found = {name: judge(clip, axis,
+                         allowance if allowance is not None
+                         else allowance_for(geometry, emitted, axis),
+                         source_px=source_pixel_px(mode, clip, axis))
              for name, axis in (("across", 1), ("down", 0))}
     whys = [f"{name}: {judged.why}" for name, judged in found.items()
             if judged.why]
@@ -397,9 +451,9 @@ def main():
     parser.add_argument("--modes", default=None,
                         help="comma separated, e.g. 'X800 Y600 C256 F60'; default is "
                              "every mode the monitor definition allows at 256 colours")
-    parser.add_argument("--allowance", type=int, default=ALLOWANCE,
-                        help="output pixels to tolerate at a flush edge "
-                             f"(default {ALLOWANCE})")
+    parser.add_argument("--allowance", type=float, default=None,
+                        help="output pixels to tolerate at an edge, overriding "
+                             "the mode's own capture grid")
     parser.add_argument("--keep-framing", action="store_true")
     args = parser.parse_args()
 
@@ -412,8 +466,10 @@ def main():
         sys.exit("no modes to sweep -- is ModeServ answering?")
 
     dev = hdmi_capture.device()
-    print(f"{len(modes)} modes, {args.host}, flush within {args.allowance} px "
-          f"({args.allowance + PARITY} at the far edge)\n")
+    within = ("each mode's own capture grid" if args.allowance is None
+              else f"{args.allowance} px")
+    print(f"{len(modes)} modes, {args.host}, flush within {within} "
+          f"({PARITY} px more at the far edge)\n")
     failed = []
     for mode in modes:
         found, why = sweep_mode(args.host, dev, source, mode, args.allowance,

@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import card_edges
 
 WIDTH, HEIGHT = 400, 40
-ACROSS = 1
+ACROSS, DOWN = 1, 0
 
 
 def across(near, far):
@@ -63,17 +63,15 @@ def test_an_edge_off_the_frame_is_sized_by_the_edge_still_on_it():
     assert "60" in out.why
 
 
-def test_an_edge_off_the_frame_is_sized_by_the_allowance_and_fails_the_pixel():
-    """Gone at one end and flush at the other is the rounding the solve lands
-    either side of, which the MARGIN's allowance covers -- and a width wrong by
-    more than it puts BOTH columns off, which bounds nothing. The pixel is a
-    separate question and it is lost: a border no part of which reached the
-    frame survives none of itself, however small the shift that cost it."""
-    out = judged(None, WIDTH - 1)
+def test_an_edge_off_the_frame_fails_however_wide_the_allowance():
+    """The goal is that the source's outermost pixel is ON the frame, so an
+    allowance that covers black beside the border cannot cover its absence --
+    and a width wrong by more than the allowance puts BOTH columns off, which
+    bounds nothing."""
+    out = card_edges.judge(across(None, WIDTH - 1), ACROSS, allowance=1000)
     assert out.margins == (None, 0)
-    assert out.out_by == card_edges.OFF_FRAME_LEAST
     assert out.whole == (0.0, 1.0)
-    assert "0.00" in out.why
+    assert "off the frame" in out.why
 
 
 def test_neither_edge_bounds_nothing():
@@ -110,6 +108,15 @@ def blocks(near_at, far_at, width=SOURCE_PX):
         if lo < hi:
             clip[0, :, lo:hi, 1] = 255
     return clip
+
+
+def test_an_edge_off_the_frame_is_out_by_its_whole_source_pixel():
+    """A border no part of which reached the frame survives none of itself,
+    however small the shift that cost it -- so the size it is out by starts at
+    the pixel it marks."""
+    out = card_edges.judge(across(None, WIDTH - 1), ACROSS, card_edges.FLUSH,
+                           source_px=SOURCE_PX)
+    assert out.out_by == SOURCE_PX
 
 
 def test_a_border_clear_of_the_frames_edge_is_whole():
@@ -152,22 +159,36 @@ def test_the_source_pixels_width_is_the_frame_over_the_modes_active_count():
 
 def test_a_border_mostly_off_the_frame_fails_though_its_margin_is_flush():
     """The fault the margin cannot see: flush at both ends, and the outermost
-    source pixel nearly all gone."""
+    source pixel nearly all gone. What the margin would have shown as black the
+    clip shows as a missing fraction of the border, so the two are ONE budget
+    and the pixel the frame lost is charged in the frame's own pixels."""
     out = card_edges.judge(blocks(1 - SOURCE_PX, WIDTH - SOURCE_PX), ACROSS,
-                           card_edges.FLUSH)
+                           card_edges.FLUSH, source_px=SOURCE_PX)
     assert out.margins == (0, 0)
-    assert out.out_by == 0
+    assert out.out_by == 0.75 * SOURCE_PX
     assert out.whole == (0.25, 1.0)
-    assert out.why is not None and "0.25" in out.why
+    assert out.why is not None
 
 
-def test_three_quarters_of_the_outermost_pixel_is_enough():
-    """What the acceptance allows: the border may run past the frame, as long
-    as most of the pixel it marks is still on it."""
+def test_a_border_the_grid_could_have_cut_is_inside_the_allowance():
+    """A quarter of the border is one output pixel here, which an allowance
+    stated on the capture grid covers -- the same quarter fails against an
+    allowance of one pixel once the magnification makes it four."""
     out = card_edges.judge(blocks(-1, WIDTH - SOURCE_PX), ACROSS,
-                           card_edges.FLUSH)
-    assert out.whole == (card_edges.WHOLE_ENOUGH, 1.0)
+                           allowance=1.0 + 0.25 * SOURCE_PX, source_px=SOURCE_PX)
+    assert out.whole == (0.75, 1.0)
     assert out.why is None
+
+
+def test_black_beside_the_border_and_the_part_of_it_lost_are_one_budget():
+    """Neither reading can be judged without the other: a window a granule late
+    shows the clip and no black, one a granule early shows black and no clip,
+    and the two cost the same thing."""
+    clipped = card_edges.judge(blocks(1 - SOURCE_PX, WIDTH - SOURCE_PX), ACROSS,
+                               card_edges.FLUSH, source_px=SOURCE_PX)
+    black = card_edges.judge(blocks(3, WIDTH - SOURCE_PX), ACROSS,
+                             card_edges.FLUSH, source_px=SOURCE_PX)
+    assert clipped.out_by == black.out_by == 3.0
 
 
 def test_a_border_clipped_to_a_sliver_inside_the_frames_edge_reports_the_sliver():
@@ -223,6 +244,37 @@ def test_the_cards_own_green_is_not_the_reference():
     clip[0, :, 10:10 + len(BENCH_SMEAR), 1] = 0
     out = card_edges.judge(clip, ACROSS, card_edges.FLUSH)
     assert out.whole == (0.0, 1.0)
+
+
+# --- the allowance the engine's own grid costs -----------------------------------
+
+def grid_term(geometry, emitted, axis):
+    """What `allowance_for` adds for the capture grid alone."""
+    return card_edges.allowance_for(geometry, emitted, axis) - card_edges.ALLOWANCE
+
+
+def test_the_allowance_follows_the_modes_own_sampling_density():
+    """A capture unit is more output pixels where the source is sampled less
+    densely, so the grid the engine places on costs more there -- which a
+    constant stated in output pixels cannot express."""
+    dense = grid_term({"eh": 1000, "ev": 1000}, (1000, 1000), ACROSS)
+    coarse = grid_term({"eh": 250, "ev": 1000}, (1000, 1000), ACROSS)
+    assert dense > 0
+    assert coarse == 4 * dense
+
+
+def test_each_axis_is_judged_on_its_own_grid():
+    """The horizontal granule is the low bit of IF_HB_SP2 and the vertical one
+    is a line, so one allowance for both axes states the wrong grid on one."""
+    geometry, emitted = {"eh": 500, "ev": 500}, (1000, 1000)
+    assert (grid_term(geometry, emitted, ACROSS)
+            != grid_term(geometry, emitted, DOWN))
+
+
+def test_the_allowance_is_the_instrument_and_the_solve_where_no_grid_is_known():
+    """Pass-through routes video around the input formatter, so there is no
+    capture window and no granule to charge."""
+    assert card_edges.ALLOWANCE == card_edges.FLUSH + card_edges.SPREAD
 
 
 # --- what the design puts at an edge ---------------------------------------------
