@@ -1076,7 +1076,7 @@ TEST_CASE("the blanking at a doubled line's head moves no position in it")
 // own.
 //
 // A fractional lag was applied here instead, and it was a correction for the
-// retiming being bypassed: SyncProcessor::applyForSyncType() wrote
+// retiming being bypassed: SyncProcessor::applySeparation() wrote
 // SP_HS_LOOP_SEL 1 on both sync types, which takes the retiming module out of
 // circuit. Measured on the bench at 800x600@60, one frozen state, the only
 // variable the routing bit: engaging the retiming moved the card's corner

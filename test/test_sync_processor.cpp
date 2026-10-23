@@ -1,4 +1,4 @@
-// Host-compiled unit tests for SyncProcessor::applyForSyncType() --
+// Host-compiled unit tests for SyncProcessor::applySeparation() --
 // `make -C test sync-processor`.
 //
 // Fields are read back through their own typedefs, never through a hand-written
@@ -63,7 +63,7 @@ static uint32_t applied(bool csync)
 {
     Wire.reset();
     Wire.poison(Poisons[0]);
-    SyncProcessor::applyForSyncType(csync, MeasuredCsyncDivider);
+    SyncProcessor::applySeparation(csync, MeasuredCsyncDivider);
     return Field::read();
 }
 
@@ -74,7 +74,7 @@ static bool wasWritten(bool csync)
     for (int i = 0; i < 2; ++i) {
         Wire.reset();
         Wire.poison(Poisons[i]);
-        SyncProcessor::applyForSyncType(csync, MeasuredCsyncDivider);
+        SyncProcessor::applySeparation(csync, MeasuredCsyncDivider);
         under[i] = Field::read();
     }
     return under[0] == under[1];
@@ -282,7 +282,7 @@ TEST_CASE("the default coast window leaves the coast lengths alone")
     // the window over must not silently undo them.
     Wire.reset();
     Wire.poison(Poisons[0]);
-    SyncProcessor::applyForSyncType(true, MeasuredCsyncDivider);
+    SyncProcessor::applySeparation(true, MeasuredCsyncDivider);
     const uint32_t pre = SyncProcessor::SP_PRE_COAST::read();
     const uint32_t post = SyncProcessor::SP_POST_COAST::read();
 
@@ -458,7 +458,7 @@ TEST_CASE("both clamp writers mean the same line on sync on green")
     const uint32_t lineRateHz = 31468;
     const uint16_t divider = 1212;
     const HsyncPulse pulse(88.0f / 1212.0f);
-    SyncProcessor::applyForSyncType(true, divider);
+    SyncProcessor::applySeparation(true, divider);
 
     SyncProcessor::placeClampFor(true, true, lineRateHz, divider, pulse);
     const uint16_t installed = SyncProcessor::SP_CS_CLP_ST::read();
@@ -530,7 +530,7 @@ TEST_CASE("an unmeasured interval keeps the hold")
     Wire.reset();
     Wire.poison(Poisons[0]);
 
-    SyncProcessor::applyForSyncType(true, MeasuredCsyncDivider);
+    SyncProcessor::applySeparation(true, MeasuredCsyncDivider);
 
     CHECK(SyncProcessor::SP_PRE_COAST::read() == 7);
     CHECK(SyncProcessor::SP_POST_COAST::read() == 6);
@@ -556,13 +556,13 @@ TEST_CASE("an interval needing no hold is coasted for less than one that does")
     SyncProcessor::useLongPostCoast(true);
 
     Wire.reset();
-    SyncProcessor::applyForSyncType(true, MeasuredCsyncDivider);
+    SyncProcessor::applySeparation(true, MeasuredCsyncDivider);
     const uint32_t held = SyncProcessor::SP_POST_COAST::read();
 
     SyncProcessor::useLongPostCoast(false);
 
     Wire.reset();
-    SyncProcessor::applyForSyncType(true, MeasuredCsyncDivider);
+    SyncProcessor::applySeparation(true, MeasuredCsyncDivider);
 
     CHECK(SyncProcessor::SP_POST_COAST::read() < held);
 
@@ -620,7 +620,7 @@ TEST_CASE("a source that rests uncoasted is not coasted by the sync type either"
     givenRestsUncoasted();
 
     Wire.reset();
-    SyncProcessor::applyForSyncType(true, MeasuredCsyncDivider);
+    SyncProcessor::applySeparation(true, MeasuredCsyncDivider);
 
     CHECK(SyncProcessor::SP_PRE_COAST::read() == 0);
     CHECK(SyncProcessor::SP_POST_COAST::read() == 0);
@@ -637,7 +637,7 @@ TEST_CASE("an overridden coast is what the sync type applies")
     SyncProcessor::overrideCoast(12, 9);
 
     Wire.reset();
-    SyncProcessor::applyForSyncType(true, MeasuredCsyncDivider);
+    SyncProcessor::applySeparation(true, MeasuredCsyncDivider);
 
     CHECK(SyncProcessor::SP_PRE_COAST::read() == 12);
     CHECK(SyncProcessor::SP_POST_COAST::read() == 9);
@@ -666,7 +666,7 @@ TEST_CASE("forgetting the override returns the constants")
     SyncProcessor::forgetCoastOverride();
 
     Wire.reset();
-    SyncProcessor::applyForSyncType(true, MeasuredCsyncDivider);
+    SyncProcessor::applySeparation(true, MeasuredCsyncDivider);
 
     CHECK(SyncProcessor::SP_PRE_COAST::read() == 7);
     CHECK(SyncProcessor::SP_POST_COAST::read() == 6);
@@ -1063,7 +1063,7 @@ TEST_CASE("the SD vertical sync position is one value for every source")
 
 // The dynamic configuration: what the separator is set to pass by pass, as
 // against the static half init() writes and the per-sync-type half
-// applyForSyncType() writes. Every fact comes in, because where the source is
+// applySeparation() writes. Every fact comes in, because where the source is
 // selected and what the engine measured are not this block's to read.
 
 template <typename Field>
@@ -1131,7 +1131,7 @@ TEST_CASE("a source whose sync carries no vertical interval gets the thresholds"
 
 TEST_CASE("a settled source on the scaling path is read, not separated for")
 {
-    // The coast lengths are applyForSyncType()'s, and a second writer of them
+    // The coast lengths are applySeparation()'s, and a second writer of them
     // closes a loop: the coast changes the measured line count, a changed count
     // arms a solve, and a solve applies the sync type.
     SyncProcessor::Dynamic source = settled();
@@ -1356,7 +1356,7 @@ TEST_CASE("separate sync references the chip's default edge")
 TEST_CASE("normalising the polarity leaves the ADC PLL's edge to the sync type")
 {
     Wire.reset();
-    SyncProcessor::applyForSyncType(true, MeasuredCsyncDivider);
+    SyncProcessor::applySeparation(true, MeasuredCsyncDivider);
 
     SyncProcessor::normaliseHsyncPolarity(true, false);
 
@@ -1366,9 +1366,9 @@ TEST_CASE("normalising the polarity leaves the ADC PLL's edge to the sync type")
 TEST_CASE("entering pass-through returns to the chip's default edge")
 {
     Wire.reset();
-    SyncProcessor::applyForSyncType(true, MeasuredCsyncDivider);
+    SyncProcessor::applySeparation(true, MeasuredCsyncDivider);
 
-    SyncProcessor::applyForPassThrough(false);
+    SyncProcessor::applyTrailingEdgeReference(false);
 
     CHECK(SyncProcessor::SP_CS_P_SWAP::read() == 0u);
     CHECK_FALSE(SyncProcessor::referencesLeadingEdge());
@@ -1381,7 +1381,7 @@ TEST_CASE("entering pass-through returns to the chip's default edge")
 TEST_CASE("the static setup leaves the edge the sync type chose")
 {
     Wire.reset();
-    SyncProcessor::applyForSyncType(true, MeasuredCsyncDivider);
+    SyncProcessor::applySeparation(true, MeasuredCsyncDivider);
 
     SyncProcessor::init();
 
@@ -1403,11 +1403,11 @@ TEST_CASE("the clamp follows the leading edge by one pulse")
     const uint16_t divider = 1212;
     const HsyncPulse pulse(88.0f / 1212.0f);
 
-    SyncProcessor::applyForSyncType(false, divider);
+    SyncProcessor::applySeparation(false, divider);
     SyncProcessor::placeClampFor(true, true, lineRateHz, divider, pulse);
     const uint16_t trailing = SyncProcessor::SP_CS_CLP_ST::read();
 
-    SyncProcessor::applyForSyncType(true, divider);
+    SyncProcessor::applySeparation(true, divider);
     SyncProcessor::placeClampFor(true, true, lineRateHz, divider, pulse);
     const uint16_t leading = SyncProcessor::SP_CS_CLP_ST::read();
 
@@ -1430,11 +1430,11 @@ TEST_CASE("the separator's pulse ends where the source's does on the leading edg
     const HsyncPulse pulse(153.0f / 2200.0f);
 
     Wire.reset();
-    SyncProcessor::applyForSyncType(true, MeasuredCsyncDivider);
+    SyncProcessor::applySeparation(true, MeasuredCsyncDivider);
     SyncProcessor::placeSeparatorPulseEnd(2200, pulse, 0.0f);
     CHECK(SyncProcessor::SP_CS_HS_SP::read() == 153u);
 
-    SyncProcessor::applyForSyncType(false, MeasuredCsyncDivider);
+    SyncProcessor::applySeparation(false, MeasuredCsyncDivider);
     SyncProcessor::placeSeparatorPulseEnd(2200, pulse, 0.0f);
     CHECK(SyncProcessor::SP_CS_HS_SP::read() == 0u);
 }
@@ -1455,7 +1455,7 @@ TEST_CASE("the separator's pulse end carries the source's video lag")
     const HsyncPulse pulse(153.0f / 2200.0f);
 
     Wire.reset();
-    SyncProcessor::applyForSyncType(true, MeasuredCsyncDivider);
+    SyncProcessor::applySeparation(true, MeasuredCsyncDivider);
 
     SUBCASE("a density above the calibrated one ends the pulse later")
     {
@@ -1485,7 +1485,7 @@ TEST_CASE("the separator's pulse end carries the source's video lag")
 TEST_CASE("the per-load setup leaves the separator's pulse end where the install put it")
 {
     Wire.reset();
-    SyncProcessor::applyForSyncType(true, MeasuredCsyncDivider);
+    SyncProcessor::applySeparation(true, MeasuredCsyncDivider);
     SyncProcessor::placeSeparatorPulseEnd(2200, HsyncPulse(153.0f / 2200.0f), 0.0f);
 
     SyncProcessor::prepare(MeasuredCsyncDivider);
@@ -1493,7 +1493,7 @@ TEST_CASE("the per-load setup leaves the separator's pulse end where the install
     CHECK(SyncProcessor::SP_CS_HS_SP::read() == 153u);
 }
 
-// The per-load setup runs after applyForSyncType() on every preset load, and
+// The per-load setup runs after applySeparation() on every preset load, and
 // SP_SOG_MODE follows the sync type. Written from both, a separate-sync source
 // is left configured for sync-on-green: STATUS_SYNC_PROC_VTOTAL then reads 0,
 // detection's line-count wait times out, and the input is never taken -- so no
@@ -1518,13 +1518,13 @@ TEST_CASE("entering pass-through leaves the SOG polarity auto-correct off")
     Wire.reset();
     SyncProcessor::SP_SOG_P_ATO::write(1);
 
-    SyncProcessor::applyForPassThrough(false);
+    SyncProcessor::applyTrailingEdgeReference(false);
 
     CHECK(SyncProcessor::SP_SOG_P_ATO::read() == 0u);
 }
 
 // SYNC ON GREEN WANTS THE SOG REFERENCE INVERTED IN PASS-THROUGH, AND THE SYNC
-// TYPE CANNOT BE THE CONDITION. SP_SOG_MODE is raised by applyForSyncType()'s
+// TYPE CANNOT BE THE CONDITION. SP_SOG_MODE is raised by applySeparation()'s
 // csync branch, so composite sync on a dedicated pin and sync on green are the
 // same bit -- keying on it inverts the VGA input on SYNC 1 as well, where
 // pass-through is already measured correct. A component source carries its
@@ -1542,7 +1542,7 @@ TEST_CASE("sync on green inverts the SOG reference in pass-through")
     Wire.reset();
     SyncProcessor::SP_SOG_P_INV::write(0);
 
-    SyncProcessor::applyForPassThrough(true);
+    SyncProcessor::applyTrailingEdgeReference(true);
 
     CHECK(SyncProcessor::SP_SOG_P_INV::read() == 1u);
 }
@@ -1552,7 +1552,7 @@ TEST_CASE("a source whose sync is not on green keeps the SOG reference")
     Wire.reset();
     SyncProcessor::SP_SOG_P_INV::write(1);
 
-    SyncProcessor::applyForPassThrough(false);
+    SyncProcessor::applyTrailingEdgeReference(false);
 
     CHECK(SyncProcessor::SP_SOG_P_INV::read() == 0u);
 }
@@ -1579,7 +1579,7 @@ TEST_CASE("the clamp follows an inverted SOG reference by one pulse")
 }
 
 // AND THE SCALING PATH HAS TO WRITE IT TOO, because nothing on the way out of
-// pass-through calls applyForPassThrough(). Left behind, the inversion reaches
+// pass-through calls applyTrailingEdgeReference(). Left behind, the inversion reaches
 // a route whose capture origin consumes it: SP_RT_HS_SP is derived from the
 // pulse hsyncPulseSamples() folds, so it lands in the same place inverted or
 // not while the retimed edge has moved by a whole pulse.
@@ -1594,7 +1594,7 @@ TEST_CASE("the scaling path never leaves the SOG reference inverted")
     Wire.reset();
     SyncProcessor::SP_SOG_P_INV::write(1);
 
-    SyncProcessor::applyForSyncType(true, MeasuredCsyncDivider);
+    SyncProcessor::applySeparation(true, MeasuredCsyncDivider);
 
     CHECK(SyncProcessor::SP_SOG_P_INV::read() == 0u);
 }
@@ -1616,7 +1616,7 @@ TEST_CASE("the scaling path never leaves the SOG reference inverted")
 TEST_CASE("the static setup clears the held SOG inversion with the register")
 {
     Wire.reset();
-    SyncProcessor::applyForPassThrough(true);
+    SyncProcessor::applyTrailingEdgeReference(true);
     REQUIRE(SyncProcessor::sogReferenceInverted());
 
     SyncProcessor::init();
@@ -1625,7 +1625,7 @@ TEST_CASE("the static setup clears the held SOG inversion with the register")
     CHECK_FALSE(SyncProcessor::sogReferenceInverted());
 }
 
-// The sub coast is applyForSyncType()'s, and entering pass-through wrote it a
+// The sub coast is applySeparation()'s, and entering pass-through wrote it a
 // second time -- unconditionally off, which is right for separate sync and
 // wrong for every source carrying serrations. A separate-sync source wants it
 // off either way, so the second write agreed with the first and the defect was
@@ -1639,9 +1639,9 @@ TEST_CASE("entering pass-through leaves the sub coast the sync type chose")
 {
     Wire.reset();
     Wire.poison(Poisons[0]);
-    SyncProcessor::applyForSyncType(true, MeasuredCsyncDivider);
+    SyncProcessor::applySeparation(true, MeasuredCsyncDivider);
 
-    SyncProcessor::applyForPassThrough(true);
+    SyncProcessor::applyTrailingEdgeReference(true);
 
     CHECK(SyncProcessor::SP_DIS_SUB_COAST::read() == 0u);
 }
@@ -1650,7 +1650,7 @@ TEST_CASE("the per-load setup leaves the sync mode the sync type chose")
 {
     Wire.reset();
     Wire.poison(Poisons[0]);
-    SyncProcessor::applyForSyncType(false, MeasuredCsyncDivider);
+    SyncProcessor::applySeparation(false, MeasuredCsyncDivider);
 
     SyncProcessor::prepare(MeasuredCsyncDivider);
 
@@ -1661,7 +1661,7 @@ TEST_CASE("the per-load setup leaves the coast enable the sync type chose")
 {
     Wire.reset();
     Wire.poison(Poisons[0]);
-    SyncProcessor::applyForSyncType(false, MeasuredCsyncDivider);
+    SyncProcessor::applySeparation(false, MeasuredCsyncDivider);
 
     SyncProcessor::prepare(MeasuredCsyncDivider);
 
@@ -1680,7 +1680,7 @@ TEST_CASE("the per-load setup leaves the overflow protect the sync type chose")
 {
     Wire.reset();
     Wire.poison(Poisons[0]);
-    SyncProcessor::applyForSyncType(false, MeasuredCsyncDivider);
+    SyncProcessor::applySeparation(false, MeasuredCsyncDivider);
 
     SyncProcessor::prepare(MeasuredCsyncDivider);
 
@@ -1708,7 +1708,7 @@ TEST_CASE("a source with its own hsync is left with no sub coast")
 TEST_CASE("the sync type writes the pulse width difference with the coast")
 {
     // The coast lengths and the pulse width difference are ONE separation
-    // configuration, and applyForSyncType() used to write only the coast.
+    // configuration, and applySeparation() used to write only the coast.
     // Measured on the bench across a vga -> ypbpr change that stalled: the
     // composite coast pair against SP_DLT_REG 0 -- the composite coast carrying
     // the separate-sync pulse width left behind by the source before it. The sync processor then counted 97 lines, the ADC PLL never
@@ -1829,7 +1829,7 @@ TEST_CASE("the separation thresholds leave the pulse ignore alone")
     // rest of the window. The other two held 0x6b and acquired at 3.3 s. That
     // is the intermittency, and it is a second writer rather than a flaky part.
     Wire.reset();
-    SyncProcessor::applyForSyncType(true, MeasuredCsyncDivider);
+    SyncProcessor::applySeparation(true, MeasuredCsyncDivider);
     REQUIRE(SyncProcessor::SP_H_PULSE_IGNOR::read() == 0x6b);
 
     SyncProcessor::applySeparationThresholds(true);

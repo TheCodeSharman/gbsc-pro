@@ -2657,7 +2657,7 @@ TEST_CASE("a sync type forgotten behind the engine's back is put in force when r
     REQUIRE(SyncMeasurement::isCsync());
     REQUIRE(SyncProcessor::SP_SOG_MODE::read() == 1);
 
-    SyncProcessor::applyForSyncType(false, Adc::dividerInForce());
+    SyncProcessor::applySeparation(false, Adc::dividerInForce());
     SyncMeasurement::forget();
     REQUIRE(SyncProcessor::SP_SOG_MODE::read() == 0);
     g_probeCalls = 0;
@@ -3160,7 +3160,7 @@ TEST_CASE("a source that measures its own lines is left on the pair it has")
 {
     seedBenchSource();
     seedSourceHalfLines(624);
-    SyncProcessor::applyForSyncType(true, Adc::dividerInForce());
+    SyncProcessor::applySeparation(true, Adc::dividerInForce());
     const uint32_t before = SyncProcessor::SP_PRE_COAST::read();
 
     DisplayClock clock;

@@ -52,7 +52,7 @@ public:
     // control nothing is reading.
     //
     // Held state, not SP_SOG_MODE read back: the register echoes what
-    // applyForSyncType() wrote, and the two disagree while a probe is moving
+    // applySeparation() wrote, and the two disagree while a probe is moving
     // the path.
     static bool inSyncPath();
 

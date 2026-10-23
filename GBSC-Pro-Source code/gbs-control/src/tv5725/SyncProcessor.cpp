@@ -387,7 +387,7 @@ void SyncProcessor::prepareForDetection()
     SP_HCST_AUTO_EN::write(0);
 }
 
-void SyncProcessor::applyForPassThrough(bool syncOnGreen)
+void SyncProcessor::applyTrailingEdgeReference(bool syncOnGreen)
 {
     invertSogReference(syncOnGreen);
     // The chip's own polarity auto-correct stays OFF, as it is on the scaling
@@ -402,7 +402,7 @@ void SyncProcessor::applyForPassThrough(bool syncOnGreen)
     referenceLeadingEdge(false);
 }
 
-void SyncProcessor::applyForSyncType(bool csync, uint16_t divider)
+void SyncProcessor::applySeparation(bool csync, uint16_t divider)
 {
     // THE SYNC TYPE IS WHAT DECIDES THE SUB-COAST, and the line rate has no job
     // in it. Composite sync carries equalisation and serration pulses in the

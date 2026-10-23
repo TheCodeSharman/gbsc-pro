@@ -75,7 +75,7 @@ TEST_CASE("the sync separator is in the sync path only on a csync source")
 
 TEST_CASE("the answer is held state, not SP_SOG_MODE read back")
 {
-    // The register echoes the sync type applyForSyncType() wrote, so reading it
+    // The register echoes the sync type applySeparation() wrote, so reading it
     // asks the chip what it was told -- and during a probe the two disagree.
     Wire.reset();
     Wire.poison(Poison);

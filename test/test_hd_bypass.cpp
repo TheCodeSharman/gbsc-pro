@@ -573,7 +573,7 @@ TEST_CASE("the sync polarities are not this block's to invert")
 
 TEST_CASE("the coast lengths are not written here")
 {
-    // The component arm wrote 4/4 over what applyForSyncType() had just
+    // The component arm wrote 4/4 over what applySeparation() had just
     // established, and SP_DLT_REG 0x70 over applyPulseWidthDifference()'s.
     // A second writer of the coast closes a loop: the coast changes the
     // measured line count, a changed count arms a solve, and a solve applies

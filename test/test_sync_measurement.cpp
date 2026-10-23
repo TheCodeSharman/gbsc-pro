@@ -226,7 +226,7 @@ TEST_CASE("a source with its own V sync answers without waiting out a settle")
     // **THE SETTLE IS PURE COST IN THE COMMON CASE.** The probe used to delay
     // OwnVsyncSettleMs blind before looking, so a source whose V sync is
     // already there paid the whole of it. Measured on the bench on `vga`,
-    // VSACT timed from the instant applyForSyncType() moves the path: high at
+    // VSACT timed from the instant applySeparation() moves the path: high at
     // 0 ms on three of four probes, and 294 ms on the first after a detection
     // cycle. The poll's own budget covers that tail, so nothing needs waiting
     // out in front of it.

@@ -187,7 +187,7 @@ static void enterPassThrough()
     VideoRoute::toHdBypassChannel();
     Chip::resetVideoBlocks();
     HdBypass::applyColourPath(Adc::inputIsComponent());
-    SyncProcessor::applyForPassThrough(Adc::inputIsComponent());
+    SyncProcessor::applyTrailingEdgeReference(Adc::inputIsComponent());
     BringUp::arm();
 }
 
@@ -923,17 +923,17 @@ TEST_CASE("the clamp follows the SOG reference the entry chose")
     GBS::HPERIOD_IF::write(431);
     seedField(0, 0x16, 1, 1, 1);          // STATUS_SYNC_PROC_HSACT
 
-    SyncProcessor::applyForPassThrough(false);
+    SyncProcessor::applyTrailingEdgeReference(false);
     SyncProcessor::forgetPositions();
     unit.acquisition.placeClampWindow();
     const uint32_t upright = SyncProcessor::SP_CS_CLP_ST::read();
 
-    SyncProcessor::applyForPassThrough(true);
+    SyncProcessor::applyTrailingEdgeReference(true);
     SyncProcessor::forgetPositions();
     unit.acquisition.placeClampWindow();
     const uint32_t inverted = SyncProcessor::SP_CS_CLP_ST::read();
 
-    SyncProcessor::applyForPassThrough(false);
+    SyncProcessor::applyTrailingEdgeReference(false);
 
     CHECK(inverted - upright
           == SyncProcessor::clampOffsetForPulse(unit.sampling.hsync(),
@@ -957,12 +957,12 @@ TEST_CASE("the clamp follows the edge the sync type chose")
     GBS::HPERIOD_IF::write(431);
     seedField(0, 0x16, 1, 1, 1);          // STATUS_SYNC_PROC_HSACT
 
-    SyncProcessor::applyForSyncType(false, Adc::dividerInForce());
+    SyncProcessor::applySeparation(false, Adc::dividerInForce());
     SyncProcessor::forgetPositions();
     unit.acquisition.placeClampWindow();
     const uint32_t trailing = SyncProcessor::SP_CS_CLP_ST::read();
 
-    SyncProcessor::applyForSyncType(true, Adc::dividerInForce());
+    SyncProcessor::applySeparation(true, Adc::dividerInForce());
     SyncProcessor::forgetPositions();
     unit.acquisition.placeClampWindow();
     const uint32_t leading = SyncProcessor::SP_CS_CLP_ST::read();
@@ -2157,7 +2157,7 @@ TEST_CASE("a source the sync processor is counting is present")
     // The sketch's classifier reports 0 on an RGBHV source whose two STATUS_16
     // bits have gone quiet, and its no-sync handling then walks the ADC and the
     // sync processor off a source the engine is solving against correctly --
-    // SP_H_PULSE_IGNOR 2 against the 255 applyForSyncType() writes, ADC_SOGCTRL
+    // SP_H_PULSE_IGNOR 2 against the 255 applySeparation() writes, ADC_SOGCTRL
     // ratcheted 12 to 5, and a black screen.
     // docs/investigations/the-sketch-hunts-while-the-engine-is-locked.md
     seedBenchSource();

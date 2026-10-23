@@ -302,24 +302,25 @@ public:
     // Every static register of this subsystem, in address order.
     static void init();
 
-    // The sync path the source arrives on. Everything here is a consequence of
-    // that one choice, and it is made by sourceHasOwnVsync() rather than read
-    // off the chip -- docs/sync-type-selection.md, because STATUS_SYNC_PROC_VSACT
-    // only reports correctly once the type is already right.
+    // THE WHOLE SEPARATOR, for a source carrying composite sync or its own: the
+    // sync source select, the SOG slicer, the coast enable and lengths, the
+    // pulse width threshold, the pulse ignore, the overflow protection and the
+    // edge reference. `csync` is sourceHasOwnVsync()'s answer rather than a
+    // register read -- docs/sync-type-selection.md, STATUS_SYNC_PROC_VSACT only
+    // reporting correctly once the type is already right.
     //
-    // Which edge of the pulse the separator and the ADC PLL reference is one
-    // of those consequences: composite sync takes the LEADING edge, because
-    // the chip's default rising edge is the trailing one on a negative-going
-    // sync and the PLL then loses horizontal pulses through the vertical
-    // interval. referencesLeadingEdge() is the held fact; the capture origin
-    // and the clamp both count from that edge and follow it.
+    // Composite sync references the LEADING edge: the chip's default rising
+    // edge is the trailing one on a negative-going sync, and the PLL then loses
+    // horizontal pulses through the vertical interval. referencesLeadingEdge()
+    // is the held fact, and the capture origin and the clamp both count from
+    // that edge and follow it.
     // ../../../../docs/investigations/the-composite-roll-is-lost-horizontal-pulses-in-the-doubled-scan.md
-    static void applyForSyncType(bool csync, uint16_t divider);
+    static void applySeparation(bool csync, uint16_t divider);
 
     // The per-load sync processor setup that does not follow the sync type.
     //
     // The sync-type fields are NOT written here. SP_SOG_MODE, the coast pair,
-    // SP_NO_COAST_REG and SP_DIS_SUB_COAST are applyForSyncType()'s, and writing
+    // SP_NO_COAST_REG and SP_DIS_SUB_COAST are applySeparation()'s, and writing
     // them from a second place left a separate-sync source configured for csync
     // -- the sync processor then counts nothing and detection refuses the input.
     // docs/investigations/sp-sog-mode-had-two-owners.md
@@ -336,18 +337,22 @@ public:
     // docs/investigations/the-detection-defaults-are-not-the-preset-paths.md
     static void prepareForDetection();
 
-    // The sync processor's half of entering pass-through: the four polarity and
-    // swap bits put back rather than inherited, because a route that never
-    // brings the chip up keeps whatever the last entry left.
-    //
-    // SP_DIS_SUB_COAST is NOT written here. It is applyForSyncType()'s, which
-    // runs first on this path, and turning it off from a second place left a
-    // serrated source counting the serrations -- invisible on separate sync,
-    // where both writers agree, and no signal on sync on green.
-    // `syncOnGreen` decides SP_SOG_P_INV. See the pass-through cases in
+    // THE EDGE REFERENCE AND NOTHING ELSE: the trailing edge, both processor
+    // polarity inversions out, the chip's polarity auto-correct off, and the
+    // SOG reference inverted where `syncOnGreen` -- five bits written rather
+    // than inherited, because a route that never brings the chip up keeps
+    // whatever the last entry left. See the pass-through cases in
     // test/test_sync_processor.cpp for why the sync type cannot be the
-    // condition.
-    static void applyForPassThrough(bool syncOnGreen);
+    // condition for the SOG inversion.
+    //
+    // NARROWER THAN applySeparation(), WHICH IT OVERLAYS. It writes none of the
+    // separation configuration -- not SP_SOG_MODE, the coast pair,
+    // SP_NO_COAST_REG or SP_DIS_SUB_COAST -- so those stand from whichever
+    // applySeparation() ran last, and a caller that overlays this owes the
+    // reference back when it gives the route up.
+    // docs/investigations/sp-sog-mode-had-two-owners.md
+    // ../../../../docs/investigations/leaving-pass-through-strands-the-sync-reference.md
+    static void applyTrailingEdgeReference(bool syncOnGreen);
 
     // How much later the clamp sits once the reference it counts from has
     // moved by a pulse: the source's pulse, in the 27 MHz counts SP_CS_CLP_ST
@@ -380,7 +385,7 @@ public:
     // STABLE -- four agreeing samples fit inside the window, so no steadiness
     // run can tell the difference. It is the caller's
     // to wait out, because a caller that is not about to measure must not
-    // block: applyForSyncType() also runs from the bypass switch.
+    // block: applySeparation() also runs from the bypass switch.
     // docs/investigations/sync-type-probe-poisons-its-own-measurement.md
     static const uint16_t PathSettleMs = 500;
 
@@ -506,7 +511,7 @@ public:
     static void applyForOffsetCalibration();
 
     // What the separator is configured for pass by pass, as against the static
-    // half init() writes and the per-sync-type half applyForSyncType() writes.
+    // half init() writes and the per-sync-type half applySeparation() writes.
     //
     // Every fact is handed in: where the source is selected and what the engine
     // measured are not this block's to read, `serrated` included --
@@ -547,7 +552,7 @@ public:
 
     // Where in the line to coast, back at the value every path starts over
     // from. It says WHERE, not how long: the coast lengths around the vertical
-    // interval follow the sync type and are applyForSyncType()'s.
+    // interval follow the sync type and are applySeparation()'s.
     static void applyDefaultCoastWindow();
 
     // How many readings of the line length must agree before the window is
@@ -681,7 +686,7 @@ public:
     // the variable rather than handling it. `found` false leaves it alone.
     //
     // The inversion into the ADC PLL is NOT this call's: it is the edge the
-    // sync type chose, applyForSyncType()'s, and this runs after it on every
+    // sync type chose, applySeparation()'s, and this runs after it on every
     // rate measurement. On separate sync that edge is the default, because a
     // second inversion there displaces the picture 94 output px.
     // ../../../../docs/investigations/leaving-bypass-leaves-the-sync-path-behind.md
@@ -723,10 +728,10 @@ public:
     // carries no broadcast vertical interval: the coast lengths either side of
     // it and the pulse-width difference that reads as vertical.
     //
-    // The coast lengths are the same pair applyForSyncType() writes, and that
+    // The coast lengths are the same pair applySeparation() writes, and that
     // is deliberate rather than a duplicate to fold away: this refreshes on a
     // schedule, so a register something else moved comes back, and there is a
-    // test pinning that applyForSyncType() does NOT write the other two.
+    // test pinning that applySeparation() does NOT write the other two.
     // Writing the coast alone leaves a composite source carrying the previous
     // separate-sync pulse width, which the sync processor cannot separate -- it
     // counts 97 lines and the ADC PLL never locks.
@@ -837,7 +842,7 @@ public:
     // which is what every path here asks for.
     static void clampFromReferenceClock();
 
-    // The H counter's overflow protection. applyForSyncType() is the one owner
+    // The H counter's overflow protection. applySeparation() is the one owner
     // of the value a setup leaves: nothing on the board measures whether it is
     // helping, so a second writer is a disagreement nothing can adjudicate.
     // ../../../../docs/investigations/the-overflow-protect-had-four-writers.md
@@ -869,7 +874,7 @@ private:
 
     // Whether the sub coast runs -- the coast WITHIN a line. Names what is
     // wanted rather than the register, which is a disable. The source's
-    // serration is what decides it and applyForSyncType() is where that is
+    // serration is what decides it and applySeparation() is where that is
     // asked, so there is nowhere outside this class it can be answered from.
     static void setSubCoast(bool wanted);
 };

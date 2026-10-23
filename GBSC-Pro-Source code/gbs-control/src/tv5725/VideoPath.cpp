@@ -1170,7 +1170,7 @@ void VideoPath::putSyncTypeInForce(bool csync)
                  arrangement, (unsigned)syncTypeChosenFor_);
     tv5725Log(line);
 
-    SyncProcessor::applyForSyncType(csync, Adc::dividerInForce());
+    SyncProcessor::applySeparation(csync, Adc::dividerInForce());
     ModeDetect::applySyncType(csync ? ModeDetect::Csync : ModeDetect::SeparateSync);
     delay(SyncProcessor::PathSettleMs);
 }

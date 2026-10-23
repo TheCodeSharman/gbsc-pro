@@ -66,7 +66,7 @@ SyncMeasurement::Answer SyncMeasurement::hasOwnVsync(uint32_t (*nowMs)())
     // ../../../../docs/known-issues.md
     tv5725Log("measure: sync type, probing for the source's own V sync");
 
-    SyncProcessor::applyForSyncType(false, Adc::dividerInForce());
+    SyncProcessor::applySeparation(false, Adc::dividerInForce());
 
     bool active = false;
     const uint32_t start = nowMs();
@@ -94,7 +94,7 @@ SyncMeasurement::Answer SyncMeasurement::hasOwnVsync(uint32_t (*nowMs)())
     // ../../../../docs/investigations/the-own-vsync-probe-answers-by-absence.md
     bool separable = false;
     if (!active) {
-        SyncProcessor::applyForSyncType(true, Adc::dividerInForce());
+        SyncProcessor::applySeparation(true, Adc::dividerInForce());
         delay(OwnVsyncSettleMs);
         uint16_t previous = 0;
         for (uint8_t taken = 0; taken < SeparatedFrameSamples && !separable;
@@ -117,7 +117,7 @@ SyncMeasurement::Answer SyncMeasurement::hasOwnVsync(uint32_t (*nowMs)())
     // Back to the arrangement HELD, which is a defined state too. The caller
     // applies whatever this answer decides, so the only requirement here is to
     // leave nothing half configured behind.
-    SyncProcessor::applyForSyncType(isCsync(), Adc::dividerInForce());
+    SyncProcessor::applySeparation(isCsync(), Adc::dividerInForce());
 
     // THE PROBE ANSWERS FOR ITS OWN DISTURBANCE. Both writes above take the
     // sync separator in and out of the path, which the chip latches exactly as

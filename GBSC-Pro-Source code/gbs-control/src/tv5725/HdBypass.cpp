@@ -155,7 +155,7 @@ void HdBypass::enterFor(bool component, bool csync, uint32_t lineRateHz,
     // the source that nothing on the board can calculate, so a constant handed
     // in here overwrites what the search established for it.
     const uint16_t divider = dividerFor(lineRateHz);
-    SyncProcessor::applyForPassThrough(component && csync);
+    SyncProcessor::applyTrailingEdgeReference(component && csync);
 
     Adc::choosePhaseAdc(EntryPhaseAdc);
     Adc::choosePhaseSyncProcessor(EntryPhaseSyncProcessor);
