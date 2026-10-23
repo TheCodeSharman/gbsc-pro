@@ -52,7 +52,15 @@ Against the RISC PC, where `sp_htotal` is exactly 2200 at sd 0.00 and the scan
 has real structure -- a dirty band of about four phases and a clean run of
 twenty-odd. **The code already separates the two cases and then throws the
 useful one away**: `far` counts `off > 1` and is reported beside `dither`,
-which counts `off != 0`, and only `dither` reaches the choice.
+which counts `off != 0`, and only `dither` reaches the gate and the choice.
+
+**NO PHASE IS APPLIED AT ALL ON THIS SOURCE.** A phase counts clean only if all
+20 of its samples read `off == 0`, and the scan is abandoned below a gate of
+`SweepGoodEnough` = 17 clean phases of 32 -- so with `clean` at 0 or 1 the
+chooser is never reached and `acquirePhase()` returns false, leaving whatever
+the previous path left in force. A soak of eight input bounces reads phase 16
+seven times and 6 once, which is `phaseSyncProcessor_`'s initial `MidField`
+persisting rather than a choice.
 
 `dedc53784` is where the chooser took its present shape, and its own evidence
 is `vga` at 320x256@50 and 640x480@60 -- no ypbpr state is in it. Choosing on
