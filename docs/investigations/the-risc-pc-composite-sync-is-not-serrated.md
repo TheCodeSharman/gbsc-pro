@@ -77,7 +77,7 @@ the vertical interval, which is where lines could go -- and turning it off
 costs none and recovers none.
 
 **The filter used not to be applied by the sync type at all.**
-`SyncProcessor::applyForSyncType()` called `applyPulseIgnore()` on its
+`SyncProcessor::applySeparation()` called `applyPulseIgnore()` on its
 separate-sync branch and not on its csync one, so on a csync source the field
 held whatever the load had computed earlier -- measured on the bench csync leg
 as 2, the unserrated value. Both branches write it now, one value per sync type.

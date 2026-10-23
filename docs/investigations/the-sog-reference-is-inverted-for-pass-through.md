@@ -71,7 +71,7 @@ what separate them.
 
 ## The sync type cannot be the condition
 
-`SP_SOG_MODE` is raised by `applyForSyncType()`'s csync branch, so it means "the
+`SP_SOG_MODE` is raised by `applySeparation()`'s csync branch, so it means "the
 sync separator is in the path" and is 1 for **composite sync on a dedicated pin
 as well as for sync on green**. Measured on the bench:
 
@@ -93,7 +93,7 @@ the fact per input and is where the condition would come from if one appears.
 
 ## And the scaling path must not inherit it
 
-Nothing on the way out of pass-through calls `applyForPassThrough()`, so the
+Nothing on the way out of pass-through calls `applyTrailingEdgeReference()`, so the
 inversion would survive into a route whose capture origin consumes it.
 `SP_RT_HS_SP` is derived from the pulse `hsyncPulseSamples()` folds, so it lands
 in the same place inverted or not -- measured 1187 against the 1186 that
@@ -105,7 +105,7 @@ down to 1709. It is the same round-trip hazard `SP_SOG_P_ATO` had, which cost
 310 columns -- see
 `the-sog-polarity-auto-correct-displaced-pass-through.md`.
 
-So `applyForSyncType()` clears it, and `SyncProcessor` holds whether it is in
+So `applySeparation()` clears it, and `SyncProcessor` holds whether it is in
 force rather than letting two sites decide the condition separately: the clamp
 counts from the same reference, and a second condition is one that can drift
 from the write.

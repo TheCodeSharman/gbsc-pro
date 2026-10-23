@@ -58,7 +58,7 @@ field by name on a settled unit with everything else untouched. The third is
 from [`serrated-sync-is-not-line-rate.md`](serrated-sync-is-not-line-rate.md).
 
 So the **sync type** decides the sub-coast. `hasSerratedSync()` dissolves, and
-the `serrated` parameter it fed out of `applyForSyncType()`,
+the `serrated` parameter it fed out of `applySeparation()`,
 `putSyncTypeInForce()` and `applySyncType()` with it.
 
 Measured after: the horizontal locks at the reference divider — 1400 against

@@ -52,7 +52,7 @@ held afterwards.
 
 **`prepareSyncProcessor()` writing `SP_SOG_MODE::write(1)` bare is REFUTED as
 the cause.** It was the leading candidate, being the one write that skips
-`SyncProcessor::applyForSyncType()` and `SyncMeasurement::forget()`. Tested directly:
+`SyncProcessor::applySeparation()` and `SyncMeasurement::forget()`. Tested directly:
 `SP_SOG_MODE=1` written by hand on a healthy locked source is undone within
 10 s, so the register is actively maintained there. Whatever maintains it is not
 running in the recovery path, and which writer wins in that state is still

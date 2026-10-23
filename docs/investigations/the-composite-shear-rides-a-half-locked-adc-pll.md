@@ -124,7 +124,7 @@ a run that appeared to test them did not: the source had been left on separate
 sync by an interrupted script, so all four of its legs read the separate-sync
 figure of about 97.6%. The two fields do differ between the arrangements --
 composite holds `SP_HS2PLL_INV_REG` 1 and `SP_HS_POL_ATO` 0, separate sync 0
-and 1, and `applyForSyncType()` writes neither on the csync branch. On separate
+and 1, and `applySeparation()` writes neither on the csync branch. On separate
 sync, inverting `SP_HS2PLL_INV_REG` costs 2.5 points and doubles the flip rate,
 which is the only thing that run established. **Read `SP_SOG_MODE` back before
 scoring any leg.**
@@ -245,7 +245,7 @@ against `snapshots/csync-320x256-50-full-rolling-2026-10-17.json`.
 12.
 
 **`SP_HS_POL_ATO` AND `SP_VS_POL_ATO` ARE WRITTEN ON ONE BRANCH ONLY.**
-`SyncProcessor::applyForSyncType()` writes both 1 in its separate-sync branch
+`SyncProcessor::applySeparation()` writes both 1 in its separate-sync branch
 and neither in its csync branch, so on composite they hold whatever the last
 separate-sync excursion left. A unit that has never been on separate sync
 since boot runs composite with them 0. `SP_HS_POL_ATO` is the retiming

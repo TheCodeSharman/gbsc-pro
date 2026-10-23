@@ -8,7 +8,7 @@ was unaffected on the same build, same channel line.
 
 ## What it was
 
-`HdBypass::enterFor()` re-applied `SyncProcessor::applyForSyncType()` with the
+`HdBypass::enterFor()` re-applied `SyncProcessor::applySeparation()` with the
 CHANNEL's divider. Every field that call writes is a sync-type fact
 `VideoPath::configureSyncPath()` has already written identically for this
 source, with one exception: `SP_H_PULSE_IGNOR` is derived from the divider. So
@@ -65,7 +65,7 @@ holding the value the working state holds:
 
 Entering the channel from the scaling path leaves the SCALING divider's
 fraction, 59, which is harmless. Booting straight into pass-through leaves the
-CHANNEL's: `applyForSyncType()` derives the threshold from
+CHANNEL's: `applySeparation()` derives the threshold from
 `Adc::dividerInForce()`, and on that route the divider in force is already
 2038, so 99 is what the arrangement writes and nothing on the channel revises
 it.

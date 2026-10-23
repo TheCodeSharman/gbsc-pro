@@ -43,7 +43,7 @@ counted as lines.
 
 | writer | pair | when |
 |---|---|---|
-| `SyncProcessor::applyForSyncType(true)` | 4 / 7 | whenever the sync type is applied — which the probe does per source mode change |
+| `SyncProcessor::applySeparation(true)` | 4 / 7 | whenever the sync type is applied — which the probe does per source mode change |
 | `updateSpDynamic()`, the `videoStandardInput <= 2` arm | 7 / 3 | on its own schedule inside the escalation ladder |
 
 The second writer is gone. What follows is what it cost while it was there, and
@@ -153,7 +153,7 @@ measured:
 1. the coast pair changes the count -- the sweep below,
 2. a changed count is `source moved: count`, which arms a solve,
 3. the solve runs the sync-type probe, which applies the sync type,
-4. `applyForSyncType()` writes its pair, and the count changes again.
+4. `applySeparation()` writes its pair, and the count changes again.
 
 So the fault feeds itself. Watched on `ypbpr` with nothing touched, over 20 s:
 coast 7/3 -> 4/7 -> 7/3, `SP_H_PULSE_IGNOR` 107 -> 44 -> 107, `PLLAD_MD` 2250 ->

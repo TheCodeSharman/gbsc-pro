@@ -90,7 +90,7 @@ left for a grace to defer.
 | `LiftSogFloor` | a no-op on both bench sources: `liftOffFloor()` returned early above `LowestSteppable` 2 and the level is 13. `reacquireSeparator()` walks from the level the input is due, which subsumes it |
 | `CoastWindow`, `HoldClamp` | repeat what a selection applies, and each discards a placement through `forgetPositions()` |
 | `SyncProcessorDynamic` | the tick applies these |
-| `HsyncOverflowProtect` | a blind toggle of a field `applyForSyncType()` owns |
+| `HsyncOverflowProtect` | a blind toggle of a field `applySeparation()` owns |
 | `ReopenSogSeparator` | parks the separator where nothing recovers it |
 
 ## The search configuration was never the selection's

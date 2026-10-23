@@ -22,7 +22,7 @@ coast left to turn off. Disabling the **sub coast** costs five lines. The sub
 coast is a separate mechanism, is not reached by the pre and post lines, and is
 what operates inside the interval.
 
-`applyForSyncType()` already uses the real disable: `SP_NO_COAST_REG` is written
+`applySeparation()` already uses the real disable: `SP_NO_COAST_REG` is written
 0 on the csync branch and 1 on the separate-sync branch. That bit, not the pair,
 is what turning the coast off means.
 

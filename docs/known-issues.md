@@ -375,7 +375,7 @@ judged again once the clamp is back in the back porch, not before.
 FACT.** `sogReferenceInverted()` is the one owner of whether the inversion is
 in force, held rather than read back; `init()` cleared `SP_SOG_P_INV` directly
 and left the fact true. `configureScalingPath()` runs `BringUp::init()` without
-`applyForSyncType()`, so leaving pass-through opens a window where the two
+`applySeparation()`, so leaving pass-through opens a window where the two
 disagree, and a clamp placed in it takes an offset for an inversion the
 hardware no longer has. 78 is 19 plus exactly that offset, which is reachable
 no other way.
@@ -477,7 +477,7 @@ the previous answer. Then:
 
 1. `establishSyncType()` finds nothing measured and probes.
 2. `SyncMeasurement::hasOwnVsync()` measures in the separate arrangement and
-   restores `applyForSyncType(isCsync(), ...)` -- `isCsync()` being the value
+   restores `applySeparation(isCsync(), ...)` -- `isCsync()` being the value
    held *before* the probe assigns its answer, which the forget made false. The
    chip is left on `SP_SOG_MODE` 0.
 3. `probe()` then sets `csync_` true, and `applySyncType(true)` returns early
@@ -1014,7 +1014,7 @@ p 0.014, so the rate moves about threefold between sessions and legs are
 comparable only inside one.
 
 **A POKE THAT IS NOT READ BACK IS NOT A STATE.** `/coast?clear` is queued for
-`loop()` and the re-solve behind it runs `applyForSyncType()`, which rewrites
+`loop()` and the re-solve behind it runs `applySeparation()`, which rewrites
 the edge reference and the pulse ignore -- so two legs poked before that landed
 were silently controls, read 1 and 0 collapses, and refuted a real lever.
 `collapse_legs.py` waits the coast out, pokes, verifies, and prints every
@@ -2850,7 +2850,7 @@ hand-cleared state does not survive to the next probe.
 
 **FIXED, AND THE FIX IS WHAT RECOVERED THE LATCHED STATE.** `hasOwnVsync()`
 now puts the processor in the DEFINED separate-sync arrangement for the
-measurement -- `SyncProcessor::applyForSyncType(false)`, one owner rather than
+measurement -- `SyncProcessor::applySeparation(false)`, one owner rather than
 a field cleared by hand -- and restores the arrangement held afterwards, which
 the caller re-applies from the answer. Measured on the unit, from the state
 above that `/sc?~`, `/restart`, a source re-issue, an input bounce and three
@@ -3963,7 +3963,7 @@ is a coincidence of the ladder's order, not the cause.
 separator was fed a threshold chosen for another source, so the hsync reaching
 the ADC PLL was not a usable reference. Two defects, both fixed:
 
-- `SyncProcessor::applyForSyncType()`'s **csync branch never wrote the field**,
+- `SyncProcessor::applySeparation()`'s **csync branch never wrote the field**,
   and the separate-sync branch does -- so a source selected after a
   separate-sync one ran on 0xff, the value that branch wrote.
 - `applySeparationThresholds()` **wrote it back from a serration it could not
@@ -8138,8 +8138,8 @@ field were byte-identical.
 settled did not reproduce it.
 
 **This is `sp-sog-mode-had-two-owners` one field later.** That repair moved
-`SP_SOG_MODE`, the coast pair and `SP_NO_COAST_REG` into `applyForSyncType()`
-and left the sub coast behind. `applyForSyncType()` now takes `serrated` and owns
+`SP_SOG_MODE`, the coast pair and `SP_NO_COAST_REG` into `applySeparation()`
+and left the sub coast behind. `applySeparation()` now takes `serrated` and owns
 it, and `prepare()` no longer writes it.
 
 Guarded by `test_sync_type_round_trip.py`, which measured 3 of 3 return legs

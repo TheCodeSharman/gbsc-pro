@@ -81,7 +81,7 @@ previous source's window.
 
 `SP_PRE_COAST` and `SP_POST_COAST` read 9/9 on some `ypbpr` acquisitions and
 7/6 on others, on one build. 7/6 is `CompositePreCoastLines`/
-`CompositePostCoastLines`, which `applyForSyncType()` writes; 9/9 is
+`CompositePostCoastLines`, which `applySeparation()` writes; 9/9 is
 `SerratedCoastLines`, reachable only through `SyncRecovery::CoastWindow` --
 a **recovery ladder** step. Measured across five legs on the same build: 7/6,
 7/6, 9/9, 9/9, 9/9, acquiring in 20.6 s, 33.8 s, 35.8 s, 35.8 s and 36.8 s.

@@ -47,7 +47,7 @@ with a picture:
 | `ADC_SOGCTRL` | 5 | 12 | ratcheted, not written |
 
 `SP_H_PULSE_IGNOR` is the clearest of them, because
-`SyncProcessor::applyForSyncType(false)` writes `0xff` and `establishSyncType()`
+`SyncProcessor::applySeparation(false)` writes `0xff` and `establishSyncType()`
 runs it on every mode change. The register reads 2 regardless. **The field has
 two owners and the sketch writes last.**
 
@@ -131,7 +131,7 @@ Each value names its writer:
 
 | coast | writer |
 |---|---|
-| 4 / 7 | `SyncProcessor::applyForSyncType(csync)`, the engine |
+| 4 / 7 | `SyncProcessor::applySeparation(csync)`, the engine |
 | 7 / 3 | `updateSpDynamic()` |
 | 9 / 9 | `runSyncWatcher()`'s no-sync branch, at `noSyncCounter == 8` |
 
@@ -161,5 +161,5 @@ costs minutes rather than one solve.
 Not the engine's solve, which is correct throughout, and not the capture freeze.
 Either the sketch's classifier has to recognise a source the sync processor is
 counting, or its no-sync handling has to stop owning fields
-`SyncProcessor::applyForSyncType()` owns. The second is the narrower change and
+`SyncProcessor::applySeparation()` owns. The second is the narrower change and
 `SP_H_PULSE_IGNOR` is the field that demonstrates the conflict.

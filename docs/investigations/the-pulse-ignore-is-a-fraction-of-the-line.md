@@ -94,7 +94,7 @@ window. `the-engine-makes-the-composite-count-unmeasurable.md`.
 `SyncProcessor::applyPulseIgnore(divider)` writes `divider x 49 / 1000` for
 every source -- 107 at 2200 as measured, 99 at the 2040 reference and 70 at
 1446. Every entry point that writes the field takes the divider and nothing
-else: `applyForSyncType()`, `prepare()` and the `Dynamic` pass on a present
+else: `applySeparation()`, `prepare()` and the `Dynamic` pass on a present
 source.
 
 `applyForSearch()` takes the latch as well, from `Dynamic`, which

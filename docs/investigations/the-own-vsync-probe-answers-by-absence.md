@@ -30,7 +30,7 @@ sources:
 | composite sync | 50, implausible | 308 |
 
 Those were taken with the configuration **written by hand**, and that is the
-confound. **In the state `SyncProcessor::applyForSyncType(false, divider)`
+confound. **In the state `SyncProcessor::applySeparation(false, divider)`
 actually creates, the register reads 0 on BOTH sync types.** Measured on the
 bench by tracing it every 2 ms for 1200 ms from the moment the path moves:
 

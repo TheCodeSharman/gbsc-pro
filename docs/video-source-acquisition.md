@@ -599,7 +599,7 @@ the branch directly.
 engine once. Two owners of one model is the register problem one level up, and
 every symptom this fork has chased is a case of it:
 
-- `SP_H_PULSE_IGNOR` had two owners. `SyncProcessor::applyForSyncType(false)`
+- `SP_H_PULSE_IGNOR` had two owners. `SyncProcessor::applySeparation(false)`
   writes 255 on every mode change and the sketch's search wrote 2 on its own
   schedule; the register reads 2 on a locked source and the screen is black.
   Both writes are `SyncProcessor`'s now, so the class arbitrates them -- what
@@ -755,7 +755,7 @@ did.
 | `LiftSogFloor` | a no-op on both bench sources: `liftOffFloor()` returned early above `LowestSteppable` 2 and the level is 13. `reacquireSeparator()` walks from the level the input is due, which subsumes it |
 | `CoastWindow`, `HoldClamp` | repeat what a selection applies, and each discards a placement through `forgetPositions()` |
 | `SyncProcessorDynamic` | the tick applies these |
-| `HsyncOverflowProtect` | a blind toggle of a field `applyForSyncType()` owns |
+| `HsyncOverflowProtect` | a blind toggle of a field `applySeparation()` owns |
 | `ReopenSogSeparator` | parks the separator where nothing recovers it, below |
 
 **THE LAST RUNG BRICKED THE SEPARATOR.** `ReopenSogSeparator` called
@@ -1380,7 +1380,7 @@ it named `SP_SDCS_VSST`/`VSSP` per standard, 520/522 for 480p and 48/46 for
 576p, where 48 lands in active video rather than the vertical interval.
 
 **`applyComponent()` WAS SECOND OWNERS THROUGHOUT.** It wrote `SP_PRE_COAST` and
-`SP_POST_COAST` 4/4 over what `applyForSyncType()` had established a few lines
+`SP_POST_COAST` 4/4 over what `applySeparation()` had established a few lines
 earlier, and `SP_DLT_REG` 0x70 over `applyPulseWidthDifference()`'s. It held the
 sync type csync AFTER the sync processor had been configured from the held
 answer, and it called the RGB patches on a COMPONENT source, undoing the YUV

@@ -47,7 +47,7 @@ measured above as four to six lines wrong.
 **So the per-standard dispatch is a derivation for one case and guesses for the
 rest**, and the collapse it invites is to the derivation, keyed on the sync type
 rather than on a standard: a source with its own vertical sync wants 0xFF, and
-`applyForSyncType()` already writes that.
+`applySeparation()` already writes that.
 
 ## Why 0xFF is right on one source and no-lock on another
 

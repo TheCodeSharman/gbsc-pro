@@ -246,7 +246,7 @@ figure was quoted anyway. **Split by restart band before comparing two states.**
 
 **AND A POKE THAT IS NOT READ BACK IS NOT A STATE.** Two legs of the first
 repeat were silently controls: `/coast?clear` is queued for `loop()` and the
-re-solve behind it runs `applyForSyncType()`, which rewrites the edge reference
+re-solve behind it runs `applySeparation()`, which rewrites the edge reference
 and the pulse ignore, so a poke written before that landed was undone. The legs
 read 1 and 0 collapses and said nothing. `collapse_legs.py` waits the coast
 request out, then pokes, then verifies, and prints every watched field for

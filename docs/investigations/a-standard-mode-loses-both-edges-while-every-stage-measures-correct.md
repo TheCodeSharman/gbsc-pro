@@ -6,7 +6,7 @@ and right. The same source in RGBHV bypass shows the card complete.
 
 > **RETRACTED: THE LINE OFFSET IS NOT A PROPERTY OF THE SOURCE OR THE DOUBLER.**
 > It was the sync processor's retiming module held out of circuit by
-> `SP_HS_LOOP_SEL` 1, which `SyncProcessor::applyForSyncType()` wrote on both
+> `SP_HS_LOOP_SEL` 1, which `SyncProcessor::applySeparation()` wrote on both
 > sync types. With the retiming engaged the residual offset is zero, and
 > `VideoSourceLine::CaptureLagFraction` is deleted rather than corrected.
 >

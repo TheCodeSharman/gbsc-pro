@@ -129,7 +129,7 @@ So 0/0 clears both unusable values outright on both composite sources.
 ### And coasting 0/0 is REFUTED anyway, because the coast holds the count
 
 **DO NOT MAKE THE COAST FOLLOW `serrated`.** It was built and flashed --
-`applyForSyncType()` and `applySeparationThresholds()` taking the fact
+`applySeparation()` and `applySeparationThresholds()` taking the fact
 `SyncProcessor::prepare()` is already handed -- and the Wii at 480p came up with
 no picture at all. The count stops being steady:
 
@@ -196,10 +196,10 @@ covers roughly counts 516..522 -- adjacent to the values that fail.
 
 **And `serrated` reaches none of the three writers.** `SyncProcessor::prepare()`
 is handed it, `applyPulseIgnore(csync, serrated)` takes it, and the coast pair is
-written from `csync` alone by `applyForSyncType()`, `applySeparationThresholds()`
+written from `csync` alone by `applySeparation()`, `applySeparationThresholds()`
 and `widenCoast()` -- under constants named `SerratedPreCoastLines` and
 `SerratedPostCoastLines`. `SyncProcessor.h` states the pair is
-`applyForSyncType()`'s alone and records what a second writer cost, so the
+`applySeparation()`'s alone and records what a second writer cost, so the
 single-owner rule it sets out is already broken by two more.
 
 ## The failure is silent everywhere except the test bus

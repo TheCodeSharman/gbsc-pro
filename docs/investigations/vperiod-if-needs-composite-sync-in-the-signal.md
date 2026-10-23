@@ -34,7 +34,7 @@ measurement is right"*. Check the value against what the mode implies, as
 `hperiod-if-railing.md` already requires for the horizontal.
 
 **The three forced rows are not states the firmware produces.**
-`SyncProcessor::applyForSyncType()` writes the coast pair, the clamp and the
+`SyncProcessor::applySeparation()` writes the coast pair, the clamp and the
 pulse-ignore settings as well, and frozen they kept whatever the previous
 configuration left. What those rows establish is narrower than a sync-type
 comparison: that the two path registers ALONE do not decide validity.

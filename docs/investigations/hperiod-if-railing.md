@@ -769,12 +769,12 @@ same source and pair of modes it took three round trips, the first two leaving
 
 Striking, and it attributes nothing: the arms differ in the sync type as well as
 the bit, because the only way the firmware holds protect through the reset is
-the csync path -- `applyForSyncType(false)` writes it 0 on a separate-sync
+the csync path -- `applySeparation(false)` writes it 0 on a separate-sync
 source, inside the very reset under test.
 
 **The test that would settle it needs separate sync with protect held**, which
 needs the firmware to stop forcing it to 0 there -- a `GBS_DEBUG` override on
-`applyForSyncType()`, then the same paired arms. If protect does prevent it, the
+`applySeparation()`, then the same paired arms. If protect does prevent it, the
 detector question below lands first: the noise is what the engine's
 three-samples-within-2 test rejects, so a steadied mislock passes.
 
@@ -1522,7 +1522,7 @@ check here scores as healthy. What makes it safe is the cross-check that already
 exists -- `rateFollowsCount()`, against the line count and the field rate -- and
 what would make it useful is more instances of the halving than the one measured.
 
-`SP_H_PROTECT` is not exotic on this board: `applyForSyncType()` writes it 1 for
+`SP_H_PROTECT` is not exotic on this board: `applySeparation()` writes it 1 for
 every composite-sync source, so the steadied counter is already the normal state
 on half the bench.
 

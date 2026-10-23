@@ -7,7 +7,7 @@ whole ladder and restarts, `acquiredPasses()` stays 0, `/geometry` reports
 
 ## The chain
 
-`SP_SOG_MODE` is written from two places. `SyncProcessor::applyForSyncType()`
+`SP_SOG_MODE` is written from two places. `SyncProcessor::applySeparation()`
 follows the measured sync type and writes 0 on a separate-sync source;
 `prepareSyncProcessor()` wrote 1 unconditionally on every preset load. The
 second ran last, and the first only ran inside `if (scalingRgbhv())` — so on
@@ -69,7 +69,7 @@ polarity is what a measurement cannot get past, not what a count cannot.
 
 **The coast pair.** An unconfigured sync processor misreads `STATUS_SYNC_PROC_HTOTAL`,
 so `SP_PRE_COAST`/`SP_POST_COAST` at 0/0 look like the fault. The direction is
-backwards: 0/0 is what `applyForSyncType()` writes for separate sync and is the
+backwards: 0/0 is what `applySeparation()` writes for separate sync and is the
 state that counts 627. The 9/18 that replaces it is the csync configuration.
 
 **The sampling clock.** `PLLAD_MD` is 2506 and `STATUS_MISC_PLLAD_LOCK` 0 on
@@ -79,10 +79,10 @@ both sides of the transition, so neither moved when the count died.
 
 `SyncProcessor::prepare()` holds the per-load setup that does not follow the
 sync type, and writes neither `SP_SOG_MODE` nor `SP_NO_COAST_REG`.
-`applyForSyncType()` is called on every route rather than only the
+`applySeparation()` is called on every route rather than only the
 scaling-RGBHV one, and runs before `prepare()`.
 
-Two host tests pin it, each failing first: after `applyForSyncType(false)`,
+Two host tests pin it, each failing first: after `applySeparation(false)`,
 `prepare()` leaves `SP_SOG_MODE` 0 and `SP_NO_COAST_REG` 1.
 
 `SP_SOG_MODE` is one of 79 fields with both a sketch writer and an engine-class

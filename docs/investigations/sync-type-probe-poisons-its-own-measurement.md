@@ -29,7 +29,7 @@ tell the difference.
 
 `SyncProcessor::PathSettleMs` is 500, and `establishSyncType()` waits it out
 after applying the type. It belongs to the caller rather than to
-`applyForSyncType()`: a blocking half second inside that function also lands on
+`applySeparation()`: a blocking half second inside that function also lands on
 `bypassModeSwitch_RGBHV()` and the preset arms, which are not about to measure
 anything, and putting it there produced a sync-type probe every 7.2 s on a
 settled source where an unmodified build was silent for 70.
@@ -107,7 +107,7 @@ enabled for 83% of the black state, sampled in a run. The cause is the sketch's
 `getVideoMode()` reporting 0 against a source the sync processor is counting at
 311 lines, after which its no-sync handling ratchets `ADC_SOGCTRL` down and
 `updateSpDynamic()` stamps a sync-search configuration over the one
-`SyncProcessor::applyForSyncType()` wrote.
+`SyncProcessor::applySeparation()` wrote.
 `docs/investigations/the-sketch-hunts-while-the-engine-is-locked.md`.
 
 What arms the mode changes is the sketch's latched SOG interrupt

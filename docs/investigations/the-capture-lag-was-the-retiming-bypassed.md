@@ -7,7 +7,7 @@ misconfiguration, and the misconfiguration is one bit.
 
 ## The bit
 
-`SyncProcessor::applyForSyncType()` wrote `SP_HS_LOOP_SEL` 1 in **both** sync
+`SyncProcessor::applySeparation()` wrote `SP_HS_LOOP_SEL` 1 in **both** sync
 branches. That is `s5_57[6]`, *"Bypass PLL HS to 57 core"* — at 1 the sync
 processor's retiming module is out of circuit, and the input formatter's line
 counter is reset by something other than the retimed hsync.

@@ -425,7 +425,7 @@ therefore invisible to any check that compares names.
       `doPostPresetLoadSteps()` goes from 50 live statements to 20.
 
       **Two of the six phases were redundant writes rather than work.** The
-      csync tail wrote `SP_EXT_SYNC_SEL` 1 where `applyForSyncType()` had
+      csync tail wrote `SP_EXT_SYNC_SEL` 1 where `applySeparation()` had
       already written it from the same held predicate earlier in the same
       function, and nothing between them touches the field — the only writers
       in the tree are that function's two branches, `selectExternalSync()` and
@@ -453,11 +453,11 @@ therefore invisible to any check that compares names.
       `applySyncProcessorDynamic()` wait for it rather than for a flag.
 
       **One claim the sketch carried did not survive the move.** The comment
-      over `applyForSyncType()` said it had to run BEFORE `prepare()`. The two
+      over `applySeparation()` said it had to run BEFORE `prepare()`. The two
       write disjoint bits of the two bytes they share, and the one field both
       reach, `SP_H_PULSE_IGNOR`, takes the same value from either —
       `prepare()` ignores serration on separate sync and the csync branch of
-      `applyForSyncType()` does not write it at all. Swapping them leaves the
+      `applySeparation()` does not write it at all. Swapping them leaves the
       whole host suite green. What IS supported is the other half of the same
       comment, which the engine now states: the arrangement is applied on
       every route, unconditionally.

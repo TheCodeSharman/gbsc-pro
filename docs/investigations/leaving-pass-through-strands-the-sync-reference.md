@@ -73,9 +73,9 @@ to the lock -- they are worth writing for the picture, not for the clock.
 
 ## Why nothing in the firmware put it back
 
-`HdBypass::enterFor()` calls `SyncProcessor::applyForPassThrough()`, which calls
+`HdBypass::enterFor()` calls `SyncProcessor::applyTrailingEdgeReference()`, which calls
 `referenceLeadingEdge(false)` -- pass-through references the trailing edge. That
-is a **second owner** of registers `applyForSyncType()` owns, and it moves them
+is a **second owner** of registers `applySeparation()` owns, and it moves them
 without moving `VideoPath`'s held type. `VideoPath::applySyncType()` then skips:
 
 ```cpp

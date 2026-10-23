@@ -6,13 +6,13 @@ and the one with a host test behind it lost.
 
 | order | writer | value |
 |---|---|---|
-| 1 | `SyncProcessor::applyForSyncType()` | 1 on csync, 0 on separate sync |
+| 1 | `SyncProcessor::applySeparation()` | 1 on csync, 0 on separate sync |
 | 2 | `SyncProcessor::prepare()`, inside `if (!rgbhvRoute)` | 1 |
 | 3 | `doPostPresetLoadSteps()`, eight statements in | 0 |
 | 4 | `doPostPresetLoadSteps()`, a hundred statements later | 0 |
 
 Writer 4 was 0 over 0: nothing between 3 and 4 touches the field. Writer 3 was
-the last word, so `applyForSyncType()`'s csync choice -- which
+the last word, so `applySeparation()`'s csync choice -- which
 `test_sync_processor.cpp` asserts as "csync coasts around the vertical interval
 and **protects the line**" -- never reached the chip on this path. A fact with a
 test on one side and the opposite value shipping on the other.
@@ -28,7 +28,7 @@ if (Tv5725::SyncProcessor::coastPlaced()) {
 }
 ```
 
-`applyForSyncType()` already calls `setSubCoast(serrated)` from the same
+`applySeparation()` already calls `setSubCoast(serrated)` from the same
 `sourceHasSerratedSync()`, so the first of the pair wrote the value that was
 already there and the second contradicted the sync type a second time.
 
@@ -61,11 +61,11 @@ rung fired on the way in. Measured across five composite-sync legs on one build:
 
 So a reading taken after acquisition says nothing about what the setup wrote,
 and two readings of it are not a comparison. The field a setup leaves is
-`applyForSyncType()`'s; everything after is the ladder's.
+`applySeparation()`'s; everything after is the ladder's.
 
 ## What is left
 
-One writer per phase. `applyForSyncType()` states the value a setup leaves,
+One writer per phase. `applySeparation()` states the value a setup leaves,
 `setHsyncOverflowProtect()` is detection's and the ladder's `FullReset` rung's,
 and `toggleHsyncOverflowProtect()` is the search. `setSubCoast()` is private to
 `SyncProcessor`, since the source's serration is asked in exactly one place.

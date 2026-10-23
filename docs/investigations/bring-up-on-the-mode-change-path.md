@@ -82,7 +82,7 @@ boot bring-up's thresholds stand for the life of the power cycle.
 Of the nineteen fields, eleven are written by `bypassModeSwitch_RGBHV()` itself
 — `DAC_RGBS_ADC2DAC`, `OUT_SYNC_SEL`, the three pad enables, `MEM_PAD_CLK_INVERT`,
 `PLLAD_FS`, `PLLAD_ICP`, `PLL_ADS`, `PLL_MS`, `SFTRST_HDBYPS_RSTZ`. Two more,
-`SP_HS_POL_ATO` and `SP_VS_POL_ATO`, come from `SyncProcessor::applyForSyncType()`,
+`SP_HS_POL_ATO` and `SP_VS_POL_ATO`, come from `SyncProcessor::applySeparation()`,
 which that switch calls. The four `VDS_*` are the scaled raster left stale behind
 a path that does not use the VDS. So the diff is the consequence of the choice
 throughout, and reading a cause out of it — the ADC PLL was the tempting one,
@@ -102,7 +102,7 @@ somewhere the mode-change path can rely on. That is the per-subsystem work, and
 it has to come first.
 
 `SP_HS_POL_ATO` and `SP_VS_POL_ATO` are already out of this list: they moved to
-`SyncProcessor::applyForSyncType()`, which the mode-change path calls whether or
+`SyncProcessor::applySeparation()`, which the mode-change path calls whether or
 not a bring-up runs. They still appear in the diff above because the run is a
 bypass one, and that path sets them for separate sync.
 
