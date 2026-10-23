@@ -187,6 +187,7 @@ static void enterPassThrough()
     VideoRoute::toHdBypassChannel();
     Chip::resetVideoBlocks();
     HdBypass::applyColourPath(Adc::inputIsComponent());
+    SyncProcessor::applyForPassThrough(Adc::inputIsComponent());
     BringUp::arm();
 }
 
@@ -1279,6 +1280,46 @@ TEST_CASE("leaving pass-through puts the colour path back")
     unit.pollFor(8);
 
     CHECK(ColourSpace::DEC_MATRIX_BYPS::read() == 0);
+}
+
+TEST_CASE("leaving pass-through puts the sync reference back")
+{
+    // Pass-through references the TRAILING edge of the source's sync where the
+    // scaling path on a composite or sync-on-green source references the
+    // leading one, and SP_CS_P_SWAP is what carries that to the ADC PLL. Left
+    // on pass-through's value the PLL does not lock, with every other register
+    // on the machine reading correct: measured on the Wii at 480p into 1080p,
+    // STATUS_MISC_PLLAD_LOCK 0.0% of 206 samples and sp_htotal wandering
+    // 1211..1213, against 86.2% and a steady 1212 once the bit is back. A full
+    // 1536-address diff across the excursion differs in five fields and four of
+    // them are this one held value.
+    //
+    // An application is what reaches the chip, and one for a sync type already
+    // in force is skipped -- so the arrangement has to be marked as no longer
+    // applied when pass-through takes it, not merely re-chosen.
+    seedPassThroughSource();
+
+    Acquiring unit;
+    unit.acquisition.usePassThroughSwitch(enterPassThrough);
+    unit.acquisition.allowPassThrough(true);
+    unit.path.useSyncTypeProbe(probeOwnVsync);
+
+    VideoSourceSelection::select(VideoSourceSelection::Ypbpr);
+    g_hasOwnVsync = false;
+    unit.start();
+    REQUIRE(unit.pollUntilSolved(8));
+    REQUIRE(unit.path.outputMode()->isBypass());
+    REQUIRE(SyncProcessor::SP_CS_P_SWAP::read() == 0);
+
+    unit.acquisition.allowPassThrough(false);
+    resolveUntilSolved(unit.acquisition, unit.nowMs);
+    REQUIRE(unit.pollUntilSolved(8));
+    REQUIRE_FALSE(unit.path.outputMode()->isBypass());
+
+    const uint32_t swap = SyncProcessor::SP_CS_P_SWAP::read();
+    VideoSourceSelection::forgetSelection();
+
+    CHECK(swap == 1);
 }
 
 TEST_CASE("leaving pass-through releases the blocks pass-through held")

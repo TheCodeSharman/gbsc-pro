@@ -863,6 +863,12 @@ void VideoPath::configureScalingPath()
     // The decimator's matrix, which pass-through takes out because the HD bypass
     // channel converts for itself.
     applyColourPath();
+
+    // THE SYNC ARRANGEMENT IS PASS-THROUGH'S TOO, and reset() above takes what
+    // is left of it. WRITTEN rather than re-chosen: an application for a type
+    // already in force is skipped, and pass-through moved the registers without
+    // moving the held type. ../../../../docs/known-issues.md
+    reapplySyncTypeInForce();
 }
 
 void VideoPath::putSeparatorAndPhasesInForce()

@@ -108,11 +108,12 @@ bool VideoSourceAcquisition::acquireSamplingPhase()
     tv5725Log(line);
 
     // SAID, NOT REPAIRED. No phase can steady a clock that is not running the
-    // divider, so another search is not the answer -- but neither is the group
-    // and the restart, which left the lock share at 0.5% and the emitted frame
-    // unchanged on the live fault where a re-detection recovered both. What
-    // recovers it is not yet wired here, and claiming a repair that does not
-    // work is worse than naming the state. docs/known-issues.md
+    // divider, so another search is not the answer -- and neither is the group
+    // and the restart, measured leaving the lock share at 0.5% on the one cause
+    // that has been traced. That cause is removed where it arises rather than
+    // recovered from here, a stranded sync reference being nothing the phase
+    // layer can see.
+    // ../../../docs/investigations/leaving-pass-through-strands-the-sync-reference.md
     if (!found && Tv5725::Adc::samplingClockSuspect())
         tv5725Log("sampling clock unlocked: clean phases scattered, not a window");
 
