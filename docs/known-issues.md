@@ -62,6 +62,15 @@ in a state that read it back exactly beforehand -- which is this signature
 exactly. A hand poke of two group fields did not reproduce it, because the
 engine rewrote them within three seconds; holding one needs a freeze.
 
+**WHAT MAKES THAT READING SAFE IS THE CLEAN RUN, NOT THE CLEAN COUNT.** The
+pass-through path scans one count off the gate on a healthy source -- measured
+on `vga` at 1280x720@60 handed over, twelve landings at 17, 17, 17, 18 x6 and
+19 x3 clean of 32 against a gate of 17, with `far` zero, which is the same pair
+of readings an unlocked clock gives. The same source scaled scores 20..25. So
+the count cannot separate them and the run can: an unlocked clock leaves the
+clean phases SCATTERED, widest run of one, where a wide band leaves a
+contiguous window of a dozen or more.
+
 **NOTHING IN THE FIRMWARE ACTED ON IT, WHICH IS THE PART NOW FIXED.** The
 engine reported `state: acquired`, and the only thing it retried was the phase
 search -- at acquired passes 10 through 60, six walks of the field for one
@@ -89,10 +98,10 @@ ypbpr  ...........................23...     band at 27..28, 30 clean
 vga    ............35caa862............     band at 11..19, 22 clean
 ```
 
-**The guard on blaming the clock is untested against a source that trips it.**
-`far` is zero at every phase on both bench sources in every state reached, so
-the clause that refuses the clock reading where a phase was more than one count
-out has never had to act.
+**One of the two guards is now exercised and one is not.** The clean-run guard
+acts on every pass-through landing, which is what found it. The `far` guard has
+only ever had something to act on during the solve thrash below -- `far` is
+zero at every phase on both bench sources in every settled state reached.
 
 **WHAT LET IT THROUGH IS THAT NO ACCEPTANCE COVERS `ypbpr`.**
 `test_card_framing.py`'s five modes are all RISC PC modes on `vga`, so a
