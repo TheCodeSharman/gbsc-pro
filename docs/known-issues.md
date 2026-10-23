@@ -52,7 +52,48 @@ unlocked clock**, so a scan taken through one measures the clock and not the
 phase. The two bad rate readings are `8/9` and `8/10` of the true rate against
 `UnconfirmedRatePulses` of 8, which is a miscounted edge rather than a rate.
 
-**WHAT TRIGGERS IT IS NOT KNOWN, AND NO ACQUISITION ROUTE REACHES IT.** Scored
+**THE TRIGGER IS LEAVING PASS-THROUGH ON `ypbpr`, CAUGHT LIVE 2026-10-23.** The
+console across it, the source being the Wii at 480p:
+
+```
+2615.48  input selected: ypbpr, reference divider 2040
+2618.93  phase scan: .......................2151.....     clean, 27 of 32
+2633.39  measured: 525 lines ... clock 2038@31468 htotal 2038      pass-through
+2634.15  measured: 525 lines x 59.87 Hz -> line rate 31434 ... UNLATCHED
+2634.15  installing: divider from line rate 31434, doubled 0 -> 1212
+2634.43  phase scan: A.BC2.33.2223.1.24..548157AB.B.3     and garbage from here
+2634.44  sampling phase: no clean window, oversample 4
+```
+
+Seven consecutive scans refused, `PA_SP_S` left on the default 16, and the
+state measured with the lock bit at **0.5% of 209 samples, one transition,
+`sp_htotal` sd 0.34 across 1211..1213** -- against 84.5% of 219 with 67
+transitions once recovered. So the unlocked clock is confirmed with the
+instrument rather than inferred.
+
+**WHAT RECOVERS IT IS A RE-DETECTION, AND THE GROUP PLUS THE RESTART DOES
+NOT.** Measured on that live state, A/B on the USB capture:
+
+| | lock | top rows 0..319, temporal sd | bottom rows |
+|---|---|---|---|
+| the fault | 0.5% of 209 | **7.91** | 1.03 |
+| after `/sampleclock?md=1212` -- the group and the PLL restart | unchanged | **7.70** | 0.98 |
+| after `/sc?~` -- full re-detection | **84.5% of 219** | **1.78** | 0.79 |
+
+So `Adc::reapplySampleRate()` is not a repair for this and the engine must not
+claim one. What is still open is why the solve does not settle: the same
+measured line rate installs 1446 and then 1212 thirty milliseconds apart, with
+the duty measured through 1446 in between, and whether that pair is the design
+or the fault is unresolved.
+
+**THE EMITTED FRAME IS WHERE IT IS MEASURABLE, AND IT LOCALISES TO THE TOP.**
+Per-band temporal sd over 160 full-resolution frames puts the disturbance in
+rows 0..39 and 120..319 at sd 2.6..7.5 against a median of 0.45 and a floor of
+0.02 at the bottom of the frame. **`picture_stability.judge` cannot see this** --
+its row-profile correlation finds lag 0 on whatever still correlates -- and a
+frame-difference score cannot either. A per-band temporal sd can.
+
+**NO ACQUISITION ROUTE REACHES IT.** Scored
 with `reacquire_soak.py` on the settled bench: 7 of 7 input bounces locked, and
 8 of 8 restarts locked at 81..85% with phase 16 chosen every time. So the entry
 is neither a fresh acquisition nor a boot. **The nearest documented cause is
@@ -98,10 +139,12 @@ ypbpr  ...........................23...     band at 27..28, 30 clean
 vga    ............35caa862............     band at 11..19, 22 clean
 ```
 
-**One of the two guards is now exercised and one is not.** The clean-run guard
-acts on every pass-through landing, which is what found it. The `far` guard has
-only ever had something to act on during the solve thrash below -- `far` is
-zero at every phase on both bench sources in every settled state reached.
+**A `far` COUNT MUST NOT GATE THE READING, AND THAT IS MEASURED.** It looks as
+though a count far off the divider means the PHASE is at fault, and an earlier
+rule here required `far` to be zero everywhere before naming the clock. Every
+one of the seven scans in the live fault carries `far` at many phases -- the
+walk moves the phase, and at a bad one the count goes a long way out -- so that
+rule could never fire where it was needed. The clean RUN is the whole of it.
 
 **WHAT LET IT THROUGH IS THAT NO ACCEPTANCE COVERS `ypbpr`.**
 `test_card_framing.py`'s five modes are all RISC PC modes on `vga`, so a
