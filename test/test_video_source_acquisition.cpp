@@ -2769,7 +2769,7 @@ TEST_CASE("a latched divider gets the search, and the watchdog is fed through it
     CHECK(g_watchdogFeeds > 0);
 }
 
-TEST_CASE("a scan that blames the clock re-applies it instead of searching again")
+TEST_CASE("a scan that blames the clock says so instead of searching again")
 {
     // **THE ENGINE MUST NEVER ANSWER A CLOCK FAULT WITH A PHASE SEARCH.** A
     // refused search leaves phaseFound() false, so SourceMaintenance re-runs it
@@ -2777,10 +2777,10 @@ TEST_CASE("a scan that blames the clock re-applies it instead of searching again
     // acquisition, each latching all 32 phases into a live sync processor,
     // while the thing at fault is the clock and no phase can reach it.
     //
-    // Measured on ypbpr: the count reads within one of the divider at every
-    // phase and never on it, every scan is refused, and the engine sat there
-    // re-solving every 25 s with the output black for 4.6 s each time.
-    // docs/known-issues.md
+    // It says so rather than repairing it: measured on the live fault, writing
+    // the group again and restarting the PLL left the lock share at 0.5% and
+    // the emitted frame's top rows moving exactly as before, where a
+    // re-detection took the lock to 84.5%. docs/known-issues.md
     seedBenchSource();
     seedLineSamples(BenchDivider);
     Acquiring unit;
@@ -2798,7 +2798,7 @@ TEST_CASE("a scan that blames the clock re-applies it instead of searching again
 
     CHECK_FALSE(unit.acquisition.acquireSamplingPhase());
     CHECK(Adc::samplingClockSuspect());
-    CHECK(loggedContaining("sampling clock re-applied"));
+    CHECK(loggedContaining("sampling clock unlocked"));
 }
 
 TEST_CASE("a starved separator gets the mid of the field rather than a sweep")

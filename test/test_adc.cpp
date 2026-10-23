@@ -909,14 +909,11 @@ TEST_CASE("a wide band with a clean window left is not reported as the clock")
     // scored 17, 17, 17, 18 six times and 19 three times clean of 32, against
     // SweepGoodEnough of 17, where the same source scaled scores 20..25. The
     // band is wide -- thirteen to fifteen phases at up to 18 counts of 20 --
-    // and `far` is zero throughout, exactly as it is on an unlocked clock.
+    // The band is wide, thirteen to fifteen phases at up to 18 counts of 20.
     //
-    // So the clean COUNT cannot separate the two and the clean RUN can: an
-    // unlocked clock leaves the clean phases SCATTERED, widest run of one,
-    // where this leaves a contiguous window of a dozen or more. Blaming the
-    // clock here would re-apply the sampling clock on a healthy source, one
-    // count of dither away.
-    // docs/known-issues.md
+    // So the clean COUNT cannot separate the two and the clean RUN can: the
+    // live fault leaves a widest run of one to three where this leaves a
+    // contiguous window of a dozen or more. docs/known-issues.md
     Wire.reset();
     Adc::PLLAD_MD::write(2230);
     g_sweepDivider = 2230;

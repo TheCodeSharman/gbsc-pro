@@ -328,13 +328,13 @@ public:
     // is the platform's. Both are handed IN: the count is another block's
     // register, and a file here reaching for ESP.wdtFeed() is a design signal
     // rather than a dependency to admit. docs/video-source-acquisition.md
-    // Whether the last search blamed the sampling CLOCK rather than the phase:
-    // the clean phases were SCATTER rather than a window, and no phase's count
-    // was ever more than one off the divider. The two are separable because
-    // their repairs differ -- a phase is chosen, a clock is restarted -- and
-    // the clean COUNT cannot separate them, a healthy pass-through scan
-    // scoring one count off the gate. Cleared by the next search that reaches
-    // an answer. ../../../docs/known-issues.md
+    // Whether the last search found the clean phases SCATTERED rather than in a
+    // window, which is what an unlocked sampling clock leaves: the count misses
+    // the divider at nearly every phase and the few that read it are isolated.
+    // Measured against the lock bit at 0.5% of 209 samples. The clean COUNT
+    // cannot say this, a healthy pass-through scan scoring one count off the
+    // gate. Cleared by the next search that reaches an answer.
+    // ../../../docs/known-issues.md
     static bool samplingClockSuspect();
 
     static bool acquirePhase(uint8_t oversample, bool sweep,
@@ -589,6 +589,10 @@ public:
     // Write the group in force again and restart the PLL. The restart is part
     // of the same act: applying the group alone leaves the PLL unlocked even at
     // the value it already held.
+    //
+    // NOT A REPAIR FOR AN UNLOCKED CLOCK -- measured on the live fault, it left
+    // the lock share and the emitted frame unchanged where a re-detection
+    // recovered both. ../../../docs/known-issues.md
     static void reapplySampleRate();
 
     static uint16_t dividerInForce();

@@ -332,18 +332,6 @@ uint8_t middleOfWidestCleanRun(const uint8_t *dither)
     return (uint8_t)((bestStart + bestLength / 2) & Adc::PhaseMax);
 }
 
-// Whether any phase's count missed the divider by more than one. One of two
-// GUARDS on blaming the clock rather than the thing that detects it: a clock
-// running near the divider but not on it cannot put any phase far out, so a
-// far count says the phase is at fault. ../../../docs/known-issues.md
-bool anyCountFarFromDivider(const uint8_t *far)
-{
-    for (uint8_t phase = 0; phase <= Adc::PhaseMax; ++phase)
-        if (far[phase] != 0)
-            return true;
-    return false;
-}
-
 // How far the search walks. Two more than the field, so the first phases
 // reached are measured again and the second reading is the one kept: the walk
 // starts by moving off whatever phase was in force, and a phase measured
@@ -471,12 +459,11 @@ bool Adc::acquirePhase(uint8_t oversample, bool sweep,
     if (clean < SweepGoodEnough) {
         // The clean COUNT cannot separate an unlocked clock from a wide band on
         // a healthy source -- the pass-through path scores one count off the
-        // gate with `far` zero, exactly as an unlocked clock does. The clean
-        // RUN can: scatter is the clock, a window is a band.
+        // gate, exactly as an unlocked clock does. The clean RUN can: scatter
+        // is the clock, a window is a band.
         uint8_t runStart = 0, runLength = 0;
         widestCleanRun(dither, &runStart, &runLength);
-        clockSuspect_ = !anyCountFarFromDivider(far)
-                        && runLength < CleanRunIsAWindow;
+        clockSuspect_ = runLength < CleanRunIsAWindow;
 
         // The walk latched every phase it scored, so a bare return leaves the
         // adjuster two steps on from where the engine last chose. Nothing chose

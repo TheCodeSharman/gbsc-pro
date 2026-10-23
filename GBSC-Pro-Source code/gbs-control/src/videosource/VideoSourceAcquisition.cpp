@@ -107,12 +107,14 @@ bool VideoSourceAcquisition::acquireSamplingPhase()
              found ? "chosen" : "no clean window", (unsigned)oversample);
     tv5725Log(line);
 
-    // A SEARCH THAT BLAMED THE CLOCK IS NOT ANSWERED WITH ANOTHER SEARCH: no
-    // phase can steady a clock that is not running the divider.
-    if (!found && Tv5725::Adc::samplingClockSuspect()) {
-        Tv5725::Adc::reapplySampleRate();
-        tv5725Log("sampling clock re-applied: no phase read the divider");
-    }
+    // SAID, NOT REPAIRED. No phase can steady a clock that is not running the
+    // divider, so another search is not the answer -- but neither is the group
+    // and the restart, which left the lock share at 0.5% and the emitted frame
+    // unchanged on the live fault where a re-detection recovered both. What
+    // recovers it is not yet wired here, and claiming a repair that does not
+    // work is worse than naming the state. docs/known-issues.md
+    if (!found && Tv5725::Adc::samplingClockSuspect())
+        tv5725Log("sampling clock unlocked: clean phases scattered, not a window");
 
     return found;
 }
