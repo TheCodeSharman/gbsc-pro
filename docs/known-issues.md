@@ -10,13 +10,14 @@ regardless of which step is in flight.
 
 ## Reaches the picture
 
-### The Wii's sampling clock locks or does not, per acquisition, and the phase scan decides by lottery
+### The ADC PLL can sit unlocked with every register reading correct, and nothing repaired it
 
 Measured 2026-10-23 on `ypbpr`, the Wii at 480p into 1920x1080. **The ADC PLL
-either locks when the source is acquired or never does, and the picture follows
-it** -- an acquisition that did not lock shows jittery edges, a disturbed band
-at the top of the frame and a picture that jumps, with every configuration
-register reading correct.
+either runs the divider or it does not, and the picture follows it** -- an
+unlocked one shows jittery edges, a disturbed band at the top of the frame and
+a picture that jumps, while every configuration register reads correct,
+including coast 7/6, `SP_SOG_MODE` 1 and `STATUS_SYNC_PROC_HTOTAL` 1212 against
+`PLLAD_MD` 1212.
 
 `STATUS_MISC_PLLAD_LOCK` sampled at 25 ms from `loop()`, which is the only
 instrument that can see it -- the bit is a duty cycle and HTTP answers too
@@ -34,51 +35,64 @@ unlocked PLL and not a property of the sync-on-green path. `sp_vtotal` holds
 524 in every sample of both states and `hsact` is 1, so vertical sync is sound
 either way -- what moves is the sampling clock.
 
-**WHAT DECIDES IT IS `Adc::acquirePhase()`, AND ON THIS SOURCE IT DECIDES BY
-NOISE.** The scan marks a phase dirty when `STATUS_SYNC_PROC_HTOTAL` differs
-from `PLLAD_MD` by **even one count**, and the Wii's count legitimately dithers
-1211/1212/1213 -- so almost every phase scores dirty and the chooser is left
-picking between `MidField` and whatever single zero the noise produced.
-Consecutive scans off the bench:
+**EVERYTHING ELSE THE STATE SHOWS IS DOWNSTREAM OF IT, AND READING ANY OF IT AS
+A SEPARATE FAULT COSTS A SESSION.** All three were filed as faults of their own
+and all three are measured sound on the same source once it is locked:
+
+| symptom in the unlocked state | the same thing locked |
+|---|---|
+| the phase scan returns noise, so no phase is applied and the choice looks like a lottery | a band at 27..28 with 30 of 32 clean, `sampling phase: chosen`, phase 16 -- reproducible across nine consecutive acquisitions |
+| the field-rate probe returns 47888 and 53280 mHz against a source at 59939 | 200 of 200 readings at `pulses=8` and 387 of 387 at `pulses=1`, all exactly 59940 mHz, sd 0.0 |
+| the engine re-solves about every 25 s, armed by `TIMINGS change (rate)`, with the output black for 4.6 s each time | no spurious arm at all |
+
+The first follows mechanically: `STATUS_SYNC_PROC_HTOTAL` counts ADC clocks, so
+an unlocked PLL makes the count wander at **every** phase and the scan's own
+metric is that wander. **No setting of the phase adjuster can steady an
+unlocked clock**, so a scan taken through one measures the clock and not the
+phase. The two bad rate readings are `8/9` and `8/10` of the true rate against
+`UnconfirmedRatePulses` of 8, which is a miscounted edge rather than a rate.
+
+**WHAT TRIGGERS IT IS NOT KNOWN, AND NO ACQUISITION ROUTE REACHES IT.** Scored
+with `reacquire_soak.py` on the settled bench: 7 of 7 input bounces locked, and
+8 of 8 restarts locked at 81..85% with phase 16 chosen every time. So the entry
+is neither a fresh acquisition nor a boot. **The nearest documented cause is
+hand-writing part of the ADC PLL group over HTTP**, which `CLAUDE.md` records
+as leaving `STATUS_SYNC_PROC_HTOTAL` wandering a few counts under the divider
+in a state that read it back exactly beforehand -- which is this signature
+exactly. A hand poke of two group fields did not reproduce it, because the
+engine rewrote them within three seconds; holding one needs a freeze.
+
+**NOTHING IN THE FIRMWARE ACTED ON IT, WHICH IS THE PART NOW FIXED.** The
+engine reported `state: acquired`, and the only thing it retried was the phase
+search -- at acquired passes 10 through 60, six walks of the field for one
+acquisition, each latching all 32 phases into a live sync processor and leaving
+the phase two steps on from where anything chose it. `Adc::acquirePhase()` now
+says when a scan blamed the CLOCK rather than the phase, `acquireSamplingPhase()`
+answers that with `Adc::reapplySampleRate()` -- the group and the restart, off
+state the ADC already holds -- and `SourceMaintenance` keeps it due for as long
+as the clock is suspect rather than closing the phase window on it.
+
+**IT IS UNVERIFIED AGAINST THE FAULT**, because the fault does not reproduce.
+What is verified is that it does not fire on a healthy source: nine
+acquisitions across both inputs, no `sampling clock re-applied` line, and the
+scans unchanged.
+
+**THE SCAN IS NOW ONE LINE AND READABLE AT A GLANCE**, which it was not: the
+`far` metric that tells a clock fault from a phase fault was printed as a
+second adjacent line and never arrived, five bench acquisitions out of five.
+One character per phase carries both -- `.` clean, a digit for one count out,
+an UPPERCASE letter for further out -- so the clock signature is "no `.`
+anywhere, no uppercase either":
 
 ```
-66446350157776457985393b17346921     one clean phase of 32
-5a345644566747527757685e28283358     none
-85948354455669413075367884457766     one
-51926574464323078423593557353553     one, and it is phase 16
+ypbpr  ...........................23...     band at 27..28, 30 clean
+vga    ............35caa862............     band at 11..19, 22 clean
 ```
 
-Against the RISC PC, where `sp_htotal` is exactly 2200 at sd 0.00 and the scan
-has real structure -- a dirty band of about four phases and a clean run of
-twenty-odd. **The code already separates the two cases and then throws the
-useful one away**: `far` counts `off > 1` and is reported beside `dither`,
-which counts `off != 0`, and only `dither` reaches the gate and the choice.
-
-**NO PHASE IS APPLIED AT ALL ON THIS SOURCE.** A phase counts clean only if all
-20 of its samples read `off == 0`, and the scan is abandoned below a gate of
-`SweepGoodEnough` = 17 clean phases of 32 -- so with `clean` at 0 or 1 the
-chooser is never reached and `acquirePhase()` returns false, leaving whatever
-the previous path left in force. A soak of eight input bounces reads phase 16
-seven times and 6 once, which is `phaseSyncProcessor_`'s initial `MidField`
-persisting rather than a choice.
-
-`dedc53784` is where the chooser took its present shape, and its own evidence
-is `vga` at 320x256@50 and 640x480@60 -- no ypbpr state is in it. Choosing on
-`far`, or falling back to it where `dither` yields no clean run, is the
-candidate; it is arithmetic over a scan array and pins at the host layer.
-
-**THE ACCEPTANCE IS A RUN OF ACQUISITIONS, NOT A WATCH.** The fault is per
-acquisition, so a unit observed for a minute says nothing.
-`reacquire_soak.py` bounces the input and scores the lock share each time.
-
-**A SECOND SYMPTOM MAY BE THE SAME FAULT.** In the unlocked state the engine
-re-solves about every 25 s and the output goes black for **4.6 s** each time --
-measured on the USB capture, frames 45.3 s to 49.9 s, armed by
-`measure: start, TIMINGS change (rate), 525 lines, solved 525` on a source
-whose count did not move. The rate probe that arms it returned 47888 and
-53280 mHz against a source at 59939, and it times vsync off `DEBUG_IN_PIN`,
-which an unlocked sampling clock would make unreliable. Not confirmed as the
-same cause.
+**The guard on blaming the clock is untested against a source that trips it.**
+`far` is zero at every phase on both bench sources in every state reached, so
+the clause that refuses the clock reading where a phase was more than one count
+out has never had to act.
 
 **WHAT LET IT THROUGH IS THAT NO ACCEPTANCE COVERS `ypbpr`.**
 `test_card_framing.py`'s five modes are all RISC PC modes on `vga`, so a
