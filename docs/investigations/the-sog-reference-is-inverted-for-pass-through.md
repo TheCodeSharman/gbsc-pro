@@ -93,8 +93,10 @@ the fact per input and is where the condition would come from if one appears.
 
 ## And the scaling path must not inherit it
 
-Nothing on the way out of pass-through calls `applyTrailingEdgeReference()`, so the
-inversion would survive into a route whose capture origin consumes it.
+The reference is now one write per route, through
+`SyncProcessor::applyReference()`, so the scaling route states the inversion
+rather than inheriting whatever pass-through left -- and before it did, the
+inversion survived into a route whose capture origin consumes it.
 `SP_RT_HS_SP` is derived from the pulse `hsyncPulseSamples()` folds, so it lands
 in the same place inverted or not -- measured 1187 against the 1186 that
 `1212 - 89 + 63` predicts -- while the retimed edge has moved by a whole pulse.

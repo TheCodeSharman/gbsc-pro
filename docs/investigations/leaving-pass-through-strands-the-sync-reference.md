@@ -73,10 +73,10 @@ to the lock -- they are worth writing for the picture, not for the clock.
 
 ## Why nothing in the firmware put it back
 
-`HdBypass::enterFor()` calls `SyncProcessor::applyTrailingEdgeReference()`, which calls
-`referenceLeadingEdge(false)` -- pass-through references the trailing edge. That
-is a **second owner** of registers `applySeparation()` owns, and it moves them
-without moving `VideoPath`'s held type. `VideoPath::applySyncType()` then skips:
+`HdBypass::enterFor()` applied the pass-through reference -- the trailing edge
+-- through a setup of its own. That was a **second owner** of registers
+`applySeparation()` owns, and it moved them without moving `VideoPath`'s held
+type. `VideoPath::applySyncType()` then skips:
 
 ```cpp
 if (syncTypeApplied_ && csync == syncTypeInForce_)
@@ -114,6 +114,52 @@ Three round trips on the fixed build, each landing scaled on `ypbpr`:
 No `sampling clock unlocked` line in the three round trips, against seven
 consecutive refusals per excursion before. `frame_bands.py` reads median 0.223,
 worst 1.262.
+
+## And then the seam itself, rather than the symptom
+
+Re-applying on the way out makes the overlay reversible and leaves the shape
+that caused it: a reference written from whichever path ran last, with nothing
+recording which. `SP_HS2PLL_INV_REG` had three writers on top of that, each
+answering a different question -- the edge the sync type chose, the source's
+measured polarity, and 0 for the ADC offset calibration.
+
+**Both answers are right for their route**, which is why neither is deleted.
+Scaled, `normaliseHsyncPolarity()` makes the polarity one shape at the boundary,
+so the inversion is the chosen edge and a second one on top is displacement --
+94 output px, measured in
+[leaving-bypass-leaves-the-sync-path-behind.md](leaving-bypass-leaves-the-sync-path-behind.md).
+Passed through, the channel replays the source's pulses the way round they
+arrive, so the PLL needs the inversion matched to the SOURCE.
+
+So the route became a fact the one owner takes.
+`SyncProcessor::applyReference()` is the only writer of `SP_SOG_P_INV`,
+`SP_CS_P_SWAP` and `SP_HS2PLL_INV_REG`, and takes the route, the sync type,
+whether sync arrives on green, and the source's polarity.
+
+**THE TWO WRITERS LOST THE POLARITY, which is a defect of its own and is what
+pins the change.** The channel matches the inversion to a negative-going source;
+a re-entry then wrote the trailing-edge answer over it, and the ADC PLL
+referenced the wrong edge until the channel sync service next ran. A host test
+in `test/test_hd_bypass.cpp` fails on that and passes after.
+
+Scored across every sync arrangement the bench has, scaled after leaving
+pass-through:
+
+| source | arrangement | lock | `SP_CS_P_SWAP` | `SP_HS2PLL_INV_REG` |
+|---|---|---|---|---|
+| Wii 480p, `ypbpr` | sync on green | 83.1%, 87.9% | 1 | 1 |
+| RISC PC 720p, `vga` | separate | 89.6%, 96.1% | 0 | 0 |
+| RISC PC 800x600, `vga` | composite | 88.8% | 1 | 1 |
+
+all at `sp_htotal` sd 0.00 on the divider, with pass-through itself 82.9..100%
+in every leg.
+
+**THE TWO FORMULAS AGREE ON ALL THREE, AND THAT IS WHY THE COLLISION NEVER
+BIT.** A composite-sync source here reads negative hsync and a separate-sync one
+positive, so `csync` and `!sourcePositive` come out the same on every source the
+bench has. The divergent case -- composite sync with positive hsync, or separate
+sync with negative -- is not reachable from here, so what is measured above is
+that single ownership costs nothing, not that the two answers differ in practice.
 
 ## What the fault made look broken, and was not
 

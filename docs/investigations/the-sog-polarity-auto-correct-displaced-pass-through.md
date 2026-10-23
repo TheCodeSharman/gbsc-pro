@@ -1,7 +1,7 @@
 # The SOG polarity auto-correct displaced pass-through
 
 `SP_SOG_P_ATO` is the chip's own "sog auto correct polarity". The scaling path
-clears it and `applyTrailingEdgeReference()` used to set it, inherited verbatim from
+clears it and the pass-through setup used to set it, inherited verbatim from
 the sketch with no stated reason. **It is a second owner of a fact
 `normaliseHsyncPolarity()` already settles, and it displaces where the sync
 processor starts counting by a whole pulse.** One bit, two faults.
