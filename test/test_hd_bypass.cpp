@@ -1078,3 +1078,32 @@ TEST_CASE("the channel's entry leaves the separator level alone")
 
     CHECK(Tv5725::SyncOnGreen::level() == 18);
 }
+
+// TWO WRITERS OF THE PLL INVERSION LOSE THE SOURCE'S POLARITY, and the second
+// write is not a correction -- it is the same field answering a different
+// question. In pass-through the channel replays the source's pulses the way
+// round they arrive, so SP_HS2PLL_INV_REG has to match the SOURCE; on the
+// scaling path the polarity is normalised at the boundary, so it is the EDGE
+// the sync type chose. Applying the pass-through reference after the polarity
+// has been matched writes the edge answer over the source answer and the ADC
+// PLL references the wrong edge until the channel sync service next runs.
+//
+// It is the register a bypass round trip was once measured to leave behind,
+// worth 94 output px on its own.
+// ../docs/investigations/leaving-bypass-leaves-the-sync-path-behind.md
+TEST_CASE("re-entering pass-through keeps the source's PLL inversion")
+{
+    Wire.reset();
+
+    Tv5725::HdBypass::SourceSyncEdges edges;
+    edges.hsyncFound = true;
+    edges.hsyncPositive = false;   // negative-going, so the PLL inverts
+    edges.vsyncFound = false;
+    edges.vsyncPositive = true;
+    Tv5725::HdBypass::applyChannelSyncEdges(edges);
+    REQUIRE(Tv5725::SyncProcessor::SP_HS2PLL_INV_REG::read() == 1u);
+
+    HdBypass::enterFor(true, true, 31469, Unpublished, 525, BenchPulse);
+
+    CHECK(Tv5725::SyncProcessor::SP_HS2PLL_INV_REG::read() == 1u);
+}

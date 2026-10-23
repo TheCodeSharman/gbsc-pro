@@ -172,6 +172,16 @@ struct Acquiring {
     }
 };
 
+// The pass-through reference, as HdBypass applies it on entry: the route and
+// whether the source puts its sync on green, with no polarity read yet.
+static Tv5725::SyncProcessor::Reference passThroughReference(bool syncOnGreen)
+{
+    Tv5725::SyncProcessor::Reference reference;
+    reference.passedThrough = true;
+    reference.syncOnGreen = syncOnGreen;
+    return reference;
+}
+
 
 // The register-level switch into pass-through. The engine decides, the switch
 // is whoever knows how to move the route -- the sketch on the board, this here.
@@ -187,7 +197,7 @@ static void enterPassThrough()
     VideoRoute::toHdBypassChannel();
     Chip::resetVideoBlocks();
     HdBypass::applyColourPath(Adc::inputIsComponent());
-    SyncProcessor::applyTrailingEdgeReference(Adc::inputIsComponent());
+    SyncProcessor::applyReference(passThroughReference(Adc::inputIsComponent()));
     BringUp::arm();
 }
 
@@ -240,6 +250,8 @@ static void checkBenchAnchors()
     CHECK(Adc::PLLAD_MD::read() == BenchDivider);
     CHECK(InputFormatter::IF_HSYNC_RST::read() == BenchDivider / 2);
 }
+
+
 
 TEST_CASE("a source driven through VideoSourceAcquisition solves the same registers")
 {
@@ -923,17 +935,17 @@ TEST_CASE("the clamp follows the SOG reference the entry chose")
     GBS::HPERIOD_IF::write(431);
     seedField(0, 0x16, 1, 1, 1);          // STATUS_SYNC_PROC_HSACT
 
-    SyncProcessor::applyTrailingEdgeReference(false);
+    SyncProcessor::applyReference(passThroughReference(false));
     SyncProcessor::forgetPositions();
     unit.acquisition.placeClampWindow();
     const uint32_t upright = SyncProcessor::SP_CS_CLP_ST::read();
 
-    SyncProcessor::applyTrailingEdgeReference(true);
+    SyncProcessor::applyReference(passThroughReference(true));
     SyncProcessor::forgetPositions();
     unit.acquisition.placeClampWindow();
     const uint32_t inverted = SyncProcessor::SP_CS_CLP_ST::read();
 
-    SyncProcessor::applyTrailingEdgeReference(false);
+    SyncProcessor::applyReference(passThroughReference(false));
 
     CHECK(inverted - upright
           == SyncProcessor::clampOffsetForPulse(unit.sampling.hsync(),

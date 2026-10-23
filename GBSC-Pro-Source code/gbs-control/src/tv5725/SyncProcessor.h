@@ -337,22 +337,54 @@ public:
     // docs/investigations/the-detection-defaults-are-not-the-preset-paths.md
     static void prepareForDetection();
 
-    // THE EDGE REFERENCE AND NOTHING ELSE: the trailing edge, both processor
-    // polarity inversions out, the chip's polarity auto-correct off, and the
-    // SOG reference inverted where `syncOnGreen` -- five bits written rather
-    // than inherited, because a route that never brings the chip up keeps
-    // whatever the last entry left. See the pass-through cases in
-    // test/test_sync_processor.cpp for why the sync type cannot be the
-    // condition for the SOG inversion.
+    // Everything that decides which edge the separator and the ADC PLL
+    // reference. `passedThrough` is the ROUTE, and it is a field rather than a
+    // second function because SP_HS2PLL_INV_REG is a different fact on each
+    // one -- see applyReference().
     //
-    // NARROWER THAN applySeparation(), WHICH IT OVERLAYS. It writes none of the
-    // separation configuration -- not SP_SOG_MODE, the coast pair,
-    // SP_NO_COAST_REG or SP_DIS_SUB_COAST -- so those stand from whichever
-    // applySeparation() ran last, and a caller that overlays this owes the
-    // reference back when it gives the route up.
+    // The polarity is the SOURCE's, measured, and only pass-through consumes
+    // it. `polarityKnown` false leaves the reference on its default edge, which
+    // is the state an entry is in before the channel sync service has read the
+    // status bits.
+    struct Reference {
+        bool passedThrough;
+        bool csync;
+        bool syncOnGreen;
+        bool sourcePositive;
+        bool polarityKnown;
+
+        Reference()
+            : passedThrough(false), csync(false), syncOnGreen(false),
+              sourcePositive(true), polarityKnown(false)
+        {
+        }
+    };
+
+    // THE ONE OWNER OF THE THREE FIELDS THE ROUTE DECIDES -- SP_SOG_P_INV,
+    // SP_CS_P_SWAP and SP_HS2PLL_INV_REG. It writes SP_SOG_P_ATO and both
+    // processor inversions as well, which prepare() also writes: those are 0 on
+    // every route and prepare() runs at boot before any reference does, so the
+    // two cannot disagree.
+    //
+    // THE ROUTE COMES IN BECAUSE SP_HS2PLL_INV_REG ANSWERS A DIFFERENT QUESTION
+    // ON EACH. Scaled, normaliseHsyncPolarity() makes the polarity one shape at
+    // the boundary, so the inversion is the EDGE the sync type chose and a
+    // second inversion on top is displacement -- 94 output px, measured. Passed
+    // through, the channel replays the source's pulses the way round they
+    // arrive, so the PLL needs the inversion matched to the SOURCE. Two writers
+    // of it, one per question, lose whichever wrote first.
+    // ../../../../docs/investigations/leaving-bypass-leaves-the-sync-path-behind.md
+    //
+    // The chip's own polarity auto-correct is off on both routes, a second
+    // owner of a fact normaliseHsyncPolarity() already settles, and measured to
+    // displace where the processor starts counting by a whole pulse.
+    // ../../../../docs/investigations/the-sog-polarity-auto-correct-displaced-pass-through.md
+    //
+    // It writes none of the SEPARATION configuration -- not SP_SOG_MODE, the
+    // coast pair, SP_NO_COAST_REG or SP_DIS_SUB_COAST -- so applySeparation()
+    // calls this and not the other way round.
     // docs/investigations/sp-sog-mode-had-two-owners.md
-    // ../../../../docs/investigations/leaving-pass-through-strands-the-sync-reference.md
-    static void applyTrailingEdgeReference(bool syncOnGreen);
+    static void applyReference(const Reference &reference);
 
     // How much later the clamp sits once the reference it counts from has
     // moved by a pulse: the source's pulse, in the 27 MHz counts SP_CS_CLP_ST
@@ -366,8 +398,9 @@ public:
     // site deciding it again is a condition that can drift from the write.
     static bool sogReferenceInverted();
 
-    // Whether the separator and the ADC PLL reference the leading edge of the
-    // pulse, SP_CS_P_SWAP and SP_HS2PLL_INV_REG together. Held, as above.
+    // Whether the separator references the leading edge of the pulse,
+    // SP_CS_P_SWAP. Held, as above. The ADC PLL's inversion only follows it on
+    // the scaling path -- applyReference() says why.
     static bool referencesLeadingEdge();
 
     // Whether the reference the clamp counts from sits a pulse away from the
@@ -376,7 +409,6 @@ public:
 
 private:
     static void invertSogReference(bool inverted);
-    static void referenceLeadingEdge(bool leading);
 
 public:
 
@@ -504,11 +536,14 @@ public:
     // docs/investigations/the-pulse-ignore-is-a-fraction-of-the-line.md
     static void applyPulseIgnore(uint16_t divider, bool equalised);
 
-    // The block parked so the ADC can measure its own black level: nothing
-    // clamped, nothing coasting, no inversion anywhere, and the clamp window
-    // collapsed so the measurement is of the input rather than of a window
-    // placed for a source.
-    static void applyForOffsetCalibration();
+    // The clamp under manual control at a collapsed window, with the coast off,
+    // nothing bypassed and no inversion anywhere -- so what is measured through
+    // the block is the input itself rather than a window placed for a source.
+    // It is what lets the ADC read its own black level.
+    //
+    // Runs once, before any sync type is in force, which is what makes the
+    // reference it applies the plain scaled default.
+    static void applyManualClampWithoutCoast();
 
     // What the separator is configured for pass by pass, as against the static
     // half init() writes and the per-sync-type half applySeparation() writes.

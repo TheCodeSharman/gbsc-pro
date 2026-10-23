@@ -4,6 +4,7 @@
 #include "Adc.h"
 #include "HsyncPulse.h"
 #include "SourceTiming.h"
+#include "SyncProcessor.h"
 #include "Tv5725.h"
 
 namespace Tv5725 {
@@ -303,9 +304,10 @@ public:
     // of the values in them is the start, and a swap driven off the read-back
     // is the engine taking a register as an input.
     //
-    // SP_HS2PLL_INV_REG follows the horizontal polarity, written whether or not
-    // the pair moved: it is the same fact, and left behind it disagrees with
-    // the pulse beside it after an SD arm has set it.
+    // The ADC PLL's inversion follows the same polarity and is applied through
+    // SyncProcessor::applyReference(), which owns the register: the polarity is
+    // this class's measurement, the reference is that class's write, and the two
+    // being written from two places lost whichever landed first.
     //
     // The vertical half needs no sync-type gate. STATUS_SYNC_PROC_VSACT reads 0
     // on the composite-sync path, so `vsyncFound` already answers the question
@@ -348,6 +350,15 @@ private:
     // does not also decide its direction.
     static bool hsyncPositive_;
     static bool vsyncPositive_;
+
+    // Whether hsyncPositive_ is a reading or still its default, and whether the
+    // source puts its sync on green. Both are facts the sync processor's
+    // reference needs and neither is a register this class writes.
+    static bool polarityMeasured_;
+    static bool syncOnGreen_;
+
+    // What the route's reference is, from the facts held above.
+    static SyncProcessor::Reference channelReference();
 
     // Take the pair, and emit it in the held direction. Every write of
     // HD_HS_ST/HD_HS_SP and HD_VS_ST/HD_VS_SP goes through these.

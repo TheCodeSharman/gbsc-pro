@@ -75,6 +75,8 @@ uint16_t HdBypass::vsyncLow_ = ChannelVsyncStart;
 uint16_t HdBypass::vsyncHigh_ = ChannelVsyncStop;
 bool HdBypass::hsyncPositive_ = true;
 bool HdBypass::vsyncPositive_ = true;
+bool HdBypass::polarityMeasured_ = false;
+bool HdBypass::syncOnGreen_ = false;
 
 void HdBypass::init()
 {
@@ -155,7 +157,12 @@ void HdBypass::enterFor(bool component, bool csync, uint32_t lineRateHz,
     // the source that nothing on the board can calculate, so a constant handed
     // in here overwrites what the search established for it.
     const uint16_t divider = dividerFor(lineRateHz);
-    SyncProcessor::applyTrailingEdgeReference(component && csync);
+
+    // The route's own reference, through the one owner. Held, because the
+    // channel sync service applies it again once it has read the source's
+    // polarity and the SOG arrangement is not its to re-decide.
+    syncOnGreen_ = component && csync;
+    SyncProcessor::applyReference(channelReference());
 
     Adc::choosePhaseAdc(EntryPhaseAdc);
     Adc::choosePhaseSyncProcessor(EntryPhaseSyncProcessor);
@@ -296,12 +303,28 @@ HdBypass::SourceSyncEdges HdBypass::readSourceSyncEdges()
     return edges;
 }
 
+SyncProcessor::Reference HdBypass::channelReference()
+{
+    SyncProcessor::Reference reference;
+    reference.passedThrough = true;
+    reference.syncOnGreen = syncOnGreen_;
+    reference.sourcePositive = hsyncPositive_;
+    reference.polarityKnown = polarityMeasured_;
+    return reference;
+}
+
 void HdBypass::applyChannelSyncEdges(const SourceSyncEdges &edges)
 {
     if (edges.hsyncFound) {
         hsyncPositive_ = edges.hsyncPositive;
+        polarityMeasured_ = true;
         holdHsyncPulse(hsyncLow_, hsyncHigh_);
-        SyncProcessor::SP_HS2PLL_INV_REG::write(edges.hsyncPositive ? 0 : 1);
+
+        // THE PLL'S INVERSION IS NOT WRITTEN HERE. The polarity is this class's
+        // measurement and the reference is SyncProcessor's register, and the
+        // two being written from two places lost whichever landed first.
+        // ../../../../docs/investigations/leaving-bypass-leaves-the-sync-path-behind.md
+        SyncProcessor::applyReference(channelReference());
     }
 
     if (edges.vsyncFound) {

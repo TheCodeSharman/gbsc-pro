@@ -80,6 +80,17 @@ static bool wasWritten(bool csync)
     return under[0] == under[1];
 }
 
+// The pass-through reference, as HdBypass applies it on entry: the route and
+// whether the source puts its sync on green, with no polarity read yet.
+static Tv5725::SyncProcessor::Reference passThroughReference(bool syncOnGreen)
+{
+    Tv5725::SyncProcessor::Reference reference;
+    reference.passedThrough = true;
+    reference.syncOnGreen = syncOnGreen;
+    return reference;
+}
+
+
 // The clamp needs enough samples to establish a level and no more. That is a
 // settling time, not a property of the line's geometry, so it does not scale
 // with the divider: written as a fraction it grows toward active video exactly
@@ -1368,7 +1379,7 @@ TEST_CASE("entering pass-through returns to the chip's default edge")
     Wire.reset();
     SyncProcessor::applySeparation(true, MeasuredCsyncDivider);
 
-    SyncProcessor::applyTrailingEdgeReference(false);
+    SyncProcessor::applyReference(passThroughReference(false));
 
     CHECK(SyncProcessor::SP_CS_P_SWAP::read() == 0u);
     CHECK_FALSE(SyncProcessor::referencesLeadingEdge());
@@ -1518,7 +1529,7 @@ TEST_CASE("entering pass-through leaves the SOG polarity auto-correct off")
     Wire.reset();
     SyncProcessor::SP_SOG_P_ATO::write(1);
 
-    SyncProcessor::applyTrailingEdgeReference(false);
+    SyncProcessor::applyReference(passThroughReference(false));
 
     CHECK(SyncProcessor::SP_SOG_P_ATO::read() == 0u);
 }
@@ -1542,7 +1553,7 @@ TEST_CASE("sync on green inverts the SOG reference in pass-through")
     Wire.reset();
     SyncProcessor::SP_SOG_P_INV::write(0);
 
-    SyncProcessor::applyTrailingEdgeReference(true);
+    SyncProcessor::applyReference(passThroughReference(true));
 
     CHECK(SyncProcessor::SP_SOG_P_INV::read() == 1u);
 }
@@ -1552,7 +1563,7 @@ TEST_CASE("a source whose sync is not on green keeps the SOG reference")
     Wire.reset();
     SyncProcessor::SP_SOG_P_INV::write(1);
 
-    SyncProcessor::applyTrailingEdgeReference(false);
+    SyncProcessor::applyReference(passThroughReference(false));
 
     CHECK(SyncProcessor::SP_SOG_P_INV::read() == 0u);
 }
@@ -1616,7 +1627,7 @@ TEST_CASE("the scaling path never leaves the SOG reference inverted")
 TEST_CASE("the static setup clears the held SOG inversion with the register")
 {
     Wire.reset();
-    SyncProcessor::applyTrailingEdgeReference(true);
+    SyncProcessor::applyReference(passThroughReference(true));
     REQUIRE(SyncProcessor::sogReferenceInverted());
 
     SyncProcessor::init();
@@ -1641,7 +1652,7 @@ TEST_CASE("entering pass-through leaves the sub coast the sync type chose")
     Wire.poison(Poisons[0]);
     SyncProcessor::applySeparation(true, MeasuredCsyncDivider);
 
-    SyncProcessor::applyTrailingEdgeReference(true);
+    SyncProcessor::applyReference(passThroughReference(true));
 
     CHECK(SyncProcessor::SP_DIS_SUB_COAST::read() == 0u);
 }

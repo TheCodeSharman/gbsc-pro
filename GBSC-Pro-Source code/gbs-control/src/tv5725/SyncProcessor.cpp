@@ -330,17 +330,14 @@ void SyncProcessor::applyDynamic(const Dynamic &source)
         applyPulseIgnore(source.divider, source.equalised);
 }
 
-void SyncProcessor::applyForOffsetCalibration()
+void SyncProcessor::applyManualClampWithoutCoast()
 {
     SP_CS_CLP_ST::write(0x00);
     SP_CS_CLP_SP::write(0x00);
     SP_SOG_MODE::write(1);
-    SP_HS2PLL_INV_REG::write(0);
     SP_CLAMP_MANUAL::write(1);
     SP_CLP_SRC_SEL::write(0);
     SP_SYNC_BYPS::write(0);
-    SP_HS_PROC_INV_REG::write(0);
-    SP_VS_PROC_INV_REG::write(0);
     SP_CLAMP_INV_REG::write(0);
     SP_NO_CLAMP_REG::write(0);
     SP_COAST_INV_REG::write(0);
@@ -348,6 +345,12 @@ void SyncProcessor::applyForOffsetCalibration()
     SP_COAST_VALUE_REG::write(0);
     SP_HS_LOOP_SEL::write(0);
     SP_HS_REG::write(1);
+
+    // The reference through its owner rather than three writes of its fields.
+    // The default is the scaling route with no composite sync, which is the
+    // un-inverted state this wrote by hand, and it runs before any sync type is
+    // in force.
+    applyReference(Reference());
 }
 
 void SyncProcessor::applyDefaultCoastWindow()
@@ -387,19 +390,31 @@ void SyncProcessor::prepareForDetection()
     SP_HCST_AUTO_EN::write(0);
 }
 
-void SyncProcessor::applyTrailingEdgeReference(bool syncOnGreen)
-{
-    invertSogReference(syncOnGreen);
-    // The chip's own polarity auto-correct stays OFF, as it is on the scaling
-    // path. normaliseHsyncPolarity() already makes the polarity one shape, so
-    // this is a second owner of it -- and it displaces where the sync processor
-    // starts counting by a whole pulse.
-    // ../../../docs/investigations/the-sog-polarity-auto-correct-displaced-pass-through.md
-    SP_SOG_P_ATO::write(0);
+namespace {
 
+// Which way round the hsync handed to the ADC PLL goes. Scaled, the edge the
+// sync type chose; passed through, whatever the source sends, because the
+// channel replays its pulses unaltered.
+bool pllReferenceInverted(const SyncProcessor::Reference &reference)
+{
+    if (!reference.passedThrough)
+        return reference.csync;
+    return reference.polarityKnown && !reference.sourcePositive;
+}
+
+}  // namespace
+
+void SyncProcessor::applyReference(const Reference &reference)
+{
+    invertSogReference(reference.passedThrough && reference.syncOnGreen);
+    SP_SOG_P_ATO::write(0);
     SP_HS_PROC_INV_REG::write(0);
     SP_VS_PROC_INV_REG::write(0);
-    referenceLeadingEdge(false);
+
+    const bool leading = !reference.passedThrough && reference.csync;
+    leadingEdge_ = leading;
+    SP_CS_P_SWAP::write(leading ? 1 : 0);
+    SP_HS2PLL_INV_REG::write(pllReferenceInverted(reference) ? 1 : 0);
 }
 
 void SyncProcessor::applySeparation(bool csync, uint16_t divider)
@@ -415,8 +430,9 @@ void SyncProcessor::applySeparation(bool csync, uint16_t divider)
 
     // No ordering constraint between these fields is established, so the two
     // branches keep their own write order.
-    invertSogReference(false);
-    referenceLeadingEdge(csync);
+    Reference reference;
+    reference.csync = csync;
+    applyReference(reference);
 
     // OUTSIDE THE BRANCH, because the separation threshold is a fraction of the
     // line rather than a property of the arrangement. Serrated here for the
@@ -622,13 +638,6 @@ void SyncProcessor::invertSogReference(bool inverted)
 }
 
 bool SyncProcessor::sogReferenceInverted() { return sogInverted_; }
-
-void SyncProcessor::referenceLeadingEdge(bool leading)
-{
-    leadingEdge_ = leading;
-    SP_CS_P_SWAP::write(leading ? 1 : 0);
-    SP_HS2PLL_INV_REG::write(leading ? 1 : 0);
-}
 
 bool SyncProcessor::referencesLeadingEdge() { return leadingEdge_; }
 

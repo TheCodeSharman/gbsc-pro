@@ -3123,7 +3123,7 @@ void calibrateAdcOffset()
     GBS::ADC_FLTR::write(3);
     GBS::ADC_TR_RSEL::write(0);
     GBS::ADC_TR_ISEL::write(0);
-    Tv5725::SyncProcessor::applyForOffsetCalibration();
+    Tv5725::SyncProcessor::applyManualClampWithoutCoast();
     GBS::ADC_CLK_PA::write(2);
     GBS::ADC_CLK_PLLAD::write(0);
     GBS::ADC_CLK_ICLK2X::write(0);
