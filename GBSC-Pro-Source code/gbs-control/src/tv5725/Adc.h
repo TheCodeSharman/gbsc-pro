@@ -328,6 +328,11 @@ public:
     // is the platform's. Both are handed IN: the count is another block's
     // register, and a file here reaching for ESP.wdtFeed() is a design signal
     // rather than a dependency to admit. docs/video-source-acquisition.md
+    // Whether the last search blamed the sampling CLOCK rather than the phase.
+    // The two are separable because their repairs differ: a phase is chosen, a
+    // clock is restarted. Cleared by the next search that reaches an answer.
+    static bool samplingClockSuspect();
+
     static bool acquirePhase(uint8_t oversample, bool sweep,
                              uint16_t (*lineSamples)(),
                              void (*feedWatchdog)());
@@ -577,6 +582,11 @@ public:
     // this: PLLAD_LAT loads it on a rising edge, so between a write and that
     // edge the register reports the new value while the PLL still runs the old
     // one. ../../../docs/investigations/hperiod-if-railing.md
+    // Write the group in force again and restart the PLL. The restart is part
+    // of the same act: applying the group alone leaves the PLL unlocked even at
+    // the value it already held.
+    static void reapplySampleRate();
+
     static uint16_t dividerInForce();
 
     // The line rate the group in force was sized from, which is what picked the
@@ -666,6 +676,7 @@ private:
     static bool referenceInForce_;
 
     static bool phaseFound_;
+    static bool clockSuspect_;
     static uint8_t gain_[3];
     static uint8_t offset_[3];
 

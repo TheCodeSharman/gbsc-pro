@@ -19,9 +19,15 @@ public:
     // cannot derive: whether the sampling phase has been found, which stops the
     // search rather than timing it.
     struct Source {
+        Source();
+
         uint16_t acquiredPasses;
         uint16_t unmeasuredPasses;
         bool samplingPhaseFound;
+
+        // The phase search refused and blamed the sampling clock rather than
+        // the phase, so what is due is a repair and not another search.
+        bool samplingClockSuspect;
     };
 
     // Named acts, each true only on the pass it falls due.

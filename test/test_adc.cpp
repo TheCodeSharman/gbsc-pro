@@ -622,6 +622,17 @@ static uint16_t lineSamplesAtPhase()
 
 static void countFeed() { ++g_feeds; }
 
+// A count MANY samples off the divider at a band of phases, which is a phase
+// genuinely mis-sampling the line rather than a clock one count out.
+static uint8_t g_farFrom = 1, g_farTo = 0;
+
+static uint16_t lineSamplesFarInBand()
+{
+    const uint8_t at = Adc::PA_SP_S::read();
+    const bool far = at >= g_farFrom && at <= g_farTo;
+    return far ? (uint16_t)(g_sweepDivider + 40) : g_sweepDivider;
+}
+
 TEST_CASE("a swept phase clears the band and is latched into both adjusters")
 {
     // The search walks the field and scores each phase by how often the sync
@@ -714,17 +725,21 @@ TEST_CASE("one disturbed phase does not decide where the sampling phase lands")
     }
 }
 
-// The scoreboard line's field, which is its last PhaseMax + 1 characters and is
-// indexed by PHASE rather than by the step the walk reached it on.
-static std::string scannedField(const char *prefix)
+// The scoreboard line's field, indexed by PHASE rather than by the step the
+// walk reached it on. One character per phase carrying both metrics: '.' clean,
+// a digit or lowercase letter for a count one off the divider, an UPPERCASE
+// letter for one further off than that.
+static std::string scannedField(const char *label)
 {
     for (size_t i = 0; i < g_logLines.size(); ++i) {
         const std::string &line = g_logLines[i];
-        if (line.find(prefix) == std::string::npos)
+        const size_t at = line.find(label);
+        if (at == std::string::npos)
             continue;
-        if (line.size() < (size_t)Adc::PhaseMax + 1)
+        const size_t from = at + strlen(label);
+        if (line.size() < from + (size_t)Adc::PhaseMax + 1)
             return std::string();
-        return line.substr(line.size() - (size_t)Adc::PhaseMax - 1);
+        return line.substr(from, (size_t)Adc::PhaseMax + 1);
     }
     return std::string();
 }
@@ -747,26 +762,52 @@ TEST_CASE("the sweep reports the scoreboard it scored on")
 
     REQUIRE(Adc::acquirePhase(2, true, lineSamplesAtPhase, countFeed));
 
-    const std::string dither = scannedField("phase dither");
-    REQUIRE(dither.size() == (size_t)Adc::PhaseMax + 1);
+    const std::string scan = scannedField("phase scan: ");
+    REQUIRE(scan.size() == (size_t)Adc::PhaseMax + 1);
 
     SUBCASE("the band it was given reads back as the band that scored") {
-        CHECK(dither[4] != '0');
-        CHECK(dither[5] != '0');
-        CHECK(dither[6] != '0');
+        CHECK(scan[4] != '.');
+        CHECK(scan[5] != '.');
+        CHECK(scan[6] != '.');
     }
 
     SUBCASE("and the phases either side of it are clean") {
-        CHECK(dither[3] == '0');
-        CHECK(dither[7] == '0');
-        CHECK(dither[0] == '0');
+        CHECK(scan[3] == '.');
+        CHECK(scan[7] == '.');
+        CHECK(scan[0] == '.');
     }
 
-    SUBCASE("the magnitude is reported beside the count") {
+    SUBCASE("a count one off the divider is not reported as far off") {
         // A count one off the divider and a count wildly off score the same in
         // the sweep's own arithmetic, and only the second is a phase fault.
-        CHECK(loggedContaining("phase far"));
+        // This band is one off, so it scores as dither and not as far.
+        const bool farOff = scan[5] >= 'A' && scan[5] <= 'Z';
+        CHECK_FALSE(farOff);
+        CHECK(scan[5] != '.');
     }
+}
+
+TEST_CASE("a count far off the divider reads as far off, in the same field")
+{
+    // BOTH METRICS RIDE ONE CHARACTER PER PHASE, because they are only useful
+    // together and two lines cannot both be relied on to arrive: reported as
+    // two adjacent lines the second never did, five bench acquisitions out of
+    // five. The combined field is 44 characters and arrives.
+    // docs/known-issues.md
+    Wire.reset();
+    g_logLines.clear();
+    Adc::PLLAD_MD::write(2230);
+    g_sweepDivider = 2230;
+    g_farFrom = 4; g_farTo = 6;
+    Adc::choosePhaseSyncProcessor(16);
+
+    REQUIRE(Adc::acquirePhase(2, true, lineSamplesFarInBand, countFeed));
+
+    const std::string scan = scannedField("phase scan: ");
+    REQUIRE(scan.size() == (size_t)Adc::PhaseMax + 1);
+    CHECK(scan[5] >= 'A');
+    CHECK(scan[5] <= 'Z');
+    CHECK(scan[0] == '.');
 }
 
 TEST_CASE("a sweep that finds no steady phase chooses none")
@@ -784,15 +825,98 @@ TEST_CASE("a sweep that finds no steady phase chooses none")
 
     // The ADC's phase is untouched, because only the search writes it.
     CHECK(Adc::phaseAdc() == 24);
+}
 
-    // **The sync processor's is left where the WALK stopped**, not where it
-    // started: the search latches each phase to score it, so a refusal still
-    // leaves the last one it tried. Two steps on from the entry phase, because
-    // the walk is two longer than the field. That is what the sketch did and it
-    // is preserved here rather than quietly repaired -- a failed search leaving
-    // the phase somewhere it did not choose is a defect to fix against a bench
-    // reading, not in a move.
-    CHECK(Adc::phaseSyncProcessor() == 11);
+TEST_CASE("a refused search puts the phase back where it started")
+{
+    // THE SEARCH LATCHES EVERY PHASE IT SCORES, so a refusal that simply
+    // returns leaves the adjuster two steps on from the entry phase -- the walk
+    // being two longer than the field. Nothing chose that phase.
+    //
+    // It compounds, because a refusal leaves phaseFound() false and
+    // SourceMaintenance re-runs the search at acquired passes 10 through 60:
+    // six walks of the field for one acquisition, each leaving the phase twelve
+    // steps further from the last value anything chose.
+    //
+    // Measured on ypbpr with the ADC PLL unlocked, where the sync processor
+    // counts within one of the divider at every phase and so no phase scores
+    // clean. docs/known-issues.md
+    Wire.reset();
+    Adc::PLLAD_MD::write(2230);
+    g_sweepDivider = 2230;
+    g_badFrom = 0; g_badTo = Adc::PhaseMax;
+    Adc::choosePhaseSyncProcessor(9);
+    Adc::choosePhaseAdc(24);
+
+    CHECK_FALSE(Adc::acquirePhase(2, true, lineSamplesAtPhase, countFeed));
+
+    CHECK(Adc::phaseSyncProcessor() == 9);
+    CHECK(Adc::PA_SP_S::read() == 9);
+}
+
+TEST_CASE("a count that never reads the divider is reported as the clock")
+{
+    // **NO PHASE CAN STEADY AN UNLOCKED SAMPLING CLOCK.** The adjuster moves
+    // WHEN the line is sampled relative to sync; it cannot change the rate the
+    // sync processor counts at. So a scan that finds no phase reading the
+    // divider exactly has measured the clock, not the phase -- and the engine's
+    // answer to the two is not the same, one being a phase to choose and the
+    // other a PLL to restart.
+    //
+    // What detects it is the absence of a clean window; `far` only GUARDS that
+    // reading, refusing it where some phase was more than one count out.
+    // Measured on ypbpr unlocked, the count reads 1211/1212/1213 against a
+    // divider of 1212 -- never far, never exact. On both bench sources settled,
+    // far is zero at every phase, so the guard is untested against a source
+    // that trips it. docs/known-issues.md
+    Wire.reset();
+    Adc::PLLAD_MD::write(2230);
+    g_sweepDivider = 2230;
+    g_badFrom = 0; g_badTo = Adc::PhaseMax;
+    Adc::choosePhaseSyncProcessor(9);
+
+    CHECK_FALSE(Adc::acquirePhase(2, true, lineSamplesAtPhase, countFeed));
+    CHECK(Adc::samplingClockSuspect());
+}
+
+TEST_CASE("the sampling clock can be re-applied from what is held")
+{
+    // THE REPAIR FOR AN UNLOCKED ADC PLL IS THE WHOLE GROUP PLUS THE RESTART,
+    // and every quantity it needs is already held -- the divider, the line rate
+    // and the oversampling in force. So the recovery reads nothing back.
+    //
+    // The restart is not separable: applying the group alone leaves the PLL
+    // unlocked even at the value it already held, which is why /sampleclock
+    // restarts it too. docs/known-issues.md
+    Wire.reset();
+    Adc::applySampleRate(2200, 15625, 2);
+    const uint16_t divider = Adc::dividerInForce();
+    const uint32_t rate = Adc::rateInForce();
+    Wire.trace.clear();
+
+    Adc::reapplySampleRate();
+
+    CHECK(Adc::dividerInForce() == divider);
+    CHECK(Adc::rateInForce() == rate);
+    CHECK(Adc::PLLAD_MD::read() == divider);
+    CHECK(latchRisingEdge() >= 0);
+}
+
+TEST_CASE("a band of bad phases is not reported as the clock")
+{
+    // The discriminator has to leave the working case alone: a real band is a
+    // few phases wide with the rest of the field reading the divider exactly,
+    // which is what both bench sources scan. Measured settled, ypbpr scans a
+    // band at 27..28 with 30 of 32 clean and vga one at 11..19 with 22 clean,
+    // each reproducible across four consecutive acquisitions.
+    Wire.reset();
+    Adc::PLLAD_MD::write(2230);
+    g_sweepDivider = 2230;
+    g_badFrom = 27; g_badTo = 28;
+    Adc::choosePhaseSyncProcessor(16);
+
+    CHECK(Adc::acquirePhase(2, true, lineSamplesAtPhase, countFeed));
+    CHECK_FALSE(Adc::samplingClockSuspect());
 }
 
 TEST_CASE("a separator too starved to judge by skips the search")

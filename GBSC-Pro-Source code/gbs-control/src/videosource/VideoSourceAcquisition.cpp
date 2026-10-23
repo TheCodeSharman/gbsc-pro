@@ -106,6 +106,14 @@ bool VideoSourceAcquisition::acquireSamplingPhase()
     snprintf(line, sizeof(line), "sampling phase: %s, oversample %u",
              found ? "chosen" : "no clean window", (unsigned)oversample);
     tv5725Log(line);
+
+    // A SEARCH THAT BLAMED THE CLOCK IS NOT ANSWERED WITH ANOTHER SEARCH: no
+    // phase can steady a clock that is not running the divider.
+    if (!found && Tv5725::Adc::samplingClockSuspect()) {
+        Tv5725::Adc::reapplySampleRate();
+        tv5725Log("sampling clock re-applied: no phase read the divider");
+    }
+
     return found;
 }
 
@@ -1422,6 +1430,7 @@ void VideoSourceAcquisition::maintainSource()
     run.acquiredPasses = acquiredPasses_;
     run.unmeasuredPasses = unmeasuredPasses_;
     run.samplingPhaseFound = Tv5725::Adc::phaseFound();
+    run.samplingClockSuspect = Tv5725::Adc::samplingClockSuspect();
 
     const SourceMaintenance::Due due = maintenance_.dueAt(run);
 

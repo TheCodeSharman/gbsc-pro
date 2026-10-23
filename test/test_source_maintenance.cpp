@@ -52,6 +52,7 @@ TEST_CASE("the sampling phase is tried every tenth pass until it is found")
     source.acquiredPasses = 10;
     source.unmeasuredPasses = 0;
     source.samplingPhaseFound = false;
+    source.samplingClockSuspect = false;
 
     CHECK(maintenance.dueAt(source).samplingPhase);
 
@@ -64,6 +65,30 @@ TEST_CASE("the sampling phase is tried every tenth pass until it is found")
     // Past the window, so a phase never found is left alone rather than
     // retried for the life of the lock.
     source.acquiredPasses = 70;
+    CHECK_FALSE(maintenance.dueAt(source).samplingPhase);
+}
+
+TEST_CASE("a suspect sampling clock is retried for as long as it is suspect")
+{
+    // A RECOVERY THAT STOPS IS NOT A RECOVERY. The phase window closes because
+    // a phase never found is not worth walking the field for again -- but the
+    // same refusal carrying the CLOCK is the engine's only route to repairing
+    // it, and a source that falls out of lock after the window would never be
+    // offered one.
+    SourceMaintenance maintenance;
+    SourceMaintenance::Source source;
+    source.unmeasuredPasses = 0;
+    source.samplingPhaseFound = false;
+    source.samplingClockSuspect = true;
+
+    source.acquiredPasses = 70;
+    CHECK(maintenance.dueAt(source).samplingPhase);
+
+    source.acquiredPasses = 600;
+    CHECK(maintenance.dueAt(source).samplingPhase);
+
+    // Still on the cadence, not on every pass.
+    source.acquiredPasses = 605;
     CHECK_FALSE(maintenance.dueAt(source).samplingPhase);
 }
 

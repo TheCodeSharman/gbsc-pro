@@ -249,6 +249,7 @@ uint32_t Adc::rateInForce_ = 0;
 uint8_t Adc::referenceStep_ = 0;
 bool Adc::referenceInForce_ = false;
 bool Adc::phaseFound_ = false;
+bool Adc::clockSuspect_ = false;
 
 void Adc::choosePhaseSyncProcessor(uint8_t phase)
 {
@@ -323,6 +324,20 @@ uint8_t middleOfWidestCleanRun(const uint8_t *dither)
     return (uint8_t)((bestStart + bestLength / 2) & Adc::PhaseMax);
 }
 
+// Whether any phase's count missed the divider by more than one. A GUARD on
+// blaming the clock, not the thing that detects it: the phase adjuster cannot
+// change the rate the sync processor counts at, so a scan with no clean window
+// anywhere has measured the clock -- and this refuses that reading where some
+// phase was far out, which a clock running near the divider cannot produce.
+// ../../../docs/known-issues.md
+bool anyCountFarFromDivider(const uint8_t *far)
+{
+    for (uint8_t phase = 0; phase <= Adc::PhaseMax; ++phase)
+        if (far[phase] != 0)
+            return true;
+    return false;
+}
+
 // How far the search walks. Two more than the field, so the first phases
 // reached are measured again and the second reading is the one kept: the walk
 // starts by moving off whatever phase was in force, and a phase measured
@@ -337,24 +352,30 @@ const uint8_t SweepGoodEnough = 17;
 // Samples taken at each phase before it is scored.
 const uint8_t SamplesPerPhase = 20;
 
-// One character per phase, so twenty samples fit in one and the whole field
-// fits in one console line.
-char scanDigit(uint8_t count)
+// One character per phase, carrying BOTH of the walk's metrics: '.' for a phase
+// whose count read the divider exactly, a digit or lowercase letter for one
+// that was a single count out, and an UPPERCASE letter for one further off
+// than that. One field rather than two, because reported as two adjacent lines
+// the second never arrived on the bench.
+char scanDigit(uint8_t dither, uint8_t far)
 {
-    if (count > 35)
-        count = 35;
-    return count < 10 ? (char)('0' + count) : (char)('a' + count - 10);
+    if (far != 0)
+        return (char)('A' + (far > 26 ? 25 : far - 1));
+    if (dither == 0)
+        return '.';
+    return dither < 10 ? (char)('0' + dither)
+                       : (char)('a' + (dither > 35 ? 25 : dither - 10));
 }
 
 // The scoreboard the walk built, indexed by phase rather than by the step it
 // was reached on. Reported whether or not the search then accepts it: a refusal
 // is the case the counts are wanted for.
-void reportScan(const char *what, const uint8_t *counts)
+void reportScan(const uint8_t *dither, const uint8_t *far)
 {
-    char line[Adc::PhaseMax + 24];
-    int at = snprintf(line, sizeof(line), "%s: ", what);
-    for (uint8_t phase = 0; phase <= Adc::PhaseMax && at < (int)sizeof(line) - 1; ++phase)
-        line[at++] = scanDigit(counts[phase]);
+    char line[Adc::PhaseMax + 16];
+    int at = snprintf(line, sizeof(line), "phase scan: ");
+    for (uint8_t phase = 0; phase <= Adc::PhaseMax; ++phase)
+        line[at++] = scanDigit(dither[phase], far[phase]);
     line[at] = '\0';
     tv5725Log(line);
 }
@@ -363,12 +384,15 @@ void reportScan(const char *what, const uint8_t *counts)
 
 bool Adc::phaseFound() { return phaseFound_; }
 
+bool Adc::samplingClockSuspect() { return clockSuspect_; }
+
 void Adc::forgetPhase() { phaseFound_ = false; }
 
 bool Adc::acquirePhase(uint8_t oversample, bool sweep,
                        uint16_t (*lineSamples)(), void (*feedWatchdog)())
 {
     phaseFound_ = false;
+    clockSuspect_ = false;
 
     if (phaseOverridden_) {
         applyPhaseSyncProcessor(phaseOverride_);
@@ -391,6 +415,7 @@ bool Adc::acquirePhase(uint8_t oversample, bool sweep,
 
     uint8_t clean = 0;
     uint8_t phase = phaseSyncProcessor();
+    const uint8_t enteredAt = phase;
 
     // Two phases are walked twice -- the sweep is two steps longer than the
     // field -- and the second visit is the one kept.
@@ -428,11 +453,18 @@ bool Adc::acquirePhase(uint8_t oversample, bool sweep,
             ++clean;
     }
 
-    reportScan("phase dither", dither);
-    reportScan("phase far", far);
+    reportScan(dither, far);
 
-    if (clean < SweepGoodEnough)
+    if (clean < SweepGoodEnough) {
+        clockSuspect_ = !anyCountFarFromDivider(far);
+
+        // The walk latched every phase it scored, so a bare return leaves the
+        // adjuster two steps on from where the engine last chose. Nothing chose
+        // that, and a refusal re-runs on the maintenance cadence.
+        choosePhaseSyncProcessor(enteredAt);
+        applyPhaseSyncProcessor(enteredAt);
         return false;
+    }
 
     // The scan proves where the band is and nothing about the rest of the
     // field, so the default is kept wherever the scan says nothing against it.
@@ -739,6 +771,14 @@ void Adc::applyForBypassRgbhv()
     ADC_FLTR::write(0);
 
     applyReferenceTrim();
+}
+
+void Adc::reapplySampleRate()
+{
+    if (dividerInForce_ == 0)
+        return;
+
+    applySampleRate(dividerInForce_, rateInForce_, oversampleInForce_);
 }
 
 uint8_t Adc::applySampleRate(uint16_t divider, uint32_t lineRateHz,

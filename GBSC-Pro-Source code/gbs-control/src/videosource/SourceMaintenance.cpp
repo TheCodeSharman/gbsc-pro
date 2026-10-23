@@ -26,6 +26,12 @@ const uint16_t DeinterlacerFirstPass = 3;
 
 }  // namespace
 
+SourceMaintenance::Source::Source()
+    : acquiredPasses(0), unmeasuredPasses(0), samplingPhaseFound(false),
+      samplingClockSuspect(false)
+{
+}
+
 SourceMaintenance::SourceMaintenance() : restoreArmed_(false) {}
 
 SourceMaintenance::Due SourceMaintenance::dueAt(const Source &source)
@@ -55,8 +61,12 @@ SourceMaintenance::Due SourceMaintenance::dueAt(const Source &source)
     if (acquired == DynamicSecondPass || (acquired % DynamicEveryPasses) == 0)
         due.syncProcessorDynamic = true;
 
+    // The window closes on a phase never found, because walking the field again
+    // buys nothing. It does NOT close while the refusal blamed the clock: that
+    // refusal is the engine's only route to repairing one, so it stays due.
     if (!source.samplingPhaseFound && acquired >= PhaseFirstPass
-        && acquired <= PhaseLastPass && (acquired % PhaseEveryPasses) == 0)
+        && (acquired <= PhaseLastPass || source.samplingClockSuspect)
+        && (acquired % PhaseEveryPasses) == 0)
         due.samplingPhase = true;
 
     if (acquired == ForgetPositionsPass)
