@@ -10,134 +10,49 @@ regardless of which step is in flight.
 
 ## Reaches the picture
 
-### The ADC PLL can sit unlocked with every register reading correct, and nothing repaired it
+### FIXED: the ADC PLL sat unlocked after a pass-through round trip, and one bit held it
 
-Measured 2026-10-23 on `ypbpr`, the Wii at 480p into 1920x1080. **The ADC PLL
-either runs the divider or it does not, and the picture follows it** -- an
-unlocked one shows jittery edges, a disturbed band at the top of the frame and
-a picture that jumps, while every configuration register reads correct,
-including coast 7/6, `SP_SOG_MODE` 1 and `STATUS_SYNC_PROC_HTOTAL` 1212 against
-`PLLAD_MD` 1212.
+Measured 2026-10-23 on `ypbpr`, the Wii at 480p into 1920x1080. A source handed
+to the encoder and then taken back came out unlocked -- jittery edges, a
+disturbed band across the top of the frame, and every configuration register
+reading correct, coast 7/6, `SP_SOG_MODE` 1 and `STATUS_SYNC_PROC_HTOTAL` 1212
+against `PLLAD_MD` 1212.
 
-`STATUS_MISC_PLLAD_LOCK` sampled at 25 ms from `loop()`, which is the only
-instrument that can see it -- the bit is a duty cycle and HTTP answers too
-slowly. The RISC PC is the control:
+**The cause is `SP_CS_P_SWAP`, which selects the sync edge the ADC PLL
+references.** Pass-through sets it to the trailing edge and leaving never put it
+back, because `VideoPath::applySyncType()` skips an application for a sync type
+already in force and pass-through had moved the registers without moving the
+held type. `configureScalingPath()` calls `reapplySyncTypeInForce()` now.
 
-| state | lock = 1 | transitions | `sp_htotal` sd |
-|---|---|---|---|
-| Wii, jittery | **0.0% of 769** | 0 | 0.42 |
-| Wii, after a re-acquisition | 84.6% of 389 | 118 | 0.00 |
-| RISC PC on `vga` | 86.5% of 392 | 93 | 0.00 |
+`STATUS_MISC_PLLAD_LOCK` sampled at 25 ms from `loop()` is the only instrument
+that can see it, the bit being a duty cycle:
 
-**The control is what makes the zero mean something**: it matches the 86.3%
-`pllad-lock-is-a-duty-cycle-not-a-state.md` records as healthy, so 0% is an
-unlocked PLL and not a property of the sync-on-green path. `sp_vtotal` holds
-524 in every sample of both states and `hsact` is 1, so vertical sync is sound
-either way -- what moves is the sampling clock.
+| state | lock = 1 | `sp_htotal` sd |
+|---|---|---|
+| after leaving pass-through | **0.0..0.5% of ~210** | 0.25..0.34, 1211..1213 |
+| the one bit written by hand | **87.0% of 216** | 0.00, 1212 |
+| three round trips on the fix | 82.4..86.9% | 0.00, 1212 |
 
-**EVERYTHING ELSE THE STATE SHOWS IS DOWNSTREAM OF IT, AND READING ANY OF IT AS
-A SEPARATE FAULT COSTS A SESSION.** All three were filed as faults of their own
-and all three are measured sound on the same source once it is locked:
+The provocation is two requests on one input -- `/uc?x` twice -- and
+`investigations/leaving-pass-through-strands-the-sync-reference.md` carries the
+1536-address diff, the field-at-a-time A/B, the refutation of `PA_ADC_S`, and
+why a re-detection recovered it where `Adc::reapplySampleRate()` did not.
 
-| symptom in the unlocked state | the same thing locked |
-|---|---|
-| the phase scan returns noise, so no phase is applied and the choice looks like a lottery | a band at 27..28 with 30 of 32 clean, `sampling phase: chosen`, phase 16 -- reproducible across nine consecutive acquisitions |
-| the field-rate probe returns 47888 and 53280 mHz against a source at 59939 | 200 of 200 readings at `pulses=8` and 387 of 387 at `pulses=1`, all exactly 59940 mHz, sd 0.0 |
-| the engine re-solves about every 25 s, armed by `TIMINGS change (rate)`, with the output black for 4.6 s each time | no spurious arm at all |
+**EVERYTHING THE UNLOCKED STATE SHOWED WAS DOWNSTREAM OF IT, AND READING ANY OF
+IT AS A SEPARATE FAULT COSTS A SESSION.** The phase scan returning noise, the
+field-rate probe reading 47888 and 53280 mHz against a source at 59939, and a
+re-solve every 25 s armed by `TIMINGS change (rate)` with the output black for
+4.6 s each time are all the clock, and all measured sound on the same source
+once it is locked.
 
-The first follows mechanically: `STATUS_SYNC_PROC_HTOTAL` counts ADC clocks, so
-an unlocked PLL makes the count wander at **every** phase and the scan's own
-metric is that wander. **No setting of the phase adjuster can steady an
-unlocked clock**, so a scan taken through one measures the clock and not the
-phase. The two bad rate readings are `8/9` and `8/10` of the true rate against
-`UnconfirmedRatePulses` of 8, which is a miscounted edge rather than a rate.
-
-**THE TRIGGER IS LEAVING PASS-THROUGH ON `ypbpr`, CAUGHT LIVE 2026-10-23.** The
-console across it, the source being the Wii at 480p:
-
-```
-2615.48  input selected: ypbpr, reference divider 2040
-2618.93  phase scan: .......................2151.....     clean, 27 of 32
-2633.39  measured: 525 lines ... clock 2038@31468 htotal 2038      pass-through
-2634.15  measured: 525 lines x 59.87 Hz -> line rate 31434 ... UNLATCHED
-2634.15  installing: divider from line rate 31434, doubled 0 -> 1212
-2634.43  phase scan: A.BC2.33.2223.1.24..548157AB.B.3     and garbage from here
-2634.44  sampling phase: no clean window, oversample 4
-```
-
-Seven consecutive scans refused, `PA_SP_S` left on the default 16, and the
-state measured with the lock bit at **0.5% of 209 samples, one transition,
-`sp_htotal` sd 0.34 across 1211..1213** -- against 84.5% of 219 with 67
-transitions once recovered. So the unlocked clock is confirmed with the
-instrument rather than inferred.
-
-**WHAT RECOVERS IT IS A RE-DETECTION, AND THE GROUP PLUS THE RESTART DOES
-NOT.** Measured on that live state, A/B on the USB capture:
-
-| | lock | top rows 0..319, temporal sd | bottom rows |
-|---|---|---|---|
-| the fault | 0.5% of 209 | **7.91** | 1.03 |
-| after `/sampleclock?md=1212` -- the group and the PLL restart | unchanged | **7.70** | 0.98 |
-| after `/sc?~` -- full re-detection | **84.5% of 219** | **1.78** | 0.79 |
-
-So `Adc::reapplySampleRate()` is not a repair for this and the engine must not
-claim one. What is still open is why the solve does not settle: the same
-measured line rate installs 1446 and then 1212 thirty milliseconds apart, with
-the duty measured through 1446 in between, and whether that pair is the design
-or the fault is unresolved.
-
-**THE EMITTED FRAME IS WHERE IT IS MEASURABLE, AND IT LOCALISES TO THE TOP.**
-Per-band temporal sd over 160 full-resolution frames puts the disturbance in
-rows 0..39 and 120..319 at sd 2.6..7.5 against a median of 0.45 and a floor of
-0.02 at the bottom of the frame. **`picture_stability.judge` cannot see this** --
-its row-profile correlation finds lag 0 on whatever still correlates -- and a
-frame-difference score cannot either. A per-band temporal sd can.
-
-**NO ACQUISITION ROUTE REACHES IT.** Scored
-with `reacquire_soak.py` on the settled bench: 7 of 7 input bounces locked, and
-8 of 8 restarts locked at 81..85% with phase 16 chosen every time. So the entry
-is neither a fresh acquisition nor a boot. **The nearest documented cause is
-hand-writing part of the ADC PLL group over HTTP**, which `CLAUDE.md` records
-as leaving `STATUS_SYNC_PROC_HTOTAL` wandering a few counts under the divider
-in a state that read it back exactly beforehand -- which is this signature
-exactly. A hand poke of two group fields did not reproduce it, because the
-engine rewrote them within three seconds; holding one needs a freeze.
-
-**WHAT MAKES THAT READING SAFE IS THE CLEAN RUN, NOT THE CLEAN COUNT.** The
-pass-through path scans one count off the gate on a healthy source -- measured
-on `vga` at 1280x720@60 handed over, twelve landings at 17, 17, 17, 18 x6 and
-19 x3 clean of 32 against a gate of 17, with `far` zero, which is the same pair
-of readings an unlocked clock gives. The same source scaled scores 20..25. So
-the count cannot separate them and the run can: an unlocked clock leaves the
-clean phases SCATTERED, widest run of one, where a wide band leaves a
-contiguous window of a dozen or more.
-
-**NOTHING IN THE FIRMWARE ACTED ON IT, WHICH IS THE PART NOW FIXED.** The
-engine reported `state: acquired`, and the only thing it retried was the phase
-search -- at acquired passes 10 through 60, six walks of the field for one
-acquisition, each latching all 32 phases into a live sync processor and leaving
-the phase two steps on from where anything chose it. `Adc::acquirePhase()` now
-says when a scan blamed the CLOCK rather than the phase, `acquireSamplingPhase()`
-answers that with `Adc::reapplySampleRate()` -- the group and the restart, off
-state the ADC already holds -- and `SourceMaintenance` keeps it due for as long
-as the clock is suspect rather than closing the phase window on it.
-
-**IT IS UNVERIFIED AGAINST THE FAULT**, because the fault does not reproduce.
-What is verified is that it does not fire on a healthy source: nine
-acquisitions across both inputs, no `sampling clock re-applied` line, and the
-scans unchanged.
-
-**THE SCAN IS NOW ONE LINE AND READABLE AT A GLANCE**, which it was not: the
-`far` metric that tells a clock fault from a phase fault was printed as a
-second adjacent line and never arrived, five bench acquisitions out of five.
-One character per phase carries both -- `.` clean, a digit for one count out,
-an UPPERCASE letter for further out -- so the clock signature is "no `.`
-anywhere, no uppercase either":
-
-```
-ypbpr  ...........................23...     band at 27..28, 30 clean
-vga    ............35caa862............     band at 11..19, 22 clean
-```
+**WHAT MAKES A SCAN READING SAFE IS THE CLEAN RUN, NOT THE CLEAN COUNT**, and
+this stands independently of the fix. The pass-through path scans one count off
+the gate on a healthy source -- measured on `vga` at 1280x720@60, twelve
+landings at 17, 17, 17, 18 x6 and 19 x3 clean of 32 against a gate of 17, with
+`far` zero -- which is the same pair of readings an unlocked clock gives. The
+same source scaled scores 20..25. So the count cannot separate them and the run
+can: an unlocked clock leaves the clean phases SCATTERED, widest run of one,
+where a wide band leaves a contiguous window of a dozen or more.
 
 **A `far` COUNT MUST NOT GATE THE READING, AND THAT IS MEASURED.** It looks as
 though a count far off the divider means the PHASE is at fault, and an earlier
@@ -146,9 +61,31 @@ one of the seven scans in the live fault carries `far` at many phases -- the
 walk moves the phase, and at a bad one the count goes a long way out -- so that
 rule could never fire where it was needed. The clean RUN is the whole of it.
 
-**WHAT LET IT THROUGH IS THAT NO ACCEPTANCE COVERS `ypbpr`.**
-`test_card_framing.py`'s five modes are all RISC PC modes on `vga`, so a
-statement about the suite is not a statement about the Wii.
+**THE SCAN IS ONE LINE AND READABLE AT A GLANCE**, which it was not: the `far`
+metric that tells a clock fault from a phase fault was printed as a second
+adjacent line and never arrived, five bench acquisitions out of five. One
+character per phase carries both -- `.` clean, a digit for one count out, an
+UPPERCASE letter for further out:
+
+```
+ypbpr  ...........................23...     band at 27..28, 30 clean
+vga    ............35caa862............     band at 11..19, 22 clean
+```
+
+### Still open: the same measured line rate installs two dividers 30 ms apart
+
+Leaving pass-through installs 1446 and then 1212 from one measured line rate,
+with the duty measured through 1446 in between. Whether that pair is the design
+-- a reference to measure through, then the real value -- or a fault is
+unresolved, and a 60 mHz rate difference cannot otherwise move the divider 19%.
+`dividerCeilingForLineFilter()` returning 0 when the arriving key matches no
+published raster is the suspected discontinuity. The console quoted in
+`investigations/leaving-pass-through-strands-the-sync-reference.md` is the
+evidence.
+
+**NO ACCEPTANCE COVERS `ypbpr`.** `test_card_framing.py`'s five modes are all
+RISC PC modes on `vga`, so a statement about the suite is not a statement about
+the Wii -- which is what let the entry above through.
 
 ### The frame time lock stopped converging on a settled source, and the ADC PLL did not care
 
