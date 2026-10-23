@@ -98,6 +98,55 @@ out has never had to act.
 `test_card_framing.py`'s five modes are all RISC PC modes on `vga`, so a
 statement about the suite is not a statement about the Wii.
 
+### The phase search runs inside an unsettled solve, and its answer passes the gate
+
+Measured 2026-10-23 on `ypbpr`, reached by parking the unit on `rgbs` (no
+source) for seven minutes and then selecting ypbpr. **Intermittent -- it
+appeared on one of two runs of the same procedure**, which is the whole
+difficulty with it.
+
+The solve thrashes, `measure: start, TIMINGS change (count), 525 lines, solved
+521` repeating about eight times in eight seconds, and a phase search runs
+between each pass. Four consecutive scans, one character per phase:
+
+```
+.....................1...14cATTB      band 27..31
+..1.......................TTTO..      band 26..29
+..1.............DTT1.....12952..      band 16..19
+........TTTH.............15b3.1.      band  8..11
+```
+
+**The band SWEEPS ACROSS THE FIELD**, which no phase band can do -- it is the
+count moving underneath the walk. The uppercase letters are `far` counts, `T`
+being all 20 samples more than one count off the divider, where a settled scan
+on this source reads `far` zero at every phase. And every one of these reports
+`sampling phase: chosen`, because enough phases still read clean to clear
+`SweepGoodEnough`: **the gate cannot refuse a scan whose dirt moved rather than
+being dirty everywhere.** It settles two seconds later at oversample 4 with the
+usual band at 27..28 and locks at 83.4%.
+
+So a phase is chosen from a measurement taken while the thing being measured
+was being reconfigured, which is the rule in `CLAUDE.md` about not interleaving
+measuring and configuring. What a wrong phase costs here is unmeasured; the
+state recovered on both runs seen.
+
+**IT IS NOT THE UNLOCKED-CLOCK FAULT ABOVE, and the guard tells them apart.**
+`far` is nonzero throughout this transient and zero throughout that one, so a
+scan taken here is correctly NOT blamed on the clock. This is the first state
+measured in which that guard has anything to act on.
+
+**WHAT RULED EVERYTHING ELSE OUT.** Seventy-seven provoked installs of the
+sampling clock, every one locked: 7 input bounces, 17 restarts, 10 output
+landings across all six modes, 3 forced oversample ratios, and 40 full
+re-detections through `/sc?~` whose scans read 29..31 clean with `far` zero in
+all 40. **The engine installs the clock correctly on every route it has**, so
+the trigger is not an acquisition.
+
+The reference clock list spinning is what the absence provides: parked on an
+input with no source it logged `measure: the reference clock measured nothing,
+trying the next` **875 times in seven minutes**, which is the entry below this
+one seen from the console.
+
 ### The gate in front of the phase search takes a reading count as a tolerance
 
 Found 2026-10-23 while reading the path, **not measured**.
