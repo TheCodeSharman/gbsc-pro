@@ -3,6 +3,7 @@
 
     python3 tools/gbsc-pro-hwtest/reacquire_soak.py --host 192.168.88.108
     ... --src ypbpr --other vga -n 12       which input, and what to bounce via
+    ... --via restart                        restart the unit instead of bouncing
     ... --settle 22                         seconds to allow per acquisition
 
 **THE FAULT THIS EXISTS FOR IS PER ACQUISITION, NOT PER SECOND.** The ADC PLL
@@ -22,6 +23,13 @@ dead one reads 0 in every sample of 769.
 
 The phase each acquisition landed on is recorded beside it, because the choice
 being a LOTTERY is the thing a soak can show and a single reading cannot.
+
+**WHICH ROUTE PROVOKES THE ACQUISITION IS PART OF THE TEST.** An input bounce
+re-measures the source through the reference clock already held and locked 7 of
+7 when the fault was live on the panel, so it does not reach the state. A
+restart runs the whole of boot, installing the ADC PLL from nothing against a
+chip that kept its registers across the ESP reset -- which is the state a
+session opens in, and where the fault has been seen.
 """
 
 import argparse
@@ -56,6 +64,16 @@ LOCKED_SHARE = 0.5
 LEAST_SAMPLES = 40
 
 LOCKED, UNLOCKED, UNRESOLVED = "locked", "unlocked", "unresolved"
+
+VIA_INPUT, VIA_RESTART = "input", "restart"
+
+# Long enough for /input to be read out of loop() and the preference written.
+PreferenceWriteS = 4.0
+
+# How long a boot is deaf for. The console delivers nothing for the first
+# seconds and HTTP answers from the network stack before loop() runs, so a poll
+# started earlier reads the boot that is going away.
+BOOT_DEAF_S = 12.0
 
 
 def lock_share(samples):
@@ -157,15 +175,58 @@ def sample_lock(host, ms=25, span_ms=6000, timeout_s=30):
     return column("pllad_lock"), column("sp_htotal")
 
 
-def reacquire(host, src, other, settle_s):
-    """Bounce the input away and back, which is what re-rolls the choice.
+def measured_wanted_source(host, src):
+    """Whether the unit is on the source the run is about.
+
+    A run that came back on another input is not a verdict about this one, and
+    nothing else says so: the phase, the lock share and the count are all
+    perfectly good readings OF THE WRONG SOURCE.
+
+    **IT CANNOT ALWAYS ANSWER, SO THE COUNT IS PRINTED PER RUN AS WELL.**
+    /preferences.txt is served behind a heap gate and refuses below 10000 free,
+    which this fork reaches routinely -- measured at 9520 free with /fs/dir
+    answering {"error":"low heap"}. An unreadable preference is not evidence of
+    the wrong source, so it passes, and the frame count in each row is what
+    makes a switch visible: 525 for the Wii at 480p against 311 for the bench
+    RISC PC. ../../docs/preferences-file.md
+    """
+    at = gbs_unit.setting(host, "input")
+    return at is None or at == src
+
+
+def reacquire(host, src, other, settle_s, via=VIA_INPUT):
+    """Provoke a fresh acquisition, then wait for the source to be counted.
+
+    **THE TWO ROUTES ARE NOT THE SAME TEST.** An input bounce re-selects the
+    mux and re-measures the source through the reference clock already held; a
+    restart runs the whole of boot, so detection re-runs the reference-clock
+    search and installs the ADC PLL from nothing, against a chip that kept its
+    registers across the ESP reset. Only the second reaches the state a session
+    opens in.
 
     Polls the COUNT rather than the state: /geometry's `state` is stale across
     an input change and reads `acquired` from the source that just went away.
     """
-    gbs_unit.select_input(host, other)
-    time.sleep(settle_s / 2.0)
-    gbs_unit.select_input(host, src)
+    if via == VIA_RESTART:
+        # SELECTED BEFORE THE RESTART, NOT AFTER. A boot comes back on whatever
+        # /preferences.txt holds, so a route that only restarts measures
+        # whichever source the last thing to touch the unit left selected.
+        # Selecting first persists it and leaves the boot to restore it, so the
+        # ADC PLL is still installed from nothing with no input change in the
+        # way.
+        gbs_unit.select_input(host, src)
+        time.sleep(PreferenceWriteS)
+        try:
+            urllib.request.urlopen(f"http://{host}/restart", timeout=5).read()
+        except OSError:
+            pass
+        # The unit is deaf for the first seconds of a boot, and an HTTP read
+        # that answers before it has gone down answers for the old boot.
+        time.sleep(BOOT_DEAF_S)
+    else:
+        gbs_unit.select_input(host, other)
+        time.sleep(settle_s / 2.0)
+        gbs_unit.select_input(host, src)
     deadline = time.time() + settle_s * 2
     while time.time() < deadline:
         time.sleep(2.0)
@@ -188,29 +249,41 @@ def main():
                         help="the input to bounce via, which forces a fresh acquisition")
     parser.add_argument("-n", "--runs", type=int, default=12)
     parser.add_argument("--settle", type=float, default=22.0)
+    parser.add_argument("--via", choices=(VIA_INPUT, VIA_RESTART), default=VIA_INPUT,
+                        help="what provokes each acquisition")
     parser.add_argument("--out", default=None, help="write the runs as JSON")
     args = parser.parse_args()
 
     runs = []
     # Flushed per line: a soak is minutes long and redirecting it to a file
     # otherwise shows nothing until it ends, which reads as a hung run.
-    print(f"{args.runs} acquisitions of {args.src}, bouncing via {args.other}\n",
-          flush=True)
-    print(f"{'#':>3} {'phase':>5} {'lock':>7} {'n':>5} {'htotal sd':>9}  verdict",
-          flush=True)
+    how = (f"bouncing via {args.other}" if args.via == VIA_INPUT
+           else "restarting the unit")
+    print(f"{args.runs} acquisitions of {args.src}, {how}\n", flush=True)
+    print(f"{'#':>3} {'phase':>5} {'lock':>7} {'n':>5} {'htotal sd':>9} "
+          f"{'lines':>6}  verdict", flush=True)
     for run in range(1, args.runs + 1):
-        if not reacquire(args.host, args.src, args.other, args.settle):
-            print(f"{run:3} {'-':>5} {'-':>7} {'-':>5} {'-':>9}  never acquired",
-                  flush=True)
+        if not reacquire(args.host, args.src, args.other, args.settle,
+                         args.via):
+            print(f"{run:3} {'-':>5} {'-':>7} {'-':>5} {'-':>9} {'-':>6}  "
+                  f"never acquired", flush=True)
+            runs.append({"verdict": UNRESOLVED, "phase": None, "samples": 0,
+                         "share": 0.0, "htotal_sd": 0.0})
+            continue
+        if not measured_wanted_source(args.host, args.src):
+            print(f"{run:3} {'-':>5} {'-':>7} {'-':>5} {'-':>9} {'-':>6}  "
+                  f"came back on another input", flush=True)
             runs.append({"verdict": UNRESOLVED, "phase": None, "samples": 0,
                          "share": 0.0, "htotal_sd": 0.0})
             continue
         phase = gbs_unit.read_named(args.host, "PA_SP_S")
+        lines = gbs_unit.read_named(args.host, "STATUS_SYNC_PROC_VTOTAL")
         lock, htotal = sample_lock(args.host)
         one = judge(lock, phase, htotal)
+        one["lines"] = lines
         runs.append(one)
         print(f"{run:3} {phase:5} {one['share'] * 100:6.1f}% {one['samples']:5} "
-              f"{one['htotal_sd']:9.2f}  {one['verdict']}", flush=True)
+              f"{one['htotal_sd']:9.2f} {lines:6}  {one['verdict']}", flush=True)
 
     got = summarise(runs)
     print(f"\n{got['locked']} of {got['judged']} acquisitions locked"

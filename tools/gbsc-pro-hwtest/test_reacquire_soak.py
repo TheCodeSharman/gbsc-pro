@@ -66,3 +66,54 @@ def test_the_phases_chosen_are_reported_so_a_lottery_is_visible():
     runs = [soak.judge(HEALTHY, 16), soak.judge(soak.DEAD_SAMPLE * 700, 9),
             soak.judge(HEALTHY, 16)]
     assert soak.summarise(runs)["phases"] == {16: 2, 9: 1}
+
+
+def test_a_restart_run_selects_the_source_before_restarting(monkeypatch):
+    """**A RESTART COMES BACK ON THE SAVED INPUT, WHICHEVER THAT IS.** The
+    route restarts and never selects, so a run labelled ypbpr measured vga for
+    six acquisitions and scored them against a ypbpr baseline -- which read as
+    the chosen phase regressing from 16 to 0 when 0 is simply vga's own answer.
+
+    Selected BEFORE the restart rather than after, so the boot still installs
+    the ADC PLL from nothing with no post-boot input change in the way: the
+    selection persists to /preferences.txt and the boot restores it."""
+    order = []
+    monkeypatch.setattr(soak.urllib.request, "urlopen",
+                        lambda url, timeout=0: order.append(url) or _NoBody())
+    monkeypatch.setattr(soak.gbs_unit, "select_input",
+                        lambda host, want: order.append(f"select:{want}"))
+    monkeypatch.setattr(soak.time, "sleep", lambda _: None)
+    monkeypatch.setattr(soak.gbs_unit, "get_json",
+                        lambda host, path: (200, {"cv": 525, "lineRateHz": 31472}))
+
+    assert soak.reacquire("unit", "ypbpr", "vga", 1.0, via=soak.VIA_RESTART)
+    assert order == ["select:ypbpr", "http://unit/restart"]
+
+
+def test_a_run_that_came_back_on_another_input_is_not_a_verdict(monkeypatch):
+    """A measurement taken on a source nobody asked for belongs in neither
+    half of the figure, exactly as a missed capture does."""
+    monkeypatch.setattr(soak.gbs_unit, "setting", lambda host, key: "vga")
+    assert not soak.measured_wanted_source("unit", "ypbpr")
+    monkeypatch.setattr(soak.gbs_unit, "setting", lambda host, key: "ypbpr")
+    assert soak.measured_wanted_source("unit", "ypbpr")
+
+
+def test_an_input_run_bounces_away_and_back(monkeypatch):
+    asked, selected = [], []
+    monkeypatch.setattr(soak.urllib.request, "urlopen",
+                        lambda url, timeout=0: asked.append(url) or _NoBody())
+    monkeypatch.setattr(soak.gbs_unit, "select_input",
+                        lambda host, want: selected.append(want))
+    monkeypatch.setattr(soak.time, "sleep", lambda _: None)
+    monkeypatch.setattr(soak.gbs_unit, "get_json",
+                        lambda host, path: (200, {"cv": 525, "lineRateHz": 31472}))
+
+    assert soak.reacquire("unit", "ypbpr", "vga", 1.0, via=soak.VIA_INPUT)
+    assert selected == ["vga", "ypbpr"]
+    assert asked == []
+
+
+class _NoBody:
+    def read(self):
+        return b""
