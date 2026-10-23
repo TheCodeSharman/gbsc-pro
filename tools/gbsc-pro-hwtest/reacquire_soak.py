@@ -65,7 +65,18 @@ LEAST_SAMPLES = 40
 
 LOCKED, UNLOCKED, UNRESOLVED = "locked", "unlocked", "unresolved"
 
-VIA_INPUT, VIA_RESTART = "input", "restart"
+VIA_INPUT, VIA_RESTART, VIA_OUTPUT = "input", "restart", "output"
+
+# The rotation an output-provoked run walks, every other leg returning to
+# 1080p so a run of any even length leaves the bench where it found it.
+#
+# WHY THE OUTPUT IS A TRIGGER AT ALL: it decides the raster, the raster decides
+# the divider ceiling, and the divider is what the ADC PLL locks or fails to
+# lock on -- so a landing installs the sampling clock afresh without the source
+# moving. 1080p is the mode with the least horizontal room and a 60 Hz source
+# is its worst case. ../../CLAUDE.md
+OUTPUT_ROTATION = ("720p", "1080p", "480p", "1080p", "576p", "1080p",
+                   "960p", "1080p", "1024p", "1080p")
 
 # Long enough for /input to be read out of loop() and the preference written.
 PreferenceWriteS = 4.0
@@ -194,7 +205,7 @@ def measured_wanted_source(host, src):
     return at is None or at == src
 
 
-def reacquire(host, src, other, settle_s, via=VIA_INPUT):
+def reacquire(host, src, other, settle_s, via=VIA_INPUT, leg=0):
     """Provoke a fresh acquisition, then wait for the source to be counted.
 
     **THE TWO ROUTES ARE NOT THE SAME TEST.** An input bounce re-selects the
@@ -207,7 +218,13 @@ def reacquire(host, src, other, settle_s, via=VIA_INPUT):
     Polls the COUNT rather than the state: /geometry's `state` is stale across
     an input change and reads `acquired` from the source that just went away.
     """
-    if via == VIA_RESTART:
+    if via == VIA_OUTPUT:
+        # The input is deliberately untouched: a leg that re-selected the
+        # source would measure a fresh acquisition too, and the two could not
+        # be told apart.
+        if not gbs_unit.choose_output(host, OUTPUT_ROTATION[leg % len(OUTPUT_ROTATION)]):
+            return False
+    elif via == VIA_RESTART:
         # SELECTED BEFORE THE RESTART, NOT AFTER. A boot comes back on whatever
         # /preferences.txt holds, so a route that only restarts measures
         # whichever source the last thing to touch the unit left selected.
@@ -249,22 +266,23 @@ def main():
                         help="the input to bounce via, which forces a fresh acquisition")
     parser.add_argument("-n", "--runs", type=int, default=12)
     parser.add_argument("--settle", type=float, default=22.0)
-    parser.add_argument("--via", choices=(VIA_INPUT, VIA_RESTART), default=VIA_INPUT,
-                        help="what provokes each acquisition")
+    parser.add_argument("--via", choices=(VIA_INPUT, VIA_RESTART, VIA_OUTPUT),
+                        default=VIA_INPUT, help="what provokes each acquisition")
     parser.add_argument("--out", default=None, help="write the runs as JSON")
     args = parser.parse_args()
 
     runs = []
     # Flushed per line: a soak is minutes long and redirecting it to a file
     # otherwise shows nothing until it ends, which reads as a hung run.
-    how = (f"bouncing via {args.other}" if args.via == VIA_INPUT
-           else "restarting the unit")
+    how = {VIA_INPUT: f"bouncing via {args.other}",
+           VIA_RESTART: "restarting the unit",
+           VIA_OUTPUT: "walking " + "/".join(OUTPUT_ROTATION)}[args.via]
     print(f"{args.runs} acquisitions of {args.src}, {how}\n", flush=True)
     print(f"{'#':>3} {'phase':>5} {'lock':>7} {'n':>5} {'htotal sd':>9} "
           f"{'lines':>6}  verdict", flush=True)
     for run in range(1, args.runs + 1):
         if not reacquire(args.host, args.src, args.other, args.settle,
-                         args.via):
+                         args.via, run - 1):
             print(f"{run:3} {'-':>5} {'-':>7} {'-':>5} {'-':>9} {'-':>6}  "
                   f"never acquired", flush=True)
             runs.append({"verdict": UNRESOLVED, "phase": None, "samples": 0,

@@ -99,6 +99,41 @@ def test_a_run_that_came_back_on_another_input_is_not_a_verdict(monkeypatch):
     assert soak.measured_wanted_source("unit", "ypbpr")
 
 
+def test_an_output_run_moves_the_output_and_leaves_the_input_alone(monkeypatch):
+    """**THE OUTPUT DECIDES THE DIVIDER, SO IT DECIDES WHAT THE ADC PLL HAS TO
+    LOCK ON.** A landing re-solves the raster, the raster sets the divider
+    ceiling and the divider is installed afresh -- all without the source
+    moving, which is what makes this a different test from an input bounce.
+
+    It must not touch the input: a run that re-selected the source would be
+    measuring a fresh acquisition as well, and the two could not be told apart.
+    """
+    chosen, selected, asked = [], [], []
+    monkeypatch.setattr(soak.gbs_unit, "choose_output",
+                        lambda host, output: chosen.append(output) or True)
+    monkeypatch.setattr(soak.gbs_unit, "select_input",
+                        lambda host, want: selected.append(want))
+    monkeypatch.setattr(soak.urllib.request, "urlopen",
+                        lambda url, timeout=0: asked.append(url) or _NoBody())
+    monkeypatch.setattr(soak.time, "sleep", lambda _: None)
+    monkeypatch.setattr(soak.gbs_unit, "get_json",
+                        lambda host, path: (200, {"cv": 525, "lineRateHz": 31472}))
+
+    assert soak.reacquire("unit", "ypbpr", "vga", 1.0, via=soak.VIA_OUTPUT, leg=0)
+    assert chosen == [soak.OUTPUT_ROTATION[0]]
+    assert selected == []
+    assert asked == []
+
+
+def test_the_output_rotation_returns_to_the_mode_it_started_from(monkeypatch):
+    """A hunt that ends on whichever mode its last leg happened to reach leaves
+    the bench somewhere nobody chose. Every other leg is 1080p, so a run of any
+    even length lands back there."""
+    assert soak.OUTPUT_ROTATION[1] == "1080p"
+    assert len(soak.OUTPUT_ROTATION) % 2 == 0
+    assert all(m == "1080p" for m in soak.OUTPUT_ROTATION[1::2])
+
+
 def test_an_input_run_bounces_away_and_back(monkeypatch):
     asked, selected = [], []
     monkeypatch.setattr(soak.urllib.request, "urlopen",
