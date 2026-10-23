@@ -10,6 +10,89 @@ regardless of which step is in flight.
 
 ## Reaches the picture
 
+### The Wii's sampling clock locks or does not, per acquisition, and the phase scan decides by lottery
+
+Measured 2026-10-23 on `ypbpr`, the Wii at 480p into 1920x1080. **The ADC PLL
+either locks when the source is acquired or never does, and the picture follows
+it** -- an acquisition that did not lock shows jittery edges, a disturbed band
+at the top of the frame and a picture that jumps, with every configuration
+register reading correct.
+
+`STATUS_MISC_PLLAD_LOCK` sampled at 25 ms from `loop()`, which is the only
+instrument that can see it -- the bit is a duty cycle and HTTP answers too
+slowly. The RISC PC is the control:
+
+| state | lock = 1 | transitions | `sp_htotal` sd |
+|---|---|---|---|
+| Wii, jittery | **0.0% of 769** | 0 | 0.42 |
+| Wii, after a re-acquisition | 84.6% of 389 | 118 | 0.00 |
+| RISC PC on `vga` | 86.5% of 392 | 93 | 0.00 |
+
+**The control is what makes the zero mean something**: it matches the 86.3%
+`pllad-lock-is-a-duty-cycle-not-a-state.md` records as healthy, so 0% is an
+unlocked PLL and not a property of the sync-on-green path. `sp_vtotal` holds
+524 in every sample of both states and `hsact` is 1, so vertical sync is sound
+either way -- what moves is the sampling clock.
+
+**WHAT DECIDES IT IS `Adc::acquirePhase()`, AND ON THIS SOURCE IT DECIDES BY
+NOISE.** The scan marks a phase dirty when `STATUS_SYNC_PROC_HTOTAL` differs
+from `PLLAD_MD` by **even one count**, and the Wii's count legitimately dithers
+1211/1212/1213 -- so almost every phase scores dirty and the chooser is left
+picking between `MidField` and whatever single zero the noise produced.
+Consecutive scans off the bench:
+
+```
+66446350157776457985393b17346921     one clean phase of 32
+5a345644566747527757685e28283358     none
+85948354455669413075367884457766     one
+51926574464323078423593557353553     one, and it is phase 16
+```
+
+Against the RISC PC, where `sp_htotal` is exactly 2200 at sd 0.00 and the scan
+has real structure -- a dirty band of about four phases and a clean run of
+twenty-odd. **The code already separates the two cases and then throws the
+useful one away**: `far` counts `off > 1` and is reported beside `dither`,
+which counts `off != 0`, and only `dither` reaches the choice.
+
+`dedc53784` is where the chooser took its present shape, and its own evidence
+is `vga` at 320x256@50 and 640x480@60 -- no ypbpr state is in it. Choosing on
+`far`, or falling back to it where `dither` yields no clean run, is the
+candidate; it is arithmetic over a scan array and pins at the host layer.
+
+**THE ACCEPTANCE IS A RUN OF ACQUISITIONS, NOT A WATCH.** The fault is per
+acquisition, so a unit observed for a minute says nothing.
+`reacquire_soak.py` bounces the input and scores the lock share each time.
+
+**A SECOND SYMPTOM MAY BE THE SAME FAULT.** In the unlocked state the engine
+re-solves about every 25 s and the output goes black for **4.6 s** each time --
+measured on the USB capture, frames 45.3 s to 49.9 s, armed by
+`measure: start, TIMINGS change (rate), 525 lines, solved 525` on a source
+whose count did not move. The rate probe that arms it returned 47888 and
+53280 mHz against a source at 59939, and it times vsync off `DEBUG_IN_PIN`,
+which an unlocked sampling clock would make unreliable. Not confirmed as the
+same cause.
+
+**WHAT LET IT THROUGH IS THAT NO ACCEPTANCE COVERS `ypbpr`.**
+`test_card_framing.py`'s five modes are all RISC PC modes on `vga`, so a
+statement about the suite is not a statement about the Wii.
+
+### Reported: 320x256 on the RISC PC frames wrong and sits vertically shifted
+
+Reported 2026-10-23 and **not yet measured** -- filed so the Wii fault above
+could be worked alone. Two things to rule out before treating it as a
+regression in the engine:
+
+- **`/framing.txt` is forgotten for every mode**, wiped by two framing sweeps
+  and the acceptance run, each of which resets the stored entry per state. So
+  what is on screen is the COMPUTED default rather than any stored tuning, and
+  the difference may be the whole report.
+  `framing-backup-2026-10-23-2100.txt` in the handover directory is the table
+  as it stood before.
+- The vertical placement specifically: the default framing's vertical residual
+  is measured at -0.04 lines over 21 modes in
+  `investigations/full-screen-framing-on-the-vesa-modes.md`, so a visible
+  vertical shift is larger than anything that measurement accounts for.
+
 ### The ADC gain seeds clip the top of the range on BOTH colour spaces
 
 Measured 2026-10-16 against a CALIBRATED ramp, which is what previous attempts
