@@ -98,6 +98,47 @@ out has never had to act.
 `test_card_framing.py`'s five modes are all RISC PC modes on `vga`, so a
 statement about the suite is not a statement about the Wii.
 
+### The frame time lock stopped converging on a settled source, and the ADC PLL did not care
+
+Measured 2026-10-23 on `ypbpr`, the Wii at 480p into 1920x1080, across an hour
+of the unit sitting untouched and then confirmed live.
+
+| | this morning | after an hour sitting |
+|---|---|---|
+| `\|err\|` | 6 000 .. 28 500 | **92 575 .. 1 322 195**, mean 832 863 |
+| samples under 50 000 | all | **0 of 2074**, and 0 of 37 on a fresh read |
+| display clock span | ~32 Hz | **129 368 Hz**, 0.120% |
+| `pin` pair | `2669354/2669354`, equal | `2669354/2672850`, 0.131% apart |
+
+So the correction is sweeping the display clock over a tenth of a per cent
+rather than holding it, and the output frame period sits 0.131% from the
+input's throughout. It is **hunting rather than saturated** -- the clock
+oscillates inside that span rather than pinning at a limit.
+
+**NOTHING ELSE MOVED.** Over the same hour the ADC PLL read 81.7..87.4% locked
+in ten samples at `sp_htotal` sd 0.00, the count held 524, and the source's
+field rate read **exactly 59897 mHz in all 2074 samples, zero spread**. So this
+is not the unlocked-clock fault above and not the rate probe misreading: the
+sampling side is healthy while the output side is not.
+
+The source's own rate moved 59939 -> 59897 mHz between two readings a few hours
+apart, 0.07%, steady at each value -- thermal drift on the Wii rather than a
+wobble. Whether that drift is what the correction failed to follow is **not
+established**; the 0.131% period gap is not the 0.07% rate change.
+
+**AND IT DOES NOT BLANK THE OUTPUT, WHICH IS MEASURED.** The obvious reading is
+that a clock swept 0.120% makes the MS9288A re-acquire, since it samples the
+analog output -- the entry above records the output going black for 4.6 s about
+every 25 s in the unlocked state. Measured on the USB capture in this state,
+with the sweep live: **2565 frames over 45 s, mean luma 203.5 across a range of
+202.4 to 204.9, and not one frame near black.** So the sweep alone does not
+blank the output and does not visibly disturb the picture, and the blackouts
+belong to something else.
+
+What is therefore still unexplained is why the correction stopped converging,
+not what it costs. `investigations/the-frame-time-lock-saturates.md` is the
+prior art.
+
 ### The phase search runs inside an unsettled solve, and its answer passes the gate
 
 Measured 2026-10-23 on `ypbpr`, reached by parking the unit on `rgbs` (no
