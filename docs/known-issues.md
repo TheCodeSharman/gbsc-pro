@@ -98,6 +98,32 @@ out has never had to act.
 `test_card_framing.py`'s five modes are all RISC PC modes on `vga`, so a
 statement about the suite is not a statement about the Wii.
 
+### The gate in front of the phase search takes a reading count as a tolerance
+
+Found 2026-10-23 while reading the path, **not measured**.
+`VideoSourceAcquisition::acquireSamplingPhase()` opens with
+
+```c
+const uint8_t LatchSamples = 8;   // "How many agreeing readings say the divider is latched."
+...
+if (!Tv5725::Adc::dividerLatched(Tv5725::SyncProcessor::lineSamples(), LatchSamples))
+    return false;
+```
+
+and `dividerLatched(uint16_t lineSamples, uint16_t tolerance)` takes a
+TOLERANCE in that second parameter, defaulting to
+`Adc::LatchedSamplesTolerance` of 2. So the gate is one reading within **8**
+ADC samples of the divider, where the comment beside it describes eight
+agreeing readings -- four times the tolerance anything else uses, and no run at
+all.
+
+It is what lets the phase search run through an unlocked clock: the count at
+1211/1212/1213 against a divider of 1212 passes a tolerance of 8 on any single
+read, where a run of agreeing readings would not. Tightening it is a change to
+the gate on every source, so it wants a bench comparison rather than a move --
+and the entry above repairs the clock once the search has refused, which is a
+different question from whether the search should have run.
+
 ### Reported: 320x256 on the RISC PC frames wrong and sits vertically shifted
 
 Reported 2026-10-23 and **not yet measured** -- filed so the Wii fault above
