@@ -192,11 +192,16 @@ def main():
     args = parser.parse_args()
 
     runs = []
-    print(f"{args.runs} acquisitions of {args.src}, bouncing via {args.other}\n")
-    print(f"{'#':>3} {'phase':>5} {'lock':>7} {'n':>5} {'htotal sd':>9}  verdict")
+    # Flushed per line: a soak is minutes long and redirecting it to a file
+    # otherwise shows nothing until it ends, which reads as a hung run.
+    print(f"{args.runs} acquisitions of {args.src}, bouncing via {args.other}\n",
+          flush=True)
+    print(f"{'#':>3} {'phase':>5} {'lock':>7} {'n':>5} {'htotal sd':>9}  verdict",
+          flush=True)
     for run in range(1, args.runs + 1):
         if not reacquire(args.host, args.src, args.other, args.settle):
-            print(f"{run:3} {'-':>5} {'-':>7} {'-':>5} {'-':>9}  never acquired")
+            print(f"{run:3} {'-':>5} {'-':>7} {'-':>5} {'-':>9}  never acquired",
+                  flush=True)
             runs.append({"verdict": UNRESOLVED, "phase": None, "samples": 0,
                          "share": 0.0, "htotal_sd": 0.0})
             continue
@@ -205,7 +210,7 @@ def main():
         one = judge(lock, phase, htotal)
         runs.append(one)
         print(f"{run:3} {phase:5} {one['share'] * 100:6.1f}% {one['samples']:5} "
-              f"{one['htotal_sd']:9.2f}  {one['verdict']}")
+              f"{one['htotal_sd']:9.2f}  {one['verdict']}", flush=True)
 
     got = summarise(runs)
     print(f"\n{got['locked']} of {got['judged']} acquisitions locked"
