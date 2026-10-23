@@ -328,9 +328,13 @@ public:
     // is the platform's. Both are handed IN: the count is another block's
     // register, and a file here reaching for ESP.wdtFeed() is a design signal
     // rather than a dependency to admit. docs/video-source-acquisition.md
-    // Whether the last search blamed the sampling CLOCK rather than the phase.
-    // The two are separable because their repairs differ: a phase is chosen, a
-    // clock is restarted. Cleared by the next search that reaches an answer.
+    // Whether the last search blamed the sampling CLOCK rather than the phase:
+    // the clean phases were SCATTER rather than a window, and no phase's count
+    // was ever more than one off the divider. The two are separable because
+    // their repairs differ -- a phase is chosen, a clock is restarted -- and
+    // the clean COUNT cannot separate them, a healthy pass-through scan
+    // scoring one count off the gate. Cleared by the next search that reaches
+    // an answer. ../../../docs/known-issues.md
     static bool samplingClockSuspect();
 
     static bool acquirePhase(uint8_t oversample, bool sweep,

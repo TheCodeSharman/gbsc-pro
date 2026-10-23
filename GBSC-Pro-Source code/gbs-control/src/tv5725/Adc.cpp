@@ -302,7 +302,7 @@ uint8_t halfSampleOn(uint8_t phase)
 // it, and by the width of the band when the band moves, which is the
 // sensitivity wanted.
 // ../../../docs/investigations/the-sampling-phase-cannot-reach-the-shimmer.md
-uint8_t middleOfWidestCleanRun(const uint8_t *dither)
+void widestCleanRun(const uint8_t *dither, uint8_t *atStart, uint8_t *runLength)
 {
     uint8_t bestStart = 0, bestLength = 0, start = 0, length = 0;
     for (uint16_t step = 0; step < 2 * (Adc::PhaseMax + 1); ++step) {
@@ -319,17 +319,23 @@ uint8_t middleOfWidestCleanRun(const uint8_t *dither)
             bestStart = start;
         }
     }
+    *atStart = bestStart;
+    *runLength = bestLength;
+}
+
+uint8_t middleOfWidestCleanRun(const uint8_t *dither)
+{
+    uint8_t bestStart = 0, bestLength = 0;
+    widestCleanRun(dither, &bestStart, &bestLength);
     if (bestLength == 0)
         return Adc::MidField;
     return (uint8_t)((bestStart + bestLength / 2) & Adc::PhaseMax);
 }
 
-// Whether any phase's count missed the divider by more than one. A GUARD on
-// blaming the clock, not the thing that detects it: the phase adjuster cannot
-// change the rate the sync processor counts at, so a scan with no clean window
-// anywhere has measured the clock -- and this refuses that reading where some
-// phase was far out, which a clock running near the divider cannot produce.
-// ../../../docs/known-issues.md
+// Whether any phase's count missed the divider by more than one. One of two
+// GUARDS on blaming the clock rather than the thing that detects it: a clock
+// running near the divider but not on it cannot put any phase far out, so a
+// far count says the phase is at fault. ../../../docs/known-issues.md
 bool anyCountFarFromDivider(const uint8_t *far)
 {
     for (uint8_t phase = 0; phase <= Adc::PhaseMax; ++phase)
@@ -351,6 +357,13 @@ const uint8_t SweepGoodEnough = 17;
 
 // Samples taken at each phase before it is scored.
 const uint8_t SamplesPerPhase = 20;
+
+// The shortest contiguous run of clean phases still worth calling a window.
+// Below it the clean phases are SCATTER, which is what an unlocked sampling
+// clock leaves -- the count misses the divider at every phase and whichever
+// ones happen to read it are isolated. A wide band on a healthy source leaves
+// a dozen or more contiguous instead, so nothing sits near this.
+const uint8_t CleanRunIsAWindow = 4;
 
 // One character per phase, carrying BOTH of the walk's metrics: '.' for a phase
 // whose count read the divider exactly, a digit or lowercase letter for one
@@ -456,7 +469,14 @@ bool Adc::acquirePhase(uint8_t oversample, bool sweep,
     reportScan(dither, far);
 
     if (clean < SweepGoodEnough) {
-        clockSuspect_ = !anyCountFarFromDivider(far);
+        // The clean COUNT cannot separate an unlocked clock from a wide band on
+        // a healthy source -- the pass-through path scores one count off the
+        // gate with `far` zero, exactly as an unlocked clock does. The clean
+        // RUN can: scatter is the clock, a window is a band.
+        uint8_t runStart = 0, runLength = 0;
+        widestCleanRun(dither, &runStart, &runLength);
+        clockSuspect_ = !anyCountFarFromDivider(far)
+                        && runLength < CleanRunIsAWindow;
 
         // The walk latched every phase it scored, so a bare return leaves the
         // adjuster two steps on from where the engine last chose. Nothing chose

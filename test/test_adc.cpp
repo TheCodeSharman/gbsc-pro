@@ -902,6 +902,36 @@ TEST_CASE("the sampling clock can be re-applied from what is held")
     CHECK(latchRisingEdge() >= 0);
 }
 
+TEST_CASE("a wide band with a clean window left is not reported as the clock")
+{
+    // **THE PASS-THROUGH PATH SCANS ONE COUNT OFF THE GATE, AND IT IS HEALTHY.**
+    // Measured on `vga` at 1280x720@60 handed over: twelve consecutive landings
+    // scored 17, 17, 17, 18 six times and 19 three times clean of 32, against
+    // SweepGoodEnough of 17, where the same source scaled scores 20..25. The
+    // band is wide -- thirteen to fifteen phases at up to 18 counts of 20 --
+    // and `far` is zero throughout, exactly as it is on an unlocked clock.
+    //
+    // So the clean COUNT cannot separate the two and the clean RUN can: an
+    // unlocked clock leaves the clean phases SCATTERED, widest run of one,
+    // where this leaves a contiguous window of a dozen or more. Blaming the
+    // clock here would re-apply the sampling clock on a healthy source, one
+    // count of dither away.
+    // docs/known-issues.md
+    Wire.reset();
+    Adc::PLLAD_MD::write(2230);
+    g_sweepDivider = 2230;
+    for (uint8_t i = 0; i <= Adc::PhaseMax; ++i) {
+        g_badPerPhase[i] = 0;
+        g_seenAtPhase[i] = 0;
+    }
+    for (uint8_t p = 5; p <= 20; ++p)
+        g_badPerPhase[p] = 14;          // a wide, heavily dirty band
+    Adc::choosePhaseSyncProcessor(16);
+
+    CHECK_FALSE(Adc::acquirePhase(2, true, lineSamplesFractional, countFeed));
+    CHECK_FALSE(Adc::samplingClockSuspect());
+}
+
 TEST_CASE("a band of bad phases is not reported as the clock")
 {
     // The discriminator has to leave the working case alone: a real band is a
