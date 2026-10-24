@@ -25,11 +25,56 @@ setup an unmeasured pulse and asserts the register did not silently keep its
 previous value is the cheapest form.
 `investigations/the-pass-through-shimmer-is-the-capture-origin.md`
 
+### A steady source is re-solved every 13 seconds, armed by a half-rate reading
+
+Measured 2026-10-24 on `vga`, RISC PC at 1280x720@60 in pass-through,
+`PLLAD_MD` 2038, source untouched. The console:
+
+```
+31.38  measure: start, TIMINGS change (rate), 750 lines, solved 750
+32.18  measured: 750 lines x 30.00 Hz -> line rate 22506
+33.55  installing: divider from line rate 45013, doubled 0 -> 1444
+33.91  sync pad: driven
+...
+38.22  sync pad: away                 <- 13.2 s later, nothing asked for it
+39.53  sync pad: driven
+```
+
+**30.00 Hz on a 60.01 Hz source is exactly half**, which is the missed-edge
+signature -- a whole multiple of the frame. It reads as a rate change, which
+arms a solve, which takes the sync pad away, re-measures from a 15625
+reference, re-installs the divider, re-runs the sampling phase search and
+drives the pad again. Every reading either side is identical: 750 lines,
+60.01 Hz, `STATUS_SYNC_PROC_HTOTAL` 2038 equal to the divider, duty 47/2038.
+Nothing about the source moved.
+
+**IT IS INTERMITTENT.** A 13.2 s cadence held across the capture above and
+**zero re-solves followed in a 75 s capture** half an hour later on the same
+mode, so a quiet console is not evidence it is fixed.
+
+**WHAT IT COSTS IS EVERY PHASE MEASUREMENT.** Each cycle re-runs
+`Adc::acquirePhase()`, so `PA_SP_S` is re-chosen on the loop's cadence rather
+than per acquisition -- three successive looks at one unchanged 640x480@60
+read 16, 20 and 8. A sweep of either phase taken while this runs is a sweep
+through a continuously re-solving engine, and the drift it produces reads as
+the phase's own instability: two readings of one held `PA_SP_S` bracketing a
+six-minute run gave achievable peaks of 60.5 and 76.6 with their optima 24
+steps apart. **Check the console for the cadence before scoring any phase.**
+
+`rateIsPlausible()` is the guard a whole-multiple reading should not pass.
+Whether it is reached on this path is not established.
+
 ### The ADC sampling phase is never tuned, and the picture is a lottery because of it
 
 `PA_ADC_S` decides where in the ADC clock the converter samples, and nothing
 derives it -- `Adc::acquirePhase()` writes the middle of its five-bit field,
 which is not a sampling instant. Only the sync processor's phase is searched.
+
+**EVERY FIGURE BELOW WAS TAKEN BEFORE THE RE-SOLVE LOOP ABOVE WAS KNOWN, AND
+NONE OF THEM CONTROLLED FOR IT.** The loop re-runs the phase search on a 13 s
+cadence, which is indistinguishable from the per-acquisition re-roll these
+readings are attributed to. Re-take them against a console confirmed quiet
+before treating any of it as a property of the phase.
 
 Measured 2026-10-24 on `vga` at 1280x720@60 in pass-through, `PLLAD_MD` 2038,
 scored per pixel on PM5544's finest grating off the USB capture. Sweeping the
