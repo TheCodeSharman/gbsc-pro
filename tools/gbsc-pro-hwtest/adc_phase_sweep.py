@@ -36,6 +36,14 @@ freeze and the sync processor's search still runs.
 
 `/phase?clear` gives both phases back to the engine, and this tool does it on
 the way out whatever happened.
+
+**AND IT CERTIFIES THE RUN.** A steady source is re-solved on an intermittent
+13 s cadence, and holding both phases does not stop the arm taking the sync pad
+away or the divider being re-installed -- so a walk taken across one compares
+two states and the drift reads as the phase's own instability. `resolve_watch`
+holds the console for the walk and every table below is reported with what
+landed on it. A run that is not `console quiet` is not a measurement.
+docs/known-issues.md
 """
 
 import argparse
@@ -44,6 +52,7 @@ import time
 
 import numpy as np
 
+import resolve_watch
 import sharpness
 import wedge
 from gbs_unit import read_named
@@ -81,6 +90,19 @@ def modeserv(host, command):
 def route(host, path):
     import urllib.request
     return urllib.request.urlopen(f"http://{host}{path}", timeout=8).read().decode()
+
+
+def pin_sync_phase(host, phase):
+    """Hold `PA_SP_S` so the walk is not also walking the sync processor's own.
+
+    The engine searches that phase per solve and the ADC's is never searched at
+    all, so an ADC walk taken while it re-rolls scores the two together -- a
+    probe that sampled it at 16, 31, 8 and 24 put three of four readings
+    outside the band where the count is stable, and read the swamping as the
+    ADC phase doing nothing.
+    """
+    route(host, f"/phase?sp={phase}")
+    time.sleep(SETTLE_S)
 
 
 def apply_phase(host, phase):
@@ -138,6 +160,9 @@ def main():
     parser.add_argument("--mode", help="ModeServ request to put the source in")
     parser.add_argument("--passes", type=int, default=3)
     parser.add_argument("--step", type=int, default=1)
+    parser.add_argument("--sp", type=int,
+                        help="hold PA_SP_S here for the walk, rather than "
+                             "letting each solve re-choose it")
     args = parser.parse_args()
 
     if args.mode:
@@ -168,15 +193,21 @@ def main():
     print(f"wedge box x {box[0]}..{box[1]}, rows {box[2]}..{box[3]}, "
           f"found at phase {chosen} and held")
 
+    if args.sp is not None:
+        pin_sync_phase(args.host, args.sp)
+        print(f"PA_SP_S held at {args.sp} for the walk")
+
     taken = {phase: [] for phase in phases}
-    try:
-        for index in range(args.passes):
-            for phase in phases:
-                apply_phase(args.host, phase)
-                taken[phase].append(reading(dev, box))
-            print(f"  pass {index + 1} of {args.passes} done")
-    finally:
-        route(args.host, "/phase?clear")
+    with resolve_watch.attached(args.host) as watch:
+        try:
+            for index in range(args.passes):
+                for phase in phases:
+                    apply_phase(args.host, phase)
+                    taken[phase].append(reading(dev, box))
+                print(f"  pass {index + 1} of {args.passes} done, "
+                      f"{watch.summary()}")
+        finally:
+            route(args.host, "/phase?clear")
 
     print("\nphase  contrast (sd)   ratio   mean|dx|  p99|dx|  mean|dy|   luma  lit left")
     rows = []
@@ -223,6 +254,13 @@ def main():
     print(f"\nthe wedge swings {wedge_swing:.2f}x and the picture "
           f"{picture_swing:.3f}x. A picture swing near the control's is the "
           f"phase costing nothing a viewer sees.")
+
+    print(f"\n{watch.summary()}")
+    if not watch.quiet():
+        print("  " + "\n  ".join(watch.lines()[:12]))
+        print("  A run that is not quiet measured more than the phase: the arm "
+              "takes the sync pad away, which re-places the sink's window, and "
+              "the re-install re-latches the ADC PLL.")
 
     print(f"\nThe box was held at x {box[0]}..{box[1]} throughout. A lit left "
           f"edge that is not one value means the picture moved under it, and "
