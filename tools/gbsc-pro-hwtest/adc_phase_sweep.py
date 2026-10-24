@@ -94,12 +94,25 @@ def lit_box(grey):
     return int(columns[0]), int(columns[-1]), int(rows[0]), int(rows[-1])
 
 
-def reading(dev):
-    """(contrast, movement, wedge left edge) for one clip."""
+def reading(dev, box):
+    """(contrast, movement, lit left edge) for one clip, scored in `box`.
+
+    THE BOX IS HELD, NOT RE-FOUND PER PHASE. Locating it each time makes the
+    instrument follow the thing it is measuring: a phase that aliases the
+    finest grating into grey moves the step out of flat card to the RIGHT, so
+    the box slides onto coarser bars and the worse phase scores HIGHER. Seen
+    on 1024x768@60, where re-finding put the box at 364 for phases 3..21 and
+    at 460..614 for 29..31, and the field's apparent best landed in the
+    latter.
+
+    The picture does not move with the phase -- measured at 1280x720@60, the
+    located box read one value across all 32 -- so a held box is scoring the
+    same pixels. The lit edge comes back with every reading so that a frame
+    that DID move is visible in the results rather than hidden in them.
+    """
     greys = luma(frames(CLIP, dev, WIDTH, HEIGHT, warmup=WARMUP))
-    box = wedge.locate(greys[0], lit_box(greys[0]))
     contrast, movement = wedge.score(greys, box)
-    return contrast, movement, box[0]
+    return contrast, movement, lit_box(greys[0])[0]
 
 
 def main():
@@ -132,17 +145,24 @@ def main():
     print(f"PLLAD_MD {divider}, PA_ADC_S in force {chosen}, "
           f"{len(phases)} phases x {args.passes} interleaved passes")
 
+    # Found once, at the phase the engine chose, and held for the walk.
+    anchor = luma(frames(CLIP, dev, WIDTH, HEIGHT, warmup=WARMUP))
+    lit = lit_box(anchor[0])
+    box = wedge.locate(anchor[0], lit)
+    print(f"wedge box x {box[0]}..{box[1]}, rows {box[2]}..{box[3]}, "
+          f"found at phase {chosen} and held")
+
     taken = {phase: [] for phase in phases}
     try:
         for index in range(args.passes):
             for phase in phases:
                 apply_phase(args.host, phase)
-                taken[phase].append(reading(dev))
+                taken[phase].append(reading(dev, box))
             print(f"  pass {index + 1} of {args.passes} done")
     finally:
         route(args.host, "/phase?clear")
 
-    print("\nphase  contrast (sd)   movement (sd)   ratio   wedge left")
+    print("\nphase  contrast (sd)   movement (sd)   ratio   lit left")
     rows = []
     for phase in phases:
         contrast = np.array([r[0] for r in taken[phase]])
@@ -161,8 +181,9 @@ def main():
     print(f"\nclearest phase {best[0]} at contrast {best[1]:.1f}, "
           f"murkiest {worst[0]} at {worst[1]:.1f} -- "
           f"{best[1] / max(worst[1], 0.01):.2f}x")
-    print("A wedge left edge that moves between phases means the phase panned "
-          "the picture, and the box followed it.")
+    print(f"The box was held at x {box[0]}..{box[1]} throughout. A lit left "
+          f"edge that is not one value means the picture moved under it, and "
+          f"those phases are not comparable with the rest.")
 
 
 if __name__ == "__main__":
