@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Walk the ADC's sampling phase and score what the finest grating does.
+"""Walk the ADC's sampling phase and score what it costs the picture.
 
     python3 adc_phase_sweep.py --host 192.168.88.108 --modeserv 192.168.88.10 \
         --mode "MODE X1280 Y720 C256 F60" --passes 3
@@ -13,6 +13,13 @@ else on the card is near enough the limit to show it.
 five-bit field, which is not a sampling instant, and only the sync processor's
 phase is walked. This is the bench instrument for asking what a search would
 be worth and where it should land.
+
+**THE WEDGE IS NOT THE VERDICT.** It is sustained periodic content at Nyquist
+and beats rather than softens, so a swing there is not a picture-quality
+claim. `sharpness.py` scores the rest of the lit picture off the SAME clips --
+grid lines, castellations, bar edges -- and the vertical gradient is the
+control, the phase being horizontal. A picture that moves like the control
+while the wedge moves 3x is a phase that costs nothing a viewer sees.
 
 **PASSES ARE INTERLEAVED, NOT REPEATED.** One reading per phase is noise: a
 phase-versus-origin probe once showed an optimum invert and it did not survive
@@ -37,6 +44,7 @@ import time
 
 import numpy as np
 
+import sharpness
 import wedge
 from gbs_unit import read_named
 from hdmi_capture import BLACK, device, frames, luma
@@ -95,7 +103,13 @@ def lit_box(grey):
 
 
 def reading(dev, box):
-    """(contrast, movement, lit left edge) for one clip, scored in `box`.
+    """One clip's readings: the wedge's, the picture's, and where it sits.
+
+    **THE WEDGE AND THE PICTURE ARE SCORED ON THE SAME FRAMES.** The wedge is
+    adversarial by construction and a swing there is not a picture-quality
+    claim, so the question is whether ordinary content moves with it -- and two
+    separate runs could not answer that, the optimum re-rolling per
+    acquisition. One clip, both measures, and the comparison holds.
 
     THE BOX IS HELD, NOT RE-FOUND PER PHASE. Locating it each time makes the
     instrument follow the thing it is measuring: a phase that aliases the
@@ -112,7 +126,9 @@ def reading(dev, box):
     """
     greys = luma(frames(CLIP, dev, WIDTH, HEIGHT, warmup=WARMUP))
     contrast, movement = wedge.score(greys, box)
-    return contrast, movement, lit_box(greys[0])[0]
+    lit = lit_box(greys[0])
+    global_ = sharpness.measure(greys, lit, exclude_rows=(box[2], box[3]))
+    return contrast, movement, lit[0], global_
 
 
 def main():
@@ -162,26 +178,53 @@ def main():
     finally:
         route(args.host, "/phase?clear")
 
-    print("\nphase  contrast (sd)   movement (sd)   ratio   lit left")
+    print("\nphase  contrast (sd)   ratio   mean|dx|  p99|dx|  mean|dy|   luma  lit left")
     rows = []
     for phase in phases:
         contrast = np.array([r[0] for r in taken[phase]])
         movement = np.array([r[1] for r in taken[phase]])
         edges = {r[2] for r in taken[phase]}
+        picture = {key: np.mean([r[3][key] for r in taken[phase]])
+                   for key in taken[phase][0][3]}
         ratio = movement.mean() / contrast.mean()
-        rows.append((phase, contrast.mean(), ratio))
+        rows.append((phase, contrast.mean(), ratio, picture))
         mark = "  <== engine" if phase == chosen else ""
-        print("  %3d  %6.1f (%4.1f)  %6.2f (%4.2f)   %5.3f   %s%s"
-              % (phase, contrast.mean(), contrast.std(),
-                 movement.mean(), movement.std(), ratio,
-                 ",".join(str(e) for e in sorted(edges)), mark))
+        print("  %3d  %6.1f (%4.1f)  %5.3f   %7.3f  %7.2f  %7.3f  %5.1f   %s%s"
+              % (phase, contrast.mean(), contrast.std(), ratio,
+                 picture["mean_dx"], picture["p99_dx"], picture["mean_dy"],
+                 picture["luma"], ",".join(str(e) for e in sorted(edges)), mark))
 
     best = max(rows, key=lambda r: r[1])
     worst = min(rows, key=lambda r: r[1])
     print(f"\nclearest phase {best[0]} at contrast {best[1]:.1f}, "
           f"murkiest {worst[0]} at {worst[1]:.1f} -- "
           f"{best[1] / max(worst[1], 0.01):.2f}x")
-    print(f"The box was held at x {box[0]}..{box[1]} throughout. A lit left "
+
+    # WHAT THE SWINGS ARE COMPARED WITH. The wedge is adversarial and the
+    # picture is not, so the question the sweep exists to answer is the RATIO
+    # of the two swings: a picture that barely moves while the wedge moves 3x
+    # says the phase is a test-card artefact. mean|dy| is the control -- the
+    # phase is horizontal and cannot move it.
+    print("\nswing across the field, peak over trough:")
+    for key, what in (("mean_dx", "mean |dx|, the whole picture"),
+                      ("p99_dx", "p99 |dx|, its sharpest edges"),
+                      ("mean_dy", "mean |dy|, THE CONTROL"),
+                      ("luma", "picture luma")):
+        values = np.array([r[3][key] for r in rows])
+        print("  %-30s %8.3f .. %8.3f   %5.3fx   at phases %d and %d"
+              % (what, values.min(), values.max(),
+                 values.max() / max(values.min(), 1e-9),
+                 rows[int(values.argmin())][0], rows[int(values.argmax())][0]))
+    wedge_swing = best[1] / max(worst[1], 0.01)
+    picture_swing = max(
+        np.array([r[3][key] for r in rows]).max()
+        / max(np.array([r[3][key] for r in rows]).min(), 1e-9)
+        for key in ("mean_dx", "p99_dx"))
+    print(f"\nthe wedge swings {wedge_swing:.2f}x and the picture "
+          f"{picture_swing:.3f}x. A picture swing near the control's is the "
+          f"phase costing nothing a viewer sees.")
+
+    print(f"\nThe box was held at x {box[0]}..{box[1]} throughout. A lit left "
           f"edge that is not one value means the picture moved under it, and "
           f"those phases are not comparable with the rest.")
 
