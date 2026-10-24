@@ -25,6 +25,46 @@ setup an unmeasured pulse and asserts the register did not silently keep its
 previous value is the cheapest form.
 `investigations/the-pass-through-shimmer-is-the-capture-origin.md`
 
+### The ADC sampling phase is never tuned, and the picture is a lottery because of it
+
+`PA_ADC_S` decides where in the ADC clock the converter samples, and nothing
+derives it -- `Adc::acquirePhase()` writes the middle of its five-bit field,
+which is not a sampling instant. Only the sync processor's phase is searched.
+
+Measured 2026-10-24 on `vga` at 1280x720@60 in pass-through, `PLLAD_MD` 2038,
+scored per pixel on PM5544's finest grating off the USB capture. Sweeping the
+field moves the surviving contrast **3.06x**, 17.4 at phase 11 to 53.2 at 30.
+Over eight re-acquisitions of that one unchanged mode:
+
+| | across acquisitions |
+|---|---|
+| achievable peak | **52.6, sd 0.42** |
+| at the engine's fixed 16 | **18.0 .. 51.6** |
+
+**The curve's shape is constant and its position re-rolls**, so the same source
+is sharp on one acquisition and soft on the next with every register the same.
+
+**WHAT IT COSTS ON ORDINARY CONTENT IS NOT ESTABLISHED, and the 3x figure must
+not be quoted as a picture-quality claim.** The wedge is sustained periodic
+content at Nyquist, which is what makes it beat rather than merely soften.
+
+**No derivation is available and no on-chip search can score it, so far.** The
+chosen `PA_SP_S` is a marker rather than a cause -- held across six values the
+optimum moves about one step per step, which cannot produce the sixteen-step
+swing seen across acquisitions. The scan's dither band is stable to one step
+while the optimum spans the field. 59 test-bus selectors move under 8% against
+a 3x contrast difference. A `PLLAD_VCORST` re-lock does not re-roll it.
+**A full 1536-register dump either side of a sixteen-step swing differs in one
+byte, `PA_SP_S`, whose slope is far too small to be it** -- a differing
+register is not a causing register, and the next one found this way wants its
+slope measured before it is believed.
+
+**What would settle it:** what in the acquisition sequence re-rolls the
+optimum, given it survives a VCO reset and is not in the register space; and
+whether the ten-bit level `AutoGain` already reads through
+`TestBus::selectLevel()` has the resolution to grade 32 phases.
+`investigations/the-adc-sampling-phase-is-a-lottery.md`
+
 ### Two pass-through modes still do not reach every edge
 
 `test_passthrough_acceptance.py` runs five modes in pass-through and asks
