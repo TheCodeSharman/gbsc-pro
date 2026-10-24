@@ -167,6 +167,23 @@ which cancels. A derivation resting on a residual there has none to rest on.
 
 ## What is open
 
+- **THE CEILING, WHICH IS A DIFFERENT QUANTITY FROM THE OPTIMUM AND IS WHY A
+  BYTE-IDENTICAL DIFF IS NOT THE REFUTATION IT READS AS.** The achievable peak
+  is recorded above as 52.6 with sd 0.42, and one acquisition reached **43.9**
+  on the same wedge box, mode and divider with the console certified quiet,
+  between two that reached 53.2. On such an acquisition no phase reaches what
+  its neighbours reach and the picture is worse everywhere rather than at the
+  engine's phase, which is what a viewer reports as the artefact being more
+  pronounced. **Every register hunt so far grouped its dumps by where the
+  OPTIMUM sat.** Grouping by the ceiling has never been done, and it is the
+  same six dumps' worth of work.
+
+  The 43.9 is a maximum over eight phases at step 4, so a peak narrower than
+  the measured 6-wide plateau could be missed, and the box was located with a
+  hand-set phase in force. A full step-1 sweep in a low-ceiling state is what
+  confirms the figure, and `snapdiff.py --save` at both ends is what the diff
+  needs -- a `dump_registers.py` dump leaves 928 addresses out, 114 of them
+  live on a settled unit.
 - **What in the acquisition sequence re-rolls it.** It survives a VCO reset and
   it is not in the register space, since the dumps are identical but for a
   register whose slope is too small. The remaining candidates are the divider
@@ -181,8 +198,15 @@ which cancels. A derivation resting on a residual there has none to rest on.
 - **Whether 14% on the sharpest edges is worth a search.** The measurement is
   taken; the judgement is not made.
 
-`/phase?adc=N` holds the phase against the engine, `/phase?clear` gives both
-phases back. `tools/gbsc-pro-hwtest/adc_phase_sweep.py` walks the field and
+`/phase?adc=N` holds the phase against the engine and `/phase?clear` gives both
+phases back. **Neither makes the engine re-choose**, and an override survives
+every re-acquisition because `choosePhaseAdc()` returns early while it is set
+-- so a register read after either names the last experiment rather than the
+firmware, and the order to reach the engine's own value is `clear` and THEN a
+re-acquisition. A restart clears every hold at once, the overrides being
+statics. `resolve_watch` certifies that no re-solve crossed a reading, which a
+hold does not: the arm takes the sync pad away and the re-install re-latches
+the ADC PLL whatever is held. `tools/gbsc-pro-hwtest/adc_phase_sweep.py` walks the field and
 reports the wedge and the picture off one clip, `sharpness.py` is the picture
 measure and `wedge_calibrate.py` reads every mode so a bar can be set,
 `phase_hunt.py` dumps every register per acquisition and diffs by optimum, and

@@ -61,14 +61,43 @@ the phase's own instability: two readings of one held `PA_SP_S` bracketing a
 six-minute run gave achievable peaks of 60.5 and 76.6 with their optima 24
 steps apart. **Check the console for the cadence before scoring any phase.**
 
-`rateIsPlausible()` is the guard a whole-multiple reading should not pass.
-Whether it is reached on this path is not established.
+**REJECTING A WHOLE MULTIPLE OF THE HELD RATE IS UNSOUND, AND IT MUST NOT BE
+THE FIX.** A missed edge on a one-pulse timing reads exactly half, so the
+reading looks classifiable -- but the same shape is what CORRECTS a boot that
+holds a spuriously doubled rate, where the source's true rate is exactly half
+of what is held and the recheck must arm on it. The two are identical in the
+rate pair, at every tolerance, and the discriminator cannot be the line period
+either: it holds in both. `test/test_video_source_acquisition.cpp`'s
+confirmation case is the one a sub-multiple veto would strand for the life of
+the boot. `investigations/the-first-solve-of-a-boot-cannot-be-corroborated.md`
+
+**AND THE INSTRUMENT IS CLEAN WHEN THE LOOP IS QUIET, so the two are one
+intermittency.** Measured on the same mode and divider with `/samplinglog
+rates=`, which times the field rate off `DEBUG_IN_PIN` exactly as
+`SourceMeasurement` does and runs from `loop()`:
+
+| instrument | readings | values |
+|---|---|---|
+| one-pulse timing | 293 | 60.018 / 60.019 Hz |
+| eight-pulse span | 165 | 60.018 Hz |
+| one-pulse under an HTTP flood | 285 | 60.018 / 60.019 Hz |
+
+`STATUS_SYNC_PROC_VTOTAL` 749 in every one, no re-solve in a 200 s console
+capture on that mode nor in 280 s on 320x256@50 after a 2.6 s mode change.
+**So the fault has to be LIVE to be measured**, and network load does not
+provoke it. What distinguishes the state it appears in is unmeasured.
 
 ### The ADC sampling phase is never tuned, and the picture is a lottery because of it
 
 `PA_ADC_S` decides where in the ADC clock the converter samples, and nothing
-derives it -- `Adc::acquirePhase()` writes the middle of its five-bit field,
-which is not a sampling instant. Only the sync processor's phase is searched.
+searches it -- `Adc::acquirePhase()` writes `oversample == 4 ?
+halfSampleOn(MidField) : MidField`, so 0 where the clock oversamples by four
+and 16 everywhere else, neither of which is a sampling instant. Only the sync
+processor's phase is searched. **The value read back is not evidence of that
+choice**: `/phase?clear` gives the phase back to the engine without making it
+re-choose, and an override survives every re-acquisition, `choosePhaseAdc()`
+returning early while it is set -- so a register read after either names the
+last experiment.
 
 **EVERY FIGURE BELOW WAS TAKEN BEFORE THE RE-SOLVE LOOP ABOVE WAS KNOWN, AND
 NONE OF THEM CONTROLLED FOR IT.** The loop re-runs the phase search on a 13 s
@@ -88,6 +117,27 @@ Over eight re-acquisitions of that one unchanged mode:
 
 **The curve's shape is constant and its position re-rolls**, so the same source
 is sharp on one acquisition and soft on the next with every register the same.
+Re-measured on a certified-quiet run, the position re-rolls across
+acquisitions and holds within one: three interleaved passes agreed to an sd of
+at most 0.6 while the peak moved from phase 30 to 9 and the trough from 11 to
+28 across a reflash, with the amplitude unchanged at 53.2 and 18.0.
+
+**AND THE ACHIEVABLE PEAK IS NOT CONSTANT EITHER, WHICH IS A SECOND QUANTITY
+AND THE ONE NO DIFF HAS BEEN KEYED ON.** One acquisition reached **43.9**
+where the two either side of it reached 53.2, on the same wedge box, mode and
+divider with the console quiet -- 20 sd below the 52.6 above, so no phase on
+it reaches what its neighbours reach, and the picture is worse at every phase
+rather than at the engine's. The register hunt has only ever grouped its dumps
+by WHERE THE OPTIMUM SAT, which is why a byte-identical result is not the
+refutation it reads as.
+
+**The 43.9 is a maximum over eight phases at step 4**, so a peak narrower than
+the measured 6-wide plateau could be missed, and it was taken with a hand-set
+phase in force at the moment the box was located. What would settle it: a full
+step-1 certified sweep in a low-ceiling state, and `snapdiff.py --save` at
+both ends of a high-ceiling and a low-ceiling acquisition, grouped by the
+CEILING. A `dump_registers.py` dump cannot answer it -- 928 addresses sit
+outside that range, 114 of them live.
 
 **WHAT IT COSTS ON ORDINARY CONTENT IS 14% OF THE SHARPEST EDGES, NOT 3x, AND
 THE 3x FIGURE MUST NOT BE QUOTED AS A PICTURE-QUALITY CLAIM.** The wedge is
