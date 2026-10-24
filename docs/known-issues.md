@@ -87,6 +87,35 @@ capture on that mode nor in 280 s on 320x256@50 after a 2.6 s mode change.
 **So the fault has to be LIVE to be measured**, and network load does not
 provoke it. What distinguishes the state it appears in is unmeasured.
 
+### Rounding stacks on the way to a register, and three sites still do it
+
+A sub-sample correction rounded to a whole sample, then a second term rounded
+to another, then the two subtracted: two errors of under half a unit each add
+to a whole one, and no register can show it -- every one of them reads
+self-consistent around a value that is a unit off.
+
+`SyncProcessor::retimeStopFor()` did exactly that and no longer does: the lag
+is carried whole and the one `lrintf` is on the finished expression. What makes
+it matter rather than tidy is the measured cost of one unit there -- 10 to 20
+per cent of the surviving contrast at a fixed `PA_ADC_S`, measured on
+1280x720@60 in pass-through at `PLLAD_MD` 2038 with the console certified
+quiet and the wedge band slid by the measured pan: origin 33 reads 47.0, 34
+reads 52.3, 35 reads 42.0.
+
+**Three sites remain, and each changes a behaviour, so each wants its own
+evidence rather than a sweep through all of them:**
+
+| site | the stack |
+|---|---|
+| `SyncProcessor::clampOffsetForPulse` | `coastLineFor()` rounds `27e6 / lineRate` to an integer, that integer is multiplied by a measured ratio, and the product is rounded again |
+| `OutputWindow::placePicture` | `corner` is rounded, `windowStop` is rounded from it, and on a clamp `corner` is rounded back from `windowStop` and `windowStop` again from that -- three deep, and the round trip is not an identity |
+| `SyncProcessor::clampStartFor` | `(uint16_t)(1 + lineLength * fraction)` TRUNCATES, so it carries a half-unit bias on every call rather than a rounding error |
+
+**The rule the fix expresses: carry every term at full precision and round
+ONCE, where the value meets the register.** An intermediate rounded to an
+integer that something else then multiplies or subtracts is the defect,
+whatever the units.
+
 ### The ADC sampling phase is never tuned, and the picture is a lottery because of it
 
 `PA_ADC_S` decides where in the ADC clock the converter samples, and nothing
