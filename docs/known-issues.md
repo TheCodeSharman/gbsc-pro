@@ -10,6 +10,52 @@ regardless of which step is in flight.
 
 ## Reaches the picture
 
+### 800x600@60 on composite sync rolls in 95% of frames, and the probe that takes its coast away cannot see it
+
+`vga`, `MODE X800 Y600 C256 F60` with `SYNC 1`, scaling into 1080p, `PLLAD_MD`
+1436 against `STATUS_SYNC_PROC_HTOTAL` 1437, count 623, acquired and holding.
+`picture_stability.judge` over 60 s legs, unfrozen, alternating with controls:
+
+| coast | displaced | jumps/s | worst offset |
+|---|---|---|---|
+| **the engine's own, 0/0** | **3426 and 3397 of 3602, 95%** | 12.3, 12.4 | -260 rows |
+| 7/4 | 12 of 3602 and 0 of 3602 | 0.15, 0.00 | 4 rows |
+| **7/0** | **0 of 3602** | 0.00 | 0 |
+| 0/4 | 3379 of 3602, 94% | 12.5 | -260 rows |
+
+**THE PRE LINES CARRY ALL OF IT.** 7/0 is a still picture and 0/4 is the fault
+at full size, so the post length decides nothing here and the two must not be
+walked together. The rolling legs also read luma 141.9..149.9 against 156.8 and
+157.0 still, and lose the far vertical margin, so the share is not an artefact
+of the correlator.
+
+**The engine arrives at 0/0 through `SyncProcessor::restsUncoasted()`, and
+both of its probes answer a different question from the one the roll asks.**
+`EqualisationMeasurement` sees half-line pulses, of which this source has none,
+and `VideoPath::measureVerticalInterval()` asks whether the INPUT FORMATTER can
+measure the vertical period uncoasted -- which it can, in every sample. The
+pre coast holds the ADC PLL's horizontal count through the vertical interval,
+and a formatter that reads the field correctly says nothing about pulses the
+PLL lost while it did.
+`investigations/the-composite-roll-is-lost-horizontal-pulses-in-the-doubled-scan.md`
+establishes the same loss on the line-doubled scan; this is it on an undoubled
+one, where the gate lets the source through.
+
+**ALWAYS COASTING IS NOT THE FIX, AND THAT IS WHY THIS IS OPEN.**
+`investigations/the-composite-shear-is-the-coast.md` measured 11.49 scored
+hours at 320x256@50 on composite, where 0/0 abolished the pulse burst -- none
+in 229 minutes against 83 at the engine's pair -- and cut the sheared frame
+sixtyfold. One input, one cable, one machine: one mode needs the hold and the
+other is measured better without it. The roll instrument cannot separate the
+two pairs at 320x256@50, both reading 0 of 3602 over 60 s, so the modes have to
+be scored on their own faults.
+
+**What would settle it:** a probe that asks what the pre coast is for -- whether
+the horizontal count survives the vertical interval -- rather than whether the
+field can be measured. The count is already read per pass, and the two modes
+differ in scan rather than in sync arrangement, so `lineDoublingFor()`'s answer
+beside the count through the interval is the cheapest candidate.
+
 ### `writeRetimeStop()` declines a zero silently, and zero is its "unmeasured" answer
 
 `retimeStopFor()` returns 0 for `!pulse.isPulse() || divider == 0`, and
@@ -239,6 +285,16 @@ a 3x contrast difference. A `PLLAD_VCORST` re-lock does not re-roll it.
 byte, `PA_SP_S`, whose slope is far too small to be it** -- a differing
 register is not a causing register, and the next one found this way wants its
 slope measured before it is believed.
+
+**WHETHER A SYNC PHASE IS WORTH CHOOSING IS THE SYNC TYPE'S ANSWER, NOT THE
+MODE'S.** Measured at `MODE X800 Y600 C256 F60` with the arrangement set by
+`SYNC` and everything else held -- one cable, `PLLAD_MD` 1436, one frozen
+acquisition a leg, console certified quiet -- `PA_SP_S` moves fixed output
+columns of the card's wedge by 4.0..15.3 grey levels on separate sync and
+0.6..5.7 on composite, and the reachable ceiling spans 1.27x against 1.04x.
+The earlier pairing that left this open compared 720p separate against
+320x256@50 composite, which differ in both.
+`investigations/the-phase-scan-measures-one-band-and-infers-the-rest.md`
 
 **What would settle it:** what in the acquisition sequence re-rolls the
 optimum, given it survives a VCO reset and is not in the register space; and

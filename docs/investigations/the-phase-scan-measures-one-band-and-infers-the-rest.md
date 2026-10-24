@@ -50,6 +50,55 @@ scan's own metric:
 So on composite the rule walks into a region measured bad by the picture, by
 inference from the only region its own metric can measure.
 
+## Whether the phase reaches the picture at all is the sync type's, not the mode's
+
+The sections above compare the two arrangements at one mode on the scan's own
+metric. **The picture answers the same way, and more strongly: on separate sync
+the sync phase moves the emitted frame and on composite it barely moves it.**
+
+`vga` at `MODE X800 Y600 C256 F60`, scaling into 1080p, `PLLAD_MD` 1436 against
+`STATUS_SYNC_PROC_HTOTAL` 1437 on both legs, one cable, the arrangement set by
+`SYNC`. Each leg is one frozen acquisition with the console certified quiet,
+`PA_ADC_S` held at the engine's own value, `PA_SP_S` walked over its whole field
+at step 4. The band scored is fixed in OUTPUT columns rather than located per
+frame, because the located wedge box differs between the arrangements and a box
+that moves with the thing it measures would read flat for that reason alone.
+Each cell is the spatial spread of a 36-column slice of the card's frequency
+wedge, over rows 582..689, and the row is how far that slice moved across the
+whole field:
+
+| slice, output column | 350 | 390 | 430 | 470 | 510 | 550 | 590 | 630 | 670 |
+|---|---|---|---|---|---|---|---|---|---|
+| **separate** | 4.0 | **12.3** | **12.3** | **13.3** | **15.3** | **11.7** | 9.3 | 10.3 | 9.8 |
+| **composite** | 2.2 | 4.1 | 4.0 | 2.9 | 5.7 | 3.5 | **0.6** | 1.7 | 3.3 |
+
+Three to six times more at every slice but the leftmost, on bases of 20 to 82
+grey levels. On separate the loss is a BAND rather than a slope -- every slice
+collapses together at `PA_SP_S` 8..12, worst at 12, and the coarse slices at
+630 and 670 fall from 81 to 71 with the fine ones, so it is not confined to
+content near Nyquist. That band sits where the scan's separate-sync band sits
+at the other mode, 11..19.
+
+The same pair gridded against `PA_ADC_S` says it again as a ceiling: the
+reachable peak spans **1.27x** over `PA_SP_S` on separate, 31.2 to 39.7, and
+**1.04x** on composite, 30.6 to 31.7, which is the instrument's own floor.
+
+**So the question the two arrangements separate is not which band is bad but
+whether any phase is better than another**, and the mode is held across it.
+
+**THE COMPOSITE LEG IS NOT THE STATE THE FIRMWARE SHIPS FOR THAT SOURCE.** At
+its own coast of 0/0 the picture rolls in 95% of frames and no reading of it
+repeats -- one phase pair read 13.2, 33.6, 23.3 and 42.7 inside one frozen
+acquisition. The leg above was taken with `SP_PRE_COAST` 7 held, where the roll
+is 0 of 3602 frames. `docs/known-issues.md`.
+
+**And the temporal measure does not support the obvious mechanism.** Sampling
+jitter smearing the phase would make composite the noisier leg, and it is the
+quieter one: per-pixel temporal sd over a flat patch of card reads 2.07 on
+composite against 3.62 on separate, with the whole frame 2.14 against 2.78.
+Why the phase stops reaching the picture when the separator is in circuit
+remains open.
+
 ## The phase does move the pulse measurement, and it moves it the wrong way
 
 `STATUS_SYNC_PROC_HLOW_LEN` read at about 2300 readings a second, A-B-A-B over
@@ -114,8 +163,10 @@ controls a monotonic trend and does not rescue counts this small.
 
 ## Open
 
-- **Why the band moves with the sync type.** The separator is in circuit on one
-  and not the other, and nothing measured says more than that.
+- **Why the sync type decides whether the phase reaches the picture.** The
+  separator is in circuit on one and not the other, and nothing measured says
+  more than that: the jitter reading goes the wrong way for the obvious
+  mechanism.
 - **What the uptime gradient is.** Thermal and post-boot settling are both
   unexcluded, and nothing has been measured from a cold boot at fixed
   intervals.
