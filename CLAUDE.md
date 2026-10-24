@@ -251,9 +251,13 @@ the type read back and the mode it landed in. **This is what makes the RISC PC a
 composite-sync source as well as a separate-sync one**, so the two sync types can
 be judged against one input, one cable and one raster, with nothing else moving.
 
-`--source` opts into tests needing a locked signal; `--preset-save` opts into
-tests that write flash. Without `--host` everything hardware skips, so a bare
-`pytest` stays useful.
+**EVERY HARDWARE FLAG DEFAULTS ON, SO `pytest --host=…` IS THE WHOLE SUITE.**
+`--source`, `--preset-load`, `--preset-save`, `--reboot`, `--freeze` and
+`--pllad-hostile` are opt-OUT, and `--modeserv` defaults to the bench source --
+a run that skips a leg says so rather than a flag nobody passed deciding it.
+`--all-modes` is the one addition, judging framing on every mode the monitor
+definition offers rather than one per solve behaviour, and costs minutes.
+Without `--host` everything hardware skips, so a bare `pytest` stays useful.
 
 ### Flashing
 
@@ -2560,11 +2564,14 @@ firmware C++.
   because a press into an unmeasured source is accepted, logged and moves
   nothing, and a poison written mid-detection is overwritten before the
   read-back -- so the failure lands on the next test, or nowhere at all.
-- Tests that disturb the picture or write flash are opt-in flags in
-  `conftest.py` (`--source`, `--preset-save`, `--no-sync`, `--pllad-hostile`),
-  so a bare `pytest --host=…` stays safe to run on a working unit.
-  **`--source` leaves the picture wrong, and a cold boot is the fix** — say so
-  before running it if someone is watching the screen. Measured 2026-08-15: the
+- **THE PICTURE IS NOT PRECIOUS AND THE DEFAULT RUNS EVERYTHING.** The flags in
+  `conftest.py` that disturb the picture or write flash -- `--source`,
+  `--preset-load`, `--preset-save`, `--reboot`, `--pllad-hostile` -- are
+  opt-OUT, so `pytest --host=…` is the full suite and a leg is skipped only
+  when someone says so. A suite that quietly ran less than it appeared to is
+  the failure this shape exists to avoid.
+  **`--source` leaves the picture wrong, and a cold boot is the fix** — mention
+  it if someone is watching the screen, but do not withhold the run for it. Measured 2026-08-15: the
   pad tests left the framing cropped and panned well off the default, and an
   oversampling test left `PLLAD_MD` 4012 against the 2548 the source wants, so
   the picture is zoomed and softer. Neither is persisted, so an ESP reset
