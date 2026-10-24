@@ -10,6 +10,77 @@ regardless of which step is in flight.
 
 ## Reaches the picture
 
+### `writeRetimeStop()` declines a zero silently, and zero is its "unmeasured" answer
+
+`retimeStopFor()` returns 0 for `!pulse.isPulse() || divider == 0`, and
+`writeRetimeStop()` returns without writing on 0. `SP_RT_HS_SP` places the
+capture counter's origin and every window the engine counts from it, so a
+source whose sync pulse is not measured is framed from whatever the previous
+source left, and no reading tells the two apart.
+
+**What would settle it:** the write cannot be the place the decision is
+expressed. Either the caller declines to apply a sampling setup it has no pulse
+for, or the absent case carries a value chosen for it. A test that hands the
+setup an unmeasured pulse and asserts the register did not silently keep its
+previous value is the cheapest form.
+`investigations/the-pass-through-shimmer-is-the-capture-origin.md`
+
+### The retime origin is calibrated for one sampling density and is wrong off it
+
+`RetimeOriginSamples` 63 was measured at about 1.12 ADC samples per source
+pixel. `vga` at 1280x720@60 in pass-through samples 1.235, where the computed
+origin of 34 reads 0.069..0.137 contrast modulation at the test card's finest
+grating against 0.0075..0.0109 at 68 -- nine to thirteen times, on that register
+alone, with the divider, ratio, VCO, charge pump and `PA_SP_S` all held.
+
+**Nothing derives the 68.** The lag term that exists to adapt the origin is
+passed `0.0f` by `HdBypass::applyPassThroughSampling()`, and the real figure
+moves it by one sample against the thirty-four wanted.
+
+**What would settle it:** a creep of `SP_RT_HS_SP` scored with
+`frame_cells.py`, on more than one mode and more than one sampling density, to
+find whether the optimum tracks a quantity the engine already holds.
+`investigations/the-pass-through-shimmer-is-the-capture-origin.md`
+
+### The preferences file does not survive a cold boot, and the whole filesystem goes with it
+
+Measured 2026-10-24 after a mains power cycle: `/fs/dir` and
+`/preferences.txt` both return nothing, not merely a short read, and they stay
+that way across a `/restart`. The ESP then comes up with `SeleInputSource == 0`,
+takes the `default:` case and **transmits no input frame to the HC32 at all**,
+so the two come up disagreeing and the picture is black until an input is
+picked by hand.
+
+This is the documented power-up race on the SPI flash -- `LittleFS.begin()`
+returning true does not mean reads work yet -- but the persistence is new: it
+did not clear on its own, which a race alone should.
+
+**What would settle it:** retry the mount and the read rather than accepting
+the first answer, and carry a checksum so a complete-but-corrupt file is
+refused rather than acted on. Note that a refused read currently poisons every
+later save, "restore defaults" included, so one bad boot is sticky.
+
+### The HC32 stops following input selections after about 865 transitions
+
+Known already; what is new is a count. An overnight `transition_soak.py` run
+of 891 legs was healthy for 800 -- 6 bad -- and then failed 22 of the last 92,
+starting about five hours in, ending wedged with `asw_01` low on VGA:
+vertical sync present, no horizontal, `STATUS_SYNC_PROC_VTOTAL` pinned at
+1526 against a 750-line source. `/sc?~`, `/input`, a pad toggle and `/restart`
+all failed to reach it; a mains power cycle did.
+
+So it is a discrete event under repeated input switching rather than wear, and
+it is reproducible in about five hours. **`mem_settings()` erases an HC32 flash
+sector and rewrites 64 bytes on every input selection**, from about eighteen
+call sites, at one fixed address with no wear levelling -- so that run cost the
+part roughly 900 erase cycles, and each one stalls the main loop while
+`signal_turn()` cannot drain the UART DMA buffer.
+
+**What would settle it:** the HC32 is reflashable over USB-C with
+`tools/gbsc-pro-flasher/`, so a build that does not persist what the ESP
+already holds is reachable.
+
+
 ### FIXED: the ADC PLL sat unlocked after a pass-through round trip, and one bit held it
 
 Measured 2026-10-23 on `ypbpr`, the Wii at 480p into 1920x1080. A source handed
