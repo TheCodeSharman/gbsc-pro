@@ -131,3 +131,37 @@ def score(greys, wedge_box):
     left, right, top, bottom = wedge_box
     block = greys[:, top:bottom, left:right].astype(float)
     return float(block.mean(axis=0).std()), float(block.std(axis=0).mean())
+
+
+def flattest(grey, box, grating):
+    """A patch of the grating's own shape, in the flattest card clear of it.
+
+    **THE MOVEMENT READING NEEDS A SCALE AND A CONSTANT CANNOT CARRY IT.** How
+    far a pixel travels between frames is partly the capture's own noise, which
+    belongs to the dongle rather than to the board -- measured at 1.05 grey
+    levels against the grating's 7.60 on one clip. A reference taken from the
+    same frames turns the grating's movement into a multiple of that noise,
+    which has a right answer and survives a change of dongle.
+
+    Same width and same rows as the grating, so the two readings are of equal
+    populations, and never overlapping it.
+    """
+    left, right, top, bottom = box
+    width = right - left + 1
+    span = grating[1] - grating[0]
+    step = max(8, int(SLICE * width))
+    band = grey[grating[2]:grating[3], :]
+
+    best, found = None, None
+    start = left + int(SEARCH_LEFT * width)
+    while start + span <= left + int(SEARCH_RIGHT * width):
+        if start + span <= grating[0] or start >= grating[1]:
+            crossings = _crossings(band[:, start:start + span].astype(float))
+            if best is None or crossings < best:
+                best, found = crossings, start
+        start += step
+
+    assert found is not None, (
+        f"no patch of {span} px clear of the grating at {grating[0]}..{grating[1]} "
+        f"fits inside the search span of a {width} px picture")
+    return (found, found + span, grating[2], grating[3])

@@ -15,11 +15,14 @@ Three questions, three instruments, because no one of them can see the others:
   measurement against one of those cannot tell a correct edge from a cropped
   one.
 - **clarity**, on `PM5544`'s frequency wedge. Below two samples per source
-  pixel the finest block sits above the sampler's Nyquist, and a sampling
-  phase that lands badly collapses its contrast. A frame that is steady and
-  correctly framed can still be mush here.
-- **stability**, how far each pixel of that block moves across a clip. The
-  card's animation is off, so a static source makes all of it the system's.
+  pixel the finest block sits above the sampler's Nyquist, so what survives is
+  decided by the sampling density and by a phase nothing derives. **The bar
+  here catches a collapsed divider, not a soft picture** -- see
+  `WEDGE_CONTRAST_FLOOR`, which carries what every mode measures.
+- **stability**, how far each pixel of that block moves across a clip, with
+  the flattest card clear of it scored off the same frames. The card's
+  animation is off, so the difference between the two is the system's -- the
+  flat reading is the capture's own noise and is 0.82..2.61 grey levels.
 
 Captured at the dongle's native 1920x1080 whatever the source is emitting.
 Asking for the source's own size gets a resampled frame, and the resampler's
@@ -56,21 +59,43 @@ BLACK = 24
 # margin is wide; it exists to reject the grey border checks, not to be tight.
 GREEN_LEAD = 40
 
-# Grey levels of spatial spread the fine wedge must still carry. Measured at
-# 1280x720@60, where the sampling phase moves it between 45.4 and 56.4 on one
-# acquisition -- repeatable to 0.06 across repeats. A grating the sampler has
-# aliased into flat grey collapses toward the capture's own noise, under 2.
-WEDGE_CONTRAST_FLOOR = 25.0
-
-# How far a pixel of the wedge may move across the clip, in grey levels,
-# against the contrast it carries. The card's animation is off, so a static
-# source makes every bit of this the system's.
+# Grey levels of spatial spread the fine wedge must still carry.
 #
-# PROVISIONAL. Measured 0.084..0.115 across four sampling phases at
-# 1280x720@60, and no state is yet measured that a reader would call unstable,
-# so this bar is set to catch gross movement rather than at a boundary anyone
-# has seen. Tighten it when a bad state has been measured.
-WEDGE_MOVEMENT_CEILING = 0.20
+# **THIS CATCHES A COLLAPSED DIVIDER AND NOTHING FINER.** What the wedge
+# carries is decided by sampling density and by the ADC's sampling phase, and
+# both span this bar on modes that are working. Measured across the whole
+# phase field at divider 2038:
+#
+#   640x480@60    77.6 .. 81.6
+#   800x600@60    73.3
+#   1024x768@60   56.7
+#   1280x720@60   17.6 .. 52.8     <- the phase lottery, 3.01x
+#   1280x1024@60   6.4 .. 10.5
+#
+# The spread between modes is DENSITY: at 2038 samples a line the two
+# 1280-wide modes genuinely cannot resolve the grating, which is physics and
+# not a defect. The spread within 1280x720 is the phase, which nothing
+# derives -- docs/investigations/the-adc-sampling-phase-is-a-lottery.md. So a
+# floor that meant "the grating resolves" would fail three working modes, and
+# this one is placed under the worst working reading instead: a divider that
+# collapsed takes the grating to the capture's own noise, around 2.
+WEDGE_CONTRAST_FLOOR = 4.0
+
+# How far a pixel of the wedge may move across the clip, in grey levels.
+#
+# ABSOLUTE, NOT AGAINST THE CONTRAST. Movement scored as a fraction of
+# contrast is 1/contrast and nothing else: across the whole phase field at
+# 1280x720@60 the absolute figure held 7.5..10.4 while the ratio swung
+# 0.164..0.566, and the ratio correlated with contrast at r = -0.107. So the
+# ratio moved with the lottery in the denominator and carried nothing of its
+# own.
+#
+# A GROSS CATCH. Measured 2.93..8.60 across the five modes against the
+# flattest card clear of the grating at 0.82..2.61, and no state anyone would
+# call unstable has been measured -- so this is sized off the worst working
+# reading rather than at a boundary. Tighten it when a bad state has been
+# measured.
+WEDGE_MOVEMENT_CEILING = 20.0
 
 # name, ModeServ request, the picture's own line count.
 #
@@ -190,7 +215,7 @@ def _assert_framed(name, grey):
 
 
 def _wedge(grey):
-    """The finest grating, as (contrast, movement).
+    """The finest grating, as (contrast, movement, the flattest card's movement).
 
     FOUND RATHER THAN STATED. The card's layout does not scale with the
     emitted raster: measured over three pass-through modes at 1920x1080, the
@@ -200,8 +225,11 @@ def _wedge(grey):
     movement in it -- so the reading came back steadier than the grating was,
     by 4x on 1280x720@60.
     """
-    box = wedge.locate(grey[0], _lit_box(grey[0]))
-    return wedge.score(grey, box)
+    lit = _lit_box(grey[0])
+    box = wedge.locate(grey[0], lit)
+    contrast, movement = wedge.score(grey, box)
+    _, flat = wedge.score(grey, wedge.flattest(grey[0], lit, box))
+    return contrast, movement, flat
 
 
 def _green_frame_at_edges(rgb):
@@ -275,12 +303,15 @@ def test_passthrough_resolves_the_finest_grating(host, source, modeserv,
 
     grey = _capture()
     _assert_framed(name, grey[0])
-    contrast, _ = _wedge(grey)
+    contrast, _, _ = _wedge(grey)
+    divider = read_fields(host, ["PLLAD_MD"])["PLLAD_MD"]
     assert contrast >= WEDGE_CONTRAST_FLOOR, (
         f"{name}: the fine wedge carries {contrast:.2f} grey levels of "
-        f"contrast, under {WEDGE_CONTRAST_FLOOR}. The grating has been aliased "
-        f"into flat grey -- below two samples per source pixel it sits above "
-        f"the sampler's Nyquist, and the sampling phase decides what survives.")
+        f"contrast, under {WEDGE_CONTRAST_FLOOR}, at PLLAD_MD {divider}. Every "
+        f"working mode measures 6.4 or better, so this is the divider rather "
+        f"than the sampling phase -- the phase can only take a working mode to "
+        f"a third of its peak, and a collapsed divider takes it to the "
+        f"capture's own noise.")
 
 
 @pytest.mark.parametrize("name,request_,picture_lines", MODES, ids=[m[0] for m in MODES])
@@ -295,12 +326,11 @@ def test_passthrough_holds_the_grating_still(host, source, modeserv,
 
     grey = _capture()
     _assert_framed(name, grey[0])
-    contrast, movement = _wedge(grey)
+    contrast, movement, flat = _wedge(grey)
     assert contrast > 0, f"{name}: the fine wedge is flat, so nothing can be judged"
-    ratio = movement / contrast
 
-    assert ratio <= WEDGE_MOVEMENT_CEILING, (
-        f"{name}: the fine wedge moves {movement:.2f} grey levels against "
-        f"{contrast:.2f} of contrast ({ratio:.4f}), over "
-        f"{WEDGE_MOVEMENT_CEILING}. The card's animation is off, so none of "
-        f"that is the source's.")
+    assert movement <= WEDGE_MOVEMENT_CEILING, (
+        f"{name}: the fine wedge moves {movement:.2f} grey levels, over "
+        f"{WEDGE_MOVEMENT_CEILING}, where the flattest card clear of it in the "
+        f"same frames moves {flat:.2f}. The card's animation is off, so none "
+        f"of that is the source's.")
