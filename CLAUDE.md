@@ -488,10 +488,14 @@ diagnosing "the unit" while able to observe roughly a third of it.
   the HC32's `USART4` TX (PB6, pin 42) goes to J18 pin 2 and to SW2, never to
   the ESP — so no firmware change creates that path, and the commented-out
   `'I'` INFO handler follows from the missing conductor. Schematic sheet 12.
-- **SW2 IS NOT A BOOTLOADER BUTTON.** `Key_Init()` configures PB6 as a
-  pulled-up input and `Key_Read()` polls it, so SW2 is an application key
-  grounding PB6 through R106 — which also means the application claims the pin
-  `USART4` TX would otherwise drive.
+- **SW2 IS THE UPDATE BUTTON, AND THE APPLICATION ALSO READS IT.**
+  `Key_Init()` configures PB6 as a pulled-up input and `Key_Read()` polls it,
+  so to the running application it is a key grounding PB6 through R106 — which
+  also means the application claims the pin `USART4` TX would otherwise drive.
+  **That says nothing about the bootloader, which runs first and reads the same
+  button**: hold it, apply power, keep holding ~3 s, and the part enumerates as
+  `2e88:4603` on the USB-C socket. `tools/gbsc-pro-flasher/` is the route and
+  it is verified on this hardware — **no SWD probe and no board modification**.
 - **THE HC32 IS REACHABLE AND ITS FIRMWARE IS UPDATABLE, AND NO ROUTE NEEDS A
   BOARD MODIFICATION.** All three reach a HOST rather than the ESP, so they buy
   visibility and a way to flash the part — never a readback the ESP can act on.
@@ -501,7 +505,7 @@ diagnosing "the unit" while able to observe roughly a third of it.
   |---|---|---|
   | SWD | J19: 1 `DVDDIO_3.3V`, 2 `SWDIO` (PA13, pin 34), 3 `SWDCLK` (PA14, pin 37), 4 GND | the vendor's own MDK project ships `JLinkSettings.ini` and a `debug_init.ini` that loads the hex, so this is the route the board author used |
   | `USART4` | J18, a 6-pin header carrying PB7, PB6, PB5, PB4, PB3, GND | TX is already on pin 2, so a USB-serial adapter is a read channel. `BSP_PRINTF_DEVICE` points at USART3, so `printf` needs re-pointing to come out of it |
-  | USB device | USB1, a USB-C receptacle, straight to PA12/`USBFS_DP` and PA11/`USBFS_DM` with CC1/CC2 pulled down 5.1K | wired and UNUSED — `LL_USB_ENABLE` is `DDL_OFF`, no USB source file is in the MDK project, and `main()` never touches it |
+  | USB device | USB1, a USB-C receptacle, straight to PA12/`USBFS_DP` and PA11/`USBFS_DM` with CC1/CC2 pulled down 5.1K | **the flashing route, and it works** — `tools/gbsc-pro-flasher/`. The APPLICATION never enumerates (`LL_USB_ENABLE` is `DDL_OFF`, no USB source file in the MDK project, `main()` never touches it), which says nothing about the bootloader that runs before it |
 
   **The USB-C port is the HC32's, not the ESP's.** The ESP's serial is a
   separate micro-USB, J5 → CH340T, on sheet 1, so the two enumerate
@@ -1124,10 +1128,17 @@ twelve tables while they existed, which is what `BringUp` was built from.
   `PLLAD_MD - STATUS_SYNC_PROC_HLOW_LEN + 63` -- so it follows the source's own
   sync width. `0.93 x MD` is `1 - duty` for a source whose sync takes 7% of the
   line and is wrong for every other duty, placing the whole capture window with
-  nothing in a register dump to show it. **A narrow pulse is where this bites**:
-  `retimeStopFor()` returns 0 when the measured sync is under the 63-sample
-  origin, and `writeRetimeStop()` then writes nothing at all, so the counter
-  keeps the origin it had.
+  nothing in a register dump to show it. **THE ORIGIN IS CALIBRATED FOR A SAMPLING
+  DENSITY, AND IT IS WRONG OFF IT.** `RetimeOriginSamples` 63 was measured at
+  about 1.12 ADC samples per source pixel; 1280x720@60 in pass-through samples
+  1.235 and the computed 34 reads 0.069..0.137 at the test card's finest
+  grating where 68 reads 0.0075..0.0109 -- nine to thirteen times, on that
+  register alone. **Nothing derives the 68.** A narrow pulse no longer returns
+  0: the stop is a phase and `retimeStopFor()` wraps it modulo the line. But
+  `writeRetimeStop()` still returns silently on 0, which `retimeStopFor()`
+  answers for an unmeasured pulse, so the whole capture window is then placed
+  from the previous source's origin with nothing said.
+  `docs/investigations/the-pass-through-shimmer-is-the-capture-origin.md`,
   `docs/investigations/the-retime-stop-is-the-counters-origin.md`.
 
   **AND THE ORIGIN CARRIES THE SOURCE'S VIDEO LAG IN THE SOURCE'S OWN PIXELS**,
