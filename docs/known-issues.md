@@ -25,22 +25,57 @@ setup an unmeasured pulse and asserts the register did not silently keep its
 previous value is the cheapest form.
 `investigations/the-pass-through-shimmer-is-the-capture-origin.md`
 
-### The retime origin is calibrated for one sampling density and is wrong off it
+### The capture origin mis-frames four of five pass-through modes, and moves between acquisitions
+
+`SP_RT_HS_SP` pans the capture: one unit is one ADC sample, which is
+`1 / samplesPerPixel` source pixels. Only a narrow window of values frames a
+mode with nothing lost at either end, and the engine lands outside it on most
+modes. Measured 2026-10-24 at 1920x1080 off the USB capture, columns of black
+at the emitted frame's edges:
+
+| mode | engine's origin | correct | black at the edges |
+|---|---|---|---|
+| 800x600@60 | 1858 | 1858 | none |
+| 1280x720@60 | 79 | 64 | 16 right |
+| 1024x768@60 | 63 | ~205 | 139 left, 36 right |
+| 640x480@60 | 79 | not found | 214 right |
+| 1280x1024@60 | -- | not found | 23 left, 110 right |
+
+**It also varies between acquisitions of the SAME mode.** 800x600 passed the
+acceptance suite on one run and read 411 columns out on the next, and
+1024x768 read 176 columns at the left on one run and at the right on another.
+`SP_RT_HS_SP` was also seen to change from 63 to 230 **with automation
+frozen** and nothing writing it from the bench, which no reading explains --
+`VideoPath::writeRetimeOrigin()` has three call sites and which of them runs
+under the freeze is not established.
+
+**What the mis-framing looks like is not a black margin.** The picture pans
+into the region before active video, where the playout has no data: most lines
+lose their head and show black, a few carry the correct content, and which
+ones changes every frame. It reads as tearing over a correct picture. The band
+is fixed in the frame at ~180 columns and the picture moves underneath it, so
+its width says nothing about the error -- the pan does.
+
+**What would settle it:** `test_passthrough_acceptance.py` states the bar and
+is red on four of five modes. The origin is derived from the measured sync
+duty, and a reading taken before the sync processor has settled is the
+candidate -- `STATUS_SYNC_PROC_HLOW_LEN` is only valid once locked and tears
+across its two bytes.
+
+### The retime origin is calibrated for one sampling density, and no derivation is established
 
 `RetimeOriginSamples` 63 was measured at about 1.12 ADC samples per source
-pixel. `vga` at 1280x720@60 in pass-through samples 1.235, where the computed
-origin of 34 reads 0.069..0.137 contrast modulation at the test card's finest
-grating against 0.0075..0.0109 at 68 -- nine to thirteen times, on that register
-alone, with the divider, ratio, VCO, charge pump and `PA_SP_S` all held.
+pixel, and `HdBypass::applyPassThroughSampling()` passes `0.0f` for
+`pixelSamples`, so the lag term that exists to adapt it never runs.
 
-**Nothing derives the 68.** The lag term that exists to adapt the origin is
-passed `0.0f` by `HdBypass::applyPassThroughSampling()`, and the real figure
-moves it by one sample against the thirty-four wanted.
-
-**What would settle it:** a creep of `SP_RT_HS_SP` scored with
-`frame_cells.py`, on more than one mode and more than one sampling density, to
-find whether the optimum tracks a quantity the engine already holds.
-`investigations/the-pass-through-shimmer-is-the-capture-origin.md`
+**The nine-to-thirteen-times figure this entry used to carry is RETRACTED.**
+It compared `SP_RT_HS_SP` 34 against 68 with `frame_cells.py`, whose cell grid
+is anchored to the lit picture -- and the register pans that picture 0.81
+output columns per unit, so the two readings scored different content. Scored
+with the grid anchored to the picture instead, the two values are within 1.2x
+on the worst cell and 34 is about twice as good on the bulk. **68 is the
+`ntsc_1280x720` preset's constant, not a derivation, and it mis-frames that
+mode by 27 columns.** `investigations/the-pass-through-shimmer-is-the-capture-origin.md`
 
 ### The preferences file does not survive a cold boot, and the whole filesystem goes with it
 

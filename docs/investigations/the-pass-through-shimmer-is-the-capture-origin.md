@@ -1,3 +1,19 @@
+> **RETRACTED, 2026-10-24.** The headline below rests on a confounded
+> instrument. `frame_cells.py` anchors its cell grid to the lit picture, and
+> `SP_RT_HS_SP` pans that picture 0.81 output columns per unit -- so the
+> readings at 34 and at 68 scored different content, and the cell boundaries
+> landed differently on a grating fine enough for that to decide the answer.
+>
+> Re-measured with the grid anchored to the picture: the two values are within
+> 1.2x on the worst cell and 34 is about twice as good on the bulk. **68 is
+> `ntsc_1280x720`'s preset constant, not a derivation**, and it puts the card
+> 27 columns left -- clipped at the left, blanking at the right.
+>
+> What survives is at the foot of this page, under *What was measured
+> afterwards*. The rest is kept because the refuted models are still refuted,
+> and because the confound is worth seeing: it is the same shape as every
+> other measurement here taken from a moving origin.
+
 # The pass-through shimmer is the capture counter's origin
 
 A sub-pixel horizontal shimmer on `vga` at 1280x720@60 in pass-through, read as
@@ -159,3 +175,47 @@ which is what turned an intermittent symptom into a distribution — 891 legs,
 and the `PA_SP_S` split rests on 183 of them. `tools/reference-build/` and the
 images in `~/Projects/gbsc-pro-backups` are what made the build comparison one
 flash rather than a rebuild.
+
+## What was measured afterwards, 2026-10-24
+
+**The register pans the capture, and that is most of what it does.** One unit
+is one ADC sample, `1 / samplesPerPixel` source pixels. Read off the card's
+border checks at 1280x720@60, only 33..36 framed the card with nothing lost at
+either end, and the engine's computed 34 was inside it. The framing bar is now
+`tools/gbsc-pro-hwtest/test_passthrough_acceptance.py`.
+
+**The sampling phase changes how much of the grating SURVIVES, not how much it
+moves.** `PA_ADC_S` swept at one acquisition of 1280x720@60, measured per
+pixel over the wedge with no cell grid to align:
+
+| `PA_ADC_S` | 8 | 16 | 20 | 24 |
+|---|---|---|---|---|
+| wedge contrast, grey levels | 45.4 | 54.9 | 56.4 | 55.7 |
+| movement, grey levels | 5.2 | 4.6 | 5.3 | 5.7 |
+
+Repeated, the contrast figures returned 45.4 and 56.4 to within 0.06. So the
+phase is worth about 20% of the finest grating's amplitude, and the movement
+term does not follow it.
+
+**An earlier reading that the optimum is 8, stable over five re-locks, is
+withdrawn.** It scored the worst 64px cell, and two runs of the same phases at
+the same origin, divider and sync width ranked them in opposite orders purely
+by where the grid fell. A grating near the sampler's Nyquist cannot be scored
+on a grid that is not anchored to it.
+
+**`PA_ADC_S` is never tuned.** `Adc::acquirePhase()` sets it to
+`oversample == 4 ? halfSampleOn(MidField) : MidField` -- the middle of a
+five-bit field, which is not a sampling instant. Only the sync processor's
+phase is searched. The optimum measured across three densities was 0 at
+2.000 samples per source pixel, 24 at 1.500 and 8 at 1.235, on the cell metric
+since withdrawn; the densities are measured from the pan slope rather than
+assumed from DMT.
+
+**Why the phase matters below two samples per pixel and not above.**
+`the-sampling-phase-cannot-reach-the-shimmer.md` swept all 32 steps at
+320x256@50 on the scaling path and found nothing, with a sound argument: the
+line-doubled grid is 1100 samples against 512 source pixels, so the sampler
+already visits 275 positions within the source pixel and a global offset moves
+them together. That mode samples 2.15 per pixel. 720p60 in pass-through
+samples 1.235, below Nyquist, which is where a beat exists for a phase offset
+to move. Both measurements stand.
