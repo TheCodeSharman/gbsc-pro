@@ -24,6 +24,12 @@ point too, because a sync phase can stop the count agreeing.
 The box is found ONCE and held for the whole grid, for the reason
 `adc_phase_sweep.py` states: re-finding it makes the instrument follow the
 thing it measures.
+
+**THE GRID RUNS FROZEN, and the console still certifies it.** A sync-phase
+change disturbs the count enough to arm a solve, which re-latches the ADC PLL
+and re-places the sink's window part way through -- measured as two clusters
+of rows on 800x600@60, with the step exactly where the arm landed. The phases
+latch themselves (`PA_SP_LAT`/`PA_ADC_LAT`), so they reach the chip frozen.
 """
 
 import argparse
@@ -62,13 +68,63 @@ def lit_box(grey):
 
 
 def lit_clip(dev):
-    """A clip of a frame that is actually lit, and how many retakes it cost."""
+    """A clip whose EVERY frame is lit, and how many retakes it cost.
+
+    The whole clip has to be lit rather than its last frame: the score averages
+    over the clip and measures movement across it, so one black frame while the
+    encoder comes back reads as lost contrast and as movement of the entire
+    picture.
+    """
     for attempt in range(BLANK_TRIES):
         greys = luma(frames(CLIP, dev, WIDTH, HEIGHT, warmup=WARMUP)).astype(np.float32)
-        if lit_box(greys[-1]) is not None:
+        if all(lit_box(grey) is not None for grey in greys):
             return greys, attempt
         time.sleep(BLANK_WAIT_S)
     return None, BLANK_TRIES
+
+
+def report(taken, phases, syncPhases, quiet, nominal=None):
+    """The grid, and the peak comparison where the console certified the run.
+
+    The comparison is between sync phases, so a solve landing mid-grid makes
+    the rows either side of it readings of two states: it is not stated at all
+    for a void run, because a table that looks like the sound one is how such a
+    reading gets carried.
+    """
+    out = ["", "contrast, PA_SP_S down the side and PA_ADC_S across:",
+           "  sp\\adc " + "".join(f"{a:7d}" for a in phases) + "     peak  at"]
+    peaks = []
+    for sp in syncPhases:
+        row = []
+        for adc in phases:
+            got = [r for r in taken[(sp, adc)] if r is not None]
+            row.append(np.mean([r[0] for r in got]) if got else float("nan"))
+        best = int(np.nanargmax(row))
+        peaks.append(row[best])
+        out.append(f"  {sp:5d}  " + "".join(f"{v:7.1f}" for v in row)
+                   + f"   {row[best]:6.1f}  {phases[best]:3d}")
+
+    out += ["", "count and retries where either was not nominal:"]
+    for (sp, adc), rows in sorted(taken.items()):
+        for r in rows:
+            if r is None:
+                out.append(f"  sp {sp:2d} adc {adc:2d}  no picture")
+            elif r[2] != nominal or r[3]:
+                out.append(f"  sp {sp:2d} adc {adc:2d}  count {r[2]}  "
+                           f"retries {r[3]}  lit left {r[4]}")
+
+    if not quiet:
+        out += ["", "NO PEAK COMPARISON: the engine solved inside the grid, so "
+                "the rows either side of it are two states."]
+        return out
+
+    out += ["", "reachable peak by PA_SP_S: "
+            + ", ".join(f"{sp}:{p:.1f}" for sp, p in zip(syncPhases, peaks)),
+            f"  spread {min(peaks):.1f} .. {max(peaks):.1f} "
+            f"= {max(peaks) / max(min(peaks), 0.01):.2f}x. A peak that depends "
+            f"on PA_SP_S means the ceiling varying between acquisitions is the "
+            f"sync phase the engine chose, not a re-roll."]
+    return out
 
 
 def main():
@@ -91,12 +147,20 @@ def main():
     # box found on an aliased wedge lands on the wrong block.
     anchor, _ = lit_clip(dev)
     box = wedge.locate(anchor[0], lit_box(anchor[0]))
-    print(f"PLLAD_MD {read_named(args.host, 'PLLAD_MD')}, wedge box {box}, "
-          f"{len(phases)}x{len(phases)} grid x {args.passes}")
+    # The count is read rather than stated, so the report below flags a point
+    # whose count left the one this acquisition is holding -- on whatever mode.
+    nominal = read_named(args.host, "STATUS_SYNC_PROC_VTOTAL")
+    print(f"PLLAD_MD {read_named(args.host, 'PLLAD_MD')}, count {nominal}, "
+          f"wedge box {box}, {len(phases)}x{len(syncPhases)} grid x {args.passes}")
 
     taken = {}
     with resolve_watch.attached(args.host) as watch:
         try:
+            # Frozen, the tick cannot arm, so the grid is one acquisition by
+            # construction rather than by luck -- a sync-phase change disturbs
+            # the count enough to arm one, and the re-install then re-latches
+            # the ADC PLL and re-places the sink's window under the sweep.
+            route(args.host, "/freeze?on=1")
             for index in range(args.passes):
                 for sp in syncPhases:
                     route(args.host, f"/phase?sp={sp}")
@@ -119,38 +183,13 @@ def main():
             # Back to the engine rather than to a pin, so a later acquisition
             # is the firmware's own choice and not this run's leftover.
             route(args.host, "/phase?clear")
+            route(args.host, "/freeze?on=0")
 
-    print("\ncontrast, PA_SP_S down the side and PA_ADC_S across:")
-    print("  sp\\adc " + "".join(f"{a:7d}" for a in phases) + "     peak  at")
-    for sp in syncPhases:
-        row = []
-        for adc in phases:
-            got = [r for r in taken[(sp, adc)] if r is not None]
-            row.append(np.mean([r[0] for r in got]) if got else float("nan"))
-        best = int(np.nanargmax(row))
-        print(f"  {sp:5d}  " + "".join(f"{v:7.1f}" for v in row)
-              + f"   {row[best]:6.1f}  {phases[best]:3d}")
-
-    print("\ncount and retries where either was not nominal:")
-    for (sp, adc), rows in sorted(taken.items()):
-        for r in rows:
-            if r is None:
-                print(f"  sp {sp:2d} adc {adc:2d}  no picture")
-            elif r[2] != 749 or r[3]:
-                print(f"  sp {sp:2d} adc {adc:2d}  count {r[2]}  "
-                      f"retries {r[3]}  lit left {r[4]}")
-
-    peaks = []
-    for sp in syncPhases:
-        got = [np.mean([r[0] for r in taken[(sp, a)] if r is not None])
-               for a in phases]
-        peaks.append(max(v for v in got if not np.isnan(v)))
-    print("\nreachable peak by PA_SP_S: "
-          + ", ".join(f"{sp}:{p:.1f}" for sp, p in zip(syncPhases, peaks)))
-    print(f"  spread {min(peaks):.1f} .. {max(peaks):.1f} "
-          f"= {max(peaks)/max(min(peaks), 0.01):.2f}x. A peak that depends on "
-          f"PA_SP_S means the ceiling varying between acquisitions is the sync "
-          f"phase the engine chose, not a re-roll.")
+    for line in report(taken, phases, syncPhases, watch.quiet(), nominal):
+        print(line)
+    if not watch.quiet():
+        for line in watch.lines():
+            print(f"    {line}")
 
 
 if __name__ == "__main__":
