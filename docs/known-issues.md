@@ -116,6 +116,41 @@ ONCE, where the value meets the register.** An intermediate rounded to an
 integer that something else then multiplies or subtracts is the defect,
 whatever the units.
 
+### `HsyncPulse::syncDuty()` folds a sample count into a ratio, and three sites still read it
+
+`syncDuty()` is the measured pulse with `InvertedPulseWidthSamples` already
+subtracted -- a count of ADC SAMPLES folded into a RATIO, so the stored value
+is only right at the divider it was folded at. `HsyncPulse.h` states the hazard
+and the source key was moved to `sourceDuty()` because of it;
+`retimeStopFor()` has followed, taking the source's own share and subtracting
+the calibration in samples at the divider in force.
+
+**The remaining three are worse, because two multiply it by a count in another
+unit entirely:**
+
+| site | multiplies the duty by | the folded correction is in |
+|---|---|---|
+| `SyncProcessor::placeSeparatorPulseEnd` | `divider`, ADC samples | ADC samples -- right unit, wrong divider |
+| `VideoSourceLine.cpp` | `units`, IF UNITS | ADC samples |
+| `SyncProcessor::clampOffsetForPulse` | `coastLineFor()`, 27 MHz COUNTS | ADC samples |
+
+A five-sample correction carried into 27 MHz counts is scaled by the ratio of
+the two line lengths -- 1728/2038 at 1280x720@60 and something else at every
+other mode -- so it is mode-dependently wrong with nothing to show it.
+
+**The shape that closes it: `syncDuty()` becomes private, `sourceDuty()` is the
+public ratio, and `HsyncPulse` owns the conversion** -- a width asked for in a
+stated unit, with the calibration applied there. A consumer working in IF units
+or reference counts then cannot apply an ADC-sample correction by accident.
+Three behaviour changes in two units, so each wants its own evidence.
+
+**`InvertedPulseWidthSamples` itself is unexplained and is not re-opened here.**
+It is measured over seven modes and its mechanism is explicitly not the
+inversion being in circuit; it compensates `RetimeOriginSamples` having been
+calibrated on H-negative states alone. A correction for a one-polarity
+calibration is worth revisiting on its own evidence rather than inside a units
+fix.
+
 ### The ADC sampling phase is never tuned, and the picture is a lottery because of it
 
 `PA_ADC_S` decides where in the ADC clock the converter samples, and nothing
