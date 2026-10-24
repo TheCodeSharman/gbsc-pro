@@ -1594,10 +1594,21 @@ TEST_CASE("a band clear of the default leaves the sampling phase at the default"
     // cannot see. Measured on the bench RISC PC at X320 Y256 C256 F50 on
     // composite sync, 100 reads a phase across the whole field: the only band
     // the metric finds is 27..29, scoring 17, 22 and 4, and phases 10..16
-    // score 0. The antipode of 27..29 is 13, which is the centre of the band
-    // the metric does find on separate sync -- 11..19 there, and 10..16 by the
-    // picture -- and 13 shears about once every 900 s where MidField measured
-    // 0 shears in 4500 s on the same source.
+    // score 0.
+    //
+    // **WHAT THIS PINS IS DETERMINISM, NOT A GOOD PHASE.** Six acquisitions of
+    // one source on composite chose 13, 8, 11, 16, 16, 16; keeping the default
+    // where the scan says nothing against it makes that one answer. Which
+    // phase is best there is unmeasured, and the picture does not favour this
+    // one -- frame-to-frame change across the field reads 0.52 at 0 and 0.56
+    // at 4 against 0.86 here, with the worst at 12.
+    //
+    // **THE SHEAR IS NOT THIS REGISTER AND MUST NOT BE CITED FOR IT.** An
+    // A-B-A of 900 s legs moving PA_SP_S alone gave 6, 5 and 4 bursts for 16,
+    // 13 and 16 -- indistinguishable -- and the burst rate falls eightfold
+    // over the first eighty minutes of uptime with nothing written, so two
+    // legs an hour apart compare uptimes.
+    // ../docs/investigations/the-phase-scan-measures-one-band-and-infers-the-rest.md
     // ../docs/investigations/the-sampling-phase-cannot-reach-the-shimmer.md
     Wire.reset();
     Adc::PLLAD_MD::write(2230);
