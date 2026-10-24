@@ -25,48 +25,52 @@ setup an unmeasured pulse and asserts the register did not silently keep its
 previous value is the cheapest form.
 `investigations/the-pass-through-shimmer-is-the-capture-origin.md`
 
-### The capture origin mis-frames four of five pass-through modes, and moves between acquisitions
+### Two pass-through modes still do not reach every edge
 
-`SP_RT_HS_SP` pans the capture: one unit is one ADC sample, which is
-`1 / samplesPerPixel` source pixels. Only a narrow window of values frames a
-mode with nothing lost at either end, and the engine lands outside it on most
-modes. Measured 2026-10-24 at 1920x1080 off the USB capture, columns of black
-at the emitted frame's edges:
+`test_passthrough_acceptance.py` runs five modes in pass-through and asks
+three questions of each. Measured 2026-10-24 over two runs: 9 passed / 6
+failed and 8 / 7. 800x600@60, 1280x720@60 and 1024x768@60 frame with nothing
+clipped; the last of those read 3 columns of black at the left on one run of
+the two, which is on the tolerance.
 
-| mode | engine's origin | correct | black at the edges |
-|---|---|---|---|
-| 800x600@60 | 1858 | 1858 | none |
-| 1280x720@60 | 79 | 64 | 16 right |
-| 1024x768@60 | 63 | ~205 | 139 left, 36 right |
-| 640x480@60 | 79 | not found | 214 right |
-| 1280x1024@60 | -- | not found | 23 left, 110 right |
+| mode | black at the edges |
+|---|---|
+| 640x480@60 | **4 rows at the BOTTOM**, left/right/top within tolerance |
+| 1280x1024@60 | **40..42 columns at the right** |
 
-**It also varies between acquisitions of the SAME mode.** 800x600 passed the
-acceptance suite on one run and read 411 columns out on the next, and
-1024x768 read 176 columns at the left on one run and at the right on another.
-`SP_RT_HS_SP` was also seen to change from 63 to 230 **with automation
-frozen** and nothing writing it from the bench, which no reading explains --
-`VideoPath::writeRetimeOrigin()` has three call sites and which of them runs
-under the freeze is not established.
+**640x480@60's deficit is VERTICAL, so the capture origin cannot explain it**
+and the two are not one fault. 1280x1024@60's is horizontal and steady across
+runs.
 
-**What the mis-framing looks like is not a black margin.** The picture pans
-into the region before active video, where the playout has no data: most lines
-lose their head and show black, a few carry the correct content, and which
-ones changes every frame. It reads as tearing over a correct picture. The band
-is fixed in the frame at ~180 columns and the picture moves underneath it, so
-its width says nothing about the error -- the pan does.
+**What is FIXED is the horizontal mis-framing that four of the five showed**,
+and the mechanism was the moment the origin was written rather than the
+derivation. `SP_RT_HS_SP` is sized from the measured sync duty and was written
+as a side effect of installing a sampling clock; `installPassThroughClock()`
+returns early where the divider it wants is already in force, so a mode change
+landing on the divider in force never wrote it and the register kept the bare
+origin -- no sync width taken off -- for the life of the mode. Measured at
+1024x768@60 arriving from 1280x720@60, both at divider 2038: the console read
+`duty: 192 pulse / 2038 divider` while the register held **79**, and the same
+mode arriving from divider 2200 wrote **1927** and framed full screen.
+`placeSyncForDuty()` places it now, with the two registers it already placed
+from the same duty, and the scaling path's second write inside
+`VideoPath::write()` is gone with it.
 
-**What would settle it:** `test_passthrough_acceptance.py` states the bar and
-is red on four of five modes. The origin is derived from the measured sync
-duty, and a reading taken before the sync processor has settled is the
-candidate -- `STATUS_SYNC_PROC_HLOW_LEN` is only valid once locked and tears
-across its two bytes.
+**So a reading of this register taken on one acquisition said nothing about
+the next**, because what it held depended on the PREVIOUS mode's divider.
+Earlier figures for "the engine's origin" per mode were that, and the
+per-acquisition variability they carried is accounted for.
 
 ### The retime origin is calibrated for one sampling density, and no derivation is established
 
 `RetimeOriginSamples` 63 was measured at about 1.12 ADC samples per source
-pixel, and `HdBypass::applyPassThroughSampling()` passes `0.0f` for
-`pixelSamples`, so the lag term that exists to adapt it never runs.
+pixel, and no derivation of it is established.
+
+`HdBypass::applyPassThroughSampling()` still passes `0.0f` for `pixelSamples`,
+so the install's own write carries no lag term -- but that write is no longer
+the one that stands. `placeSyncForDuty()` re-places the origin once the duty
+has been measured and passes `timing_.pixelSamples()`, so the term now runs on
+the pass-through path wherever a published raster matched the source.
 
 **The nine-to-thirteen-times figure this entry used to carry is RETRACTED.**
 It compared `SP_RT_HS_SP` 34 against 68 with `frame_cells.py`, whose cell grid

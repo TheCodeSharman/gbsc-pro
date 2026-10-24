@@ -73,8 +73,16 @@ ADC clock, four readings per state:
 | md 1740 | 2 | 1 | 156.6 MHz | 0.0094..0.0105 | 0.129..0.168 |
 | md 1444 | 2 | 0 | 130.0 MHz | 0.0012..0.0013 | 0.0199..0.0285 |
 
-The two md 1740 rows are indistinguishable, so **the oversampling ratio changes
-nothing** about the shimmer. The high-VCO rows look like a gain effect and are
+The two md 1740 rows are indistinguishable, which was read as **the
+oversampling ratio changing nothing** about the shimmer. **That reading does
+not survive the retraction at the head of this page and is withdrawn**, in
+neither direction: the ratio moves the capture origin by
+`UndecimatedOriginSamples`, 16 ADC samples, added at ratio one and not at
+ratio two, so those two rows had the picture panned 16 samples apart and the
+cell grid scored different content -- the same confound the nine-to-thirteen
+figure fell to. Scoring it honestly wants a per-pixel measure, and
+`/sampleclock?os=` did not move `PLLAD_CKOS` when it was tried on 2026-10-24,
+so nothing has measured it since. The high-VCO rows look like a gain effect and are
 not one: the reference build runs **167.1 MHz with `FS` 1** and reads picture
 median 0.0019, worst 0.0253..0.0272 over four re-locks. Both ratio 1, both
 `FS` 1, VCOs within 7%, and five times apart — so neither the VCO nor the gain
