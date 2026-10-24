@@ -32,6 +32,7 @@ run disturbs the picture and leaves the last mode up.
 import numpy as np
 import pytest
 
+import wedge
 from gbs_unit import read_fields, wait_for
 from hdmi_capture import device, frames, luma
 
@@ -39,11 +40,6 @@ pytestmark = pytest.mark.source_mode
 
 WIDTH, HEIGHT = 1920, 1080
 FRAMES = 40
-
-# x0, y0, x1, y1 as fractions of the lit picture: the LEFT third of PM5544's
-# frequency wedge, which is the finest grating on the card. Fractions rather
-# than pixels because the card scales with the mode while its layout does not.
-FINE_WEDGE = (0.20, 0.54, 0.38, 0.64)
 
 # Columns of black allowed at an edge before the picture is judged clipped.
 # A correctly framed mode measures 0: 1920x1080 lit, margins 0/0, on every
@@ -194,25 +190,18 @@ def _assert_framed(name, grey):
 
 
 def _wedge(grey):
-    """The fine wedge, as (contrast, movement).
+    """The finest grating, as (contrast, movement).
 
-    `contrast` is how much of the grating survived sampling: the spatial
-    spread of the time-averaged block, in grey levels. `movement` is how much
-    each pixel changes across the clip, which on a card with its animation off
-    is the system's and nothing else's.
-
-    NO CELL GRID. The first attempt scored the worst 64px cell, and a grating
-    this fine is sensitive to where the cell boundaries fall on it -- two runs
-    of the same states ranked the sampling phases in opposite orders purely by
-    where the grid landed. Per pixel there is no grid to align.
+    FOUND RATHER THAN STATED. The card's layout does not scale with the
+    emitted raster: measured over three pass-through modes at 1920x1080, the
+    dense block sits at x 0.19..0.31 of the lit picture on 800x600@60 and
+    1024x768@60 and at 0.27..0.44 on 1280x720@60. A fixed fraction covered
+    grating on one mode and flat card on another, and the flat part has little
+    movement in it -- so the reading came back steadier than the grating was,
+    by 4x on 1280x720@60.
     """
-    left, right, top, bottom = _lit_box(grey[0])
-    width, height = right - left, bottom - top
-    block = grey[:,
-                 top + int(FINE_WEDGE[1] * height):top + int(FINE_WEDGE[3] * height),
-                 left + int(FINE_WEDGE[0] * width):left + int(FINE_WEDGE[2] * width)]
-    block = block.astype(float)
-    return float(block.mean(axis=0).std()), float(block.std(axis=0).mean())
+    box = wedge.locate(grey[0], _lit_box(grey[0]))
+    return wedge.score(grey, box)
 
 
 def _green_frame_at_edges(rgb):
