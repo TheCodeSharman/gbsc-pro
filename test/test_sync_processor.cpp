@@ -1471,8 +1471,11 @@ TEST_CASE("the separator's pulse end carries the source's video lag")
     SUBCASE("a density above the calibrated one ends the pulse later")
     {
         SyncProcessor::placeSeparatorPulseEnd(2200, pulse, 4.297f);
+        // Summed whole and rounded once: the lag is fractional, so adding it
+        // to a separately rounded width is the stacking this must not do.
         CHECK(SyncProcessor::SP_CS_HS_SP::read()
-              == 153u + SyncProcessor::originVideoLagSamples(4.297f));
+              == (uint16_t)lrintf(153.0f
+                                  + SyncProcessor::originVideoLagSamples(4.297f)));
     }
 
     SUBCASE("an unpublished source ends it on the measured width alone")
@@ -1491,6 +1494,31 @@ TEST_CASE("the separator's pulse end carries the source's video lag")
         const uint16_t sparseEnd = SyncProcessor::SP_CS_HS_SP::read();
         CHECK(denseEnd - sparseEnd == dense - sparse);
     }
+}
+
+// THE ARITHMETIC IS CARRIED AT FULL PRECISION AND ROUNDED ONCE, AT THE
+// REGISTER. Rounding the lag to a whole sample and the pulse width to another
+// before subtracting them lets two errors of under half a sample each add to a
+// whole one, and nothing downstream can see it: every register still reads
+// self-consistent while the capture origin sits a sample off.
+//
+// The duty is measured against one divider and applied to another -- which is
+// the whole reason HsyncPulse carries a ratio rather than a count -- so the
+// pulse width is fractional on most modes rather than exceptionally.
+//
+// A lag of 2.6 samples against a pulse of 141.4: rounded separately they give
+// 3 - 141 and the origin lands a sample late; carried whole, 2.6 - 141.4 is
+// 138.8 and rounds to 139.
+TEST_CASE("the retime origin rounds once rather than term by term")
+{
+    const float duty = 141.4f / 2038.0f;
+    const float density = SyncProcessor::CalibratedPixelSamples
+                          + 2.6f / SyncProcessor::SourceVideoDelayPixels;
+
+    const uint16_t stop = SyncProcessor::retimeStopFor(2038, HsyncPulse(duty),
+                                                       2, density);
+
+    CHECK(stop == (uint16_t)(2038 + SyncProcessor::RetimeOriginSamples - 139));
 }
 
 TEST_CASE("the per-load setup leaves the separator's pulse end where the install put it")

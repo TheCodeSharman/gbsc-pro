@@ -233,7 +233,7 @@ public:
     // The lag above in ADC samples at this sampling density, signed, and 0
     // where no raster states the pixel count it needs. One owner, because both
     // paths that place the counter's origin owe it.
-    static long originVideoLagSamples(float pixelSamples);
+    static float originVideoLagSamples(float pixelSamples);
 
     // What the origin gains at oversampling ratio ONE, where the decimators are
     // out of circuit and the captured video lands later in the line counter.

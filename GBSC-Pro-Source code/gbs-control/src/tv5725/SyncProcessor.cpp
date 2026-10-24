@@ -20,11 +20,11 @@ const uint16_t SyncProcessor::InvertedPulseWidthSamples;
 const float SyncProcessor::SourceVideoDelayPixels = 4.4f;
 const float SyncProcessor::CalibratedPixelSamples = 1.12f;
 
-long SyncProcessor::originVideoLagSamples(float pixelSamples)
+float SyncProcessor::originVideoLagSamples(float pixelSamples)
 {
     if (pixelSamples <= 0.0f)
-        return 0L;
-    return lrintf(SourceVideoDelayPixels * (pixelSamples - CalibratedPixelSamples));
+        return 0.0f;
+    return SourceVideoDelayPixels * (pixelSamples - CalibratedPixelSamples);
 }
 
 uint16_t SyncProcessor::retimeStopFor(uint16_t divider, const HsyncPulse &pulse,
@@ -33,17 +33,22 @@ uint16_t SyncProcessor::retimeStopFor(uint16_t divider, const HsyncPulse &pulse,
     if (!pulse.isPulse() || divider == 0)
         return 0;
 
-    const long lag = originVideoLagSamples(pixelSamples);
-    const uint16_t origin = (uint16_t)(
-        (long)RetimeOriginSamples + lag
-        + (oversample <= 1 ? (long)UndecimatedOriginSamples : 0L));
-    const uint32_t sync = (uint32_t)lrintf((float)divider * pulse.syncDuty());
+    // ROUNDED ONCE, HERE. Each term is under a sample of correction, so
+    // rounding them separately lets two sub-sample errors add to a whole
+    // sample of origin -- which no register can show, every one of them
+    // reading self-consistent around a capture that samples the wrong instant.
+    const float origin = (float)RetimeOriginSamples
+                         + originVideoLagSamples(pixelSamples)
+                         + (oversample <= 1 ? (float)UndecimatedOriginSamples
+                                            : 0.0f);
+    const float sync = (float)divider * pulse.syncDuty();
 
     // A pulse narrower than the origin carries the subtraction past the end of
     // the line, where the register is inert. The stop is a PHASE, so the same
     // phase one line earlier is the modulo: a whole line of horizontal shift is
     // no horizontal shift at all.
-    const uint32_t stop = (divider + origin - sync) % divider;
+    const uint32_t stop =
+        (uint32_t)lrintf((float)divider + origin - sync) % divider;
 
     // 0 is this function's "nothing measured" answer, so a phase landing there
     // takes the next sample instead -- one ADC sample, against an origin whose
@@ -798,8 +803,8 @@ void SyncProcessor::placeSeparatorPulseEnd(uint16_t divider, const HsyncPulse &p
 {
     long samples = 0L;
     if (leadingEdge_ && pulse.isPulse())
-        samples = lrintf((float)divider * pulse.syncDuty())
-                + originVideoLagSamples(pixelSamples);
+        samples = lrintf((float)divider * pulse.syncDuty()
+                         + originVideoLagSamples(pixelSamples));
     if (samples < 0L)
         samples = 0L;
     SP_CS_HS_SP::write((uint16_t)samples);
