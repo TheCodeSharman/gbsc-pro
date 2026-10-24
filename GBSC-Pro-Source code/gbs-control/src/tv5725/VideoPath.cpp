@@ -44,7 +44,6 @@ VideoPath::VideoPath(DisplayClock &displayClock, SourceMeasurement &sampling,
       reachHorizontal_(0), reachVertical_(0),
       firstHorizontal_(0), firstVertical_(0),
       syncHorizontal_(0), syncVertical_(0), activeStartLine_(0),
-      installedDivider_(0),
       timing_(0.0f),
       sampling_(sampling),
       scanSolved_(false), lineDoubled_(true),
@@ -581,29 +580,45 @@ bool VideoPath::setOutputMode(const OutputMode *mode)
 
 void VideoPath::sourceMeasured(const HsyncPulse &reading)
 {
-    // THE DUTY ARRIVES AFTER THE CLOCK IS INSTALLED, and the two registers
-    // below are sized from it. takeDuty() refuses a reading taken through an
+    // THE DUTY ARRIVES AFTER THE CLOCK IS INSTALLED, and the registers below
+    // are sized from it. takeDuty() refuses a reading taken through an
     // unlatched clock and only an install latches one, so the install that
     // places them is always one pass short of the duty they want -- and a solve
     // that runs afterwards does not touch them. Left unsized, SP_CS_HS_SP is 0
     // where the pulse asks for a placement, and on the leading-edge reference
     // that IS the capture counter's origin -- so it moves by a whole pulse.
-    const bool arrived = reading.isPulse() && !reading_.isPulse();
+    //
+    // A DUTY THAT MOVED IS A DUTY THAT ARRIVED. A mode change that lands on the
+    // divider already in force installs no clock, so this is the only moment
+    // its sync width reaches the chip at all.
+    const bool arrived = reading.isPulse() && !reading.agrees(reading_);
 
     reading_ = reading;
     timing_ = SourceTiming::matching(arrivingKey());
     activeStartLine_ = timing_.activeStartLine(sampling_.sourceLines() + 1);
 
-    if (arrived && installedDivider_ != 0)
+    if (arrived)
         placeSyncForDuty();
 }
 
+// Every register the measured duty sizes, in one owner and at the one moment
+// the duty is known. THE DIVIDER IS THE ONE IN FORCE rather than the one a
+// scaling install recorded: pass-through's clock is HdBypass's and reaches no
+// install here, so a remembered divider is the previous path's on that route.
 void VideoPath::placeSyncForDuty()
 {
+    const uint16_t divider = Adc::dividerInForce();
+    if (divider == 0)
+        return;
+
+    // THE CAPTURE COUNTER'S ORIGIN. Written on the install as well, because a
+    // block with no duty still needs an origin before it can count one.
+    writeRetimeOrigin();
+
     // WHERE THE SEPARATOR'S REGENERATED PULSE ENDS, which on the leading-edge
     // reference is the capture counter's origin.
-    SyncProcessor::placeSeparatorPulseEnd(installedDivider_, reading_,
-                                          timing_.pixelSamples(installedDivider_));
+    SyncProcessor::placeSeparatorPulseEnd(divider, reading_,
+                                          timing_.pixelSamples(divider));
 
     // The clamp is a fraction of the LINE, so it moves with the divider. Left
     // where a previous one put it, the stop reaches past the back porch and the
@@ -611,8 +626,7 @@ void VideoPath::placeSyncForDuty()
     // from the divider applied rather than measured:
     // STATUS_SYNC_PROC_HTOTAL only echoes it back.
     SyncProcessor::placeClampFor(syncTypeInForce_, Adc::inputIsComponent(),
-                                 sampling_.lineRateHz(), installedDivider_,
-                                 reading_);
+                                 sampling_.lineRateHz(), divider, reading_);
 }
 
 void VideoPath::prepareToMeasure(uint16_t sourceLines)
@@ -1251,8 +1265,6 @@ void VideoPath::applySamplingClock(uint16_t divider, uint32_t lineRateHz)
         return;
 
     Adc::applySampleRate(divider, lineRateHz, modeOversample_);
-    installedDivider_ = divider;
-    writeRetimeOrigin();
     writePulseIgnore();
     placeSyncForDuty();
 
@@ -1674,11 +1686,6 @@ void VideoPath::write(const OutputWindow &solved, const CaptureWindow &capture)
     // The line double's progressive window spans one whole line, so it is
     // recomputed on every solve. Its start is written rather than read, or a
     // clobbered preset byte would propagate into the stop.
-    // The install invalidates the duty, so the sync width this needs arrives on
-    // a later pass than the divider does: derived here as well, or the counter's
-    // origin keeps the PREVIOUS source's sync width for the life of the mode.
-    writeRetimeOrigin();
-
     GBS::IF_LINE_ST::write(capture.progressiveWindow().stop());
     GBS::IF_LINE_SP::write(capture.progressiveWindow().start());
     GBS::IF_HB_SP2::write(capture.horizontal().stop());

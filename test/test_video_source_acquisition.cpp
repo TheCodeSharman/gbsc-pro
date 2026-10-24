@@ -3501,6 +3501,57 @@ TEST_CASE("an engine that has never solved arms the first solve from the count")
 // divider: measured on the bench, 800x600 to 640x480 left PLLAD_MD at 2039
 // against a 524-line source with STATUS_MISC_PLLAD_LOCK 0 and the picture
 // stretched.
+// THE ORIGIN FOLLOWS THE SOURCE'S DUTY, NOT THE DIVIDER'S MOVEMENT. In
+// pass-through the capture counter's origin is written only by
+// installPassThroughClock(), which returns early when the divider it wants is
+// already in force -- so a mode change landing on the same divider leaves
+// whatever the teardown wrote, which is the bare origin with no sync width
+// taken off it. The scaling path cannot reach this: VideoPath::write() derives
+// the origin again on every solve, for exactly the reason its comment states.
+//
+// Measured on the bench, 1024x768@60 in pass-through at divider 2038:
+// arriving from 1280x720@60, which wants the same divider, the console read
+// `duty: 192 pulse / 2038 divider` while SP_RT_HS_SP held 79 -- the bare
+// origin -- and the emitted frame lost the left of the picture and carried
+// 180 columns of black at the right. The same mode arrived at from divider
+// 2200 wrote 1927 and framed full screen with nothing clipped.
+TEST_CASE("a pass-through mode change writes the origin its own duty derives")
+{
+    seedBenchSource();
+    seedPassThroughSource();
+    g_passThroughSwitches = 0;
+
+    Acquiring unit;
+    unit.acquisition.usePassThroughSwitch(enterPassThrough);
+    unit.acquisition.allowPassThrough(true);
+    unit.start();
+    REQUIRE(unit.pollUntilSolved(8));
+    REQUIRE(unit.path.outputMode()->isBypass());
+
+    // The bench pair, both of which the channel counter's ceiling holds at one
+    // divider: 1280x720@60 at 750 lines with a 2.6% pulse, then 1024x768@60 at
+    // 806 with a 9.6% one. The first arrives on a divider of its own, so the
+    // channel's clock is installed and the origin is derived with it.
+    seedSourceLines(750);
+    seedField(0, 0x19, 0, 12, 52);    // STATUS_SYNC_PROC_HLOW_LEN
+    g_fieldRate = 60.0f;
+    unit.pollFor(10);
+    const uint16_t divider = Adc::dividerInForce();
+
+    seedSourceLines(806);
+    seedField(0, 0x19, 0, 12, 196);
+    g_fieldRate = 60.0f;
+    unit.pollFor(10);
+
+    // The case this exists for: the arriving mode wants the divider already in
+    // force, so nothing installs a clock and nothing else writes the origin.
+    REQUIRE(Adc::dividerInForce() == divider);
+
+    CHECK(SyncProcessor::SP_RT_HS_SP::read()
+          == SyncProcessor::retimeStopFor(divider, unit.sampling.hsync(),
+                                          Adc::oversampleInForce(), 0.0f));
+}
+
 TEST_CASE("a source that changes rate while passed through is re-sized")
 {
     seedBenchSource();

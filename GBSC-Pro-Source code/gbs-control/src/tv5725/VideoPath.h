@@ -774,10 +774,6 @@ private:
     uint16_t syncHorizontal_, syncVertical_;
     uint16_t activeStartLine_;
 
-    // The divider this class installed, held rather than read back: the retime
-    // stop is a function of it and of the source's sync width, and the sync
-    // width arrives AFTER the install invalidates it.
-    uint16_t installedDivider_;
     SourceTiming timing_;
     SourceMeasurement &sampling_;
     bool scanSolved_;

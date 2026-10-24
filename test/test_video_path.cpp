@@ -1704,13 +1704,13 @@ TEST_CASE("a framed picture holds every window against the framing")
 
     // The raster did not change, so its registers are not rewritten -- and
     // neither is the sampling group, which was installed before the duty was
-    // read rather than by the solve. The three beyond the geometry are
-    // OUT_SYNC_CNTRL, the DAC power and the sync pad, asserted with every show,
-    // and the retime stop is derived per solve because the sync width it needs
-    // arrives after the install that invalidates it -- two bytes, the field
-    // being twelve bits across s5_4B and s5_4C. The one-line delay is written
-    // with every window, because the window is what bounds what it can carry.
-    CHECK(registersWritten() == 38);
+    // read rather than by the solve. Nor is the capture counter's origin: it
+    // is sized from the measured duty, so it is placed when the duty arrives,
+    // on whichever path the source is taking. The three beyond the geometry
+    // are OUT_SYNC_CNTRL, the DAC power and the sync pad, asserted with every
+    // show. The one-line delay is written with every window, because the
+    // window is what bounds what it can carry.
+    CHECK(registersWritten() == 36);
 }
 
 // --- the IF line counter follows the scan mode -------------------------------
