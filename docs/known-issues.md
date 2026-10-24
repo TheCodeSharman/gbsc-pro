@@ -44,9 +44,31 @@ Over eight re-acquisitions of that one unchanged mode:
 **The curve's shape is constant and its position re-rolls**, so the same source
 is sharp on one acquisition and soft on the next with every register the same.
 
-**WHAT IT COSTS ON ORDINARY CONTENT IS NOT ESTABLISHED, and the 3x figure must
-not be quoted as a picture-quality claim.** The wedge is sustained periodic
-content at Nyquist, which is what makes it beat rather than merely soften.
+**WHAT IT COSTS ON ORDINARY CONTENT IS 14% OF THE SHARPEST EDGES, NOT 3x, AND
+THE 3x FIGURE MUST NOT BE QUOTED AS A PICTURE-QUALITY CLAIM.** The wedge is
+sustained periodic content at Nyquist, which is what makes it beat rather than
+merely soften. Measured 2026-10-24 off the same clips, the lit picture with the
+wedge band cut out:
+
+| | 1280x720@60 | 640x480@60 |
+|---|---|---|
+| wedge contrast | **3.01x** | **1.05x** |
+| p99 \|dx\|, the sharpest edges | 1.142x | 1.068x |
+| mean \|dx\|, the whole picture | 1.034x | 1.023x |
+| mean \|dy\|, THE CONTROL | 1.003x | 1.006x |
+
+**AND THE PHENOMENON IS CONFIRMED AS SAMPLING DENSITY.** 640x480@60 is the
+density control -- the same divider 2038 across a shorter source line, so
+about 2.55 samples per source pixel against 1280x720@60's 1.235 -- and the
+wedge swing collapses from 3.01x to 1.05x there while its absolute contrast
+rises from 17.6..52.8 to 77.6..81.6. Above two samples a pixel the grating is
+no longer above Nyquist and the phase stops mattering, which is what the model
+says. `mean |dy|` is the control: the phase is horizontal and cannot move it.
+
+So the cost is real, in phase with the wedge, and small. **Settle whether 14%
+on the sharpest edges is worth a search before spending a session on the
+cause** -- `sharpness.py` and `adc_phase_sweep.py` take the measurement in one
+run.
 
 **No derivation is available and no on-chip search can score it, so far.** The
 chosen `PA_SP_S` is a marker rather than a cause -- held across six values the

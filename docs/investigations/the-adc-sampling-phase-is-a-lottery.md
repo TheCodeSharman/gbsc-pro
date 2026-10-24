@@ -36,13 +36,57 @@ can reach about 52.6; which phase reaches it moves across the whole field, and
 phenomenon: a picture that is sharp on one acquisition and soft on the next
 with every register the same.
 
-**WHAT IT COSTS ON ORDINARY CONTENT IS NOT ESTABLISHED.** The wedge is
-adversarial by construction -- sustained periodic content at Nyquist, which is
-what makes it beat rather than merely soften. A single-pixel feature is the
-same thing occurring naturally, so text, 1 px rules and sprite edges are
-expected to soften where the wedge beats, but no measurement here shows it.
-**Do not quote the 3x figure as a picture-quality claim** until a global
-sharpness measure over ordinary card content has been taken.
+## What it costs on ordinary content: 14% of the sharpest edges
+
+The wedge is adversarial by construction -- sustained periodic content at
+Nyquist, which is what makes it beat rather than merely soften -- so **the 3x
+figure is not a picture-quality claim**. The measure that is one is the luma
+gradient over the whole lit picture with the wedge's row band cut out, leaving
+the grid lines, castellations, bar edges and centre circle: the 1 px features
+that occur naturally. `sharpness.py`.
+
+Scored off the SAME clips as the wedge, whole field swept, two interleaved
+passes:
+
+| | 1280x720@60 | 640x480@60 | 1280x1024@60 |
+|---|---|---|---|
+| wedge contrast, peak over trough | **3.01x** | **1.05x** | 1.63x |
+| p99 \|dx\|, the sharpest edges | 1.142x | 1.068x | 1.092x |
+| mean \|dx\|, the whole picture | 1.034x | 1.023x | 1.020x |
+| mean \|dy\|, THE CONTROL | 1.003x | 1.006x | 1.046x |
+| picture luma | 1.003x | 1.002x | 1.003x |
+
+**`mean |dy|` IS THE CONTROL AND IT IS WHAT MAKES THE REST READABLE.** The
+phase is where in the ADC clock a sample of the LINE is taken, so vertical
+sharpness is whole lines and cannot move with it. A swing appearing in both
+axes is brightness, a re-lock or the link, and is not the phase.
+
+The two curves are in phase -- 1280x720@60 peaks at wedge 5 / p99 3 and
+troughs at wedge 22 / p99 19 -- so it is one phenomenon rather than noise. But
+the correlation across the field is only **r = 0.383**, the curves having
+different shapes at the low end, so the picture reading is not a proxy for the
+wedge and each has to be taken on its own.
+
+**AND THE PHENOMENON IS SAMPLING DENSITY, WHICH THE DENSITY CONTROL SETTLES.**
+640x480@60 runs the same divider 2038 across a shorter source line -- about
+2.55 samples per source pixel against 1280x720@60's 1.235 -- and there the
+wedge swing collapses to 1.05x while its absolute contrast rises from
+17.6..52.8 to 77.6..81.6. Above two samples a pixel the grating is no longer
+above Nyquist and the phase stops deciding what survives, exactly as the model
+says. The same thing shows across the five pass-through modes at one divider:
+the contrast falls monotonically with the source's pixel count, and
+`test_passthrough_acceptance.py`'s `WEDGE_CONTRAST_FLOOR` carries the figures
+as the derivation of its own bar.
+
+Note `mean |dy|` reads 1.046x on 1280x1024@60 against 1.003..1.006x elsewhere,
+and the whole of that is one phase: **phase 4 disturbs the control on two
+separate sweeps**, 2.938 against 2.725..2.734 at 1280x720@60 and 2.604 against
+2.491..2.522 at 1280x1024@60. What phase 4 does is unexplained and it is one
+field position out of 32, so it is noted rather than pursued.
+
+**The conclusion the priority rests on:** the phase costs 14% of the gradient
+on the sharpest edges at the worst sampling density the bench can reach, and
+2-3% over the picture as a whole. Not 3x.
 
 ## What the instrument had to be
 
@@ -134,10 +178,13 @@ which cancels. A derivation resting on a residual there has none to rest on.
   scattered over a whole picture is untested, and the doubt is real:
   `AutoGain` only asks "did anything clip", a threshold question with a wide
   margin.
-- **Whether it costs anything on ordinary content**, as above.
+- **Whether 14% on the sharpest edges is worth a search.** The measurement is
+  taken; the judgement is not made.
 
 `/phase?adc=N` holds the phase against the engine, `/phase?clear` gives both
-phases back. `tools/gbsc-pro-hwtest/adc_phase_sweep.py` walks the field,
+phases back. `tools/gbsc-pro-hwtest/adc_phase_sweep.py` walks the field and
+reports the wedge and the picture off one clip, `sharpness.py` is the picture
+measure and `wedge_calibrate.py` reads every mode so a bar can be set,
 `phase_hunt.py` dumps every register per acquisition and diffs by optimum, and
 `phase_correlation.py` and `phase_distribution.py` are the two refuted
 correlations.
