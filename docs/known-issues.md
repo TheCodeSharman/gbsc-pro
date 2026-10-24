@@ -1688,6 +1688,42 @@ self-recovery in 60 s. `/sc?~` clears it in 5 s. Only a MODE change arms the
 re-probe that reaches the clean state, which is the sync-type entry's shape at
 a mode that cannot be acquired the wrong way round.
 
+**THE MECHANISM IS A GARBAGE FIRST READING INSTALLING A 15 kHz SETUP, AND
+NOTHING AFTERWARDS CAN MEASURE PAST IT.** Measured 2026-10-25 on the same
+source, the whole failure in one `/sc?~`:
+
+```
+ 0.52  measured: 221 lines x 43.95 Hz -> line rate 9714, htotal 1133 UNLATCHED
+ 0.57  installing: divider from line rate 9714, doubled 1 -> 2200
+11.14  sync arrangement: composite or SOG for input 3
+11.70  duty: 9 pulse / 2200 divider, htotal 618, negative, UNLOCKED
+12.71  measured: 510 lines x 21.97 Hz -> line rate 0, htotal 831 UNLATCHED   x22
+34.79  measured: 510 lines x 94.83 Hz -> line rate 48364
+34.97  installing: divider from line rate 48330, doubled 0 -> 1326
+35.29  sync pad: driven
+35.35  sync pad: away
+```
+
+The first reading is taken while the source is still changing, and the divider
+and the LINE DOUBLING installed from it are a 15 kHz-class setup on a 45 kHz
+source. Every reading after it is taken through that clock, which never
+latches -- `STATUS_SYNC_PROC_HTOTAL` 831 against a divider of 2200 -- and the
+count sticks at 510 where the source sends 750. **The separator's own
+parameters are fractions of the divider**, so the coast window,
+`SP_H_PULSE_IGNOR` and `SP_DLT_REG` are all sized for the wrong line, and the
+separator cannot lock until the rate is right while the rate cannot be measured
+until it locks.
+
+**This is the family `SP_H_PULSE_IGNOR` was already fixed for** -- a threshold
+sized against a divider that is not the one in force -- so it is tractable
+rather than a property of the part.
+
+**AND IT DIFFERS FROM THE READING ABOVE**, which has zero `sync pad: driven`
+and 272 reference-clock retries in 90 s. This run reached a measurement,
+installed a divider, ran a phase scan and drove the pad once before dropping
+it. Either the behaviour varies run to run or something has moved; a third
+capture decides which.
+
 ### The pass-through transition blanks once on separate sync and repeatedly on composite
 
 Measured 2026-10-21, same source and output.
