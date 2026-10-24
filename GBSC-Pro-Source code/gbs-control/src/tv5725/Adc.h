@@ -304,6 +304,19 @@ public:
     static void overridePhaseSyncProcessor(uint8_t phase);
     static void forgetPhaseOverride();
     static bool phaseOverridden();
+
+    // The ADC's sampling phase held the same way, and on its OWN flag. The two
+    // adjusters answer different questions -- the sync processor's decides
+    // whether the count is clean, the ADC's where in the clock the converter
+    // samples -- so holding one may not stop the other being searched, or an
+    // experiment on one runs against an unsearched other.
+    //
+    // Nothing derives this phase yet: acquirePhase() sets it to the middle of
+    // the field, which is not a sampling instant. This is what lets the bench
+    // ask what a search would be worth. tools/gbsc-pro-hwtest/adc_phase_sweep.py
+    static void overridePhaseAdc(uint8_t phase);
+    static void forgetPhaseAdcOverride();
+    static bool phaseAdcOverridden();
     static uint8_t phaseSyncProcessor();
     static uint8_t phaseAdc();
 
@@ -674,6 +687,8 @@ private:
     static uint8_t phaseAdc_;
     static uint8_t phaseOverride_;
     static bool phaseOverridden_;
+    static uint8_t phaseAdcOverride_;
+    static bool phaseAdcOverridden_;
     static uint8_t inputSel_;
     static uint8_t oversampleInForce_;
     static uint16_t dividerInForce_;

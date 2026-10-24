@@ -209,6 +209,7 @@ volatile uint8_t pendingTestBusIf = 0xff;
 volatile bool pendingPhase = false;
 volatile bool pendingPhaseClear = false;
 volatile bool pendingPhaseApply = false;
+volatile bool pendingPhaseAdc = false;
 volatile uint8_t pendingPhaseValue = 16;
 
 volatile bool pendingCoast = false;
@@ -2809,19 +2810,28 @@ static void reportSampleClock(const char *what)
 // scoring -- so a phase written from outside is taken back part way through a
 // leg, and more often in the arm that disagrees with the engine.
 // docs/investigations/the-phase-scan-measures-one-band-and-infers-the-rest.md
-static void applyPhaseOverride(bool apply, bool clear, uint8_t phase)
+// `which` says which adjuster the value is for, because the two are held
+// separately: the ADC's phase is where in the clock the converter samples and
+// the sync processor's is what makes the count clean.
+static void applyPhaseOverride(bool apply, bool clear, bool adc, uint8_t phase)
 {
     if (apply) {
-        if (clear)
+        if (clear) {
             Tv5725::Adc::forgetPhaseOverride();
-        else
+            Tv5725::Adc::forgetPhaseAdcOverride();
+        } else if (adc) {
+            Tv5725::Adc::overridePhaseAdc(phase);
+        } else {
             Tv5725::Adc::overridePhaseSyncProcessor(phase);
+        }
         Tv5725::Adc::applyPhases();
     }
 
-    debugPrintf("phase: %s sp %u\n",
-        Tv5725::Adc::phaseOverridden() ? "override" : "default",
-        (unsigned)Tv5725::Adc::phaseSyncProcessor());
+    debugPrintf("phase: sp %u %s, adc %u %s\n",
+        (unsigned)Tv5725::Adc::phaseSyncProcessor(),
+        Tv5725::Adc::phaseOverridden() ? "held" : "default",
+        (unsigned)Tv5725::Adc::phaseAdc(),
+        Tv5725::Adc::phaseAdcOverridden() ? "held" : "default");
 }
 
 static void applyCoastOverride(bool apply, bool clear, uint8_t pre, uint8_t post)
@@ -4888,7 +4898,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
         if (pendingPhase) {
             pendingPhase = false;
             applyPhaseOverride(pendingPhaseApply, pendingPhaseClear,
-                pendingPhaseValue);
+                pendingPhaseAdc, pendingPhaseValue);
         }
 
         if (pendingCoast) {
@@ -6002,14 +6012,24 @@ void startWebserver()
     // The sync processor's sampling phase, held against the search.
     //
     //   /phase                          report, change nothing
-    //   /phase?sp=13                    hold that phase through every solve
-    //   /phase?clear                    back to the engine's own search
+    //   /phase?sp=13                    hold the sync processor's phase
+    //   /phase?adc=7                    hold the ADC's sampling phase
+    //   /phase?clear                    both back to the engine
+    //
+    // The ADC's phase goes through Adc rather than being poked into PA_ADC_S:
+    // that class HOLDS the phase rather than reading it back, so a register
+    // written from outside leaves the held value a lie, and the adjuster only
+    // loads it on a rising edge of PA_ADC_LAT in any case.
     server.on("/phase", HTTP_GET, [](AsyncWebServerRequest *request) {
         const bool sp = request->hasParam("sp");
+        const bool adc = request->hasParam("adc");
         pendingPhaseClear = request->hasParam("clear");
+        pendingPhaseAdc = adc;
         if (sp)
             pendingPhaseValue = (uint8_t)request->getParam("sp")->value().toInt();
-        pendingPhaseApply = pendingPhaseClear || sp;
+        else if (adc)
+            pendingPhaseValue = (uint8_t)request->getParam("adc")->value().toInt();
+        pendingPhaseApply = pendingPhaseClear || sp || adc;
         pendingPhase = true;
         request->send(200, "application/json", "{\"queued\":\"phase\"}");
     });

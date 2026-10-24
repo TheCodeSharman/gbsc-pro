@@ -1669,7 +1669,7 @@ TEST_CASE("a held sampling phase is not walked to score the field")
     Adc::overridePhaseSyncProcessor(13);
     REQUIRE(Adc::acquirePhase(2, true, lineSamplesAtPhase, countFeed));
 
-    CHECK_FALSE(loggedContaining("phase dither"));
+    CHECK_FALSE(loggedContaining("phase scan"));
 }
 
 TEST_CASE("nothing else may move a held sampling phase")
@@ -1682,6 +1682,78 @@ TEST_CASE("nothing else may move a held sampling phase")
     Adc::choosePhaseSyncProcessor(Adc::MidField);
 
     CHECK(Adc::phaseSyncProcessor() == 13);
+}
+
+// --- and the ADC's own sampling phase ----------------------------------------
+//
+// THE TWO HOLDS ARE INDEPENDENT. The sync processor's phase decides whether
+// the count is clean and the ADC's decides where in the clock the converter
+// samples, so holding one may not stop the other being searched: a shared flag
+// would make an ADC experiment run against an unsearched sync processor, which
+// is a different source as far as every later reading is concerned.
+
+TEST_CASE("a held ADC sampling phase reaches the converter")
+{
+    // Driving PA_ADC_S by register instead takes two owners: Adc HOLDS the
+    // phase rather than reading it back, so a poked register leaves the held
+    // value a lie and the next solve applies the stale one. The latch is the
+    // second reason -- PA_ADC_S feeds the adjuster on a rising edge of
+    // PA_ADC_LAT, so the register reads the new value while the converter
+    // still samples at the old.
+    Wire.reset();
+    Adc::PLLAD_MD::write(2230);
+    g_sweepDivider = 2230;
+    g_badFrom = 4; g_badTo = 6;
+    Adc::forgetPhaseOverride();
+    Adc::forgetPhaseAdcOverride();
+
+    Adc::overridePhaseAdc(7);
+    REQUIRE(Adc::acquirePhase(2, true, lineSamplesAtPhase, countFeed));
+
+    CHECK(Adc::phaseAdc() == 7);
+    CHECK(Adc::PA_ADC_S::read() == 7);
+}
+
+TEST_CASE("holding the ADC phase still lets the sync processor be searched")
+{
+    Wire.reset();
+    g_logLines.clear();
+    Adc::PLLAD_MD::write(2230);
+    g_sweepDivider = 2230;
+    g_badFrom = 4; g_badTo = 6;
+    Adc::forgetPhaseOverride();
+    Adc::forgetPhaseAdcOverride();
+
+    Adc::overridePhaseAdc(7);
+    REQUIRE(Adc::acquirePhase(2, true, lineSamplesAtPhase, countFeed));
+
+    CHECK(loggedContaining("phase scan"));
+}
+
+TEST_CASE("nothing else may move a held ADC phase")
+{
+    Wire.reset();
+    Adc::forgetPhaseAdcOverride();
+    Adc::overridePhaseAdc(7);
+
+    Adc::choosePhaseAdc(Adc::MidField);
+
+    CHECK(Adc::phaseAdc() == 7);
+}
+
+TEST_CASE("forgetting the ADC hold gives that phase back to the engine")
+{
+    Wire.reset();
+    Adc::PLLAD_MD::write(2230);
+    g_sweepDivider = 2230;
+    g_badFrom = 10; g_badTo = 16;
+    Adc::forgetPhaseOverride();
+    Adc::overridePhaseAdc(7);
+    Adc::forgetPhaseAdcOverride();
+
+    REQUIRE(Adc::acquirePhase(2, true, lineSamplesAtPhase, countFeed));
+
+    CHECK(Adc::phaseAdc() != 7);
 }
 
 TEST_CASE("forgetting the hold gives the phase back to the engine")

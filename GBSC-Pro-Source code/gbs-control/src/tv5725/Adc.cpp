@@ -234,6 +234,8 @@ uint8_t Adc::phaseSyncProcessor_ = 16;
 uint8_t Adc::phaseAdc_ = 16;
 uint8_t Adc::phaseOverride_ = 16;
 bool Adc::phaseOverridden_ = false;
+uint8_t Adc::phaseAdcOverride_ = 16;
+bool Adc::phaseAdcOverridden_ = false;
 
 // Which of the two the chip comes up on is whatever the last boot left, and no
 // read-back can be trusted to mean the source is component, so the engine
@@ -274,9 +276,24 @@ bool Adc::phaseOverridden() { return phaseOverridden_; }
 
 void Adc::choosePhaseAdc(uint8_t phase)
 {
+    if (phaseAdcOverridden_)
+        return;
     if (phase <= PhaseMax)
         phaseAdc_ = phase;
 }
+
+void Adc::overridePhaseAdc(uint8_t phase)
+{
+    if (phase > PhaseMax)
+        return;
+    phaseAdcOverridden_ = true;
+    phaseAdcOverride_ = phase;
+    phaseAdc_ = phase;
+}
+
+void Adc::forgetPhaseAdcOverride() { phaseAdcOverridden_ = false; }
+
+bool Adc::phaseAdcOverridden() { return phaseAdcOverridden_; }
 
 uint8_t Adc::phaseSyncProcessor() { return phaseSyncProcessor_; }
 
@@ -397,6 +414,7 @@ bool Adc::acquirePhase(uint8_t oversample, bool sweep,
 
     if (phaseOverridden_) {
         applyPhaseSyncProcessor(phaseOverride_);
+        applyPhaseAdc(phaseAdc());
         phaseFound_ = true;
         return true;
     }
