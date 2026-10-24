@@ -1509,6 +1509,35 @@ TEST_CASE("the separator's pulse end carries the source's video lag")
 // A lag of 2.6 samples against a pulse of 141.4: rounded separately they give
 // 3 - 141 and the origin lands a sample late; carried whole, 2.6 - 141.4 is
 // 138.8 and rounds to 139.
+// THE CALIBRATION IS A COUNT OF SAMPLES AND THE DUTY IS A RATIO, SO THE TWO
+// MUST NOT BE MIXED BEFORE THE DIVIDER IS KNOWN. Subtracting
+// InvertedPulseWidthSamples from the count and then dividing stores a ratio
+// that is only right at the divider it was measured against, and the divider
+// moves between the measurement and the origin: a pass-through source is
+// measured at the scaling divider and placed at the channel's.
+//
+// Measured on the bench at 1280x720@60, the duty taken at divider 1444 and the
+// origin written at 2038: the carried ratio gives a width of 45.2 samples where
+// a direct reading at 2038 gives 52 raw and 47 corrected. The source's own
+// share carried instead gives 47.2, which is the direct reading.
+// ../docs/investigations/the-key-carried-the-origins-calibration.md
+TEST_CASE("a duty measured at another divider places the origin on the source's own share")
+{
+    // ONE source pulse, 52 samples of the 2038-sample line it is placed at.
+    // The pair differs only in the divider the five-sample calibration was
+    // folded in at -- 1444 for a reading carried from a scaling solve, 2038
+    // for one taken here -- which is a difference in BOOKKEEPING and not in
+    // the source.
+    const float share = 52.0f / 2038.0f;
+    const HsyncPulse carried((share * 1444.0f - 5.0f) / 1444.0f, share);
+    const HsyncPulse measuredHere((share * 2038.0f - 5.0f) / 2038.0f, share);
+
+    Wire.reset();
+
+    CHECK(SyncProcessor::retimeStopFor(2038, carried, 1, 1.2352f)
+          == SyncProcessor::retimeStopFor(2038, measuredHere, 1, 1.2352f));
+}
+
 TEST_CASE("the retime origin rounds once rather than term by term")
 {
     const float duty = 141.4f / 2038.0f;

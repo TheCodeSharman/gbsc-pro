@@ -41,7 +41,15 @@ uint16_t SyncProcessor::retimeStopFor(uint16_t divider, const HsyncPulse &pulse,
                          + originVideoLagSamples(pixelSamples)
                          + (oversample <= 1 ? (float)UndecimatedOriginSamples
                                             : 0.0f);
-    const float sync = (float)divider * pulse.syncDuty();
+    // THE SOURCE'S OWN SHARE, with the calibration taken off IN SAMPLES here.
+    // syncDuty() has it already subtracted at whatever divider the reading was
+    // taken against, and that divider is not this one -- a pass-through source
+    // is measured at the scaling divider and placed at the channel's.
+    const float raw = (float)divider * pulse.sourceDuty();
+    const float sync =
+        pulse.carriesOriginCalibration() && raw > (float)InvertedPulseWidthSamples
+            ? raw - (float)InvertedPulseWidthSamples
+            : raw;
 
     // A pulse narrower than the origin carries the subtraction past the end of
     // the line, where the register is inert. The stop is a PHASE, so the same

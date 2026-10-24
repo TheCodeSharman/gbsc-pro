@@ -16,6 +16,11 @@ float HsyncPulse::syncDuty() const { return syncDuty_; }
 
 float HsyncPulse::sourceDuty() const { return sourceDuty_; }
 
+bool HsyncPulse::carriesOriginCalibration() const
+{
+    return sourceDuty_ > syncDuty_;
+}
+
 bool HsyncPulse::isPulse() const
 {
     const float perThousand = syncDuty_ * 1000.0f;

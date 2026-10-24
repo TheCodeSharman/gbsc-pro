@@ -39,6 +39,14 @@ public:
     // ../../../docs/investigations/the-key-carried-the-origins-calibration.md
     float sourceDuty() const;
 
+    // Whether the reading carries the origin's calibration -- the difference
+    // between the two shares above. A consumer that places something in ADC
+    // samples takes the SOURCE's share and subtracts the calibration itself,
+    // at the divider in force: a count of samples folded into a ratio is only
+    // right at the divider it was folded at, and the divider moves between the
+    // measurement and every use of it.
+    bool carriesOriginCalibration() const;
+
     // Whether this duty is a sync pulse at all.
     //
     // STATUS_SYNC_PROC_HLOW_LEN counts the LOW time, so until the polarity
