@@ -188,16 +188,17 @@ void HdBypass::applyChannelRaster(const SourceTiming &timing,
                                   uint16_t frameLines)
 {
     SyncProcessor::applySdVsyncPosition();
-    applyVerticalBlanking(timing.activeStartLine(frameLines),
-                          timing.activeStopLine(frameLines));
+    if (frameLines == 0)
+        return;
+
+    const bool known = timing.published();
+    applyVerticalBlanking(known ? timing.activeStartLine(frameLines) : 0,
+                          known ? timing.activeStopLine(frameLines) : frameLines);
 }
 
 void HdBypass::applyVerticalBlanking(uint16_t activeStartLine,
                                      uint16_t activeStopLine)
 {
-    if (activeStartLine == 0)
-        return;
-
     HD_VB_ST::write(activeStopLine);
     HD_VB_SP::write(activeStartLine);
 }

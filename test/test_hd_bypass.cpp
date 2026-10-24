@@ -643,10 +643,33 @@ TEST_CASE("the channel closes the window where active video ends")
     CHECK(HdBypass::HD_VB_ST::read() == 510);
 }
 
-TEST_CASE("a source running no published raster keeps the window it had")
+TEST_CASE("a source running no published raster blanks nothing, rather than "
+          "keeping the window it had")
 {
-    // No raster means no line to trust, and blanking a guessed count costs
-    // picture. Leaving the window alone is the one answer that cannot.
+    // Measured on the bench: 640x480 in pass-through left the window at lines
+    // 33..513, and a 1280x720 source matching no raster inherited it -- 480
+    // rows of picture in a 750-line frame, the bottom third black, with every
+    // register reading plausible. Keeping the window costs the picture the
+    // guard was there to protect.
+    //
+    // No raster means no line to trust, so nothing is blanked: the source's
+    // own blanking plays out as black, which clips nothing and is visible for
+    // what it is.
+    Wire.reset();
+    Wire.poison(Poison);
+    HdBypass::HD_VB_SP::write(33);
+    HdBypass::HD_VB_ST::write(513);
+
+    HdBypass::applyForSource(2039, 45000, Unpublished, 750, BenchPulse);
+
+    CHECK(HdBypass::HD_VB_SP::read() == 0);
+    CHECK(HdBypass::HD_VB_ST::read() == 750);
+}
+
+TEST_CASE("a frame nobody counted leaves the window alone")
+{
+    // Zero lines is not a measurement, so there is no frame to open the window
+    // onto and the caller has nothing to say yet.
     Wire.reset();
     Wire.poison(Poison);
     HdBypass::HD_VB_SP::write(64);
