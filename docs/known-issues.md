@@ -56,6 +56,36 @@ field can be measured. The count is already read per pass, and the two modes
 differ in scan rather than in sync arrangement, so `lineDoublingFor()`'s answer
 beside the count through the interval is the cheapest candidate.
 
+**`VPERIOD_IF` ALTERNATES BETWEEN TWO FACTORS WITHIN ONE ACQUISITION, SO A
+NON-ZERO READING IS NOT EVIDENCE THE FORMATTER TIMED THIS FRAME.** 3283
+samples on this source, decomposed by the field's own layout -- low 7 bits from
+`s0_07`, high 4 from `s0_08`:
+
+| value | low 7 | high 4 | count |
+|---|---|---|---|
+| 1255 | 103 | 9 | 2328 |
+| 627 | 115 | **4** | 203 |
+| 615 | 103 | **4** | 361 |
+| 1267 | 115 | 9 | 371 |
+
+A high nibble of 4 carries 564 of the samples, so a genuine reading has it, and
+the two crossings are symmetric at 361 and 371 -- which is what a torn wide
+field gives when the genuine pair is **1255 and 627**. Those are the same frame
+at the two factors, `(1255 + 1) / 2` being `627 + 1`. **So 627 is not half a
+frame wrongly measured**, and neither a non-zero test nor a test of the readings
+against each other rejects it; only the count does. An earlier reading that
+attributed 615 and 1267 to tearing alone is superseded.
+
+**WHAT SETS THE FACTOR IS OPEN**, and three candidates are refuted: the Wii
+reads 524 on the scaling path and in bypass alike, 800x600@60 is undoubled and
+reads 2x where the Wii is undoubled and reads 1x, and 320x256@50 is doubled and
+reads 2x. What survives is a correlation with n=1 -- the source needing the hold
+is the one whose reading alternates, where 320x256@50 reads 623 in 2863 and the
+Wii reads 524 every time. It is load-bearing: `reconciledFrame()` tries both
+factors and takes whichever lands within 8 lines of the count, and
+`countContradicted()` gates acquisition, `frameMovedFrom()` arms a re-measure
+and `countFrom()` feeds the solve.
+
 ### `writeRetimeStop()` declines a zero silently, and zero is its "unmeasured" answer
 
 `retimeStopFor()` returns 0 for `!pulse.isPulse() || divider == 0`, and
@@ -1169,7 +1199,12 @@ pulse, and `test_picture_holds_still.py` reads 0 of 514 on both legs.
 `investigations/the-composite-roll-is-lost-horizontal-pulses-in-the-doubled-scan.md`.
 
 **THE ONE-FRAME-IN-A-HUNDRED RESIDUAL WAS THE POST COAST, and the roll of a
-line or two is closed with it.** `SP_POST_COAST` is 4, where it was 6.
+line or two is closed with it.** `SP_POST_COAST` became 4, where it was 6 --
+**and that value is superseded**: the post coast is per source now,
+`LongPostCoastLines` 6 or `ShortPostCoastLines` 2 by what
+`VideoPath::measureVerticalInterval()` measures, because 4 and 6 later measured
+indistinguishable on a source needing the hold, leaving the hold itself rather
+than its length as the residual. The sweep below stands as the measurement.
 Composite `vga` at 320x256@50 into 1080p, frozen, 100 s legs alternating with
 controls, as the share of emitted frames displaced vertically:
 
