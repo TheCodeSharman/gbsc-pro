@@ -1099,29 +1099,38 @@ static uint16_t countThroughThreshold(bool rejectsEqualisation)
     return SyncProcessor::frameLines();
 }
 
-void VideoPath::measureEqualisation()
+bool VideoPath::measureEqualisation()
 {
     if (equalisationProbe_ == 0 || EqualisationMeasurement::isSet())
-        return;
+        return true;
 
     // A SEPARATE-SYNC SOURCE HAS NOTHING TO MEASURE. It is indifferent across
     // the whole range of the field, so a probe there spends two settling times
     // to choose between values measured to be the same.
     if (!SyncMeasurement::isCsync())
-        return;
+        return true;
 
     // A REFERENCE LATCHES LIKE ANY OTHER CLOCK, so samplingClockLatched() reads
     // true while the block counts the line the PREVIOUS source was measured
     // against. The header states the contract this keeps.
     if (Adc::referenceSamplingClockInForce())
-        return;
+        return true;
 
     if (!samplingClockLatched())
-        return;
+        return true;
+
+    // AND THE CLOCK HAS TO HAVE BEEN IN FORCE A WHILE, which is the one
+    // refusal worth coming back for: the install that chooses a divider
+    // re-latches the ADC PLL, and the horizontal echo above answers true while
+    // the count is still moving. A TIME rather than a condition the source
+    // could fail for ever, so the retry terminates.
+    // ../../../../docs/known-issues.md
+    if (!sampling_.clockSettled())
+        return false;
 
     const bool equalised = EqualisationMeasurement::probe(equalisationProbe_);
     if (!EqualisationMeasurement::isSet())
-        return;
+        return true;
 
     writePulseIgnore();
 
@@ -1140,6 +1149,7 @@ void VideoPath::measureEqualisation()
              (unsigned)SyncProcessor::preCoastLines(),
              (unsigned)SyncProcessor::postCoastLines());
     tv5725Log(line);
+    return true;
 }
 
 void VideoPath::measureVerticalInterval(uint16_t sourceLines)

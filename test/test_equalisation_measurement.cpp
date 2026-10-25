@@ -22,14 +22,20 @@ int readings = 0;
 const uint16_t *dithering = 0;
 uint8_t dithered = 0;
 
+// What the higher threshold reads once the measurement has been taken through
+// the lower one, where a case has the count move underneath the probe.
+uint16_t rejectingAfter = 0;
+uint8_t rejectingReadings = 0;
+
 uint16_t countAt(bool rejectsEqualisation)
 {
-    if (dithering != 0 && !rejectsEqualisation) {
-        ++readings;
-        return dithering[dithered++ % 5];
-    }
     ++readings;
-    return rejectsEqualisation ? rejecting : admitting;
+    if (!rejectsEqualisation)
+        return dithering != 0 ? dithering[dithered++ % 5] : admitting;
+
+    const bool after = rejectingReadings >= EqualisationMeasurement::Samples;
+    ++rejectingReadings;
+    return after && rejectingAfter != 0 ? rejectingAfter : rejecting;
 }
 
 void given(uint16_t below, uint16_t above)
@@ -40,6 +46,8 @@ void given(uint16_t below, uint16_t above)
     readings = 0;
     dithering = 0;
     dithered = 0;
+    rejectingAfter = 0;
+    rejectingReadings = 0;
 }
 
 }  // namespace
@@ -84,7 +92,7 @@ TEST_CASE("the probe runs once per source, not once per pass")
     EqualisationMeasurement::equalisation(countAt);
     EqualisationMeasurement::equalisation(countAt);
 
-    CHECK(readings == 2 * EqualisationMeasurement::Samples);
+    CHECK(readings == 3 * EqualisationMeasurement::Samples);
 }
 
 TEST_CASE("forgetting re-arms the probe")
@@ -95,7 +103,7 @@ TEST_CASE("forgetting re-arms the probe")
     EqualisationMeasurement::forget();
     EqualisationMeasurement::equalisation(countAt);
 
-    CHECK(readings == 4 * EqualisationMeasurement::Samples);
+    CHECK(readings == 6 * EqualisationMeasurement::Samples);
 }
 
 TEST_CASE("a value merely set does not suppress the probe")
@@ -134,6 +142,34 @@ TEST_CASE("and the interval still carries it through the same dither")
     static const uint16_t wandering[5] = {321, 318, 319, 317, 320};
     given(0, 310);
     dithering = wandering;
+
+    CHECK(EqualisationMeasurement::equalisation(countAt));
+}
+
+TEST_CASE("a count that moved under the probe concludes nothing")
+{
+    // The verdict is a difference between two counts taken a settling time
+    // apart, so a count moving for its own reasons produces one whatever the
+    // thresholds do -- which is how the Wii at 480p answered equalisation from
+    // a window 80 ms after its divider was latched, where settled it reads the
+    // same count through both.
+    //
+    // The control is the higher threshold read again AFTER the measurement: two
+    // readings of one threshold that disagree by the verdict's own margin
+    // describe two states of the source, not two thresholds.
+    // ../docs/known-issues.md
+    given(524, 524);
+    rejectingAfter = 517;
+
+    EqualisationMeasurement::equalisation(countAt);
+
+    CHECK_FALSE(EqualisationMeasurement::isSet());
+}
+
+TEST_CASE("and a control that agrees carries the verdict")
+{
+    given(319, 310);
+    rejectingAfter = 311;
 
     CHECK(EqualisationMeasurement::equalisation(countAt));
 }

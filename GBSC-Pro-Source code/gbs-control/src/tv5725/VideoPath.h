@@ -353,11 +353,18 @@ public:
     // field do not overlap across this bench's sources, so the value follows a
     // measurement rather than a constant.
     //
-    // RUNS LATCHED. The thresholds are in ADC samples of the line the block is
-    // counting, so through a reference clock the pair describes a line the
-    // source is not sending and both readings are of nothing.
+    // RUNS LATCHED AND SETTLED. The thresholds are in ADC samples of the line
+    // the block is counting, so through a reference clock the pair describes a
+    // line the source is not sending and both readings are of nothing -- and a
+    // clock latched this pass is counting the source's line without the count
+    // being the source's yet.
     // ../../../docs/investigations/the-composite-count-dithers-where-the-ignore-nears-the-pulse.md
-    void measureEqualisation();
+    //
+    // False where the state it has to measure in does not exist yet, which asks
+    // the caller for another pass. Nothing else in the engine measures the
+    // interval, so a refusal that is not retried leaves the threshold at the
+    // assumed one for the session.
+    bool measureEqualisation();
 
     // The hsync pulse, taken by the layer that measures and handed over. THE
     // ENGINE READS NOTHING BACK: every window it solves, now and on every

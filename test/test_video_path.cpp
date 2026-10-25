@@ -3308,6 +3308,92 @@ TEST_CASE("a source is not probed through a reference clock")
     CHECK_FALSE(EqualisationMeasurement::isSet());
 }
 
+TEST_CASE("the probe answers nothing through a clock latched in this pass")
+{
+    // Measured on the bench, selecting ypbpr with the RISC PC on vga before it:
+    //
+    //   22.64  installing: divider from line rate 31471, doubled 0 -> 1446
+    //   22.64  vertical interval: equalisation, pulse ignore 70 of 1446 samples
+    //   22.92  settle: spent after 882 ms
+    //
+    // The divider is the source's own, so the line it measured through was not
+    // the previous source's -- what is wrong is WHEN. Installing it re-latches
+    // the ADC PLL, and the probe read both thresholds in the window the engine
+    // itself then waits out, which is where the count is not yet the source's.
+    //
+    // samplingClockLatched() cannot refuse that: STATUS_SYNC_PROC_HTOTAL echoes
+    // a newly written divider while the vertical count is still moving, so the
+    // probe needs the settle rather than the echo.
+    seedBenchSource();
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+    VideoSourceAcquisition acquisition(sampling, engine);
+    engine.useSyncTypeProbe(probeOwnVsync);
+    engine.useEqualisationProbe(equalisedProbe);
+
+    g_hasOwnVsync = false;
+    engine.setOutputMode(benchMode());
+    engine.inputTimingsChanged(4);
+    REQUIRE(pollUntilSolved(acquisition));
+
+    EqualisationMeasurement::forget();
+    sampling.samplingClockLatched();
+    engine.measureEqualisation();
+
+    CHECK_FALSE(EqualisationMeasurement::isSet());
+}
+
+TEST_CASE("and the pass that latched it comes back rather than going without")
+{
+    // The install chooses the divider from the rate just measured, so the pass
+    // that probes is normally the pass that latched -- and nothing else in the
+    // engine measures the interval. Refused without asking for another pass,
+    // the threshold then stands at the assumed one for the session, which is
+    // the equalised 49 per thousand on a source carrying none.
+    seedBenchSource();
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+    VideoSourceAcquisition acquisition(sampling, engine);
+    engine.useSyncTypeProbe(probeOwnVsync);
+    engine.useEqualisationProbe(equalisedProbe);
+
+    g_hasOwnVsync = false;
+    engine.setOutputMode(benchMode());
+    engine.inputTimingsChanged(4);
+    REQUIRE(pollUntilSolved(acquisition));
+
+    EqualisationMeasurement::forget();
+    sampling.samplingClockLatched();
+
+    CHECK_FALSE(engine.measureEqualisation());
+}
+
+TEST_CASE("and takes the measurement once the settle is spent")
+{
+    seedBenchSource();
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+    VideoSourceAcquisition acquisition(sampling, engine);
+    engine.useSyncTypeProbe(probeOwnVsync);
+    engine.useEqualisationProbe(equalisedProbe);
+
+    g_hasOwnVsync = false;
+    engine.setOutputMode(benchMode());
+    engine.inputTimingsChanged(4);
+    REQUIRE(pollUntilSolved(acquisition));
+    REQUIRE(sampling.clockSettled());
+
+    EqualisationMeasurement::forget();
+
+    CHECK(engine.measureEqualisation());
+}
+
 TEST_CASE("a separate-sync source is not probed at all")
 {
     // It is indifferent across the whole range of the field, so a probe there

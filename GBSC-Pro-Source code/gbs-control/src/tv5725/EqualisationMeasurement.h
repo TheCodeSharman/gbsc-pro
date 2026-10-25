@@ -64,6 +64,12 @@ public:
     // and a lost lock both report a count, and a difference between two of
     // those is arithmetic on noise. The probe then leaves the answer unset so
     // the next pass asks again.
+    //
+    // Neither does a window that moved. The higher threshold is read either
+    // side of the measurement, and a control pair EqualisationLines apart is
+    // two states of the source rather than two thresholds -- the verdict being
+    // a difference between counts taken a settling time apart, a count moving
+    // for its own reasons produces one whatever the thresholds do.
     static bool probe(CountAtThreshold countAt);
 
     // How many lines the lower threshold must ADD before they are equalising
@@ -72,9 +78,9 @@ public:
     // worst spans four.
     static const uint8_t EqualisationLines = 4;
 
-    // How many readings each threshold is judged on. The count dithers, so one
-    // pair can separate by as much as the interval does; the median of an odd
-    // run of them cannot.
+    // How many readings each threshold is judged on, three runs of them to a
+    // probe. The count dithers, so one pair can separate by as much as the
+    // interval does; the median of an odd run of them cannot.
     static const uint8_t Samples = 5;
 
 private:

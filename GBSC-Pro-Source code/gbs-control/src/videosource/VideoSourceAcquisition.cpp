@@ -1234,7 +1234,12 @@ bool VideoSourceAcquisition::runPass(uint32_t nowMs, bool &detectionPass)
     // are fractions of the line in ADC samples, so the probe is of nothing
     // until the divider it is counted against is the one in force; and the
     // threshold it settles on is what every reading after it is taken through.
-    videoPath_.measureEqualisation();
+    // The install above re-latched the ADC PLL, so the settled state the probe
+    // has to measure in does not exist until the settle it armed is spent --
+    // and this is the only route that measures the interval, so the pass comes
+    // back for it rather than leaving it unmeasured for the session.
+    if (!videoPath_.measureEqualisation())
+        return false;
 
     if (!reading(sampling_.measureDuty(nowMs), settling)) {
         if (!settling)

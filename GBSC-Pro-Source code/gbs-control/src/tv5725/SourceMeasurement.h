@@ -247,6 +247,16 @@ public:
     // dips, and a decision keyed on one is taken on the dip.
     uint16_t settledSourceLines() const;
 
+    // Whether the sampling clock has been in force long enough for a count read
+    // through it to be the source's. An install re-latches the ADC PLL, and
+    // STATUS_SYNC_PROC_HTOTAL echoes the newly written divider while the
+    // vertical count is still moving -- so Adc::dividerLatched() answers true
+    // inside the window this one is still refusing.
+    //
+    // Runs long by at most one pass and never short, clockSettling() being what
+    // spends it.
+    bool clockSettled() const;
+
     // The vertical period the last reading came from, or 0 where it did not
     // complete. verticalTapFor() and the relock want the period itself.
     uint16_t verticalPeriod() const;

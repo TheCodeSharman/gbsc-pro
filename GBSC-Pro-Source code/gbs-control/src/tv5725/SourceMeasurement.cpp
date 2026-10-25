@@ -221,6 +221,11 @@ void SourceMeasurement::modeChanged()
     countRestored_ = false;
 }
 
+bool SourceMeasurement::clockSettled() const
+{
+    return !settleArmed_ && !settleTiming_;
+}
+
 void SourceMeasurement::samplingClockLatched()
 {
     settleArmed_ = true;

@@ -60,15 +60,34 @@ bool EqualisationMeasurement::equalisation(CountAtThreshold countAt)
 // The lower threshold admits whatever the vertical interval carries at
 // half-line spacing, so a serrated source counts those as lines and reads
 // HIGH. An unserrated one reads the same through both.
+//
+// THE HIGHER THRESHOLD IS READ EITHER SIDE, AND THAT CONTROL IS WHAT MAKES THE
+// DIFFERENCE EVIDENCE. The two readings are a settling time apart, so a count
+// moving for its own reasons separates them whatever the thresholds do; two
+// readings of ONE threshold disagreeing by the verdict's own margin describe
+// two states of the source rather than two thresholds.
+// ../../../../docs/known-issues.md
 bool EqualisationMeasurement::probe(CountAtThreshold countAt)
 {
+    const uint16_t before = sampleAt(countAt, true);
     const uint16_t admitting = sampleAt(countAt, false);
-    const uint16_t rejecting = sampleAt(countAt, true);
+    const uint16_t after = sampleAt(countAt, true);
 
-    if (!VideoSignal::countIsSource(admitting)
-        || !VideoSignal::countIsSource(rejecting))
+    if (!VideoSignal::countIsSource(before)
+        || !VideoSignal::countIsSource(admitting)
+        || !VideoSignal::countIsSource(after))
         return equalised_;
 
+    const uint16_t moved = before > after ? (uint16_t)(before - after)
+                                          : (uint16_t)(after - before);
+    if (moved >= EqualisationLines)
+        return equalised_;
+
+    // The larger of the control pair, which is the reading that makes claiming
+    // equalisation harder: an answer of equalisation is what the unmeasured
+    // default already assumes, so the probe has to earn it rather than inherit
+    // it from whichever end of the control it happened to be read at.
+    const uint16_t rejecting = before > after ? before : after;
     equalised_ = admitting >= (uint16_t)(rejecting + EqualisationLines);
     set_ = true;
     return equalised_;
