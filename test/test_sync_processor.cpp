@@ -602,29 +602,39 @@ TEST_CASE("an unequalised source that cannot be measured uncoasted is still coas
     forgetRestsUncoasted();
 }
 
-TEST_CASE("a source with nothing in its vertical interval is not coasted at all")
+TEST_CASE("a source needing no hold takes a short pre coast and no post")
 {
-    // The PRE lines are what carry the composite shear: 862 randomised blocks
-    // over 11.49 hours put 0/0 at 0.017 [0.01, 0.04] of 7/6's sheared frames
-    // and 0 bursts in 229 minutes, and crossing the pair attributes it to the
-    // pre lines at 6.76 [2.54, 18.00], p = 1.8e-07, where the post lines do
-    // nothing within pre 7.
+    // A LONG PRE COAST CARRIES THE COMPOSITE SHEAR AND A SHORT ONE DOES NOT.
+    // 862 randomised blocks over 11.49 hours put 0/0 at 0.017 [0.01, 0.04] of
+    // 7/6's sheared frames and 0 bursts in 229 minutes, and crossing the pair
+    // attributes it to the pre lines at 6.76 [2.54, 18.00], p = 1.8e-07. Two
+    // pre lines cost none of that: 30 randomised blocks a cell at 24 scored
+    // minutes each read 0 bursts, 0 count collapses and 0 sheared frames at
+    // 2/0, identical to 0/0, against 25, 7 and 17 at 7/6 -- and 2/0 held the
+    // count at 308 throughout where 0/0 was seen at 307 and 308, which matters
+    // because the source key and the framing lookup are built from it.
     //
-    // THE POST LINES GO WITH THEM. 0/2 dithers the count 69 times as often as
-    // 0/0, so the pair is 0/0 or it is the hold.
+    // THEY ARE INSURANCE AGAINST A WRONG VERDICT, which is the only thing they
+    // can be: a source that rests uncoasted is by definition one that does not
+    // need them. 800x600@60 on composite is the case -- judged to need no hold
+    // it rolls in 95% of 3602 emitted frames at 0 pre lines and in 0 of 1202
+    // at 2.
+    //
+    // THE POST LINES STILL GO TO ZERO. 0/2 dithers the count 69 times as often
+    // as 0/0, so a post coast is the hold or it is nothing.
     // docs/investigations/the-composite-shear-is-the-coast.md
     givenRestsUncoasted();
 
     Wire.reset();
     SyncProcessor::applySeparationThresholds(true);
 
-    CHECK(SyncProcessor::SP_PRE_COAST::read() == 0);
+    CHECK(SyncProcessor::SP_PRE_COAST::read() == 2);
     CHECK(SyncProcessor::SP_POST_COAST::read() == 0);
 
     forgetRestsUncoasted();
 }
 
-TEST_CASE("a source that rests uncoasted is not coasted by the sync type either")
+TEST_CASE("a source that rests uncoasted is not held by the sync type either")
 {
     // Two functions write the pair, so a gate reaching one of them is undone
     // by whichever ran last.
@@ -633,7 +643,7 @@ TEST_CASE("a source that rests uncoasted is not coasted by the sync type either"
     Wire.reset();
     SyncProcessor::applySeparation(true, MeasuredCsyncDivider);
 
-    CHECK(SyncProcessor::SP_PRE_COAST::read() == 0);
+    CHECK(SyncProcessor::SP_PRE_COAST::read() == 2);
     CHECK(SyncProcessor::SP_POST_COAST::read() == 0);
 
     forgetRestsUncoasted();

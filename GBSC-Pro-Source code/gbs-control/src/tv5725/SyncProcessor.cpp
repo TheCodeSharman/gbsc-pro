@@ -248,7 +248,7 @@ uint8_t SyncProcessor::preCoastLines()
     if (coastOverridden_)
         return preCoastOverride_;
     if (restsUncoasted())
-        return 0;
+        return RestingPreCoastLines;
     return CompositePreCoastLines;
 }
 

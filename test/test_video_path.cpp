@@ -3036,7 +3036,7 @@ TEST_CASE("a coast changed on a settled source reaches the chip")
     engine.setOutputMode(benchMode());
     engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(acquisition));
-    REQUIRE(SyncProcessor::SP_PRE_COAST::read() == 0);
+    REQUIRE(SyncProcessor::SP_PRE_COAST::read() == 2);
 
     SyncProcessor::overrideCoast(12, 12);
     engine.reapplySyncTypeInForce();
@@ -3143,9 +3143,11 @@ TEST_CASE("a serrated source solves to the threshold that rejects its interval")
 
 TEST_CASE("a source resting uncoasted solves to no coast at all")
 {
-    // The composite shear is the PRE coast lines, so the pair goes with the
-    // two measurements the gate takes -- and it has to be written when they
-    // land, because both probes run after the arrangement did.
+    // The composite shear is the LONG pre coast, so the pair goes with the two
+    // measurements the gate takes -- and it has to be written when they land,
+    // because both probes run after the arrangement did. A source needing no
+    // hold still takes the short pre coast, which is measured to cost nothing
+    // and is insurance against the verdict being wrong.
     // ../docs/investigations/the-composite-shear-is-the-coast.md
     seedBenchSource();
     DisplayClock clock;
@@ -3162,7 +3164,7 @@ TEST_CASE("a source resting uncoasted solves to no coast at all")
     REQUIRE(pollUntilSolved(acquisition));
     REQUIRE_FALSE(EqualisationMeasurement::carriesEqualisation());
 
-    CHECK(SyncProcessor::SP_PRE_COAST::read() == 0);
+    CHECK(SyncProcessor::SP_PRE_COAST::read() == 2);
     CHECK(SyncProcessor::SP_POST_COAST::read() == 0);
 }
 

@@ -447,9 +447,10 @@ public:
     // composite source, and how many after. COAST stops the PLL tracking the
     // reference and holds its output frequency.
     //
-    // **THE PRE LINES CARRY THE COMPOSITE SHEAR**, so a source that can do
-    // without them takes 0/0 -- and 0/2 is not available as a half step, the
-    // count dithering far more there than at 0/0.
+    // **A LONG PRE COAST CARRIES THE COMPOSITE SHEAR AND A SHORT ONE DOES
+    // NOT**, so a source that can do without the hold takes the resting pre
+    // coast below rather than the full seven -- and no post coast at all, 0/2
+    // dithering the count far more than 0/0.
     // docs/investigations/the-composite-shear-is-the-coast.md
     //
     // **WHICH SOURCES CAN DO WITHOUT THEM IS NOT SETTLED, AND EQUALISATION
@@ -479,6 +480,13 @@ public:
     static const uint8_t CompositePreCoastLines = 7;
     static const uint8_t LongPostCoastLines = 6;
     static const uint8_t ShortPostCoastLines = 2;
+
+    // What a source needing no hold is coasted by anyway, as insurance against
+    // the verdict being wrong: the probe cannot see what the pre lines are for,
+    // and a source wrongly judged to rest uncoasted rolls at 0 and holds at 2.
+    // It is measured to cost nothing on a source that genuinely rests.
+    // test/test_sync_processor.cpp carries both measurements.
+    static const uint8_t RestingPreCoastLines = 2;
 
     // Which of the two a held source gets, and half of the gate above. HELD
     // rather than asked per write, because both writers of the pair need the
