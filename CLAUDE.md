@@ -2479,17 +2479,28 @@ firmware C++.
   ```
 
   One line out means one kind, which is the rule. More than one means split it.
-- **STOP FOR REVIEW AT ANY COMMIT TOUCHING C++**, which is `*.cpp`, `*.h`,
-  `*.hpp`, `*.c` or `*.ino`. Everything else -- Python tooling, snapshots,
-  `docs/`, `project:` policy commits -- goes straight through. The engine is
-  the part worth reading and the Python tooling is deliberately skipped.
-  **GATE ON THE FILE LIST, NEVER THE SUBJECT PREFIX.** Measured across the
-  branch: no commit says `firmware:` without touching C++, but 8 of 10
-  C++-touching commits were labelled `tv5725:`, `input:`, `gbs-control:`,
-  `docs:` or `tools:`, so the prefix alone would have skipped the 68-file
-  preset-table deletion. Upstream provenance selects nothing either -- it was
-  tried as "stop only at files present at `upstream/main`", and that waved the
-  entire geometry engine past unreviewed, `src/tv5725/` being new in this fork.
+- **DO NOT STOP FOR REVIEW PER COMMIT. COMMIT THE WORK.** The review is of the
+  resulting code, in a broad pass once the shape has settled, which is the same
+  thing the push rule above says -- thousands of commits are not read one at a
+  time, and a session that halts on each C++ commit spends the session on the
+  halt. **The first pass is the probing question**, asked of the code as it
+  stands, and it reaches the parts a diff does not.
+
+  So the gate is the SUITE and not a signature: run the host suite, commit, and
+  say in the message what was measured and what is untested. A change that
+  cannot be judged from the host suite says so and names the bench reading that
+  stood in for one.
+
+  The one thing still worth splitting is the KIND, because that is readability
+  rather than approval -- firmware, tooling, project conventions and docs each
+  read on their own. The check for that is below.
+
+  Where a C++-touching commit does need to be found later, gate on the FILE
+  LIST and never the subject prefix: 8 of 10 such commits were labelled
+  `tv5725:`, `input:`, `gbs-control:`, `docs:` or `tools:`, so the prefix alone
+  would miss the 68-file preset-table deletion, and upstream provenance selects
+  nothing either -- `src/tv5725:` is new in this fork, so "present at
+  `upstream/main`" waves the entire geometry engine past.
 
   ```sh
   for h in $(git log --format=%h --reverse main..dev); do
