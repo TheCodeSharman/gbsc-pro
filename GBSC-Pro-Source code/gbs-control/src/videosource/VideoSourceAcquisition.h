@@ -483,6 +483,12 @@ private:
     uint16_t unacquiredPasses_;
     uint16_t absentPasses_;
 
+    // Consecutive polls on which the line the processor counted was not the one
+    // the divider in force clocks. Forgiven for the same run as a count that
+    // cannot be read at all, because it is the same question asked of the other
+    // axis: AbsentPasses.
+    uint16_t unlatchedPasses_;
+
     // Consecutive detection passes whose line count was inside the source
     // bounds and never settled. What it has to sit through is noise: one
     // disagreeing sample restarts the idle run, so a single glitch costs a

@@ -40,6 +40,7 @@ VideoSourceAcquisition::VideoSourceAcquisition(Tv5725::SourceMeasurement &sampli
       unlockedPasses_(0), contradictedPasses_(0),
       solvedLinePeriod_(0), rateRun_(0), recheckPasses_(0),
       sourceInterrupted_(false), unacquiredPasses_(0), absentPasses_(0),
+      unlatchedPasses_(0),
       unsettledPasses_(0), unsettledArmed_(false),
       passThroughFieldRateHz_(0.0f),
       unmeasuredPasses_(0), referenceRetryPasses_(0),
@@ -632,20 +633,32 @@ bool VideoSourceAcquisition::sourceMoved()
     else if (absentPasses_ < AbsentPasses)
         ++absentPasses_;
 
-    // The horizontal half, and it is not a second steadiness run: the divider
-    // is held state the engine chose, so one reading of what the sync processor
-    // counts against it is the whole test.
+    // The horizontal half, and BOTH HALVES FORGIVE A DROPPED READING FOR THE
+    // SAME RUN: a processor that loses the line for a moment reads exactly like
+    // one clocking a divider the engine did not choose, and the verdict is what
+    // the acquired run -- and so every maintenance threshold keyed on it --
+    // starts over from.
+    // ../../../docs/investigations/a-dropped-line-count-is-not-an-unlocked-source.md
     //
     // A reading that cannot read the source at all moves nothing until the run
     // is spent: the verdict HOLDS what it had, because one such reading is a
     // miscount rather than a source leaving. AbsentPasses.
     const uint16_t lineSamples = Tv5725::SyncProcessor::lineSamples();
+    const bool latched = Tv5725::Adc::dividerLatched(lineSamples);
+    if (latched)
+        unlatchedPasses_ = 0;
+    else if (unlatchedPasses_ < AbsentPasses)
+        ++unlatchedPasses_;
+
     const SourceState was = sourceState_;
-    if (readsSource)
-        sourceState_ = Tv5725::Adc::dividerLatched(lineSamples) ? SourceAcquired
-                                                                : SourceUnlocked;
-    else if (absentPasses_ >= AbsentPasses)
+    if (readsSource) {
+        if (latched)
+            sourceState_ = SourceAcquired;
+        else if (unlatchedPasses_ >= AbsentPasses)
+            sourceState_ = SourceUnlocked;
+    } else if (absentPasses_ >= AbsentPasses) {
         sourceState_ = SourceAbsent;
+    }
 
     // The state changing is worth a line because the fault it exists to name is
     // INTERMITTENT and a poll fast enough to catch it changes what the unit

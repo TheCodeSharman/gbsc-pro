@@ -1573,10 +1573,35 @@ TEST_CASE("a source counted steadily at a line the ADC is not sampling is unlock
     // that has not moved.
     seedLineSamplesUnlocked(3250);
 
-    for (uint8_t i = 0; i < SourceMeasurement::SteadySamples + 2; ++i)
+    for (uint16_t i = 0; i < VideoSourceAcquisition::AbsentPasses + 2; ++i)
         unit.poll();
 
     CHECK(unit.acquisition.sourceState() == VideoSourceAcquisition::SourceUnlocked);
+}
+
+TEST_CASE("a line count the processor drops for a moment is not a source unlocking")
+{
+    // Measured on the Wii at 480p: STATUS_SYNC_PROC_HTOTAL leaves the divider
+    // for 25..75 ms about twice a second, 14.7% of a 30 s window in 64
+    // episodes, at the same rate with automation FROZEN -- so it is the source
+    // and nothing the engine writes. A verdict reached on one such reading
+    // zeroes the acquired run every 0.47 s, and auto gain needs 91 unbroken
+    // passes, so the three channel gains never leave 51 and the picture is
+    // magenta.
+    seedBenchSource();
+    seedLineSamples(BenchDivider);
+    Acquiring unit;
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+    const uint16_t settled = unit.acquisition.acquiredPasses();
+    REQUIRE(settled > 0);
+
+    seedLineSamplesUnlocked(12);
+    unit.poll();
+    seedLineSamples(BenchDivider);
+
+    CHECK(unit.acquisition.sourceState() == VideoSourceAcquisition::SourceAcquired);
+    CHECK(unit.acquisition.acquiredPasses() > settled);
 }
 
 TEST_CASE("unlocked is not absent, because the two want opposite things")
@@ -1594,7 +1619,7 @@ TEST_CASE("unlocked is not absent, because the two want opposite things")
     // The processor loses the line the ADC is clocking, under a source
     // that has not moved.
     seedLineSamplesUnlocked(3250);
-    for (uint8_t i = 0; i < SourceMeasurement::SteadySamples + 2; ++i)
+    for (uint16_t i = 0; i < VideoSourceAcquisition::AbsentPasses + 2; ++i)
         unit.poll();
 
     CHECK(unit.acquisition.sourceState() != VideoSourceAcquisition::SourceAbsent);
@@ -1622,7 +1647,7 @@ TEST_CASE("an unlocked source recovers, though its count has not moved")
     // The divider in force is not the one the line is counted against, under a
     // source that has not moved.
     seedLineSamplesUnlocked(976);
-    for (uint8_t i = 0; i < SourceMeasurement::SteadySamples + 2; ++i)
+    for (uint16_t i = 0; i < VideoSourceAcquisition::AbsentPasses + 2; ++i)
         unit.poll();
     REQUIRE(unit.acquisition.sourceState() == VideoSourceAcquisition::SourceUnlocked);
 
@@ -2232,10 +2257,11 @@ TEST_CASE("a source that goes away zeroes the acquired run")
     REQUIRE(unit.acquisition.acquiredPasses() > 0);
 
     seedLineSamplesUnlocked(3250);
-    unit.poll();
+    for (uint16_t i = 0; i < VideoSourceAcquisition::AbsentPasses + 2; ++i)
+        unit.poll();
 
     CHECK(unit.acquisition.acquiredPasses() == 0);
-    CHECK(unit.acquisition.unmeasuredPasses() == 1);
+    CHECK(unit.acquisition.unmeasuredPasses() > 0);
 }
 
 TEST_CASE("the run counts detection passes, not loop passes")
@@ -2747,7 +2773,7 @@ TEST_CASE("a live count stops the search on a source the run has given up on")
     REQUIRE(unit.pollUntilSolved());
 
     seedLineSamplesUnlocked(3250);
-    for (uint8_t i = 0; i < SourceMeasurement::SteadySamples + 2; ++i)
+    for (uint16_t i = 0; i < VideoSourceAcquisition::AbsentPasses + 2; ++i)
         unit.poll();
 
     REQUIRE_FALSE(unit.acquisition.sourceIsPresent());
