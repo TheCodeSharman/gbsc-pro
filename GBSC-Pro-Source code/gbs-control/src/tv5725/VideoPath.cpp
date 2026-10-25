@@ -1110,6 +1110,12 @@ void VideoPath::measureEqualisation()
     if (!SyncMeasurement::isCsync())
         return;
 
+    // A REFERENCE LATCHES LIKE ANY OTHER CLOCK, so samplingClockLatched() reads
+    // true while the block counts the line the PREVIOUS source was measured
+    // against. The header states the contract this keeps.
+    if (Adc::referenceSamplingClockInForce())
+        return;
+
     if (!samplingClockLatched())
         return;
 

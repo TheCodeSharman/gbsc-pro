@@ -3267,6 +3267,47 @@ TEST_CASE("a serrated source keeps the hold either side of its interval")
     CHECK(SyncProcessor::SP_POST_COAST::read() > 0);
 }
 
+TEST_CASE("a source is not probed through a reference clock")
+{
+    // Measured on the bench, selecting ypbpr with the RISC PC on vga before it:
+    //
+    //   input selected: ypbpr, reference divider 2040, applied +66ms
+    //   vertical interval: equalisation, pulse ignore 107 of 2200 samples
+    //
+    // 2200 is the line the PREVIOUS source was counted against, and the Wii's
+    // own divider is 1446. The probe read both thresholds through it, answered
+    // equalisation for a source that carries none, and that answer LATCHES --
+    // so the equalised threshold stood once the real divider arrived, where it
+    // is 4.9% of the line and lands inside the count's dither. A dithering
+    // count never holds the acquired run, and the clamp release and auto gain
+    // both key on that run.
+    //
+    // samplingClockLatched() cannot see this on its own: the PLL locks to the
+    // reference and the sync processor reports it back, so the divider reads
+    // latched while it is nobody's line.
+    seedBenchSource();
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+    VideoSourceAcquisition acquisition(sampling, engine);
+    engine.useSyncTypeProbe(probeOwnVsync);
+    engine.useEqualisationProbe(equalisedProbe);
+
+    g_hasOwnVsync = false;
+    engine.setOutputMode(benchMode());
+    engine.inputTimingsChanged(4);
+    REQUIRE(pollUntilSolved(acquisition));
+    REQUIRE(EqualisationMeasurement::isSet());
+
+    EqualisationMeasurement::forget();
+    Adc::installReferenceDivider(2200);
+    Wire.lockSyncProcessor();
+    engine.measureEqualisation();
+
+    CHECK_FALSE(EqualisationMeasurement::isSet());
+}
+
 TEST_CASE("a separate-sync source is not probed at all")
 {
     // It is indifferent across the whole range of the field, so a probe there
