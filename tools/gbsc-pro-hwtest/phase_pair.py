@@ -40,9 +40,12 @@ scores higher.
 """
 
 import argparse
+import collections
 import csv
+import re
 import socket
 import sys
+import threading
 import time
 import urllib.request
 
@@ -64,6 +67,96 @@ ACQUIRE_S = 22
 
 WITNESSES = ["PA_SP_S", "PA_ADC_S", "PLLAD_MD", "SP_RT_HS_SP",
              "STATUS_SYNC_PROC_VTOTAL", "STATUS_SYNC_PROC_HTOTAL"]
+
+# Adc::MidField, the phase the search keeps whenever the scan says nothing
+# against it.
+MID_FIELD = 16
+
+SCAN = re.compile(r"phase scan:\s*(\S+)")
+
+
+class Console:
+    """The engine's own lines, with the host clock that saw them.
+
+    `reportScan()` prints the walk's whole scoreboard, one character per phase,
+    so what the search DISCARDED is readable from here -- which is what makes
+    the keep-the-default branch measurable without touching the firmware.
+    """
+
+    def __init__(self, host):
+        self.host = host
+        self.lines = collections.deque(maxlen=40000)
+        self.stop = threading.Event()
+        self.lock = threading.Lock()
+        threading.Thread(target=self._run, daemon=True).start()
+
+    def _run(self):
+        import websocket
+        while not self.stop.is_set():
+            try:
+                link = websocket.create_connection(
+                    "ws://%s:81" % self.host, subprotocols=["arduino"],
+                    timeout=5)
+                link.settimeout(0.5)
+            except Exception:
+                time.sleep(3)
+                continue
+            while not self.stop.is_set():
+                try:
+                    text = link.recv().strip()
+                except Exception as why:
+                    if "timed out" in str(why):
+                        continue
+                    break
+                with self.lock:
+                    self.lines.append((time.time(), text))
+            try:
+                link.close()
+            except Exception:
+                pass
+
+    def since(self, when):
+        with self.lock:
+            return [text for seen, text in self.lines if seen >= when]
+
+
+def scan_since(console, when):
+    """The LAST scoreboard printed since `when`, or None."""
+    found = None
+    for text in console.since(when):
+        match = SCAN.search(text)
+        if match:
+            found = match.group(1)
+    return found
+
+
+def middle_of_widest_clean_run(scan):
+    """Adc::middleOfWidestCleanRun, off the console's own scoreboard.
+
+    scanDigit() prints '.' for a phase whose count read the divider exactly, so
+    a dot is a dither of 0 and nothing else is one.
+    """
+    width = len(scan)
+    best_start, best_length, start, length = 0, 0, 0, 0
+    for step in range(2 * width):
+        phase = step % width
+        if scan[phase] != ".":
+            length = 0
+            continue
+        if length == 0:
+            start = phase
+        length += 1
+        if length > best_length and length <= width:
+            best_length, best_start = length, start
+    if best_length == 0:
+        return MID_FIELD
+    return (best_start + best_length // 2) % width
+
+
+def apart(a, b, field=FIELD):
+    """How far two phases sit, the short way round."""
+    gap = (a - b) % field
+    return min(gap, field - gap)
 
 
 def modeserv(host, command):
@@ -141,12 +234,14 @@ def main():
     args = parser.parse_args()
 
     dev = device()
+    console = Console(args.host)
     rows = []
     for trial in range(args.trials):
         # The engine's own choices, so both holds go first.
         route(args.host, "/phase?clear")
         modeserv(args.modeserv, args.other)
         time.sleep(ACQUIRE_S)
+        asked = time.time()
         reply = modeserv(args.modeserv, args.mode)
         if "F-1" in reply:
             print(f"trial {trial + 1}: source read back {reply!r}, no usable "
@@ -157,6 +252,7 @@ def main():
         time.sleep(ACQUIRE_S)
 
         held = read_fields(args.host, WITNESSES)
+        scan = scan_since(console, asked)
         anchor = luma(frames(CLIP, dev, WIDTH, HEIGHT, warmup=WARMUP))
         try:
             box = wedge.locate(anchor[0], lit_box(anchor[0]))
@@ -174,7 +270,13 @@ def main():
 
         after = read_fields(args.host, ["SP_RT_HS_SP"])
         offset = (best_adc - best_sp) % FIELD
+        run_middle = middle_of_widest_clean_run(scan) if scan else None
         row = {
+            "scan": scan or "",
+            "run_middle": run_middle if run_middle is not None else -1,
+            "sp_off_by_chosen": apart(best_sp, held["PA_SP_S"]),
+            "sp_off_by_run": (apart(best_sp, run_middle)
+                              if run_middle is not None else -1),
             "trial": trial + 1,
             "chosen_sp": held["PA_SP_S"], "chosen_adc": held["PA_ADC_S"],
             "best_sp": best_sp, "best_adc": best_adc, "offset": offset,
@@ -191,13 +293,16 @@ def main():
         rows.append(row)
         print("trial %2d: best sp %2d (chosen %2d)  best adc %2d (chosen %2d)  "
               "offset %2d  adc %5.1f/%5.1f  sp %5.1f/%5.1f  origin %4d->%4d  "
-              "left span %d"
+              "left span %d  run middle %s (off %s vs chosen off %d)"
               % (row["trial"], best_sp, row["chosen_sp"], best_adc,
                  row["chosen_adc"], offset, row["adc_peak"], row["adc_trough"],
                  row["sp_peak"], row["sp_trough"], row["origin"],
-                 row["origin_after"], row["left_span"]), flush=True)
+                 row["origin_after"], row["left_span"],
+                 row["run_middle"], row["sp_off_by_run"],
+                 row["sp_off_by_chosen"]), flush=True)
 
     route(args.host, "/phase?clear")
+    console.stop.set()
 
     if not rows:
         sys.exit("no trial produced a reading")
@@ -222,6 +327,22 @@ def main():
         print("THE ORIGIN MOVED. It costs the grating more than either phase, "
               "so these trials are not comparable -- discard rather than "
               "interpret.")
+    scored = [r for r in rows if r["sp_off_by_run"] >= 0]
+    if scored:
+        by_chosen = float(np.mean([r["sp_off_by_chosen"] for r in scored]))
+        by_run = float(np.mean([r["sp_off_by_run"] for r in scored]))
+        print("the best sync phase sits %.2f steps from what the engine chose "
+              "and %.2f from the widest clean run's middle, over %d trials"
+              % (by_chosen, by_run, len(scored)))
+        print("REMOVING THE KEEP-THE-DEFAULT BRANCH WOULD %s"
+              % ("HELP" if by_run < by_chosen - 0.5 else
+                 "HURT" if by_run > by_chosen + 0.5 else
+                 "CHANGE NOTHING MEASURABLE"))
+    else:
+        print("no phase scan reached the console, so the branch's "
+              "counterfactual is unmeasured -- is a client taking delivery, "
+              "and is the heap gate open? docs/gbs-control-debug-interface.md")
+
     if circular_span(sps) <= 1:
         print("THE BEST SYNC PHASE DID NOT MOVE, so nothing here can correlate "
               "with it whatever the ADC phase did. A run that never varied the "
