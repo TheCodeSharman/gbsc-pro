@@ -7354,46 +7354,49 @@ rather than two.
 
 `investigations/the-composite-count-dithers-where-the-ignore-nears-the-pulse.md`.
 
-### The Wii at 480p is magenta, and auto gain is not the reason
+### The component resting gain of 51 is magenta, and auto gain is the only thing that leaves it
 
-**The source is stable and the framing is right.** The Homebrew Channel menu is
-legible and full screen off the USB capture, 1918x1079 of 1920x1080, with the
-count steady at 524, `STATUS_SYNC_PROC_HTOTAL` equal to `PLLAD_MD` at 1446 and
-the console silent for 30 s. Green is the channel that is missing: whites come
-out magenta, so the deficit is across the whole picture rather than in one
-level.
+**A COMMON GAIN ON ALL THREE CHANNELS STILL SHIFTS THE HUE, which is what makes
+this look like a colour-path fault.** Measured on the Wii at 480p on `ypbpr`
+into 1920x1080, one state, nothing else touched: `ADC_RGCTRL`/`GGCTRL`/`BGCTRL`
+at **51/51/51** gives a picture with no green in it -- whites come out magenta
+-- and at **243/243/243** the same frame is correct, white background, blue
+accents, natural skin tones. `Tv5725::AutoGain` writes those three registers
+and nothing else (`Adc::holdGain(wanted, wanted, wanted)`), so the gain level
+is the whole of the difference.
 
-**AUTO GAIN IS OFF, SO IT CANNOT BE STARVED.** `auto-gain` reads `0` in the
-stored preferences and the sketch's gate asks that first, so auto gain has
-never run on either bench source. The three channel gains at **51/51/51** are
-`ColourSpace::ComponentGain` 0x33, the value the component colour space
-prescribes at rest, and `vga`'s 123/123/123 are `ColourSpace::RgbGain` 0x7B for
-the same reason. **Equal gains on a magenta picture are the colour space, not a
-measurement that failed**, and an earlier reading of them as a starved auto
-gain is superseded. Turning auto gain on is the untried experiment, and it says
-whether the green deficit is in the analog level or downstream of it.
+51 is `ColourSpace::ComponentGain` 0x33, the value the component colour space
+prescribes at rest, as 123 is `ColourSpace::RgbGain` 0x7B on `vga`. **So the
+resting value is unusable on a real component source and only auto gain gets
+off it.** Whether the constant should move is open: it is one source's
+evidence, and `vga` at auto gain's 203 is slightly less vivid than at its own
+resting 123, so the two colour spaces do not obviously want the same answer.
 
-**Every colour register is the value `ColourSpace::applyYuv()` prescribes:**
-`ADC_RYSEL_R/G/B` 1/0/1, `DEC_MATRIX_BYPS` 1, `IF_MATRIX_BYPS` 1,
-`VDS_UCOS_GAIN` 0x1C, `VDS_VCOS_GAIN` 0x29, all three DAC channel enables 1.
-**The same wrong colour has been seen on this source in pass-through**, so it is
-not a property of the scaling path.
+**AUTO GAIN HAS TO BE REACHED TWICE OVER.** It is off unless `auto-gain` is 1
+in the stored preferences, and the sketch's gate also wants
+`acquiredPasses() > 90` -- 1.82 s of unbroken acquired run at
+`DetectionIntervalMs`. Until the dropped-line-count verdict was fixed the Wii
+held that run under about 23 passes for ever, so turning the preference on
+would have changed nothing on this source.
+`investigations/a-dropped-line-count-is-not-an-unlocked-source.md`.
 
-**THE CLAMP IS NOT TESTABLE BY MOVING IT HERE, AND TWO READINGS THAT SAID SO
-ARE VOID.** `SP_CS_CLP_ST` reads 78 where the picture starts at 67, which looks
+**AND THE WEB PADS TURN IT OFF WITH NO WEB ROUTE BACK.** `/uc?n` and `/uc?o`
+step the gain by hand and both call `setAutoGain(false)`; nothing in
+`handleType2Command()` sets it true, so `/uc` cannot undo that. The routes that
+can are the serial switch's `T` and the OSD menu's Picture -> ADC gain row,
+which `/menu?key=` drives:
+
+```sh
+curl 'http://<ip>/menu?key=menu'   # then down, ok to enter Picture Settings,
+curl 'http://<ip>/menu?key=ok'     # ok on ADC gain toggles it
+```
+
+**The clamp is not testable by moving it here, and two readings that said so
+are void.** `SP_CS_CLP_ST` reads 78 where the picture starts at 67, which looks
 decisive; `investigations/a-frozen-component-source-drifts-to-magenta.md`
 measures `R-G` running +17.5 to +114 in 46 s on a frozen component source with
 nothing written, and two clamp walks climbing in WALK ORDER rather than in
 clamp value. A clamp walk on a frozen component source measures the clock.
-Green carries the sync on this input, which is what makes its own black level
-the suspect and what makes a frozen walk unable to ask about it.
-
-**The re-lock loop that used to sit in front of this is closed.** The source's
-line count genuinely drops for 25 to 75 ms about twice a second, at the same
-rate with automation frozen, and the engine acted on every one of them; both
-halves of the presence verdict forgive a dropped reading for the same run now.
-`investigations/a-dropped-line-count-is-not-an-unlocked-source.md`. It did not
-change the colour.
 
 ### The contradicted-count arm never stops on an interlaced source
 

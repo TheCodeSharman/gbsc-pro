@@ -46,11 +46,17 @@ episode is 75 ms against a run of `AbsentPasses` × `DetectionIntervalMs` =
 samples in 108 episodes afterwards, with the console silent for 30 s where it
 had carried 184 state changes in 45 s.
 
-## What this does not explain
+## What it does and does not explain about the magenta
 
-The picture is magenta before and after, and that is a separate fault.
-`auto-gain` is `0` in the stored preferences, so auto gain has never run on
-either source and cannot be starved by anything; 51/51/51 is
-`ColourSpace::ComponentGain`, the prescribed resting value for the component
-colour space, exactly as 123/123/123 is `ColourSpace::RgbGain` on `vga`.
-`known-issues.md` carries what is left of it.
+The picture is magenta before and after the fix, so the colour is not the
+verdict's doing. `auto-gain` reads `0` in the stored preferences, so auto gain
+had never run on either bench source and could not be starved by anything;
+51/51/51 is `ColourSpace::ComponentGain`, the component colour space's
+prescribed resting value, as 123/123/123 is `ColourSpace::RgbGain` on `vga`.
+
+**What the fix does buy is the ability to reach it at all.** The sketch gates
+auto gain on `acquiredPasses() > 90`, which is 1.82 s of unbroken acquired run,
+and the collapse held that run under about 23 passes for ever. With the verdict
+forgiving the drop, turning the preference on settles the gains at 243/243/243
+and the picture comes out correct. `known-issues.md` carries the resting value
+that is left open by that.
