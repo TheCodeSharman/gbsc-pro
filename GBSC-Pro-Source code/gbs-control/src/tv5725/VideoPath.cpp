@@ -1141,6 +1141,13 @@ void VideoPath::measureVerticalInterval(uint16_t sourceLines)
     if (!SyncMeasurement::isCsync())
         return;
 
+    // NOT KNOWN is not a frame of no lines. settledSourceLines() answers 0
+    // while the count is unsettled, and every reading disagrees with zero, so
+    // a pass taken there finds the formatter following nothing and holds a
+    // source that may not want it. ../../../docs/known-issues.md
+    if (sourceLines == 0)
+        return;
+
     if (intervalMeasuredFor_ == syncTypeChosenFor_
         && intervalMeasuredLines_ == sourceLines)
         return;
@@ -1181,7 +1188,7 @@ void VideoPath::measureVerticalInterval(uint16_t sourceLines)
     intervalMeasuredFor_ = syncTypeChosenFor_;
     intervalMeasuredLines_ = sourceLines;
 
-    char line[88];
+    char line[112];
     snprintf(line, sizeof(line),
              "vertical interval: %u lines, the formatter followed it in %u of "
              "%u reading %u, post coast %u",

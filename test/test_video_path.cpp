@@ -2728,6 +2728,59 @@ TEST_CASE("an interval the formatter loses uncoasted keeps the hold")
     CHECK(SyncProcessor::SP_POST_COAST::read() == 6);
 }
 
+TEST_CASE("an unmeasured count decides nothing about the interval")
+{
+    // SourceMeasurement::settledSourceLines() answers 0 while the count is
+    // unsettled, which is "not known" rather than a frame of no lines -- and
+    // every reading disagrees with a frame of zero, so a probe run there finds
+    // the formatter following nothing and applies the hold to a source that
+    // may not want it. Measured on vga at 320x256@50 on composite: the probe
+    // ran at 0 lines and read 0 of 8, then again a second later at 312 lines
+    // and read 8 of 8. It corrected itself, and only because a second pass
+    // came -- and each run holds the coast at 0/0 to take its reading, which
+    // is the state a source needing the hold cannot be left on.
+    seedBenchSource();
+    seedSourceLines(308);
+    seedSourceHalfLines(623);
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+    engine.useSyncTypeProbe(probeOwnVsync);
+    g_hasOwnVsync = false;
+    engine.establishSyncType((uint8_t)VideoSourceSelection::selected());
+    REQUIRE(SyncMeasurement::isCsync());
+    SyncProcessor::useLongPostCoast(false);
+
+    engine.measureVerticalInterval(0);
+
+    CHECK_FALSE(SyncProcessor::longPostCoastInUse());
+}
+
+TEST_CASE("a count that arrives after an unmeasured one is still probed")
+{
+    // The verdict is keyed on the count, so a pass taken at 0 must not file an
+    // answer under it: the real count has to reach the probe when it settles.
+    seedBenchSource();
+    seedSourceLines(623);
+    seedSourceHalfLines(1255);
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+    engine.useSyncTypeProbe(probeOwnVsync);
+    g_hasOwnVsync = false;
+    engine.establishSyncType((uint8_t)VideoSourceSelection::selected());
+    REQUIRE(SyncMeasurement::isCsync());
+    SyncProcessor::useLongPostCoast(false);
+    engine.measureVerticalInterval(0);
+
+    Wire.halveFramePeriod(3);
+    engine.measureVerticalInterval(623);
+
+    CHECK(SyncProcessor::longPostCoastInUse());
+}
+
 TEST_CASE("a period that halves against the count keeps the hold")
 {
     // 800x600@60 on composite: the formatter COMPLETES the measurement and
