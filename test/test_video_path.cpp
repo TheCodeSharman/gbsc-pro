@@ -3174,8 +3174,10 @@ TEST_CASE("a serrated source solves to the threshold that rejects its interval")
 {
     // The Wii in PAL 576i through the same 2200-sample line: 319 against a
     // true 310 below the floor, which is the vertical interval being counted.
-    // 107 is what reads it, and every smaller value was measured not to.
-    // ../docs/investigations/the-pulse-ignore-value-is-measured-not-chosen.md
+    // The band 81..123 reads its 310 at every value, and 88 is 4.0% of this
+    // line -- the top of the band the source's OTHER mode allows, 480p
+    // stopping holding its count above 4.08% at divider 1446.
+    // ../docs/investigations/the-composite-count-dithers-where-the-ignore-nears-the-pulse.md
     seedBenchSource();
     DisplayClock clock;
     SourceMeasurement sampling(inputFormatter);
@@ -3191,7 +3193,7 @@ TEST_CASE("a serrated source solves to the threshold that rejects its interval")
     REQUIRE(pollUntilSolved(acquisition));
     REQUIRE(Adc::PLLAD_MD::read() == 2200);
 
-    CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 107);
+    CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 88);
 }
 
 TEST_CASE("a source resting uncoasted solves to no coast at all")

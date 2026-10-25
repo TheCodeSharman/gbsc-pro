@@ -115,10 +115,14 @@ uint8_t postCoastOverride_ = 0;
 // need it is displaced in under a percent of frames.
 bool longPostCoast_ = true;
 
-// 107 through a 2200-sample line is the value measured to read PAL 576i. Below
-// 3.68% of the line the separator counts that source's serrations as lines and
-// reads 319 against a true 310.
-const uint16_t EqualisedPulseIgnorePerThousand = 49;
+// BOTH BOUNDS ARE MEASURED ON THE WII, the only source here carrying equalising
+// pulses, so the fraction has to satisfy two modes of one machine: 576i through
+// a 2200-sample line counts its serrations as lines below 3.68%, and 480p
+// through a 1446-sample line stops holding its count above 4.08%. 4.0% is the
+// high end of that band, taken high because the two errors are not equal -- a
+// threshold under the floor leaves a serrated source counting its vertical
+// interval, where one over the ceiling costs a dither.
+const uint16_t EqualisedPulseIgnorePerThousand = 40;
 
 // What a source with nothing in its vertical interval can take, which is less:
 // 4.9% lands inside the dither on 640x512@50 composite, where the whole band

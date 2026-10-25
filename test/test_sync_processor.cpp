@@ -188,8 +188,8 @@ TEST_CASE("the separation threshold follows the line in force on both arrangemen
     CHECK(wasWritten<SyncProcessor::SP_H_PULSE_IGNOR>(true));
     CHECK(wasWritten<SyncProcessor::SP_H_PULSE_IGNOR>(false));
 
-    CHECK(applied<SyncProcessor::SP_H_PULSE_IGNOR>(true) == 0x6b);
-    CHECK(applied<SyncProcessor::SP_H_PULSE_IGNOR>(false) == 0x6b);
+    CHECK(applied<SyncProcessor::SP_H_PULSE_IGNOR>(true) == 0x58);
+    CHECK(applied<SyncProcessor::SP_H_PULSE_IGNOR>(false) == 0x58);
 }
 
 TEST_CASE("sync-on-green is enabled on both paths")
@@ -767,7 +767,37 @@ TEST_CASE("the pulse ignore does not key on the sync type")
     Wire.reset();
     SyncProcessor::applyPulseIgnore(MeasuredCsyncDivider, true);
 
-    CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 0x6b);
+    CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 0x58);
+}
+
+// BOTH BOUNDS ON THE EQUALISED FRACTION ARE MEASURED ON THE WII, which is the
+// only source on this bench carrying equalising pulses -- so the two cases it
+// has to satisfy are two modes of one machine, and 4.9% of the line satisfies
+// one of them.
+//
+//   576i through a 2200-sample line: below 81 samples the separator counts the
+//   serrations as lines and reads 319 against a true 310.
+//   480p through the 1446-sample line a 1080p raster affords: frozen with the
+//   divider latched, 59 holds the count in 25 of 25 readings at one value and
+//   70 in 19 of 25 at two, against interleaved controls at 40 reading 25 of 25.
+//
+// 4.9% is 107 and 70 at those dividers: it clears the floor and sits ABOVE the
+// ceiling, so the dither lands on the source the measurement exists for.
+// ../docs/investigations/the-composite-count-dithers-where-the-ignore-nears-the-pulse.md
+TEST_CASE("the equalised fraction clears the serration floor")
+{
+    Wire.reset();
+    SyncProcessor::applyPulseIgnore(MeasuredCsyncDivider, true);
+
+    CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() >= 81);
+}
+
+TEST_CASE("and stays under the sync pulse on the same source's other mode")
+{
+    Wire.reset();
+    SyncProcessor::applyPulseIgnore(1446, true);
+
+    CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() <= 59);
 }
 
 TEST_CASE("a source with no serrations takes the lower fraction")
@@ -790,24 +820,24 @@ TEST_CASE("a source with no serrations takes the lower fraction")
 TEST_CASE("a composite source's pulse ignore is a fraction of the line in ADC samples")
 {
     // The pulse widths it is compared against are counted in ADC samples, so
-    // one byte is a different fraction of every line. 107 was measured right on
-    // PAL 576i through a 2200-sample line -- every smaller value counted the
-    // serrations as lines. Through the 1446-sample line a 1080p raster affords
-    // the Wii at 480p, the same 107 sits above its 106-sample sync pulse and
-    // the separator ignores the source; lowered by hand, it measured within
-    // half a second. docs/investigations/the-pulse-ignore-is-a-fraction-of-the-line.md
+    // one byte is a different fraction of every line. On PAL 576i through a
+    // 2200-sample line the whole band 81..123 reads the source's 310 in 24 of
+    // 24 readings at every value, and below 77 the separator counts the
+    // serrations and reads 319. Through the 1446-sample line a 1080p raster
+    // affords the Wii at 480p, the top of that band climbs into its own pulse.
+    // docs/investigations/the-pulse-ignore-is-a-fraction-of-the-line.md
     Wire.reset();
     SyncProcessor::applyPulseIgnore(MeasuredCsyncDivider, true);
-    CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 0x6b);
+    CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 0x58);
 
     SUBCASE("a shorter line in samples takes a threshold under its sync pulse") {
         SyncProcessor::applyPulseIgnore(1446, true);
-        CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 70);
+        CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 57);
     }
 
     SUBCASE("and the reference line likewise") {
         SyncProcessor::applyPulseIgnore(2040, true);
-        CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 99);
+        CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 81);
     }
 }
 
@@ -1128,7 +1158,7 @@ TEST_CASE("a source that cannot be counted gets the search configuration")
     SyncProcessor::applyDynamic(source);
 
     // settled() is latched, so the threshold is the line's own fraction.
-    CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 0x6b);
+    CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 0x58);
     CHECK(SyncProcessor::SP_H_TIMER_VAL::read() == 0x3a);
     CHECK(SyncProcessor::SP_H_COAST::read() == 0);
     CHECK(SyncProcessor::SP_H_CST_ST::read() == 0x10);
@@ -1163,7 +1193,7 @@ TEST_CASE("a settled source on the scaling path is read, not separated for")
     SyncProcessor::applyDynamic(source);
 
     CHECK(SyncProcessor::SP_DLT_REG::read() == 0xC0);
-    CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 0x6b);
+    CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 0x58);
     CHECK_FALSE(dynamicWrites<SyncProcessor::SP_PRE_COAST>(source));
 }
 
@@ -1190,7 +1220,7 @@ TEST_CASE("a present composite source takes the fraction of its own line")
     source.csync = true;
     source.divider = ChannelDivider;
 
-    CHECK(dynamicValue<SyncProcessor::SP_H_PULSE_IGNOR>(source) == 99);
+    CHECK(dynamicValue<SyncProcessor::SP_H_PULSE_IGNOR>(source) == 81);
 }
 
 // AND ON A PATH SOURCE TOO, which is the route with nothing else to re-place
@@ -1218,7 +1248,7 @@ TEST_CASE("a path source takes the same fraction")
     source.csync = true;
     source.divider = ChannelDivider;
 
-    CHECK(dynamicValue<SyncProcessor::SP_H_PULSE_IGNOR>(source) == 99);
+    CHECK(dynamicValue<SyncProcessor::SP_H_PULSE_IGNOR>(source) == 81);
 }
 
 TEST_CASE("a source neither searched for nor acquired keeps the search's threshold")
@@ -1260,7 +1290,7 @@ TEST_CASE("a search through the divider's own line takes that line's fraction")
     source.csync = true;
     source.divider = ChannelDivider;
 
-    CHECK(dynamicValue<SyncProcessor::SP_H_PULSE_IGNOR>(source) == 99);
+    CHECK(dynamicValue<SyncProcessor::SP_H_PULSE_IGNOR>(source) == 81);
 }
 
 // AND THE REFERENCE CLOCK KEEPS IT, because there the block counts a line the
@@ -1908,11 +1938,12 @@ TEST_CASE("the separation thresholds leave the pulse ignore alone")
     // is the intermittency, and it is a second writer rather than a flaky part.
     Wire.reset();
     SyncProcessor::applySeparation(true, MeasuredCsyncDivider);
-    REQUIRE(SyncProcessor::SP_H_PULSE_IGNOR::read() == 0x6b);
+    const uint16_t arranged = SyncProcessor::SP_H_PULSE_IGNOR::read();
+    REQUIRE(arranged != 0);
 
     SyncProcessor::applySeparationThresholds(true);
 
-    CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 0x6b);
+    CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == arranged);
 }
 
 TEST_CASE("the count the block reports is the source's frame, not the register")
