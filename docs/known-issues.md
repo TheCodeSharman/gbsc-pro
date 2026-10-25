@@ -7354,6 +7354,48 @@ rather than two.
 
 `investigations/the-composite-count-dithers-where-the-ignore-nears-the-pulse.md`.
 
+### The Wii at 480p re-locks twice a second, so auto gain never finishes and the picture is magenta
+
+`ypbpr`, the Wii at 480p, scaling path into 1080p, `PLLAD_MD` 1446. 45 s of
+console carries **96 `source acquired` and 88 `source UNLOCKED`**, alternating:
+
+```
+source acquired: 525 lines, 1446 samples against divider 1446
+source UNLOCKED: 525 lines,   12 samples against divider 1446
+```
+
+**THE COUNT IS STEADY AT 525 THROUGHOUT, so this is not the contradicted-count
+arm below.** What flaps is `STATUS_SYNC_PROC_HTOTAL` -- 1446 against the
+divider when locked, 11 to 13 when not -- while the divider, the count and the
+coast pair stay correct and steady. **60 `sampling phase: chosen` lines fall in
+the same window**, so the phase search re-runs per cycle and latches 32 phases
+each time, which is itself a PLL disturbance: the recovery feeds the fault.
+
+**The magenta is auto gain, not the colour path.** Nothing stays still long
+enough for it to complete -- **zero `auto gain:` lines in 45 s** -- so the three
+channel gains sit at **51/51/51**, which is `ColourSpace::ComponentGain` 0x33,
+the resting value. The same mechanism as the interlaced entry below. Every
+colour register is the value `ColourSpace::applyYuv()` prescribes:
+`ADC_RYSEL_R/G/B` 1/0/1, `DEC_MATRIX_BYPS` 1, `IF_MATRIX_BYPS` 1,
+`VDS_UCOS_GAIN` 0x1C, `VDS_VCOS_GAIN` 0x29, all three DAC channel enables 1.
+**The same wrong gain has been seen on this source in pass-through**, so it is
+not a property of the scaling path.
+
+**THE CLAMP IS NOT TESTABLE BY MOVING IT HERE, AND TWO READINGS THAT SAID SO
+ARE VOID.** `SP_CS_CLP_ST` reads 78 where the picture starts at 67, which looks
+decisive; `investigations/a-frozen-component-source-drifts-to-magenta.md`
+measures `R-G` running +17.5 to +114 in 46 s on a frozen component source with
+nothing written, and two clamp walks climbing in WALK ORDER rather than in
+clamp value. A clamp walk on a frozen component source measures the clock.
+
+**What would settle it:** whether the 11..13 reading is a real unlock or a
+count read while the block is not counting. 1446 is `0x5A6` and 12 is `0x00C`,
+sharing neither byte, so the two-byte tear is ruled out -- a read taken
+mid-reset is not. `/samplinglog?ms=25` samples the count, the lock bit and
+`STATUS_SYNC_PROC_HTOTAL` adjacently from inside `loop()`, which is the only
+way to ask what fraction of the window the collapse occupies and whether it
+precedes or follows the phase search.
+
 ### The contradicted-count arm never stops on an interlaced source
 
 576i on `ypbpr` re-solves every 2.5 s for as long as it is left, dropping the
