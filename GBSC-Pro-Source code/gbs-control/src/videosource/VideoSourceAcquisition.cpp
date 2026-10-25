@@ -1167,7 +1167,7 @@ bool VideoSourceAcquisition::runPass(uint32_t nowMs, bool &detectionPass)
     // a count read through the previous source's clock answers about that
     // source; and BEFORE the rate below, because the post coast gates the input
     // formatter's vertical and the rate is timed on it.
-    videoPath_.measureVerticalInterval();
+    videoPath_.measureVerticalInterval(sampling_.settledSourceLines());
 
     // The rate, then the output that rate can be carried at, then the clock
     // that output bounds, then the duty against that clock. The idle pass is

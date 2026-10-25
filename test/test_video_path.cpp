@@ -2697,7 +2697,7 @@ TEST_CASE("an interval the formatter measures uncoasted takes the short coast")
     REQUIRE(SyncMeasurement::isCsync());
     SyncProcessor::useLongPostCoast(true);
 
-    engine.measureVerticalInterval();
+    engine.measureVerticalInterval(308);
 
     CHECK_FALSE(SyncProcessor::longPostCoastInUse());
     CHECK(SyncProcessor::SP_POST_COAST::read() == 2);
@@ -2722,10 +2722,92 @@ TEST_CASE("an interval the formatter loses uncoasted keeps the hold")
     REQUIRE(SyncMeasurement::isCsync());
     SyncProcessor::useLongPostCoast(false);
 
-    engine.measureVerticalInterval();
+    engine.measureVerticalInterval(520);
 
     CHECK(SyncProcessor::longPostCoastInUse());
     CHECK(SyncProcessor::SP_POST_COAST::read() == 6);
+}
+
+TEST_CASE("a period that halves against the count keeps the hold")
+{
+    // 800x600@60 on composite: the formatter COMPLETES the measurement and
+    // returns the frame at the OTHER FACTOR -- 627 in 203 readings of 3283
+    // against 1255 in 2328, with
+    // STATUS_SYNC_PROC_VTOTAL steady at 623 beside it. Denied the hold that
+    // source rolls in 95% of emitted frames; the source measured better
+    // without it reads one value in 2863. So a non-zero reading answers a
+    // different question. docs/known-issues.md
+    seedBenchSource();
+    seedSourceLines(623);
+    seedSourceHalfLines(1255);
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+    engine.useSyncTypeProbe(probeOwnVsync);
+    g_hasOwnVsync = false;
+    engine.establishSyncType((uint8_t)VideoSourceSelection::selected());
+    REQUIRE(SyncMeasurement::isCsync());
+    SyncProcessor::useLongPostCoast(false);
+    Wire.halveFramePeriod(3);
+
+    engine.measureVerticalInterval(623);
+
+    CHECK(SyncProcessor::longPostCoastInUse());
+}
+
+TEST_CASE("a period that agrees with itself and not with the count keeps the hold")
+{
+    // Agreement among the readings is not enough: the factor is steady across
+    // a run of samples, so eight readings at the wrong one agree perfectly.
+    // The count is the second instrument and
+    // it holds -- 623 in 3267 of 3283 beside that reading.
+    seedBenchSource();
+    seedSourceLines(623);
+    seedSourceHalfLines(627);
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+    engine.useSyncTypeProbe(probeOwnVsync);
+    g_hasOwnVsync = false;
+    engine.establishSyncType((uint8_t)VideoSourceSelection::selected());
+    REQUIRE(SyncMeasurement::isCsync());
+    SyncProcessor::useLongPostCoast(false);
+
+    engine.measureVerticalInterval(623);
+
+    CHECK(SyncProcessor::longPostCoastInUse());
+}
+
+TEST_CASE("a mode change on one selection measures the interval again")
+{
+    // The verdict was keyed on the input selection alone, on the premise that
+    // the interval belongs to what the source puts on the connector. One
+    // machine on one cable refutes it: 320x256@50 on composite reads one
+    // period in 2863 and is measured better uncoasted, and 800x600@60 on the
+    // same cable times two fields as one and rolls in 95% of frames without
+    // the hold. docs/known-issues.md
+    seedBenchSource();
+    seedSourceLines(308);
+    seedSourceHalfLines(623);
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+    engine.useSyncTypeProbe(probeOwnVsync);
+    g_hasOwnVsync = false;
+    engine.establishSyncType((uint8_t)VideoSourceSelection::selected());
+    REQUIRE(SyncMeasurement::isCsync());
+    engine.measureVerticalInterval(308);
+    REQUIRE_FALSE(SyncProcessor::longPostCoastInUse());
+
+    seedSourceLines(623);
+    seedSourceHalfLines(1255);
+    Wire.halveFramePeriod(3);
+    engine.measureVerticalInterval(623);
+
+    CHECK(SyncProcessor::longPostCoastInUse());
 }
 
 TEST_CASE("one reading short of every one keeps the hold")
@@ -2745,7 +2827,7 @@ TEST_CASE("one reading short of every one keeps the hold")
     SyncProcessor::useLongPostCoast(false);
     Wire.loseFrameMeasurementOnce();
 
-    engine.measureVerticalInterval();
+    engine.measureVerticalInterval(308);
 
     CHECK(SyncProcessor::longPostCoastInUse());
 }
@@ -2765,7 +2847,7 @@ TEST_CASE("a source with its own vertical sync is asked nothing")
     engine.establishSyncType((uint8_t)VideoSourceSelection::selected());
     SyncProcessor::useLongPostCoast(true);
 
-    engine.measureVerticalInterval();
+    engine.measureVerticalInterval(308);
 
     CHECK(SyncProcessor::longPostCoastInUse());
 }
@@ -2787,7 +2869,7 @@ TEST_CASE("a coast held from outside is neither measured nor forgotten")
     engine.establishSyncType((uint8_t)VideoSourceSelection::selected());
     SyncProcessor::overrideCoast(12, 9);
 
-    engine.measureVerticalInterval();
+    engine.measureVerticalInterval(308);
 
     CHECK(SyncProcessor::coastOverridden());
     CHECK(SyncProcessor::preCoastLines() == 12);
@@ -2796,7 +2878,7 @@ TEST_CASE("a coast held from outside is neither measured nor forgotten")
     SyncProcessor::forgetCoastOverride();
 }
 
-TEST_CASE("the interval is measured once per selection, not once per pass")
+TEST_CASE("the interval is measured once per mode, not once per pass")
 {
     // The probe holds the coast at 0/0, where a source needing it drops -- so
     // a run per pass of a mode change holds it repeatedly. Measured on the
@@ -2811,10 +2893,10 @@ TEST_CASE("the interval is measured once per selection, not once per pass")
     engine.useSyncTypeProbe(probeOwnVsync);
     g_hasOwnVsync = false;
     engine.establishSyncType((uint8_t)VideoSourceSelection::selected());
-    engine.measureVerticalInterval();
+    engine.measureVerticalInterval(308);
     SyncProcessor::useLongPostCoast(true);
 
-    engine.measureVerticalInterval();
+    engine.measureVerticalInterval(308);
 
     CHECK(SyncProcessor::longPostCoastInUse());
 }

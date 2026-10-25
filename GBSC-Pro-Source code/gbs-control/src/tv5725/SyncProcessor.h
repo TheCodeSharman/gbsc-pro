@@ -457,7 +457,12 @@ public:
     // half-line pulses, and the Wii at 480p carries none while still failing
     // at 0/0 -- its count dithers and the sync pad cycles every ~2 s. The
     // functional question is VideoPath::measureVerticalInterval()'s: whether
-    // the input formatter can still measure the interval uncoasted.
+    // the input formatter's uncoasted period FOLLOWS THE COUNT. VPERIOD_IF
+    // alternates between two FACTORS within one acquisition, so a reading can
+    // be non-zero, can agree with the readings beside it, and still not be this
+    // frame's period -- only the count rejects it. 800x600@60 on composite
+    // rolls in 95% of emitted frames without the hold.
+    // ../../../../docs/known-issues.md
     // Both are required here, because every state measured good satisfies
     // both and dropping either admits one that is not.
     // docs/investigations/the-equalisation-probe-cannot-see-serration.md

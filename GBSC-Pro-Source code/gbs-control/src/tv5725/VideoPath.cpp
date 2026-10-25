@@ -48,7 +48,7 @@ VideoPath::VideoPath(DisplayClock &displayClock, SourceMeasurement &sampling,
       sampling_(sampling),
       scanSolved_(false), lineDoubled_(true),
       syncTypeApplied_(false),
-      syncTypeInForce_(false), syncTypeChosenFor_(NoSelectionSeen), intervalMeasuredFor_(NoSelectionSeen), syncProbe_(0), equalisationProbe_(countThroughThreshold),
+      syncTypeInForce_(false), syncTypeChosenFor_(NoSelectionSeen), intervalMeasuredFor_(NoSelectionSeen), intervalMeasuredLines_(0), syncProbe_(0), equalisationProbe_(countThroughThreshold),
       framings_(framings),
       solvePending_(false), modePending_(false), modeOversample_(4),
       heldDivider_(0), fullFraming_(false), installedRateHz_(0),
@@ -1064,6 +1064,26 @@ void VideoPath::establishSyncType(uint8_t chosenFor)
 // immediate -- the formatter's measurement stops inside one reading of the
 // write -- so these bound the probe rather than wait for anything.
 static const uint8_t IntervalSamples = 8;
+
+// How far apart the formatter's period and the sync processor's count may sit
+// and still be one measurement, as a fraction of the frame. VPERIOD_IF counts
+// half-lines, so a frame is twice the count, and the two instruments differ by
+// about 1% on a source measured good -- 623 against 308 and 1255 against 623.
+// The other factor sits 50% away, so the gate carries 25 times the margin it
+// needs and still cannot admit one.
+static const uint8_t FrameAgreementParts = 4;
+
+// Whether the formatter timed THIS source's frame, rather than half of it, two
+// of them, or nothing at all.
+static bool followsFrame(uint16_t halfLines, uint16_t sourceLines)
+{
+    if (halfLines == 0 || sourceLines == 0)
+        return false;
+    const uint16_t frame = (uint16_t)(2 * sourceLines);
+    const uint16_t apart = halfLines > frame ? (uint16_t)(halfLines - frame)
+                                             : (uint16_t)(frame - halfLines);
+    return (uint32_t)apart * FrameAgreementParts <= frame;
+}
 static const uint8_t IntervalSampleMs = 20;
 
 // How long the separator is given to count the line through a threshold just
@@ -1116,11 +1136,13 @@ void VideoPath::measureEqualisation()
     tv5725Log(line);
 }
 
-void VideoPath::measureVerticalInterval()
+void VideoPath::measureVerticalInterval(uint16_t sourceLines)
 {
     if (!SyncMeasurement::isCsync())
         return;
-    if (intervalMeasuredFor_ == syncTypeChosenFor_)
+
+    if (intervalMeasuredFor_ == syncTypeChosenFor_
+        && intervalMeasuredLines_ == sourceLines)
         return;
 
     // A coast held from outside is the one being tested, and this holds the
@@ -1132,9 +1154,18 @@ void VideoPath::measureVerticalInterval()
     SyncProcessor::overrideCoast(0, 0);
     SyncProcessor::applySeparationThresholds(true);
 
+    // EVERY reading against the COUNT, which is the second instrument and the
+    // one that holds. A non-zero test admits a reading taken at the other
+    // factor, and so does a test of the readings against each other, the factor
+    // being steady across a run of samples.
+    // docs/known-issues.md
+    uint16_t last = 0;
     uint8_t measured = 0;
     for (uint8_t taken = 0; taken < IntervalSamples; taken++) {
-        if (inputFormatter_.verticalPeriod() != 0)
+        const uint16_t period = inputFormatter_.verticalPeriod();
+        if (period != 0)
+            last = period;
+        if (followsFrame(period, sourceLines))
             measured++;
         delay(IntervalSampleMs);
     }
@@ -1148,12 +1179,14 @@ void VideoPath::measureVerticalInterval()
     SyncProcessor::useLongPostCoast(needed);
     SyncProcessor::applySeparationThresholds(true);
     intervalMeasuredFor_ = syncTypeChosenFor_;
+    intervalMeasuredLines_ = sourceLines;
 
     char line[88];
     snprintf(line, sizeof(line),
-             "vertical interval: the formatter measured it uncoasted in %u of "
-             "%u, post coast %u",
-             (unsigned)measured, (unsigned)IntervalSamples,
+             "vertical interval: %u lines, the formatter followed it in %u of "
+             "%u reading %u, post coast %u",
+             (unsigned)sourceLines, (unsigned)measured,
+             (unsigned)IntervalSamples, (unsigned)last,
              (unsigned)SyncProcessor::postCoastLines());
     tv5725Log(line);
 }

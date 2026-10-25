@@ -346,7 +346,7 @@ public:
     // drops, and BEFORE the field rate is taken: the post coast gates the
     // formatter's vertical, which is the signal the rate is timed on.
     // ../../../docs/known-issues.md
-    void measureVerticalInterval();
+    void measureVerticalInterval(uint16_t sourceLines);
 
     // Whether the source's vertical interval is serrated, which decides which
     // fraction of the line SP_H_PULSE_IGNOR takes. The two bounds on that
@@ -785,11 +785,15 @@ private:
     static const uint8_t NoSelectionSeen = 0xFF;
     uint8_t syncTypeChosenFor_;
 
-    // Which selection the interval was measured for, keyed like the sync type
-    // above and for the same reason: the property belongs to what the source
-    // puts on the connector, so a mode change on one source keeps the answer
-    // and must not pay for the probe again.
+    // Which selection the interval was measured for, and at which count. The
+    // selection alone was the key, on the premise that the interval belongs to
+    // what the source puts on the connector -- which one machine on one cable
+    // refutes, 320x256@50 and 800x600@60 on composite wanting opposite pairs.
+    // The count rather than the pass, because the probe holds the coast at 0/0
+    // to take its reading and a source needing the hold drops while it does.
+    // ../../../../docs/known-issues.md
     uint8_t intervalMeasuredFor_;
+    uint16_t intervalMeasuredLines_;
     SyncMeasurement::Answer (*syncProbe_)();
     EqualisationMeasurement::CountAtThreshold equalisationProbe_;
     SourceKey framedKey_;

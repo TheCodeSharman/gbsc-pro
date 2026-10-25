@@ -23,6 +23,9 @@ public:
     // Where a byte ended up: the bank the slave's pointer named at the time.
     uint8_t bank[Segments][256];
     uint8_t frameLost_ = 0;
+    uint8_t periodHalved_ = 0;
+    bool periodRestore_ = false;
+    uint16_t periodHeld_ = 0;
     bool frameRestore_ = false;
 
     // Whether a byte was ever written since the last reset(), as opposed to
@@ -72,6 +75,8 @@ public:
         hsyncInvertedSeen_ = false;
         syncProcessorLocked_ = false;
         frameLost_ = 0;
+        periodHalved_ = 0;
+        periodRestore_ = false;
         frameRestore_ = false;
         trace.clear();
         tx_.clear();
@@ -148,11 +153,28 @@ public:
     void loseFrameMeasurement(uint8_t reads) { frameLost_ = reads; }
     void loseFrameMeasurementOnce() { loseFrameMeasurement(1); }
 
+    // How many reads of VPERIOD_IF come back at the OTHER FACTOR, half the
+    // frame. The measurement completes and STATUS_IF_VT_OK is set, so this is a
+    // reading that disagrees with the count rather than one going missing --
+    // measured on 800x600@60 composite as 627 in 203 readings of 3283 against
+    // 1255 in 2328.
+    // docs/known-issues.md
+    void halveFramePeriod(uint8_t reads) { periodHalved_ = reads; }
+
     // A bus that acknowledges writes and stores none of them, which is what an
     // unpowered board looks like from this end: the segment select still lands,
     // because the code under test cannot tell a lost select from a lost write
     // and the round trip it is judged on is the payload's.
     void refuseWrites(bool refuse) { refusing_ = refuse; }
+
+    // VPERIOD_IF, written back into the two registers it spans.
+    void writeVerticalPeriod(uint16_t halfLines)
+    {
+        bank[0][0x07] = (uint8_t)((bank[0][0x07] & 0x01)
+                                  | ((halfLines << 1) & 0xFE));
+        bank[0][0x08] = (uint8_t)((bank[0][0x08] & 0xF0)
+                                  | ((halfLines >> 7) & 0x0F));
+    }
 
     // A field, decoded the way the chip lays one out: little-endian across
     // consecutive registers, then shifted and masked.
@@ -219,6 +241,15 @@ public:
         } else if (frameRestore_) {
             frameRestore_ = false;
             bank[0][0x00] = (uint8_t)(bank[0][0x00] | 0x01);
+        }
+        if (periodHalved_ > 0 && segment == 0 && readOffset_ == 0x07) {
+            --periodHalved_;
+            periodHeld_ = (uint16_t)field(0, 0x07, 1, 11);
+            writeVerticalPeriod((uint16_t)(periodHeld_ / 2));
+            periodRestore_ = true;
+        } else if (periodRestore_) {
+            periodRestore_ = false;
+            writeVerticalPeriod(periodHeld_);
         }
         rx_.clear();
         rxNext_ = 0;
