@@ -7354,6 +7354,77 @@ rather than two.
 
 `investigations/the-composite-count-dithers-where-the-ignore-nears-the-pulse.md`.
 
+### The equalisation probe answers before the source is solved, and the wrong answer latches
+
+**The Wii at 480p carries no equalisation and IS serrated**, which is the
+combination the probe cannot distinguish from carrying nothing --
+`investigations/the-equalisation-probe-cannot-see-serration.md` measures it
+reading 524 at both thresholds. It wants `UnequalisedPulseIgnorePerThousand`
+28, which is `SP_H_PULSE_IGNOR` 40 at divider 1446. It is getting **70**, the
+equalised 49 per thousand, which
+`investigations/the-composite-count-dithers-where-the-ignore-nears-the-pulse.md`
+measures landing inside the count's own dither.
+
+**THE PROBE RUNS BEFORE `measure: start`.** Caught on the console across a
+`vga` to `ypbpr` selection, after the reference-clock gate was closed:
+
+```
+ 3.63  vertical interval: 525 lines, the formatter followed it in 0 of 8 reading 524
+ 4.03  vertical interval: equalisation, pulse ignore 70 of 1444 samples, coast 7/6
+ 4.11  measure: start, MUX change (input), 525 lines, solved 525
+ 6.61  measure: start, TIMINGS change (contradicted count), 525 lines, solved 521
+```
+
+The divider is now the source's own, and the readings the verdict is taken
+from are still of an unsettled source -- `0 of 8` either side of it. The answer
+then LATCHES (`isSet()` suppresses a re-probe), so one bad window decides the
+threshold for the session.
+
+**WHAT IT COSTS, IN ONE CHAIN.** 70 dithers the count; a dithering count never
+holds the acquired run; `SourceMaintenance::readyAt()` gates the clamp window
+on `ClampReadyPasses` and auto gain on `AutoGainReadyPasses` 91, so neither
+runs. `releaseClampIfPlaced()` only releases where the window was placed, so
+`SP_NO_CLAMP_REG` stays **1** and the component black reference floats, which
+is the magenta; and the dither is the shear.
+
+**IT IS INTERMITTENT AND IT FAKES A REGRESSION.** Which state the unit lands
+in depends on whether the probe wins a settled window, so it correlates with
+whatever was flashed last. A bisect over 2026-10-20..25 named `8b05a205e` on an
+A-B-A and was **void**: the control -- one `vga` to `ypbpr` bounce on an
+unchanged build -- reproduces all 17 differing fields, `SP_H_PULSE_IGNOR`
+40 -> 70 and `SP_NO_CLAMP_REG` 0 -> 1 among them. **Score a candidate against
+an input bounce on one build before blaming a commit.**
+
+**`VPERIOD_IF` AGAINST THE COUNT IS THE INSTRUMENT THAT SEES SERRATION**, which
+the probe cannot: normalised by the line-doubling factor, the shortfall is the
+lines the separator lost. Measured, Wii 480p `VPERIOD_IF` 524 against
+`STATUS_SYNC_PROC_VTOTAL` 524 is zero lost and serrated; RISC PC 320x256@50
+composite reads 623 against 308 doubled, about 3.5 lines lost and unserrated.
+**But it is only trustworthy where the source is settled** -- in the dithering
+state it reads 1747, 381, 373, 1271 and 1523 on one source.
+
+**THE RESOLUTION IS A REFERENCE STATE FOR THE MEASURING PASS, NOT A LATER
+PROBE.** Deferring the probe until the source is solved is the wrong shape: it
+leaves the measurement taken through whatever the solve happened to choose, and
+it is the same opportunism one step later. The convention this answers to is
+already stated -- know every fact before setting up, and where a measurement
+needs the chip configured, use a KNOWN reference for the measuring pass and set
+the real value in the one setup afterwards. So the probe establishes the state
+it measures in -- a stated divider and stated thresholds, the same on every
+source -- reads both counts through it, and the single setup that follows
+writes the real threshold from the answer. What is wrong today is not that a
+reference was in force but that the line was nobody's: `107 of 2200` is the
+PREVIOUS source's solved divider, which bears no stated relation to the one
+arriving. Refusing to probe through a reference, which `32b35ad55` does, stops
+that particular reading and does not give the measurement a defined state.
+
+**And auto gain cannot settle on this input independently of all of the
+above**: green reads **1023 at every gain** while red and blue fall, so the
+walk steps to the end of its range and reports `settled at 255`. 0x3FF is the
+component stop value this input is documented to have and `AutoGain::Saturated`
+is 0x3F8, so green counts as saturated unconditionally.
+
+
 ### The component resting gain of 51 is magenta, and auto gain is the only thing that leaves it
 
 **A COMMON GAIN ON ALL THREE CHANNELS STILL SHIFTS THE HUE, which is what makes
