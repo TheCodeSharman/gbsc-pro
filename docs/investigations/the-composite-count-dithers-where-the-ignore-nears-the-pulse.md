@@ -1,6 +1,6 @@
 # The composite count dithers where the pulse ignore nears the source's pulse
 
-`SP_H_PULSE_IGNOR` is `divider x 49 / 1000`, and on 640x512@50 that lands at
+`SP_H_PULSE_IGNOR` was `divider x 49 / 1000`, and on 640x512@50 that lands at
 **79% of the source's own sync pulse**. The count then visits five values
 instead of one, and everything keyed on it follows: the scan type flaps into
 interlace and back, the motion-adaptive deinterlacer engages on a progressive
@@ -123,8 +123,8 @@ at every divider and the shares are what compare. 20 samples of
 | RISC PC 640x512@50 csync, 1424 | 6.11% | 2.81%, **4.49 .. 5.06%** | **3.09 .. 4.21%** | 5.34% |
 | RISC PC 640x512@50 csync, 1746 | 6.13% | 0.92%, **2.75%** | -- | 3.67% |
 
-**No value above 2.81% holds all four.** The shipped `49 / 1000` is 4.9%, which
-is inside the band on three of them and outside it on the fourth -- and the
+**No value above 2.81% holds all four.** The `49 / 1000` of the time is 4.9%,
+which is inside the band on three of them and outside it on the fourth -- and the
 fourth is one of the two dividers one mode lands on, which is why that mode
 alone is bistable.
 
@@ -224,6 +224,71 @@ to reject broadcast equalising pulses, at about 3.6% of the line against a 7.2%
 sync pulse, and the only serrated source this board can produce comes through
 the ADV7280 on composite or S-Video, which is not on the bench.
 `../bench-sources.md`.
+
+## The fraction the serrated source needs is wrong for that source's other mode
+
+The bands above were read at three or four points per source, and the gaps
+between them hid the fault. Re-walked a value at a time, frozen with the
+divider latched, 25 readings of `STATUS_SYNC_PROC_VTOTAL` per value and the
+entry value repeated as a control between every treatment:
+
+| source | divider | pulse | value | share of line | share of pulse | count |
+|---|---|---|---|---|---|---|
+| Wii 480p `ypbpr` | 1446 | 104 | 40 | 2.77% | 0.38 | 524 x25, one value |
+| | | | 50 | 3.46% | 0.48 | 524 x25, one value |
+| | | | **59** | **4.08%** | 0.57 | **524 x25, one value** |
+| | | | **70** | **4.84%** | 0.67 | 524 x19, **two values** |
+| | | | 80 | 5.53% | 0.77 | 16 of 25, three values |
+| | | | 90 | 6.22% | 0.87 | median 530, 4 of 25 |
+| RISC PC 640x512@50 csync | 1746 | 107 | 48..60 | 2.75..3.44% | 0.45..0.56 | 530 x25 at every value |
+| | | | 62 | 3.55% | 0.58 | 11 of 25, two values |
+| | | | 64 | 3.67% | 0.60 | nothing read |
+
+Every control read its own value in 25 of 25, so neither walk left a state
+behind. The 640x512@50 row at 1746 is the one the table above gives as
+`0.92%, 2.75%`: 54, 56, 58 and 60 were never tested there, and they hold.
+
+**So the 4.9% in force was above the Wii at 480p's ceiling** -- and both bounds
+on the EQUALISED fraction belong to the Wii, it being the only source here that
+carries equalising pulses. Its 576i floor is 3.68% and its 480p ceiling 4.08%,
+so one fraction has to satisfy two modes of one machine, and 4.9% satisfies the
+floor alone. **4.0%** is 88 and 57 at those two dividers, inside the band at
+both, and is taken at the ceiling's end of the gap because the two errors are
+not equal: under the floor a serrated source counts its vertical interval.
+
+## And the threshold was dithering the count the probe reads through it
+
+This is why the fraction and the probe are one fault rather than two. The probe
+takes its REJECTING reading through the equalised threshold, so a threshold
+that loses real pulses reads LOW there -- which is arithmetically
+indistinguishable from the admitting reading being HIGH, and the Wii at 480p
+answered equalisation for a source carrying none. The probe was measuring an
+artefact of its own instrument.
+
+With the fraction at 4.0% both of its readings are of the source and it answers
+`carries nothing`, which takes the unequalised 2.8%:
+
+| | ignore | count |
+|---|---|---|
+| `vga`, RISC PC 320x256@50 csync, divider 2200 | 61 | 308 steady |
+| `ypbpr`, Wii 480p, divider 1446 | **40** | **524 in 107 of 107** readings from `loop()` at 59940 mHz, spread 0 |
+
+The emitted frame is a correct Wii menu, white background and cyan accents,
+where the dithering state was magenta.
+
+## The ceiling is not a fraction of the pulse
+
+The obvious reading of the table above -- that the threshold climbs into the
+pulse, so the pulse is what it should be stated against -- does not survive the
+third source. 800x600@60 on composite sync runs a 12.07% duty, VESA putting
+128 pixels of hsync in a 1056-pixel line, and the whole plateau 86..236 through
+its 2038-sample line reads it: **0.35 to 0.96 of its own 246-sample pulse.**
+640x512@50 at a 6.13% duty fails above 0.56 of its.
+
+So neither share is constant across the bench, and what the fraction of the
+LINE buys is that it is the quantity the measurements above are expressed in.
+A pulse-relative restatement would move the Wii at 480p from 70 to 68 and
+change no verdict.
 
 ## `acquired_and_settled()` cannot see this
 

@@ -7354,75 +7354,100 @@ rather than two.
 
 `investigations/the-composite-count-dithers-where-the-ignore-nears-the-pulse.md`.
 
-### The equalisation probe answers before the source is solved, and the wrong answer latches
+### FIXED: the equalisation probe answered from an unsettled window, and its own threshold was what moved the count
 
-**The Wii at 480p carries no equalisation and IS serrated**, which is the
-combination the probe cannot distinguish from carrying nothing --
-`investigations/the-equalisation-probe-cannot-see-serration.md` measures it
-reading 524 at both thresholds. It wants `UnequalisedPulseIgnorePerThousand`
-28, which is `SP_H_PULSE_IGNOR` 40 at divider 1446. It is getting **70**, the
-equalised 49 per thousand, which
-`investigations/the-composite-count-dithers-where-the-ignore-nears-the-pulse.md`
-measures landing inside the count's own dither.
+**Three faults in one chain, and the last of them was the probe measuring
+through a register it was also disturbing.**
 
-**THE PROBE RUNS BEFORE `measure: start`.** Caught on the console across a
-`vga` to `ypbpr` selection, after the reference-clock gate was closed:
+**THE PROBE RAN 0 ms AFTER A PLL LATCH.** The install that chooses a divider
+from the rate just measured re-latches the ADC PLL, and the probe read both
+thresholds immediately after it -- so every probe on every source was taken
+inside the settle the engine itself then waits out. Measured on a `vga` to
+`ypbpr` selection:
 
 ```
- 3.63  vertical interval: 525 lines, the formatter followed it in 0 of 8 reading 524
- 4.03  vertical interval: equalisation, pulse ignore 70 of 1444 samples, coast 7/6
- 4.11  measure: start, MUX change (input), 525 lines, solved 525
- 6.61  measure: start, TIMINGS change (contradicted count), 525 lines, solved 521
+22.64  installing: divider from line rate 31471, doubled 0 -> 1446
+22.64  vertical interval: equalisation, pulse ignore 70 of 1446 samples
+22.92  settle: spent after 882 ms
 ```
 
-The divider is now the source's own, and the readings the verdict is taken
-from are still of an unsettled source -- `0 of 8` either side of it. The answer
-then LATCHES (`isSet()` suppresses a re-probe), so one bad window decides the
-threshold for the session.
+The divider there is the source's own, so the earlier reading that the line was
+the PREVIOUS source's does not describe this. `Adc::dividerLatched()` cannot
+refuse it either: `STATUS_SYNC_PROC_HTOTAL` echoes a newly written divider long
+before the vertical count is the source's. `SourceMeasurement::clockSettled()`
+is what the probe asks now, and because the pass that probes is normally the
+pass that latched, `VideoPath::measureEqualisation()` reports the refusal and
+the pass comes back for it -- nothing else in the engine measures the interval,
+so a refusal that is not retried leaves the threshold at the assumed one for
+the session. The retry terminates because the settle is a TIME.
 
-**WHAT IT COSTS, IN ONE CHAIN.** 70 dithers the count; a dithering count never
-holds the acquired run; `SourceMaintenance::readyAt()` gates the clamp window
-on `ClampReadyPasses` and auto gain on `AutoGainReadyPasses` 91, so neither
-runs. `releaseClampIfPlaced()` only releases where the window was placed, so
-`SP_NO_CLAMP_REG` stays **1** and the component black reference floats, which
-is the magenta; and the dither is the shear.
+**THE VERDICT NOW CARRIES A CONTROL.** The higher threshold is read either side
+of the measurement, and a control pair `EqualisationLines` apart describes two
+states of the source rather than two thresholds -- the verdict being a
+difference between counts taken a settling time apart, a count moving for its
+own reasons produces one whatever the thresholds do.
 
-**IT IS INTERMITTENT AND IT FAKES A REGRESSION.** Which state the unit lands
-in depends on whether the probe wins a settled window, so it correlates with
-whatever was flashed last. A bisect over 2026-10-20..25 named `8b05a205e` on an
-A-B-A and was **void**: the control -- one `vga` to `ypbpr` bounce on an
-unchanged build -- reproduces all 17 differing fields, `SP_H_PULSE_IGNOR`
-40 -> 70 and `SP_NO_CLAMP_REG` 0 -> 1 among them. **Score a candidate against
-an input bounce on one build before blaming a commit.**
+**AND THE EQUALISED FRACTION WAS ITSELF DITHERING THE COUNT IT WAS MEASURING.**
+That is why the settle alone did not fix the verdict. The probe reads the count
+through this threshold as its REJECTING case, so a threshold that loses real
+pulses reads LOW there -- which is indistinguishable from the admitting case
+reading high, and the Wii at 480p answered equalisation for a source carrying
+none. 4.9% of the line is 70 at divider 1446; measured frozen with the divider
+latched, 25 readings per value against interleaved controls at 40 reading 25 of
+25:
 
-**`VPERIOD_IF` AGAINST THE COUNT IS THE INSTRUMENT THAT SEES SERRATION**, which
-the probe cannot: normalised by the line-doubling factor, the shortfall is the
-lines the separator lost. Measured, Wii 480p `VPERIOD_IF` 524 against
-`STATUS_SYNC_PROC_VTOTAL` 524 is zero lost and serrated; RISC PC 320x256@50
-composite reads 623 against 308 doubled, about 3.5 lines lost and unserrated.
-**But it is only trustworthy where the source is settled** -- in the dithering
-state it reads 1747, 381, 373, 1271 and 1523 on one source.
+| `SP_H_PULSE_IGNOR` | share of its 104-sample pulse | count |
+|---|---|---|
+| 40 | 0.38 | 524 x25, one value |
+| 50 | 0.48 | 524 x25, one value |
+| **59** | **0.57** | **524 x25, one value** |
+| **70** | **0.67** | 524 x19, **two values** |
+| 80 | 0.77 | 16 of 25, three values |
+| 90 | 0.87 | median 530, 4 of 25 |
 
-**THE RESOLUTION IS A REFERENCE STATE FOR THE MEASURING PASS, NOT A LATER
-PROBE.** Deferring the probe until the source is solved is the wrong shape: it
-leaves the measurement taken through whatever the solve happened to choose, and
-it is the same opportunism one step later. The convention this answers to is
-already stated -- know every fact before setting up, and where a measurement
-needs the chip configured, use a KNOWN reference for the measuring pass and set
-the real value in the one setup afterwards. So the probe establishes the state
-it measures in -- a stated divider and stated thresholds, the same on every
-source -- reads both counts through it, and the single setup that follows
-writes the real threshold from the answer. What is wrong today is not that a
-reference was in force but that the line was nobody's: `107 of 2200` is the
-PREVIOUS source's solved divider, which bears no stated relation to the one
-arriving. Refusing to probe through a reference, which `32b35ad55` does, stops
-that particular reading and does not give the measurement a defined state.
+**Both bounds on that fraction are the Wii's**, it being the only source here
+carrying equalising pulses -- 3.68% is the 576i floor and 4.08% this mode's
+ceiling -- so 4.9% satisfied one mode of one machine and not the other.
+`EqualisedPulseIgnorePerThousand` is **40**, which is 88 and 57 at those two
+dividers, inside the band at both. Taken at the top of the ceiling's side
+because the two errors are not equal: under the floor a serrated source counts
+its vertical interval.
 
-**And auto gain cannot settle on this input independently of all of the
-above**: green reads **1023 at every gain** while red and blue fall, so the
-walk steps to the end of its range and reports `settled at 255`. 0x3FF is the
-component stop value this input is documented to have and `AutoGain::Saturated`
-is 0x3F8, so green counts as saturated unconditionally.
+**THE CEILING IS NOT A FRACTION OF THE PULSE, AND THE SAME MEASUREMENTS REFUTE
+THAT MODEL.** 800x600@60 runs a 12.07% duty and holds its count to 0.96 of its
+own pulse, where 640x512@50 at 6.13% fails above 0.56 of its. The fraction of
+the LINE stands.
+
+Measured after flashing, both inputs, one state:
+
+| | ignore | count |
+|---|---|---|
+| `vga`, RISC PC 320x256@50 csync, divider 2200 | 61 | 308 steady |
+| `ypbpr`, Wii 480p, divider 1446 | **40**, logged `carries nothing` | **524 in 107 of 107** on-device readings at 59940 mHz, spread 0 |
+
+The emitted frame is a correct Wii menu -- white background, cyan accents, no
+shear -- where the dithering state was magenta. That closes the chain this
+entry recorded: a dithering count never held the acquired run, so
+`SourceMaintenance::readyAt()` released no clamp window and ran no auto gain.
+
+**WHAT IS STILL OPEN.** The 576i and 480i legs have not been re-measured since
+the fraction moved -- 88 at divider 2200 is inside the band measured to read
+310 at every value, but the engine's divider for those modes has not been
+checked against it. And **auto gain cannot settle on this input
+independently**: green reads 1023 at every gain on `ypbpr` while red and blue
+fall, so the walk steps to the end of its range and reports `settled at 255`.
+0x3FF is the component stop value this input is documented to have and
+`AutoGain::Saturated` is 0x3F8, so green counts as saturated unconditionally.
+
+**THE BISECT TRAP THIS ENTRY CARRIED STANDS.** Which state the unit landed in
+depended on whether the probe won a settled window, so it correlated with
+whatever was flashed last. A bisect over 2026-10-20..25 named `8b05a205e` and
+was void: one `vga` to `ypbpr` bounce on an unchanged build reproduced all 17
+differing fields. **Score a candidate against an input bounce on one build
+before blaming a commit.**
+
+`investigations/the-composite-count-dithers-where-the-ignore-nears-the-pulse.md`,
+`investigations/the-equalisation-probe-cannot-see-serration.md`.
 
 
 ### The component resting gain of 51 is magenta, and auto gain is the only thing that leaves it
