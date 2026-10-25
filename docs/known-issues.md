@@ -7354,31 +7354,29 @@ rather than two.
 
 `investigations/the-composite-count-dithers-where-the-ignore-nears-the-pulse.md`.
 
-### The Wii at 480p re-locks twice a second, so auto gain never finishes and the picture is magenta
+### The Wii at 480p is magenta, and auto gain is not the reason
 
-`ypbpr`, the Wii at 480p, scaling path into 1080p, `PLLAD_MD` 1446. 45 s of
-console carries **96 `source acquired` and 88 `source UNLOCKED`**, alternating:
+**The source is stable and the framing is right.** The Homebrew Channel menu is
+legible and full screen off the USB capture, 1918x1079 of 1920x1080, with the
+count steady at 524, `STATUS_SYNC_PROC_HTOTAL` equal to `PLLAD_MD` at 1446 and
+the console silent for 30 s. Green is the channel that is missing: whites come
+out magenta, so the deficit is across the whole picture rather than in one
+level.
 
-```
-source acquired: 525 lines, 1446 samples against divider 1446
-source UNLOCKED: 525 lines,   12 samples against divider 1446
-```
+**AUTO GAIN IS OFF, SO IT CANNOT BE STARVED.** `auto-gain` reads `0` in the
+stored preferences and the sketch's gate asks that first, so auto gain has
+never run on either bench source. The three channel gains at **51/51/51** are
+`ColourSpace::ComponentGain` 0x33, the value the component colour space
+prescribes at rest, and `vga`'s 123/123/123 are `ColourSpace::RgbGain` 0x7B for
+the same reason. **Equal gains on a magenta picture are the colour space, not a
+measurement that failed**, and an earlier reading of them as a starved auto
+gain is superseded. Turning auto gain on is the untried experiment, and it says
+whether the green deficit is in the analog level or downstream of it.
 
-**THE COUNT IS STEADY AT 525 THROUGHOUT, so this is not the contradicted-count
-arm below.** What flaps is `STATUS_SYNC_PROC_HTOTAL` -- 1446 against the
-divider when locked, 11 to 13 when not -- while the divider, the count and the
-coast pair stay correct and steady. **60 `sampling phase: chosen` lines fall in
-the same window**, so the phase search re-runs per cycle and latches 32 phases
-each time, which is itself a PLL disturbance: the recovery feeds the fault.
-
-**The magenta is auto gain, not the colour path.** Nothing stays still long
-enough for it to complete -- **zero `auto gain:` lines in 45 s** -- so the three
-channel gains sit at **51/51/51**, which is `ColourSpace::ComponentGain` 0x33,
-the resting value. The same mechanism as the interlaced entry below. Every
-colour register is the value `ColourSpace::applyYuv()` prescribes:
+**Every colour register is the value `ColourSpace::applyYuv()` prescribes:**
 `ADC_RYSEL_R/G/B` 1/0/1, `DEC_MATRIX_BYPS` 1, `IF_MATRIX_BYPS` 1,
 `VDS_UCOS_GAIN` 0x1C, `VDS_VCOS_GAIN` 0x29, all three DAC channel enables 1.
-**The same wrong gain has been seen on this source in pass-through**, so it is
+**The same wrong colour has been seen on this source in pass-through**, so it is
 not a property of the scaling path.
 
 **THE CLAMP IS NOT TESTABLE BY MOVING IT HERE, AND TWO READINGS THAT SAID SO
@@ -7387,14 +7385,15 @@ decisive; `investigations/a-frozen-component-source-drifts-to-magenta.md`
 measures `R-G` running +17.5 to +114 in 46 s on a frozen component source with
 nothing written, and two clamp walks climbing in WALK ORDER rather than in
 clamp value. A clamp walk on a frozen component source measures the clock.
+Green carries the sync on this input, which is what makes its own black level
+the suspect and what makes a frozen walk unable to ask about it.
 
-**What would settle it:** whether the 11..13 reading is a real unlock or a
-count read while the block is not counting. 1446 is `0x5A6` and 12 is `0x00C`,
-sharing neither byte, so the two-byte tear is ruled out -- a read taken
-mid-reset is not. `/samplinglog?ms=25` samples the count, the lock bit and
-`STATUS_SYNC_PROC_HTOTAL` adjacently from inside `loop()`, which is the only
-way to ask what fraction of the window the collapse occupies and whether it
-precedes or follows the phase search.
+**The re-lock loop that used to sit in front of this is closed.** The source's
+line count genuinely drops for 25 to 75 ms about twice a second, at the same
+rate with automation frozen, and the engine acted on every one of them; both
+halves of the presence verdict forgive a dropped reading for the same run now.
+`investigations/a-dropped-line-count-is-not-an-unlocked-source.md`. It did not
+change the colour.
 
 ### The contradicted-count arm never stops on an interlaced source
 
