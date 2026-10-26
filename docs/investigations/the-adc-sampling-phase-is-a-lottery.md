@@ -208,6 +208,104 @@ period, which is exactly `1 / samplesPerPixel` of a pixel, and a one-sample
 origin shift moves the sub-pixel phase by exactly that -- one whole field,
 which cancels. A derivation resting on a residual there has none to rest on.
 
+## What re-rolls it: the ADC PLL's own re-latch
+
+Measured on `vga`, RISC PC at 1280x720@60 in pass-through, `PLLAD_MD` 2038,
+**source untouched throughout** -- no mode change, no input change, no
+re-acquisition. `/sampleclock` rewrites the PLL group at the value already held
+and restarts it. Full step-1 sweep after each, box found once and held:
+
+| re-latch | 0 | 1 | 2 | 3 | 4 |
+|---|---|---|---|---|---|
+| optimum | 22 | 20 | 20 | 8 | 18 |
+| peak | 52.6 | 52.6 | 52.5 | 52.5 | 52.5 |
+
+The count held 749, `STATUS_SYNC_PROC_HTOTAL` 2038 against the divider and
+`PA_SP_S` 29 at every leg. **A 14-step span with nothing about the source or
+the chosen divider changing**, and the ceiling flat to a tenth of a grey level.
+
+**THE PHASE ADJUSTERS' OWN RESTART IS NOT IT, which is what makes this the
+PLL's.** `applyPhaseAdc()` pulses `PA_ADC_BYPSZ` 0 -> 1 on every apply, so a
+32-point sweep restarts the adjuster's lock circuit 32 times; three interleaved
+sweeps agree to under one grey level and `r = 1.000`. The adjuster's lock loop
+settles to the same place every time within one acquisition. A bare
+`PLLAD_VCORST` pulse does not re-roll it either, so what draws is the group
+write and restart rather than the VCO re-lock.
+
+**The practical consequence is that a fresh draw costs about six seconds** --
+`/sampleclock?md=<the value already held>` -- against the two and a half
+minutes a re-acquisition costs. Every experiment on this phenomenon gets
+cheaper by that factor, and a comparison across draws no longer needs the
+source disturbed.
+
+## Controls that do not reach it
+
+Each measured on one held draw with the first leg repeated last as the control,
+so a difference belongs to the bit rather than to the hour. None of them is a
+fix and none is unexplored any more.
+
+| control | what it is | result |
+|---|---|---|
+| `PA_ADC_LOCKOFF` s5_18[6] | the phase adjuster's lock circuit disable, written 0 at bring-up and never again | **inert** -- peak 52.6 / 52.8 / 52.6, `r = 1.000`, max difference 0.8 against a control difference of 0.8 |
+| `ADC_FLTR` s5_03[5:4] | the ADC's own analog corner, 150 / 110 / 70 / 40 MHz, bring-up writes the widest | **attenuates, does not stabilise** -- peak falls 52.7, 51.5, 48.7, 40.8 while the swing holds 2.59x, 2.36x, 2.41x, 2.61x |
+| `SP_HD_MODE` s5_3e[1] | SD against HD mode, written 0 unconditionally including for an HD source | **inert** -- peak 52.8 at every setting, swing 3.07x / 3.08x / 3.05x, identical RGB means |
+
+**Why the analog filter cannot help, which is the general shape of the
+problem.** At 2038 samples across a 1650-pixel line the sampler runs 91.7 MHz
+against a grating fundamental near 37 MHz: the grating is already BELOW the
+kept Nyquist of 45.9 MHz. So this is not out-of-band content folding down,
+which is what an anti-alias filter removes -- it is sparse sampling of a
+near-Nyquist signal, where the recovered contrast depends on where the samples
+land. `ADC_FLTR` 3 at 40 MHz sits on top of the 37 MHz signal and kills it
+rather than steadying it. **The filtering that would help acts at the KEPT
+rate**, which is what a decimator does and an analog corner ahead of the
+converter does not.
+
+## Oversampling is unavailable at the divider this mode runs
+
+Not untried: the tap does not exist. Oversampling here takes an EARLIER VCO tap
+and decimates, `PLLAD_CKOS = postDivider - stepsFor(ratio)`, and the post
+divider comes from RD-5725-1.1's crossover table at 80 / 40 / 20 MHz. CKO is
+2038 x 45013 = 91.7 MHz, above the top row, so `PLLAD_KS` reads 0 and
+`oversampleFor()` halves any request back to 1. The part's rating closes it
+independently: 2 x 91.7 = 183.4 MHz against 162 MSPS.
+
+**Upstream behaves identically**, so this is not a regression -- stock's
+`setOverSampleRatio()` opens `case 2:` with `if (ks == 0) { setOverSampleRatio(1,
+false); return; }`. What stock does carry that this fork does not is a
+`hi_res && !bypass` branch raising `ADC_CLK_ICLK1X` at ratio 1 and bumping
+`PLLAD_CKOS` at ratio 2; both are guarded off the pass-through path.
+
+**Buying the tap costs kept samples, and that comparison is UNSETTLED.**
+Oversampling becomes legal below the 80 MHz row, which at this line rate means
+a divider of 1776 or less -- 1.076 samples per source pixel against 1.235, so
+2.15 samples per grating period against 2.47. A run at `md=1776 os=2` read a
+peak of 28.0 against 52.8, **and that figure is not evidence**: the wedge box
+was found once and held across a divider change, which moves and rescales the
+picture, so the held box lands on a different part of the grating. The divider
+also rewrites `SP_RT_HS_SP` -- measured 32 -> 22 -- and that origin's formula
+is calibrated for a sampling density and wrong off it, costing the grating far
+more than the phase does.
+
+**So a divider comparison in pass-through has to co-optimise the capture
+origin**, or it measures the origin formula's error at that divider. Nothing
+here says whether oversampling helps at a properly placed origin.
+
+## The lottery, in one acquisition
+
+The engine holds `PA_ADC_S` at `MidField` 16 whatever the draw. Two draws of
+the same source, mode and divider, each a full step-1 sweep with the box held:
+
+| | reachable peak | at the engine's 16 | share of the peak |
+|---|---|---|---|
+| one draw | 52.1 at phase 15 | 51.6 | **99%** |
+| the trough of that same draw | | 13.4 at phase 5 | 26% |
+
+Same acquisition, same everything: the field spans 51.6 down to 13.4 and where
+the engine sits is the draw's business. That is the artefact as a viewer meets
+it, and it is why the fix is a search rather than a constant --
+`no-scan-derives-the-adc-sampling-phase.md` has why no rule names the value.
+
 ## What is open
 
 - **THE CEILING, WHICH IS A DIFFERENT QUANTITY FROM THE OPTIMUM AND IS WHY A
@@ -227,17 +325,51 @@ which cancels. A derivation resting on a residual there has none to rest on.
   confirms the figure, and `snapdiff.py --save` at both ends is what the diff
   needs -- a `dump_registers.py` dump leaves 928 addresses out, 114 of them
   live on a settled unit.
-- **What in the acquisition sequence re-rolls it.** It survives a VCO reset and
-  it is not in the register space, since the dumps are identical but for a
-  register whose slope is too small. The remaining candidates are the divider
-  latch, the sync processor reset, and the reference-clock install.
-- **Whether `TestBus` level readback can score it.** `AutoGain` already reads
-  the converter's ten-bit sampled level through `TestBus::selectLevel()` and
-  `readLevel()`, so a level path exists and is proven. Whether the spread of
-  that distribution has the resolution to grade 32 phases from samples
-  scattered over a whole picture is untested, and the doubt is real:
-  `AutoGain` only asks "did anything clip", a threshold question with a wide
-  margin.
+- **WHAT the PLL's re-latch draws, now that the re-latch is named.** The group
+  write and restart re-rolls it and a bare `PLLAD_VCORST` does not, so the draw
+  is inside `restartPll()` and the group it loads rather than in the VCO's own
+  re-lock. Bisecting further by hand is what `/sampleclock` exists to prevent,
+  so this wants a firmware-side split rather than register pokes.
+- **`SP_JITTER_SYNC` s5_20[4]**, sync on both edges against falling only,
+  written 0 unconditionally. The ADC PLL locks to HSync, so which edges form
+  its reference is not obviously unrelated to where it locks. Untested.
+- **Whether `TestBus` level readback can score it. STILL OPEN, and an HTTP
+  read cannot answer it.** The level path is proven -- `AutoGain` reads the
+  converter's ten bits through `TestBus::selectLevel()` and `readLevel()`, and
+  driven the way the firmware drives it, `TEST_BUS_SEL` 15 with `TEST_BUS_EN`
+  and `PAD_BOUT_EN` raised, green returns a 0..1020 distribution. A sweep taken
+  over HTTP is not an instrument for it: at 43 Hz the readings collapse to a
+  few values quantised to 64 and 128, and the statistics swing by 270..390%
+  across the field against contrast at `r = -0.2..-0.35`, which is noise rather
+  than a null.
+
+  **The arithmetic says what would be needed.** The read is I2C paced and
+  uncorrelated with pixel position, so it samples the WHOLE frame; the wedge is
+  0.7% of it, and a 3x swing there moves the total variance about 0.04%.
+  Resolving that wants of the order of a million samples per phase. On-device
+  sampling through `SamplingLog` reaches perhaps 20 kHz against HTTP's 43 Hz,
+  which makes it minutes per phase -- **a bench experiment, and not a runtime
+  search** even if it reads. Transition counting is separately closed: 59
+  selector and formatter combinations against a 3.00x contrast difference, none
+  moving more than 8%.
+
+  `TEST_BUS` itself is absent from `tv5725_registers.json`, which carries only
+  `TEST_BUS_2E` and `TEST_BUS_2F`; the firmware's `TEST_BUS` is the 16 bits
+  across both, masked to ten. Selector 14, the red level, returns a narrow
+  quantised range where green and blue return the full span, and that is
+  unexplained.
+- **THE ADC HAS A TEST BUS OF ITS OWN AND IT HAS NEVER BEEN SCANNED**, so "the
+  test bus is exhausted" is not yet a statement anyone may make. `ADC_TA_EN`
+  s5_05[0] gates it -- "ADC test enable, when 0 the ADC works normally" -- and
+  `ADC_TA_CTRL` s5_05[1:4] selects among sixteen, described only as "ADC test
+  bus control bit". The firmware writes the gate 0 at bring-up and never again.
+  The 59-combination sweep that closed transition counting walked
+  `TEST_BUS_SEL` and `IF_TEST_SEL`, neither of which is this.
+
+  It is the one remaining candidate in the ADC's own domain, which is where the
+  phase lives, and the two digital selectors are not: a signal upstream of the
+  decimators could carry what the kept samples no longer do. Enabling it puts
+  the ADC in test mode, so the picture is at risk and `/sc?~` is the recovery.
 - **Whether 14% on the sharpest edges is worth a search.** The measurement is
   taken; the judgement is not made -- and it is a PASS-THROUGH 14%, the scaling
   path showing no response at all.
