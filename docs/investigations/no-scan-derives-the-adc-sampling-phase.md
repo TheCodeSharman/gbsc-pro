@@ -7,8 +7,9 @@ two ADC samples per source pixel that choice decides how much of the source's
 finest detail survives, and the phase that wins re-rolls on every acquisition.
 `the-adc-sampling-phase-is-a-lottery.md` is the phenomenon and what it costs.
 
-This page is the model for deriving it rather than searching for it, and the
-measurement that refutes it.
+This page is the model for deriving it off the sync phase scan rather than
+searching for it, the measurement that refutes that, and what the same run
+says about building the search instead.
 
 ## The model, and why it was convincing
 
@@ -112,6 +113,54 @@ five.
 
 So the two bests do not move together, no fixed offset exists, and nothing the
 scan measures predicts the ADC optimum.
+
+## Why a search is worth building, and why the sync phase scan cannot stand in
+
+The same eight acquisitions read as CEILINGS rather than as optima. Each sweep
+is taken with the other adjuster where the engine left it, so each column is
+what that adjuster can reach on its own.
+
+| across the 8 acquisitions | |
+|---|---|
+| best reachable by sweeping `PA_ADC_S`, sync phase at the engine's 30 | 52.1..53.3, **sd 0.31** |
+| worst phase in that same field | 16.9..23.1 |
+| best reachable by sweeping `PA_SP_S`, ADC pinned at the engine's fixed 16 | **30.3..52.4, sd 7.27 -- 1.73x** |
+
+**The good picture is reachable on every one of these acquisitions.** All
+eight reach about 52.8 to a third of a grey level, so nothing about a bad one
+is out of reach -- what re-rolls is only whether the fixed `MidField` 16 lands
+on it. At that fixed phase the delivered contrast is 18.0..51.6 across
+acquisitions, a 2.9x spread, which is the artefact as a viewer meets it: one
+source and one mode reading sharp on one acquisition and beating on the next.
+
+**A SEARCH WOULD NOT RECOVER A LOW-CEILING ACQUISITION, AND THOSE EXIST.**
+One acquisition on record reached 43.9 on the same box, mode and divider with
+the console certified quiet, between two that reached 53.2; there no phase
+reaches what its neighbours reach and the picture is worse everywhere rather
+than at the engine's phase. These eight do not reproduce it and do not refute
+it -- they bound it as the rarer of the two. **So a search fixes the common
+case and a residual artefact afterwards is not evidence the search failed**,
+which is worth settling before one is judged.
+`the-adc-sampling-phase-is-a-lottery.md` carries the ceiling as an open
+question, and grouping dumps by the CEILING rather than by the optimum has
+never been done.
+
+**AND THE SYNC PHASE SCAN CANNOT STAND IN FOR A SEARCH.** That phase IS
+searched every acquisition, so the cheap hope is that it already absorbs this.
+It does not: pinned at the engine's ADC phase, the best any sync phase reaches
+varies by 1.73x and falls to 30.3 against the 52.8 the ADC field reaches, so
+on some acquisitions no sync phase rescues the picture. The two adjusters are
+not interchangeable, which is the same conclusion the refutation above reaches
+from the other direction.
+
+**WHICH COST FIGURE APPLIES DEPENDS ON THE COMPLAINT, AND THE TWO ARE OFTEN
+SWAPPED.** The wedge's 3x is sustained periodic content at Nyquist, which is
+what makes it BEAT rather than merely soften -- so for a beating grating the
+wedge figure is the measurement, not an adversarial overstatement of it. The
+14% on the sharpest edges and 2-3% over the whole picture are the figures for
+general softness on ordinary content.
+`the-adc-sampling-phase-is-a-lottery.md` carries both and the control that
+makes them readable.
 
 ## What the same run settles about the sync phase
 

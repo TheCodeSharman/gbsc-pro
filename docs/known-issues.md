@@ -350,10 +350,24 @@ rises from 17.6..52.8 to 77.6..81.6. Above two samples a pixel the grating is
 no longer above Nyquist and the phase stops mattering, which is what the model
 says. `mean |dy|` is the control: the phase is horizontal and cannot move it.
 
-So the cost is real, in phase with the wedge, and small. **Settle whether 14%
-on the sharpest edges is worth a search before spending a session on the
-cause** -- `sharpness.py` and `adc_phase_sweep.py` take the measurement in one
-run.
+So the cost is real, in phase with the wedge, and small on ordinary content.
+`sharpness.py` and `adc_phase_sweep.py` take that measurement in one run.
+
+**WHICH FIGURE APPLIES DEPENDS ON THE COMPLAINT.** The 14% is general
+softness on ordinary content; the wedge's 3x is sustained periodic content at
+Nyquist, which is what BEATS -- so a beating grating is the wedge's case and
+not an adversarial overstatement of it.
+
+**IMPROVING PASS-THROUGH IS THE GOAL, AND THERE A SEARCH IS WORTH BUILDING.**
+The reachable peak is 52.1..53.3 at sd 0.31 over eight acquisitions, so the
+good picture is reachable on each of them and only the engine's fixed
+`MidField` 16 misses it, delivering 18.0..51.6. **The sync phase scan cannot
+stand in**: at that fixed ADC phase the best any sync phase reaches falls to
+30.3 against the 52.8 the ADC field reaches. What is missing is an on-chip
+instrument, not a reason. **A search would not recover the low-ceiling
+acquisition recorded above**, where no phase reaches what its neighbours do,
+so a residual artefact after one is not evidence it failed.
+`investigations/no-scan-derives-the-adc-sampling-phase.md`
 
 **AND IT IS A PASS-THROUGH COST, WHICH IS MOST OF THAT JUDGEMENT.** The
 scaling path shows no phase response at all -- 1.094x at 800x600@60 and 1.009x
