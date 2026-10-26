@@ -375,6 +375,48 @@ site also has its own reason, and `VideoPath.cpp` states one that is nothing to
 do with phase: the reset leaves the capture counter's origin at 0 and the
 reference-clock install is what writes it.
 
+## The sync processor's own test bus does not carry the draw either
+
+Its test bus is the right domain -- the draw is in that block, and
+`SP_TEST_MODULE` s5_63[1:3] exposes eight stages by name, **6 being the
+retiming module** that generates the pulse the PLL locks to, with
+`SP_TEST_SIGNAL_SEL` picking eight signals of each. `TEST_BUS_` at s0_2E is a
+24-bit block, so a pair can be read as a value rather than counted as edges.
+Bring-up already leaves `SP_TEST_EN` 1 on module 7, and holding test mode on
+does not disturb the lock: eight draws at `STATUS_SYNC_PROC_HTOTAL` 2038
+against the divider with peaks of 52.7..53.3.
+
+**WHAT MADE THE READ WORTH TRYING** where the level path is closed: the level
+path fails because an HTTP read samples the whole frame at 43 Hz against a
+wedge that is 0.7% of it, whereas the draw's offset is STATIC for the life of a
+draw. A value that is not moving can be read slowly.
+
+**AND THAT PREMISE HOLDS FOR ONLY 27 OF THE 64.** Read ten times inside one
+draw, **37 pairs dither** -- every signal of `cs_sep`, `retiming` and
+`out proc` among them -- so a single read of one samples the wire's state and
+varies whether or not the phase did. **A bare across-draw table therefore reads
+as 44 varying signals when 37 of them are the read's own timing**, which is the
+trap this measurement exists to avoid.
+
+Of the 27 that hold still, across eight draws whose shifts were +8, -2, +1, -8,
+-2, +10 and +14:
+
+| | pairs |
+|---|---|
+| static within a draw and unchanging across all eight | **20** |
+| static within a draw and varying across draws | 7, all of `vs_pol_det` |
+| live, so unreadable by a single read | 37 |
+
+**The seven are the bus in another state, not a signal.** They move only in
+draws 3 and 8 -- and in those two scans nearly every pair including the live
+ones reads `0x40xx`, so it is the scan rather than the pair. The shifts at
+those draws were -2 and +14, which share nothing.
+
+So nothing the sync processor's test bus carries as a VALUE encodes the offset.
+The 37 live ones are not closed by this: they would need on-device sampling,
+and `/testbus` counts edges on a pair rather than reading it as a word.
+`sp_test_bus.py`.
+
 ## Controls that do not reach it
 
 Each measured on one held draw with the first leg repeated last as the control,
