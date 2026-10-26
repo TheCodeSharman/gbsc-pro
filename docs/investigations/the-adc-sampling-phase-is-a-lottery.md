@@ -257,6 +257,54 @@ minutes a re-acquisition costs. Every experiment on this phenomenon gets
 cheaper by that factor, and a comparison across draws no longer needs the
 source disturbed.
 
+## A DRAW ROTATES THE CURVE, so the shape is the mode's and only the offset rolls
+
+Thirteen draws at 1280x720@60 in pass-through, divider 2038, one held wedge
+box. Scored as the circular SHIFT that best aligns each curve to the one before
+it rather than by where the optimum sat:
+
+| | shift | residual at it | residual unrotated | peak |
+|---|---|---|---|---|
+| seven draws, before the ordering fix below | +16, +8, +9, +11, -5, +11 | 3.1..5.7 | 9.1..24.4 | 51.8..52.3 |
+| six draws, after it | -14, -3, +13, +13, -4 | 1.4..6.6 | 4.7..18.3 | 50.9..52.5 |
+
+Rotation carries most of every difference, against a control repeat of 0.67 --
+so **the curve is a property of the mode and a draw moves its offset**. The
+peak is within 1.6 of 52.5 on all thirteen, so the ceiling did not move either.
+
+Two things follow. **The optimum is the noisier statement of the two**: the
+peak is a plateau several steps wide, so it hops between neighbouring draws
+that have not moved. And **the unknown is ONE quantity rather than 32** -- which
+is what a per-mode constant would have to be tuned against, and why controlling
+the roll is worth more than a trim that the next acquisition re-rolls.
+
+The rotation is not exact: the residual at the best shift is 1.4..6.6 against
+the control's 0.67, so something beside the offset moves as well. What it is is
+not established.
+
+## The phase applies were ordered wrongly, and that is NOT the draw
+
+`Adc::applyPhases()` ran before `Adc::latch()` on both restart paths --
+`VideoPath::restartAndLatch()` and the sketch's `restartAfterBypassSwitch()` --
+and that latch reloads the ADC PLL group and re-locks the clock the two phase
+adjusters align to. Neither `PA_SP_S` nor `PA_ADC_S` is in the group
+`PLLAD_LAT` loads, so there was nothing to gain by preceding it. The applies
+run after it now, and `test_video_path.cpp` pins the order.
+
+**It does not stop the draw**, which is the finding rather than the fix. Seven
+draws before and seven after, same mode, divider and box:
+
+| | optima across the draws |
+|---|---|
+| before | 11, 1, 19, 20, 22, 6, 22 |
+| after | 19, 4, 16, 2, 3, 15, 17 |
+
+Both span the field. So the draw is in the PLL's own re-lock and not in when
+the adjusters are restarted around it -- **which closes the whole sequencing
+family**, the obvious place to look next. A lock circuit restarted against an
+already locked clock is repeatable, measured: three interleaved 32-point
+sweeps, each pulsing `PA_ADC_BYPSZ` 32 times, agree to under a grey level.
+
 ## Controls that do not reach it
 
 Each measured on one held draw with the first leg repeated last as the control,
@@ -279,6 +327,85 @@ land. `ADC_FLTR` 3 at 40 MHz sits on top of the 37 MHz signal and kills it
 rather than steadying it. **The filtering that would help acts at the KEPT
 rate**, which is what a decimator does and an analog corner ahead of the
 converter does not.
+
+## `SP_JITTER_SYNC` ROTATES the curve, and it is the first control that moves it
+
+`SP_JITTER_SYNC` s5_20[4] syncs the processor on both the rising and the
+falling edge of HSync rather than the falling one alone, and is written 0
+unconditionally. The ADC PLL locks to HSync, so which edges form its reference
+is where it can decide the sampling instant -- and it does.
+
+Measured on `vga` at 1280x720@60 in pass-through, divider 2038, one held draw,
+the legs interleaved 0, 1, 0, 1, 0:
+
+| leg | optimum | peak | trough | swing | mean | best circular shift against the first leg |
+|---|---|---|---|---|---|---|
+| 0 | 11 | 53.0 | 17.9 | 2.96x | 36.1 | -- |
+| 1 | 25 | 52.0 | 17.5 | 2.97x | 40.1 | **+13, residual 6.02 against 21.81 unrotated** |
+| 0 | 11 | 52.1 | 17.5 | 2.98x | 35.4 | +0, residual 0.68 |
+| 1 | 25 | 52.0 | 17.2 | 3.02x | 39.8 | **+13, residual 5.82 against 21.82** |
+| 0 | 11 | 52.0 | 17.6 | 2.95x | 35.4 | +0, residual 0.67 (control, `r = 1.000`) |
+
+**It is a rotation and not a re-roll**: the same +13 of 32 steps twice, the
+optimum landing on 25 both times and back on 11 every time it is cleared, with
+the peak and the swing unmoved. The residual after rotating is 6.0 against the
+control's 0.67, so the curve is not purely translated -- but the translation
+carries three quarters of the difference.
+
+**What it costs where nothing chooses it.** With a fixed phase of 16 the two
+settings are not equivalent on this draw: 47.6 at `SP_JITTER_SYNC` 0 against
+the rotated curve's 23.7, a factor of two on the same picture. Nothing in the
+firmware chooses between them, so which one a build runs is whichever the
+bring-up wrote.
+
+It does not locate the optimum, so it is not the fix on its own. What it shows
+is that the sampling instant has a deterministic, reversible control beside the
+32-step field -- the first thing found that moves the draw at all.
+`phase_curve.py --legs SP_JITTER_SYNC=0,1 --csv`.
+
+## The ADC's own test bus is inert, which closes the ADC's domain
+
+`ADC_TA_EN` s5_05[0] gates a test bus inside the ADC and `ADC_TA_CTRL`
+s5_05[1:4] selects among sixteen, documented only as "ADC test bus control
+bit". It was the last unscanned selector, and the one in the converter's own
+domain where the phase lives rather than downstream of the decimators.
+
+**It does nothing, on two independent instruments.** With the gate raised and
+each of the sixteen selected in turn:
+
+- **Nothing reaches `TEST_BUS_SEL`.** Every one of the 32 chip selectors reads
+  inside the control's own envelope. Three candidates were flagged against a
+  single control sweep and all three fell to 0.0 when re-read -- selectors 0
+  and 2 carry a few transitions a window and 5, 11, 14, 15, 16 and 18 swing by
+  200 to 385 between two windows on an untouched unit, so **one control sweep
+  cannot score a leg here**. `adc_test_bus.py` takes the envelope from repeated
+  controls interleaved with the legs.
+- **The emitted frame does not move.** Wedge contrast 10.5 at every setting,
+  frame mean 135.76..135.90 against a control of 135.90, and the lit box
+  87..1813 identical throughout. A register that reads back is not proof the
+  hardware acted on the write, so the picture is the instrument that matters:
+  the gate reaches nothing the converter does either.
+
+**`ADC_TEST` s5_0c[4:1] beside it is live and is destructive**, which also
+proves the probe would have seen a response. "When = 1 the ADC output clock
+will be invert / for ADC test / reserved", written 9 at bring-up. Three of its
+four bits do something and the top one is inert -- every value and its +8
+partner read identically:
+
+| bits set | frame |
+|---|---|
+| neither of weight 2 or 4 (0, 1, 8, 9) | the picture, mean 136 |
+| weight 2, weight 1 clear (2, 10) | nothing at all, mean 0.08 |
+| weight 2, weight 1 set (3, 11) | a flat field, R 74.9 G 75.0 B 74.8 |
+| weight 4, weight 1 clear (4, 12) | the solid green screen, R 2.8 G 99.5 B 82.2 |
+| weight 4, weight 1 set (5, 13) | nothing at all |
+| both, weight 1 clear (6, 14) | nothing at all |
+| both, weight 1 set (7, 15) | a flat field, mean 74.9 |
+
+So an inverted ADC output clock is not reachable as a coarse half-sample phase
+step: every live combination is the green screen or no output, and the picture
+returns the moment 9 goes back. **Neither field is a phase control and neither
+is an instrument for one.**
 
 ## Oversampling is unavailable at the divider this mode runs
 
@@ -344,14 +471,18 @@ it, and it is why the fix is a search rather than a constant --
   confirms the figure, and `snapdiff.py --save` at both ends is what the diff
   needs -- a `dump_registers.py` dump leaves 928 addresses out, 114 of them
   live on a settled unit.
-- **WHAT the PLL's re-latch draws, now that the re-latch is named.** The group
-  write and restart re-rolls it and a bare `PLLAD_VCORST` does not, so the draw
-  is inside `restartPll()` and the group it loads rather than in the VCO's own
-  re-lock. Bisecting further by hand is what `/sampleclock` exists to prevent,
-  so this wants a firmware-side split rather than register pokes.
-- **`SP_JITTER_SYNC` s5_20[4]**, sync on both edges against falling only,
-  written 0 unconditionally. The ADC PLL locks to HSync, so which edges form
-  its reference is not obviously unrelated to where it locks. Untested.
+- **WHAT the PLL's re-latch draws, now that the sequencing is excluded.** The
+  group write and restart re-rolls it, a bare `PLLAD_VCORST` does not, and
+  moving the phase applies after the group's latch does not stop it -- so the
+  draw is in the re-lock itself. **`phase_curve.py --pulse` is how it is asked
+  one part at a time**: it writes the complement of a one-bit field and writes
+  it straight back, which is a rising edge on a bit resting high and a reset
+  pulse on one resting low, and reports the shift that followed against a no-op
+  leg as the control. `PLLAD_LAT`, `PLLAD_LEN`, `PLLAD_VCORST`, `PLLAD_PDZ`.
+  **This is what a per-mode constant depends on**: the curve is the mode's and
+  only the offset rolls, so a roll that can be stopped or made repeatable turns
+  the phase into something tunable once, and a trim without that is re-rolled
+  by the next acquisition.
 - **Whether `TestBus` level readback can score it. STILL OPEN, and an HTTP
   read cannot answer it.** The level path is proven -- `AutoGain` reads the
   converter's ten bits through `TestBus::selectLevel()` and `readLevel()`, and
@@ -377,18 +508,6 @@ it, and it is why the fix is a search rather than a constant --
   across both, masked to ten. Selector 14, the red level, returns a narrow
   quantised range where green and blue return the full span, and that is
   unexplained.
-- **THE ADC HAS A TEST BUS OF ITS OWN AND IT HAS NEVER BEEN SCANNED**, so "the
-  test bus is exhausted" is not yet a statement anyone may make. `ADC_TA_EN`
-  s5_05[0] gates it -- "ADC test enable, when 0 the ADC works normally" -- and
-  `ADC_TA_CTRL` s5_05[1:4] selects among sixteen, described only as "ADC test
-  bus control bit". The firmware writes the gate 0 at bring-up and never again.
-  The 59-combination sweep that closed transition counting walked
-  `TEST_BUS_SEL` and `IF_TEST_SEL`, neither of which is this.
-
-  It is the one remaining candidate in the ADC's own domain, which is where the
-  phase lives, and the two digital selectors are not: a signal upstream of the
-  decimators could carry what the kept samples no longer do. Enabling it puts
-  the ADC in test mode, so the picture is at risk and `/sc?~` is the recovery.
 - **Whether 14% on the sharpest edges is worth a search.** The measurement is
   taken; the judgement is not made -- and it is a PASS-THROUGH 14%, the scaling
   path showing no response at all.
