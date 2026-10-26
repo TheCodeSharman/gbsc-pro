@@ -5,14 +5,20 @@ derives it: `Adc::acquirePhase()` sets it to `oversample == 4 ?
 halfSampleOn(MidField) : MidField`, the middle of a five-bit field, which is
 not a sampling instant. Only the sync processor's phase is searched.
 
-**IT IS NOT ALIASING, AND THE DISTINCTION DECIDES WHAT HELPS.** The card's
-finest grating is one-pixel bars, which at the bench 720p source's 74.25 MHz
-pixel clock is a **37.1 MHz** component; sampling 2038 kept at 45013 Hz is
-91.7 MHz, so Nyquist is 45.9 MHz and nothing folds. What decides how much
-survives is **samples per grating PERIOD, which is only 2.47** -- barely clear
-of the limit of 2, where the recovered amplitude of a component depends sharply
-on where the samples land. The cure is therefore MORE kept samples per period,
-and the eleven-bit line counter caps that at 2.48 on this source.
+**IT IS NOT ALIASING AND IT IS NOT A CAPTURE FAILURE, AND BOTH DISTINCTIONS
+DECIDE WHAT HELPS.** The card's finest grating is one-pixel bars, which at the
+bench 720p source's 74.25 MHz pixel clock is a **37.1 MHz** component; sampling
+2038 kept at 45013 Hz is 91.7 MHz, so Nyquist is 45.9 MHz and **the grating is
+captured faithfully** -- point sampling above Nyquist loses nothing in
+principle.
+
+What varies three-fold across the field is the SAMPLE VALUES, and pass-through
+puts those on screen without an ideal reconstruction: at **2.47 samples per
+grating period** the peak-to-peak of the samples themselves depends on where
+they land. **So the defect is in reconstruction, not in capture**, and the
+remedy is a reconstruction filter -- which is exactly what a decimation filter
+is, and why oversampling is the right technique here rather than the wrong one.
+What forbids it is the converter's rating, below.
 
 ## THE SEARCH FOR A PHASE IS CLOSED. Three findings close it together
 
@@ -23,10 +29,11 @@ and the eleven-bit line counter caps that at 2.48 on this source.
    phase of a counter inside the sync processor's own loop -- and no register
    reports a measurement of the picture, so the chip cannot rank phases for
    itself. The sections below have both.
-3. **The artefact is a capture barely clear of the grating's Nyquist** -- 2.47
-   kept samples per grating period, where the eleven-bit line counter caps the
-   figure at 2.48. It is not aliasing, so neither oversampling nor the ADC's
-   analog corner reaches it: both only attenuate.
+3. **It is a hardware limit, and the limit is the converter's analog sampling
+   rate.** The remedy is oversampling at the full kept count, and that asks
+   **183.5 MHz of a 162 MSPS part** -- DS-5725-3.2's front page. Where the
+   rating has headroom the firmware already takes it; where the phase bites it
+   cannot.
 
 What remains is a note on where the phase bites and why, not a feature to
 build. **Do not re-open this as a tuning or search problem.**
@@ -712,21 +719,40 @@ count is what carries the pixels:
 | ratio 2 | 1740 | 1.055 | **2.11** |
 | the counter's wall | 2047 | 1.241 | **2.48** |
 
-**So oversampling moves the wrong way**, and the decimator's FILTER is why it
-flattens the curve without curing anything. What matters is samples per grating
-period -- **2.47 at ratio 1 and 2.11 at ratio 2** -- and lowering the kept count
-moves that towards the limit of 2, where the phase sensitivity is worst.
+**OVERSAMPLING IS THE RIGHT TECHNIQUE AND THE CONVERTER IS 13% TOO SLOW FOR
+IT.** A kept sample at ratio 2 is not a discarded-neighbour point sample --
+`DEC2_BYPS` names a 2x-to-1x stage, so it is filtered, and that filter is the
+reconstruction the pass-through path otherwise lacks. What it cannot do is
+extend BANDWIDTH past half the decimated rate, so the kept count still sets the
+band.
 
-A kept sample at ratio 2 is not a discarded-neighbour point sample: `DEC2_BYPS`
-names a 2x-to-1x stage, so it is filtered. **A decimation filter's transition
-band is centred at half its OUTPUT rate, which is 39.2 MHz at 1740 kept, and
-the grating is at 37.1 MHz** -- on the filter's shoulder.
+| | kept | conversion needed | within 162 MSPS |
+|---|---|---|---|
+| ratio 1, as the engine runs it | 2038 | 91.7 MHz | yes |
+| **ratio 2 at the same kept count** | 2038 | **183.5 MHz** | **no** |
+| ratio 2 at the divider the row forces | 1740 | 156.6 MHz | yes, at 97% |
 
-**That is what makes the trade unwinnable rather than merely unfavourable: the
-phase sensitivity and the grating are the same frequency region.** The filter
-removes the variation by attenuating the component whose amplitude was varying,
-so softer and steadier arrive together and cannot be separated. At ratio 4 the
-shoulder falls to 19.6 MHz and the grating goes entirely.
+**The crossover table IS that rating expressed per row** -- every row tops out
+at the same conversion rate, so the 80 MHz row is 162 MSPS halved and forces
+kept to 1777 or less at ratio 2. At the 1740 that leaves, **the decimation
+filter's transition band is centred at half its output rate, 39.2 MHz, against
+the grating's 37.1 MHz** -- on the shoulder. So the filter removes the phase
+variation by attenuating the component that was varying: softer and steadier
+arrive together. At ratio 4 the shoulder falls to 19.6 MHz and the grating goes
+entirely.
+
+**PUSHING PAST 162 MSPS IS SELF-DEFEATING, not merely out of specification.**
+The rating is a sample-and-hold settling limit, so past it the amplitude error
+is largest where the input moves most between samples -- the 37 MHz grating,
+which is the component the oversampling is there to protect. It would also be
+the hardest result to read: an overclocked S/H degrades gradually rather than
+failing to lock, so `STATUS_SYNC_PROC_HTOTAL` still reads the divider and the
+picture is still there, subtly worse.
+
+**WHERE THE RATING HAS HEADROOM THE FIRMWARE ALREADY TAKES IT**, which is what
+makes this structural rather than a missed option: a 15.6 kHz source keeps 2047
+AND runs ratio 4, converting 128 MHz, and `recommendedDivider()` chooses it. The
+gap opens only on sources whose kept count needs more than 162 MSPS halved.
 
 **There is no configuration that buys both, and the eleven-bit line counter is
 why.** Resolving that grating with room to spare wants of the order of 3300
