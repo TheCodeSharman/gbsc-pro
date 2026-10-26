@@ -9085,6 +9085,39 @@ no new instrument.
 
 ## Costs time rather than correctness
 
+### `/sampleclock` leaves `PA_SP_S` on the previous divider's search, and the picture jitters
+
+The route writes the whole ADC PLL group and re-derives `SP_RT_HS_SP`, and it
+does **not** re-search the sync processor's phase. The quiet band of that phase
+moves with the divider, so a value searched at one divider can be the worst
+point at another -- and the symptom is the whole picture jittering horizontally
+at high frequency, which reads as the new divider being unusable.
+
+Measured on `vga`, RISC PC at 1280x720@60 in pass-through, after
+`/sampleclock?md=1740&os=2` carried `PA_SP_S` 29 over from 2038. The per-line
+wander of four vertical edges across frames, each frame's whole-picture pan
+removed:
+
+| `PA_SP_S` | 0 | 4 | 8 | 12 | 16 | 20 | 24 | 28 |
+|---|---|---|---|---|---|---|---|---|
+| mean wander, px | 0.161 | 0.096 | 0.093 | **0.070** | 0.072 | 0.073 | 0.109 | **0.199** |
+
+29 is the peak. `/phase?sp=16` takes it to 0.070, below the ratio-1 control at
+2038 of 0.075..0.136 on the same edges.
+
+**Two instruments say nothing about it.** `STATUS_SYNC_PROC_HTOTAL` reads the
+divider exactly with a spread of plus or minus one in both states, and
+`STATUS_MISC_PLLAD_LOCK` reads 1 -- so a register dump cannot see it. And
+`SP_H_PULSE_IGNOR` is not the cause although the arithmetic suggests it:
+`/sampleclock` leaves it at `pulseIgnoreFor(2038, true)` = 81, which is 4.66% of
+the 1740 line where that block's constants put the holding band at
+2.75..2.81%, and 81 against 48 gives identical wander and an identical count
+spread.
+
+**The firmware consequence**: anything that chooses a divider has to re-search
+the sync phase as part of that choice, or it ships this.
+`docs/investigations/the-adc-sampling-phase-is-a-lottery.md`.
+
 ### `BOOTLOG_BYTES=2048` takes the heap below the filesystem routes, and they fail silently
 
 The boot log and the `/fs/*` routes cannot both be had. Measured on the bench

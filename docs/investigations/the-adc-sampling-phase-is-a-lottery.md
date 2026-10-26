@@ -5,8 +5,31 @@ derives it: `Adc::acquirePhase()` sets it to `oversample == 4 ?
 halfSampleOn(MidField) : MidField`, the middle of a five-bit field, which is
 not a sampling instant. Only the sync processor's phase is searched.
 
-Below two ADC samples per source pixel the card's finest grating sits above the
-sampler's Nyquist, so the phase decides how much of it survives.
+**IT IS NOT ALIASING, AND THE DISTINCTION DECIDES WHAT HELPS.** The card's
+finest grating is one-pixel bars, which at the bench 720p source's 74.25 MHz
+pixel clock is a **37.1 MHz** component; sampling 2038 kept at 45013 Hz is
+91.7 MHz, so Nyquist is 45.9 MHz and nothing folds. What decides how much
+survives is **samples per grating PERIOD, which is only 2.47** -- barely clear
+of the limit of 2, where the recovered amplitude of a component depends sharply
+on where the samples land. The cure is therefore MORE kept samples per period,
+and the eleven-bit line counter caps that at 2.48 on this source.
+
+## THE SEARCH FOR A PHASE IS CLOSED. Three findings close it together
+
+1. **A per-mode trim cannot be a feature.** The draw re-rolls on every
+   acquisition, so a tuned value is worthless the next time the source returns
+   and the user would retune every mode every time.
+2. **No automatic set is reachable.** No register encodes the offset -- it is the
+   phase of a counter inside the sync processor's own loop -- and no register
+   reports a measurement of the picture, so the chip cannot rank phases for
+   itself. The sections below have both.
+3. **The artefact is a capture barely clear of the grating's Nyquist** -- 2.47
+   kept samples per grating period, where the eleven-bit line counter caps the
+   figure at 2.48. It is not aliasing, so neither oversampling nor the ADC's
+   analog corner reaches it: both only attenuate.
+
+What remains is a note on where the phase bites and why, not a feature to
+build. **Do not re-open this as a tuning or search problem.**
 
 ## What it costs
 
@@ -345,13 +368,23 @@ above. The sweep after each is scored as the shift against the one before it:
 **Power-cycling the ADC does not move the sampling phase and resetting the
 sync processor does**, which places the draw outside the converter entirely.
 
-**The mechanism the register names give.** `SP_HS2PLL_INV_REG` s5_56[1] is "HS
-to PLL invert", so the ADC PLL's reference is the sync processor's RETIMED
-output rather than the separator's edge: separator, retiming, HS to PLL,
-`PLLAD`, ADC clock. Resetting the sync processor restarts the block generating
-that reference, and the phase follows it. That is also why the source's own
-rigid relationship between sync and pixels does not reach the converter -- the
-clock is locked to a pulse the chip regenerates.
+**THE DATASHEET STATES THE CHAIN OUTRIGHT, in `ADC_CLK_PLLAD` s5_00[2]**:
+"PLLAD input clock is from sync processor" at 0, "from OSC" at 1. It reads 0 on
+every path here, so the converter's clock is multiplied up from a pulse the
+sync processor generates -- separator, retiming, HS to PLL
+(`SP_HS2PLL_INV_REG` s5_56[1], "HS to PLL invert"), `PLLAD`, ADC clock. Both
+phase adjusters sit on that clock and not on the data: `PA_SP_S` is documented
+"PA_PLLAD phase control" despite its name, and `PA_ADC_S` follows it.
+
+Resetting the sync processor restarts the block generating the reference, and
+the phase follows it. **That is also why the two inert legs are inert rather
+than badly measured.** The converter cannot hold a phase it does not generate,
+and a PLL re-locking to an UNCHANGED reference returns to the same alignment by
+definition -- which is what `ADC_POWDZ` and the `PLLAD_*` pulses each measure
+at +0. It is equally why the source's own rigid relationship between sync and
+pixels does not reach the converter: the clock is locked to a pulse the chip
+regenerates, and the sync processor counts in ADC samples, so what the reset
+re-draws is that counter's phase within one sample of its own output.
 
 **AND IT DRAWS AFRESH, which is what makes it the lottery rather than a
 control.** Four identical resets on settled acquisitions gave **+16, -7, -12
@@ -568,7 +601,7 @@ step: every live combination is the green screen or no output, and the picture
 returns the moment 9 goes back. **Neither field is a phase control and neither
 is an instrument for one.**
 
-## Oversampling is unavailable at the divider this mode runs
+## Oversampling is unavailable AT 2038, and reachable at 1740
 
 Not untried: the tap does not exist. Oversampling here takes an EARLIER VCO tap
 and decimates, `PLLAD_CKOS = postDivider - stepsFor(ratio)`, and the post
@@ -597,6 +630,143 @@ more than the phase does.
 **So a divider comparison in pass-through has to co-optimise the capture
 origin**, or it measures the origin formula's error at that divider. Nothing
 here says whether oversampling helps at a properly placed origin.
+
+### THE CONVERSION RATE IS NOT THE BINDING CONSTRAINT, AND NEITHER IS ALIASING
+
+The source is CEA-4, `h_timings:40,220,0,1280,0,110` -- 1650 pixels a line at a
+74.25 MHz pixel clock -- so its information is band limited at **37.1 MHz**,
+half the pixel rate, and any conversion rate above 74.25 MHz folds nothing.
+Ratio 1 already converts at 91.7 MHz.
+
+| | kept `PLLAD_MD` | ratio | conversion | samples per grating period |
+|---|---|---|---|---|
+| the engine's choice | 2038 | 1 | 91.7 MHz | **2.47** |
+| the ratio-2 row | 1740 | 2 | 156.6 MHz | **2.11** |
+
+**So raising the conversion rate buys nothing here**, which is why the ADC's own
+analog corner buys nothing either -- every `ADC_FLTR` setting sits above
+Nyquist on this board and only attenuates.
+`the-analog-filter-corner-is-above-nyquist.md`.
+
+What the eleven-bit counter costs is the quantity that DOES decide the phase
+sensitivity: **kept samples per grating period**, capped at 2.48 on this
+source.
+
+### THE `ADC_CLK_*` FAMILY CANNOT RAISE IT, AND IS WHERE THE QUESTION LANDS
+
+| field | what it selects | why it does not help |
+|---|---|---|
+| `ADC_CLK_ICLK2X` s5_00[3] | ICLK2X = the ADC output clock, or /2 | a **divider**. The input formatter counts at ICLK1X, so `kept = ICLK1X / lineRate` -- these can only LOWER the kept count. `Adc::applySampleRate()` writes both straight from the ratio |
+| `ADC_CLK_ICLK1X` s5_00[4] | ICLK1X = ICLK2X, or /2 | as above |
+| `ADC_CLK_PA` s5_00[1:0] | the PA_ADC adjuster's input clock: 00 PLLAD's CLKO2, 01 PCLKIN, 10 V4CLK | PA_ADC delays the clock the converter SAMPLES on, so a source not locked to the incoming hsync cannot deliver a fixed count per line. V4CLK is identified nowhere in RD-5725-1.1's extraction |
+| `ADC_CLK_PLLAD` s5_00[2] | PLLAD's input: 0 the sync processor, 1 the OSC | 1 removes the draw by removing the lock to the source |
+
+**So the family IS the mechanism** -- the ICLK stages are the oversampling and
+`ADC_CLK_PLLAD` names where the draw comes from -- and no setting of it raises
+the kept count or keeps a sync-locked sample clock without the draw. The last
+two rows are ruled out by what a sampling clock has to do, not by measurement.
+
+### IT LANDS CLEANLY, AND IT JITTERS UNTIL THE SYNC PHASE IS RE-SEARCHED
+
+`/sampleclock?md=1740&os=2` applies: `PLLAD_KS` 1, `PLLAD_CKOS` 0,
+`ADC_CLK_ICLK1X` 1, `DEC2_BYPS` 0, `STATUS_SYNC_PROC_HTOTAL` 1740 against the
+divider, count 749 unchanged, `STATUS_MISC_PLLAD_LOCK` 1.
+
+**The whole picture then jitters horizontally, and the cause is `PA_SP_S` left
+over from the previous divider's search.** `/sampleclock` re-derives
+`SP_RT_HS_SP` -- 32 to 23 -- and does not re-search the sync processor's phase.
+Measured as the per-line wander of four vertical edges across frames, each
+frame's whole-picture pan removed so a displacement cannot read as a wander:
+
+| `PA_SP_S` | 0 | 4 | 8 | 12 | 16 | 20 | 24 | 28 |
+|---|---|---|---|---|---|---|---|---|
+| mean wander, px | 0.161 | 0.096 | 0.093 | **0.070** | 0.072 | 0.073 | 0.109 | **0.199** |
+
+The value carried in is **29, the peak of that curve**, and the quiet band
+12..20 reads 0.070 against a ratio-1 control at 2038 of 0.075..0.136 on the
+same edges. **So the oversampled state is QUIETER than the control once the
+phase is re-searched**, and the jitter is not VCO noise at 156.6 MHz.
+
+**`SP_H_PULSE_IGNOR` IS NOT THE CAUSE, which is worth stating because the
+arithmetic says it should be.** `/sampleclock` leaves it at
+`pulseIgnoreFor(2038, true)` = 81, which is 4.66% of the 1740 line where this
+block's own constants put the holding band at 2.75..2.81% and 4.9% inside the
+dither. Measured either side, 81 and 48 give identical wander and an identical
+`STATUS_SYNC_PROC_HTOTAL` spread of 1739..1741. A count dither is the wrong
+instrument for a sub-pixel wander, and plus or minus one on that register is
+inside the healthy band anyway.
+
+### AND IT DOES NOT CURE THE GRATING, BECAUSE THE TRADE RUNS THE WRONG WAY
+
+Read on the panel at the quiet phase, the finest grating is still troubled and
+at best marginally better. The arithmetic says why, and it closes the route.
+
+The grating's finest bar is one source pixel, so its period is two and Nyquist
+asks for **more than one KEPT sample per source pixel -- 1650 a line**. That is
+a bound on the kept count and not on the conversion rate, because the kept
+count is what carries the pixels:
+
+| | kept | samples per source px | **samples per grating period** |
+|---|---|---|---|
+| ratio 1 | 2038 | 1.235 | **2.47** |
+| ratio 2 | 1740 | 1.055 | **2.11** |
+| the counter's wall | 2047 | 1.241 | **2.48** |
+
+**So oversampling moves the wrong way**, and the decimator's FILTER is why it
+flattens the curve without curing anything. What matters is samples per grating
+period -- **2.47 at ratio 1 and 2.11 at ratio 2** -- and lowering the kept count
+moves that towards the limit of 2, where the phase sensitivity is worst.
+
+A kept sample at ratio 2 is not a discarded-neighbour point sample: `DEC2_BYPS`
+names a 2x-to-1x stage, so it is filtered. **A decimation filter's transition
+band is centred at half its OUTPUT rate, which is 39.2 MHz at 1740 kept, and
+the grating is at 37.1 MHz** -- on the filter's shoulder.
+
+**That is what makes the trade unwinnable rather than merely unfavourable: the
+phase sensitivity and the grating are the same frequency region.** The filter
+removes the variation by attenuating the component whose amplitude was varying,
+so softer and steadier arrive together and cannot be separated. At ratio 4 the
+shoulder falls to 19.6 MHz and the grating goes entirely.
+
+**There is no configuration that buys both, and the eleven-bit line counter is
+why.** Resolving that grating with room to spare wants of the order of 3300
+kept samples against a wall of 2047. **So the phase lottery on a
+high-resolution source in pass-through is a symptom of a capture that cannot
+carry the source's finest detail, and no choice of phase, ratio or divider
+removes it.**
+
+**What remains unmeasured is the wedge contrast across the two dividers**, which
+the box relocation confounds. It would quantify the trade above; it cannot
+change its direction.
+
+## NO REGISTER REPORTS A MEASUREMENT OF THE PICTURE, so no on-device search
+## can rank phases
+
+The hunts on this page all ask whether some register ENCODES the draw. The
+other question is whether the chip can SCORE a phase for itself, and the
+register map answers it without a bench run: it cannot.
+
+The status area is s0_00..s0_1b and is fully accounted for -- the IF, sync
+processor, VDS, memory FIFO, GPIO, interrupt and misc blocks -- and **not one
+field in it reports a measurement of picture content**. The detectors that
+compute one keep the result internally:
+
+| detector | what it computes | what is readable |
+|---|---|---|
+| `VDS_BLEV_AUTO_EN` | Y min and max over the picture, for black-level expansion | nothing. `VDS_USER_MIN`/`MAX` are the MANUAL-mode inputs, not readbacks |
+| `MADPT_HFREQ_DET_EN` | a high-frequency indicator in auto mode | nothing. `MADPT_HFREQ_ID` is the user's value for manual mode |
+| `MADPT_NOISE_EST_EN`, `MADPT_STILL_NOISE_EST_EN` | global and still noise estimates | nothing. `MADPT_*_NOISE_VALUE` are inputs |
+
+So a runtime search needs an instrument outside the register file, which leaves
+the test bus -- and the arithmetic in this page's open list puts that at the
+order of a million samples per phase to resolve a wedge that is 0.7% of the
+frame. **A chip-computed quality metric is not a route that was tried and
+failed; the hardware does not expose one.**
+
+**AND THE DEFECT IS NOT PRESENT IN WHAT SUCH A METRIC WOULD MEASURE.** The
+phase costs 14% on the sharpest edges and 2-3% over the picture, so on ordinary
+content there is no signal to rank phases by. A metric needs the artefact to be
+visible in what it scores, and only sustained near-Nyquist content makes it so.
 
 ## The lottery, in one acquisition
 
@@ -670,8 +840,9 @@ it, and it is why the fix is a search rather than a constant --
   quantised range where green and blue return the full span, and that is
   unexplained.
 - **Whether 14% on the sharpest edges is worth a search.** The measurement is
-  taken; the judgement is not made -- and it is a PASS-THROUGH 14%, the scaling
-  path showing no response at all.
+  taken; the judgement is not made -- and it is a PASS-THROUGH 14%. **What the
+  scaling path does is OPEN and not flat**, every sweep taken there having gone
+  through a box this page's confound section refutes.
 - **The sync phase's own headroom, which is a different question from this
   page's.** The engine's choice is repeatable and sits a few steps off the
   picture's best on a curve that swings several fold, and a sweep inside one
