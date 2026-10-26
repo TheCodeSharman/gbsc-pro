@@ -382,7 +382,7 @@ whether the ten-bit level `AutoGain` already reads through
 `TestBus::selectLevel()` has the resolution to grade 32 phases.
 `investigations/the-adc-sampling-phase-is-a-lottery.md`
 
-### The sync phase costs the picture by SAMPLING DENSITY, not by sync type, and the engine's default sits on the band's edge
+### FIXED: the sampling phase default sat on the band's edge, and the phase costs the picture by SAMPLING DENSITY rather than sync type
 
 **`PA_SP_S` 16 judders the picture where 27 does not, and the firmware already
 computes 27 and then discards it.** `Adc::acquirePhase()` ends on
@@ -446,16 +446,24 @@ wide, middle **27**. 27 sits inside the measured 0.00 plateau. The high-density
 legs mark 28 alone on composite and 12..19 on separate, where the rule picks 12
 and 0 and nothing can distinguish them.
 
-**WHAT THIS DOES NOT SETTLE, AND WHY THE SHORTCUT IS STILL THERE.** `dedc53784`
-added it against a SHIMMER measurement -- frame-to-frame grey change, 0.86 at
-phase 12 against 0.52 at 0 on 320x256@50 composite -- and 12 is exactly what
-the clean-run rule picks there. Displacement and shimmer are different
-quantities and only displacement is measured above, so removing the shortcut
-outright would take the tied-best displacement and the worst shimmer in one
-step. A rule keyed on `SourceTiming::pixelSamples()` -- the clean-run middle
-below about two samples a pixel, MidField above it -- satisfies both sets of
-evidence and is derivable from what the engine holds, but it is a proposal
-rather than a measurement.
+**THE BRANCH IS REMOVED AND THE CHOICE IS NOW THE CLEAN RUN'S MIDDLE
+UNCONDITIONALLY.** Remeasured after the change, three acquisitions of
+800x600@60 separate with the source bounced away and back so the engine
+re-scans each time: chose 26, 27 and 26, each **0 of ~3602 frames displaced,
+0.00 jumps/s**. So the choice varies by ONE STEP across acquisitions and every
+one is clean -- the default was never the more repeatable answer, only the
+more constant one, which is what the removed branch was kept for.
+
+Nothing regressed where the phase costs nothing: 320x256@50 reads 0.00 on both
+arrangements after the change, composite choosing 12 and separate 0.
+
+**WHAT IS STILL NOT MEASURED is SHIMMER** -- frame-to-frame grey change, the
+quantity `dedc53784` argued the branch for, which called phase 12 worst on
+320x256@50 composite where the rule now lands. It is a different quantity from
+displacement and it did not reproduce today. If it is real it is a second cost
+with its own optimum, and the rule that would reconcile them is one keyed on
+`SourceTiming::pixelSamples()`; that remains a proposal and wants measuring
+before it is taken.
 
 **AND THE SHIMMER EVIDENCE CARRIES THE SAME BOUND.** `dedc53784`'s figures are
 a sweep across the field, so unless they crossed acquisitions they describe one
