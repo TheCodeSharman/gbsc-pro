@@ -21,13 +21,21 @@ one tuned for a raster no longer in force.
 Reproduced on `vga`, RISC PC at 1280x720@60, by cycling ypbpr pass-through ->
 1080p -> vga -> pass-through. It landed on `PA_SP_S` 7 at `PLLAD_MD` 2038.
 
-**THE CONSOLE PROVES NO SEARCH RAN FOR THAT STATE.** Forced afterwards, the scan
+**THE SCAN SAYS A SEARCH WOULD NOT HAVE CHOSEN IT.** Forced afterwards, it
 reports `phase scan: ......13567eadc99a81............` -- one character per
 phase, `.` being all twenty samples reading the divider exactly -- so the
 dithering band is **6..19**, the widest clean run wraps 20..5, and
 `middleOfWidestCleanRun()` returns **29**. 7 lies inside the band at dither 3,
-so no searching branch can select it: the `!sweep` branch writes `MidField` 16
-and the refusal branch restores where it entered.
+which no searching branch selects: the `!sweep` branch writes `MidField` 16 and
+the refusal branch restores where it entered.
+
+**WHETHER THE VALUE IS INHERITED OR SEARCHED AGAINST THE WRONG SAMPLING IS NOT
+SETTLED.** The phase MOVES across the transition -- 9 on ypbpr to 6 on vga --
+so something writes it, which an inherited value alone does not explain. The
+second candidate is a search running before the arriving source has settled,
+against a profile belonging to the departing one. Distinguishing them needs the
+`phase scan:` line from the vga leg, and every attempt to capture it lost the
+console (see the link entry below).
 
 The cost, as the per-line wander of four vertical edges across frames with each
 frame's pan removed: **0.217 px at the inherited 7 against 0.117 at 29**, with
@@ -38,6 +46,40 @@ code comment invites the suspicion: the dithering band 6..19 matches the measure
 wander band -- 7 reads 0.223, 8 0.274, 12 0.358, 16 0.349, against 0.117..0.130
 at 0, 4, 20, 24, 28 and 30. The two instruments agree. **The search works; it
 does not run.**
+
+### In pass-through the divider is one value for every source, so a divider-keyed rule cannot fire
+
+`PLLAD_MD` reads **2038** for BOTH the Wii at 480p and the RiscPC at
+1280x720@60, because the channel writes its own divider and does not go through
+a measurement -- the console shows `installing: divider from line rate 31468,
+doubled 0 -> 1446` and then `evt,bypass-switch,524` putting 2038 back.
+
+So an ypbpr -> vga round trip moves the sampling CLOCK while the divider stands
+still: 2038 x 31468 against 2038 x 45013. **Reproduced deterministically** --
+`PA_SP_S` 9 on ypbpr then 6 on vga, two cycles with identical values, where
+6..19 is the dithering band at the RiscPC's rate.
+
+The rate is therefore the term that has to invalidate the phase there, and it
+is `VideoSourceAcquisition`'s fact rather than `Tv5725::Adc`'s.
+
+### The bench WiFi link drops packets heavily, and it reads as firmware intermittency
+
+Measured over 180 packets: **23.9% loss, RTT 6..1144 ms**, and a 54 second
+window with HTTP timing out and the websocket closed. A later sample read 62.5%.
+`iw` on the router could not be consulted -- the ssh agent refused the key -- so
+this is not yet attributed to the unit rather than to the host's path.
+
+**Three things it cost, all of which read as firmware faults.** An `/input`
+request answered with a urllib timeout while the source changed anyway. A
+console capture showed an input selection logging NOTHING, which was the socket
+having closed. And two `flash-ota` runs died at `No Answer` because the arming
+`curl` inside the target never landed -- `ota_probe.py` reported the unit armed
+and `CONNECTED` the moment it was armed by hand.
+
+**A console harness must report a closed socket rather than swallow it.** A
+`try/except Exception: pass` around `recv()` makes a dropped connection
+indistinguishable from a quiet firmware, and a conclusion of "the engine logged
+nothing" was drawn from exactly that and is withdrawn.
 
 ### The sampling-phase sweep is gated on the sync separator's level, which is inert on separate sync
 
