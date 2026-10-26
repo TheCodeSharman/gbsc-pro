@@ -46,7 +46,7 @@ VideoSourceAcquisition::VideoSourceAcquisition(Tv5725::SourceMeasurement &sampli
       unmeasuredPasses_(0), referenceRetryPasses_(0),
       acquiredPasses_(0),
       selectionSeen_(VideoSourceSelection::None), selectionEstablished_(false),
-      runAdvanced_(false), phaseRateHz_(0) {}
+      runAdvanced_(false), phaseRateHz_(0), phaseSettled_(false) {}
 
 void VideoSourceAcquisition::useRunGate(bool (*mayRun)()) { mayRun_ = mayRun; }
 
@@ -89,7 +89,8 @@ const uint8_t LatchSamples = 8;
 
 bool VideoSourceAcquisition::samplingPhaseFound() const
 {
-    return Tv5725::Adc::phaseFound() && phaseRateHz_ == sampling_.lineRateHz();
+    return Tv5725::Adc::phaseFound() && phaseRateHz_ == sampling_.lineRateHz()
+           && phaseSettled_;
 }
 
 bool VideoSourceAcquisition::acquireSamplingPhase()
@@ -115,8 +116,10 @@ bool VideoSourceAcquisition::acquireSamplingPhase()
 
     // Recorded so a later pass can tell whether the phase still belongs to the
     // sampling this source is read through.
-    if (found)
+    if (found) {
         phaseRateHz_ = sampling_.lineRateHz();
+        phaseSettled_ = acquiredPasses_ >= PhaseSettledPasses;
+    }
 
     char line[48];
     snprintf(line, sizeof(line), "sampling phase: %s, oversample %u",

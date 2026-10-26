@@ -4107,6 +4107,13 @@ TEST_CASE("a phase searched at one source's rate is not found at another's")
     unit.acquisition.useWatchdogFeed(countWatchdogFeed);
     unit.start();
     REQUIRE(unit.pollUntilSolved());
+
+    // Past the settle threshold before searching, or the answer is provisional
+    // and would report unfound whatever this rule did.
+    const uint16_t settledAt = VideoSourceAcquisition::PhaseSettledPasses;
+    for (uint8_t i = 0; i < 40 && unit.acquisition.acquiredPasses() < settledAt; ++i)
+        unit.poll();
+    REQUIRE(unit.acquisition.acquiredPasses() >= settledAt);
     REQUIRE(unit.acquisition.acquireSamplingPhase());
     REQUIRE(unit.acquisition.samplingPhaseFound());
     const uint32_t searchedAt = unit.acquisition.sourceLineRateHz();
@@ -4115,6 +4122,32 @@ TEST_CASE("a phase searched at one source's rate is not found at another's")
     g_fieldRate = 60.0f;
     REQUIRE(rateMeasured(measurePastGate(unit.sampling)));
     REQUIRE(unit.acquisition.sourceLineRateHz() != searchedAt);
+    REQUIRE(Adc::phaseFound());
+
+    CHECK_FALSE(unit.acquisition.samplingPhaseFound());
+}
+
+TEST_CASE("a phase searched before the source settles is provisional")
+{
+    // THE BAND THE SEARCH SCORES ON THE FIRST PASSES IS NOT THE SETTLED BAND.
+    // Read off the device 0.6 s after a bypass switch the dithering band is
+    // 16..29, where the same source settled scores 6..19 -- very nearly
+    // complementary, so the early answer is one the settled source calls bad,
+    // and the per-line wander confirms it at 0.22 px against 0.117.
+    //
+    // The early search still runs, because presentWhenSettled() gives the sync
+    // pad back once the phase has been searched. Reporting it unfound is what
+    // leaves SourceMaintenance's window open so a later search replaces it.
+    // ../docs/known-issues.md
+    seedBenchSource();
+    seedLineSamples(BenchDivider);
+    Acquiring unit;
+    unit.acquisition.useWatchdogFeed(countWatchdogFeed);
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+    const uint16_t settledAt = VideoSourceAcquisition::PhaseSettledPasses;
+    REQUIRE(unit.acquisition.acquiredPasses() < settledAt);
+    REQUIRE(unit.acquisition.acquireSamplingPhase());
     REQUIRE(Adc::phaseFound());
 
     CHECK_FALSE(unit.acquisition.samplingPhaseFound());

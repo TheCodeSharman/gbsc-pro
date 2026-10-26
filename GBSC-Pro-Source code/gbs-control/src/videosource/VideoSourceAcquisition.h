@@ -126,13 +126,22 @@ public:
     // take: this asks whether a sweep is worth running at all.
     bool acquireSamplingPhase();
 
-    // Whether the phase held was searched for the sampling THIS source is read
-    // through. Tv5725::Adc forgets a phase when the divider moves, and this
-    // adds the other half of the clock: the source's line rate, which this
-    // class holds the measurement of. In pass-through the channel writes one
-    // divider for every source, so the rate is the only term that moves.
-    // ../../../docs/known-issues.md
+    // Whether the phase held is one to keep. Three things have to hold: a
+    // search succeeded, it was searched for the sampling THIS source is read
+    // through -- Tv5725::Adc covers the divider, this covers the source's line
+    // rate -- and it was searched with the source SETTLED.
+    //
+    // A phase searched on the first acquired passes is provisional, because the
+    // dithering band it scores there is not the band the settled source has.
+    // Reporting it unfound is what re-opens SourceMaintenance's window, so the
+    // early search still presents the output and a later one replaces its
+    // answer. ../../../docs/known-issues.md
     bool samplingPhaseFound() const;
+
+    // Acquired passes before a sampling-phase search answers for the settled
+    // source. At or above SourceMaintenance's own first phase pass, or the
+    // re-search never becomes due and the provisional answer stands.
+    static const uint16_t PhaseSettledPasses = 10;
 
     // The sync processor's three per-source writes, each gated on the same
     // question: a window measured off a line nobody is sending clamps to
@@ -572,6 +581,10 @@ private:
     // The source line rate the sampling phase was searched at, 0 before any
     // search has succeeded.
     uint32_t phaseRateHz_;
+
+    // Whether that search ran with the source settled rather than on the first
+    // acquired passes.
+    bool phaseSettled_;
 };
 
 #endif  // VIDEOSOURCE_VIDEO_SOURCE_ACQUISITION_H_
