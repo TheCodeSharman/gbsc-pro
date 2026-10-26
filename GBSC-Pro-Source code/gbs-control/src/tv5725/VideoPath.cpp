@@ -97,11 +97,13 @@ void VideoPath::restartAndLatch()
 
     applyClockGroup();
     applyFrameBufferRequests();
-
-    // The phase adjusters take their value again on the restart, and then the
-    // whole group goes in on one edge.
-    Adc::applyPhases();
     Adc::latch();
+
+    // AFTER the latch, which re-locks the clock the adjusters align to. Neither
+    // phase register is in the group PLLAD_LAT loads, so there is nothing to
+    // gain by going in ahead of it and a fresh sampling phase to lose.
+    // ../../../docs/investigations/the-adc-sampling-phase-is-a-lottery.md
+    Adc::applyPhases();
 
     SyncProcessor::clampFromReferenceClock();
     SyncProcessor::applyDefaultClampWindow();

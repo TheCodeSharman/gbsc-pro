@@ -3863,6 +3863,32 @@ TEST_CASE("the restart latches the ADC group after writing it")
     CHECK(lastRisingEdge > lastGroupWrite);
 }
 
+// AND IT RESTARTS THE PHASE ADJUSTERS AFTER THAT LATCH, because the latch
+// re-locks the clock they align to. PA_SP_LAT and PA_ADC_LAT load the two phase
+// registers; PLLAD_LAT loads none of them -- so the applies have no reason to
+// precede it, and preceding it leaves each lock circuit holding a relationship
+// to the clock the next statement replaces. Restarting them against a clock
+// that is already locked is repeatable: three interleaved 32-point sweeps, each
+// pulsing PA_ADC_BYPSZ 32 times, agree to under a grey level.
+// ../../docs/investigations/the-adc-sampling-phase-is-a-lottery.md
+TEST_CASE("the restart restarts the phase adjusters after the ADC group's latch")
+{
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+
+    Wire.reset();
+    engine.restartAndLatch();
+
+    REQUIRE(lastRisingEdgeOf<Adc::PLLAD_LAT>() >= 0);
+    REQUIRE(lastRisingEdgeOf<Adc::PA_ADC_BYPSZ>() >= 0);
+    CHECK(lastRisingEdgeOf<Adc::PA_ADC_BYPSZ>()
+          > lastRisingEdgeOf<Adc::PLLAD_LAT>());
+    CHECK(lastRisingEdgeOf<Adc::PA_SP_BYPSZ>()
+          > lastRisingEdgeOf<Adc::PLLAD_LAT>());
+}
+
 TEST_CASE("putting the separator in force uses the level held, choosing none")
 {
     DisplayClock clock;

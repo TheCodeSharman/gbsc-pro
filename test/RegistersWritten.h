@@ -9,6 +9,29 @@
 
 #include "fake/Wire.h"
 
+// Where a one-bit field last went from 0 to 1, asked by NAME. A field sharing
+// its byte with its neighbours cannot be found by looking for writes to the
+// byte, which every neighbour also makes.
+template <typename Reg>
+static int lastRisingEdgeOf()
+{
+    const uint8_t mask = static_cast<uint8_t>(1u << Reg::bitOffset);
+    bool low = false;
+    int at = -1;
+    for (size_t i = 0; i < Wire.trace.size(); ++i) {
+        if (Wire.trace[i].segment != Reg::segment
+            || Wire.trace[i].reg != Reg::byteOffset)
+            continue;
+        if (!(Wire.trace[i].value & mask))
+            low = true;
+        else if (low) {
+            at = static_cast<int>(i);
+            low = false;
+        }
+    }
+    return at;
+}
+
 static unsigned registersWritten()
 {
     unsigned written = 0;

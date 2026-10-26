@@ -2562,9 +2562,13 @@ static void restartAfterBypassSwitch()
     delay(20);
     Tv5725::Chip::outputUp();
 
+    Tv5725::Adc::latch();
+
+    // AFTER the latch, which re-locks the clock the adjusters align to. Neither
+    // phase register is in the group PLLAD_LAT loads.
+    // docs/investigations/the-adc-sampling-phase-is-a-lottery.md
     setAndLatchPhaseSP();
     setAndLatchPhaseADC();
-    Tv5725::Adc::latch();
 }
 
 // Install a candidate REFERENCE sampling clock, which is not what
