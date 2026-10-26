@@ -25,11 +25,13 @@ Each draw's values are printed as they are taken, because a draw costs about
 five minutes -- 64 pairs of deferred read-modify-writes plus a 32-point sweep --
 so a run reporting only at the end yields nothing from an interrupted one.
 
-**MOST OF THE PAIRS ARE LIVE WIRES AND A SINGLE READ OF ONE MEANS NOTHING**,
-which is what makes a bare across-draw table misleading: 37 of the 64 dither
-WITHIN one draw, so their readings vary whether or not the phase did. Each pair
-is therefore read several times per draw and reported as static or live, and
-only a pair that is static within a draw can be compared across draws at all.
+**MOST OF THE PAIRS ARE LIVE WIRES AND A SINGLE READ OF ONE MEANS NOTHING.**
+37 of the 64 dither WITHIN one draw, so a read of one samples the wire's state
+and varies whether or not the phase did -- which makes an across-draw table of
+single reads read as 44 varying signals when 37 of them are the read's own
+timing. So the sampling is done ON THE DEVICE, by `/sptestbus`, which takes a
+distribution per pair from `loop()` and reports its count, extremes, mean and
+value table. An HTTP read answers at tens of hertz at best and cannot take one.
 
 **64 CANDIDATES AGAINST A HANDFUL OF DRAWS WILL THROW UP AGREEMENTS BY CHANCE.**
 Nothing here confirms one -- it reports the per-pair table so a candidate can be
@@ -39,11 +41,12 @@ docs/investigations/the-adc-sampling-phase-is-a-lottery.md
 """
 
 import argparse
+import sys
 import time
 
 import numpy as np
 
-from gbs_unit import read_fields, read_named, write_named
+from gbs_unit import Console, get, read_fields, read_named, write_named
 from hdmi_capture import device
 from phase_curve import WITNESS, locate, report, route, shiftAgainst, sweep
 
@@ -53,42 +56,68 @@ SYNC_PROCESSOR = 0xA
 MODULES = range(8)
 SIGNALS = range(8)
 
+# How long delivery has to stop before the scan is taken as finished.
+QuietEnough = 4.0
+
 # RD-5725-1.1's own table, for the report.
 STAGE = {0: "none", 1: "hs_pol_det", 2: "hs_act_det", 3: "vs_pol_det",
          4: "vs_act_det", 5: "cs_sep", 6: "retiming", 7: "out proc"}
 
 
-def busValue(host):
-    """The test bus's own value. RD-5725-1.1 documents a 24-bit block at s0_2E
-    and the register map carries two of its bytes, which is what is read."""
-    both = read_fields(host, ["TEST_BUS_2E", "TEST_BUS_2F"])
-    return (both["TEST_BUS_2F"] << 8) | both["TEST_BUS_2E"]
+def pairFrom(line):
+    """One `sptb,` row as ((module, signal), distribution), or None.
 
-
-def scan(host, reads):
-    """Every stage and signal of the sync processor, each read several times.
-
-    The value per pair and whether it held still: a pair that dithers inside
-    one draw is a live wire, and comparing one read of it against another
-    draw's measures the sampling instant rather than the draw.
+    The distribution is (count, low, high, mean, distinct, overflowed). A row
+    with fewer fields than that is a truncated console line rather than a
+    reading, and the console drops bursts.
     """
-    held = read_fields(host, ["TEST_BUS_SEL", "TEST_BUS_EN", "SP_TEST_EN",
-                              "SP_TEST_MODULE", "SP_TEST_SIGNAL_SEL"])
-    write_named(host, "TEST_BUS_SEL", SYNC_PROCESSOR)
-    write_named(host, "TEST_BUS_EN", 1)
-    write_named(host, "SP_TEST_EN", 1)
-    values = {}
-    try:
-        for module in MODULES:
-            write_named(host, "SP_TEST_MODULE", module)
-            for signal in SIGNALS:
-                write_named(host, "SP_TEST_SIGNAL_SEL", signal)
-                seen = [busValue(host) for _ in range(reads)]
-                values[(module, signal)] = (seen[0], len(set(seen)) == 1)
-    finally:
-        for name, was in held.items():
-            write_named(host, name, was)
-    return values
+    if not line.startswith("sptb,") or line.startswith("sptb,header"):
+        return None
+    part = line.split(",")
+    if len(part) < 9 or not part[1].isdigit():
+        return None
+    return ((int(part[1]), int(part[2])),
+            (int(part[3]), int(part[4]), int(part[5]), int(part[6]),
+             int(part[7]), part[8] == "1"))
+
+
+def scan(host, console, reads):
+    """Every stage and signal, as the distribution the device sampled.
+
+    Per pair: (count, low, high, mean, distinct, overflowed). A pair whose
+    distinct count is 1 held still across the whole run; anything above that is
+    a live wire, and comparing one read of it between draws measures the read's
+    timing rather than the draw.
+    """
+    console.drain()
+    status, body = get(host, "/sptestbus?reads=%d" % reads)
+    if status == 404 or (status == 500 and not body.strip()):
+        sys.exit("no /sptestbus on this firmware; it is behind GBS_DEBUG")
+
+    # JUDGED BY QUIESCENCE, NOT BY THE done MARKER OR A FULL SET. The console
+    # drops bursts and 65 lines in quick succession is one, so neither the
+    # marker nor the 64th pair is guaranteed to arrive -- waiting on either
+    # stalls a run whose scan has already finished. Delivery stopping is the
+    # signal that survives a drop.
+    wanted = len(MODULES) * len(SIGNALS)
+    pairs, deadline, quiet = {}, time.time() + 300, 0.0
+    while time.time() < deadline and len(pairs) < wanted:
+        arrived = len(pairs)
+        for line in console.collect(0.3):
+            row = pairFrom(line)
+            if row:
+                pairs[row[0]] = row[1]
+        console.drain()
+        quiet = 0.0 if len(pairs) > arrived else quiet + 0.3
+        if pairs and quiet >= QuietEnough:
+            break
+    if not pairs:
+        sys.exit("the scan delivered nothing -- /sptestbus is behind GBS_DEBUG, "
+                 "and the console is deaf for ~15 s after a boot")
+    if len(pairs) < len(MODULES) * len(SIGNALS):
+        print("  only %d of 64 pairs arrived, the rest dropped by the console"
+              % len(pairs), flush=True)
+    return pairs
 
 
 def drawAgain(host):
@@ -105,9 +134,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--host", required=True)
     parser.add_argument("--draws", type=int, default=8)
-    parser.add_argument("--reads", type=int, default=4,
-                        help="reads per pair per draw, which is what tells a "
-                             "latched value from a live wire")
+    parser.add_argument("--reads", type=int, default=2000,
+                        help="samples per pair per draw, taken on the device")
     args = parser.parse_args()
 
     held = read_fields(args.host, WITNESS)
@@ -115,6 +143,7 @@ def main():
     if held["DAC_RGBS_BYPS2DAC"] != 1:
         print("NOT in pass-through, where the phase bites -- /uc?x switches.")
 
+    console = Console(args.host)
     dev = device()
     box = locate(dev)
     print("wedge box", box, "(found once and held)", flush=True)
@@ -124,14 +153,25 @@ def main():
         for draw in range(args.draws):
             if draw:
                 drawAgain(args.host)
-            values = scan(args.host, args.reads)
+            values = scan(args.host, console, args.reads)
             print("values,%d,%s" % (draw + 1, ",".join(
-                "%d:%d=%d%s" % (module, signal, values[(module, signal)][0],
-                                "" if values[(module, signal)][1] else "?")
+                "%d/%d=%d..%d~%d(%d)" % ((module, signal)
+                                         + values[(module, signal)][1:5])
                 for module, signal in sorted(values))), flush=True)
+            # A register read is deferred to loop(), which the scan has just
+            # held for the length of the sampling, so the first one after it
+            # can time out and answer nothing. That is the loop being busy
+            # rather than a sick unit.
             health = read_fields(args.host, ["PLLAD_MD",
                                              "STATUS_SYNC_PROC_HTOTAL"])
-            if health["STATUS_SYNC_PROC_HTOTAL"] != health["PLLAD_MD"]:
+            if health is None:
+                time.sleep(2.0)
+                health = read_fields(args.host, ["PLLAD_MD",
+                                                 "STATUS_SYNC_PROC_HTOTAL"])
+            if health is None:
+                print("  the unit did not answer a register read after the "
+                      "scan", flush=True)
+            elif health["STATUS_SYNC_PROC_HTOTAL"] != health["PLLAD_MD"]:
                 print("  the count left the divider, so test mode disturbed "
                       "the lock:", health, flush=True)
             curve = sweep(args.host, dev, box)
@@ -140,6 +180,7 @@ def main():
             draws.append((values, curve))
     finally:
         route(args.host, "/phase?clear")
+        console.close()
 
     print("\nshift per draw, against the one before it:", flush=True)
     shifts = [0]
@@ -148,7 +189,7 @@ def main():
     print(" ", shifts, flush=True)
 
     live = [pair for pair in sorted(draws[0][0])
-            if not all(values[pair][1] for values, _ in draws)]
+            if not all(values[pair][4] == 1 for values, _ in draws)]
     print("\n%d of 64 pairs dither WITHIN a draw, so a read of one samples it "
           "asynchronously and says nothing about the draw:" % len(live),
           flush=True)
@@ -160,7 +201,7 @@ def main():
     for pair in sorted(draws[0][0]):
         if pair in live:
             continue
-        series = [values[pair][0] for values, _ in draws]
+        series = [values[pair][1] for values, _ in draws]
         if len(set(series)) > 1:
             moved = True
             print("  module %d (%-10s) signal %d: %s"

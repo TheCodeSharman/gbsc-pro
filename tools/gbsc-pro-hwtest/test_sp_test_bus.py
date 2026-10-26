@@ -32,10 +32,25 @@ def test_a_missing_host_is_refused():
     assert run().returncode != 0
 
 
-def test_the_bus_value_takes_its_high_byte_from_the_second_register():
-    reads = {"TEST_BUS_2E": 0x34, "TEST_BUS_2F": 0x12}
-    assert sp_test_bus.busValue.__doc__
-    assert (reads["TEST_BUS_2F"] << 8 | reads["TEST_BUS_2E"]) == 0x1234
+def test_a_device_row_parses_into_a_pair_and_its_distribution():
+    row = sp_test_bus.pairFrom("sptb,6,3,2000,70,16583,8201,6,0,70:12 16583:988")
+    assert row == ((6, 3), (2000, 70, 16583, 8201, 6, False))
+
+
+def test_a_pair_that_held_still_reports_one_distinct_value():
+    row = sp_test_bus.pairFrom("sptb,0,0,2000,1856,1856,1856,1,0,1856:2000")
+    assert row[1][4] == 1, "distinct is what separates a latched value"
+
+
+def test_the_header_and_the_done_marker_are_not_readings():
+    assert sp_test_bus.pairFrom("sptb,header,module,signal,count reads=2000") is None
+    assert sp_test_bus.pairFrom("sptb,done") is None
+
+
+def test_a_truncated_row_is_not_a_reading():
+    """The console drops bursts, and a half-delivered row parsed as a reading
+    is a value nothing on the device ever reported."""
+    assert sp_test_bus.pairFrom("sptb,6,3,2000,70") is None
 
 
 def test_every_stage_the_datasheet_names_is_carried():
