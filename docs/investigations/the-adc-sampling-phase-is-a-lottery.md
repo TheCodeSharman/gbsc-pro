@@ -353,10 +353,27 @@ that reference, and the phase follows it. That is also why the source's own
 rigid relationship between sync and pixels does not reach the converter -- the
 clock is locked to a pulse the chip regenerates.
 
-The leg's own sweep left one phase unlit, the source being briefly absent
-across the reset, so its residual of 10.65 is not comparable with the others
-and the peak fell from 52.0 to 49.7 and stayed there. The shift is the finding;
-the residual is the reset in flight.
+**AND IT DRAWS AFRESH, which is what makes it the lottery rather than a
+control.** Four identical resets on settled acquisitions gave **+16, -7, -12
+and +0** -- three moved the curve and the fourth landed back where it was,
+which a draw over 32 offsets does. A no-op leg repeated three times gave +0 at
+residuals 0.13, 0.15 and 0.25, so the +0 reset is the draw coming up short
+rather than the method failing.
+
+Each leg's sweep leaves one phase unlit, the source being briefly absent across
+the reset, so these residuals are not comparable with the inert legs' and the
+peak dips and recovers -- 52.0, then 49.7, then 51.9 and 51.8. The shift is the
+finding; the rest is the reset in flight.
+
+**What this does NOT license is removing the reset.** The sync processor
+carries most of the per-mode state -- the coast window, both retime positions,
+the clamp, `SP_H_PULSE_IGNOR` -- and whether any of those needs the reset to
+take effect is unestablished. The PHASES do not: `applyPhaseSyncProcessor()`
+loads through `PA_SP_LAT` and `PA_SP_BYPSZ`, a 32-point sweep moves the picture
+with no reset involved, and a bare `PA_ADC_BYPSZ` pulse measures +0. Each call
+site also has its own reason, and `VideoPath.cpp` states one that is nothing to
+do with phase: the reset leaves the capture counter's origin at 0 and the
+reference-clock install is what writes it.
 
 ## Controls that do not reach it
 
