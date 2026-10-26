@@ -1587,29 +1587,26 @@ TEST_CASE("choosing a decimator test logic does not switch the path off")
     CHECK(Adc::DEC_TEST_ENABLE::read() == 1);
 }
 
-TEST_CASE("a band clear of the default leaves the sampling phase at the default")
+TEST_CASE("a band clear of the default still moves the phase off the default")
 {
-    // THE SWEEP'S EVIDENCE IS WHERE THE BAND IS. IT IS NOT EVIDENCE THAT THE
-    // FAR SIDE OF THE FIELD IS GOOD, and the far side is where the metric
-    // cannot see. Measured on the bench RISC PC at X320 Y256 C256 F50 on
-    // composite sync, 100 reads a phase across the whole field: the only band
-    // the metric finds is 27..29, scoring 17, 22 and 4, and phases 10..16
-    // score 0.
+    // **THE DEFAULT IS NOT A GOOD PHASE, AND KEEPING IT WHERE THE SCAN SCORES
+    // IT CLEAN PUTS THE PICTURE ON THE BAND'S SHOULDER.** Measured on `vga` at
+    // 800x600@60 separate, 1.36 ADC samples a source pixel, by DISPLACEMENT in
+    // rows off the USB capture -- 60 s a value, the default interleaved as a
+    // control between every treatment:
     //
-    // **WHAT THIS PINS IS DETERMINISM, NOT A GOOD PHASE.** Six acquisitions of
-    // one source on composite chose 13, 8, 11, 16, 16, 16; keeping the default
-    // where the scan says nothing against it makes that one answer. Which
-    // phase is best there is unmeasured, and the picture does not favour this
-    // one -- frame-to-frame change across the field reads 0.52 at 0 and 0.56
-    // at 4 against 0.86 here, with the worst at 12.
+    //   phase        8     12     16      20     24     28
+    //   jumps/s   18.38  11.60   0.22    0.00   0.00   0.00
     //
-    // **THE SHEAR IS NOT THIS REGISTER AND MUST NOT BE CITED FOR IT.** An
-    // A-B-A of 900 s legs moving PA_SP_S alone gave 6, 5 and 4 bursts for 16,
-    // 13 and 16 -- indistinguishable -- and the burst rate falls eightfold
-    // over the first eighty minutes of uptime with nothing written, so two
-    // legs an hour apart compare uptimes.
-    // ../docs/investigations/the-phase-scan-measures-one-band-and-infers-the-rest.md
-    // ../docs/investigations/the-sampling-phase-cannot-reach-the-shimmer.md
+    // The scan there reads `.......11769c341................`, so the band is
+    // 7..15 and MidField is the FIRST phase after it -- scored clean by the
+    // metric and still five to ten times worse than the run's middle. The
+    // widest clean run WRAPS, 16 through 6, 23 wide, middle 27, which is
+    // inside the measured plateau.
+    //
+    // Here the band is 27..29, so the clean run is 30 through 26, 29 wide,
+    // and its middle is 12.
+    // ../docs/known-issues.md
     Wire.reset();
     Adc::PLLAD_MD::write(2230);
     g_sweepDivider = 2230;
@@ -1619,7 +1616,7 @@ TEST_CASE("a band clear of the default leaves the sampling phase at the default"
 
     REQUIRE(Adc::acquirePhase(2, true, lineSamplesAtPhase, countFeed));
 
-    CHECK(Adc::phaseSyncProcessor() == Adc::MidField);
+    CHECK(Adc::phaseSyncProcessor() == 12);
 }
 
 TEST_CASE("a band over the default moves the sampling phase off it")

@@ -491,12 +491,13 @@ bool Adc::acquirePhase(uint8_t oversample, bool sweep,
         return false;
     }
 
-    // The scan proves where the band is and nothing about the rest of the
-    // field, so the default is kept wherever the scan says nothing against it.
-    // One sync type's band is the other's clean run on the same source.
-    // ../../../docs/investigations/the-sampling-phase-cannot-reach-the-shimmer.md
-    choosePhaseSyncProcessor(dither[MidField] == 0 ? MidField
-                                                    : middleOfWidestCleanRun(dither));
+    // AS FAR FROM THE BAND AS THE SCAN CAN PUT IT. Keeping MidField wherever
+    // the scan scored it clean put the picture on the band's SHOULDER: at
+    // 800x600@60 separate the band is 7..15 and MidField is the first phase
+    // after it, measured five to ten times worse by displacement than the
+    // run's middle, which the metric cannot see because it scores the count
+    // rather than the picture. ../../../docs/known-issues.md
+    choosePhaseSyncProcessor(middleOfWidestCleanRun(dither));
     choosePhaseAdc(oversample == 4 ? halfSampleOn(MidField) : MidField);
 
     applyPhaseSyncProcessor(phaseSyncProcessor());
