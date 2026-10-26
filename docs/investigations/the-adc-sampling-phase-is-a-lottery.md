@@ -117,10 +117,10 @@ So the 14% above, and every swing on this page, describes pass-through. The
 everyday scaling path shows no ADC phase response at all, which is where the
 judgement about whether a search is worth making has to start.
 
-**A FLAT FIELD'S ARGMAX IS NOISE, AND IT READS AS A REFUTATION.**
-`phase_pair.py` refuses one for that reason: run on 800x600@60 scaled it
-returned an offset concentration of 0.301 over eight acquisitions, which looks
-like a scattered relationship and is a scattered measurement of nothing.
+**A FLAT FIELD'S ARGMAX IS NOISE, AND IT READS AS A RESULT EITHER WAY.**
+`phase_pair.py` refuses one below 1.5x for that reason.
+`no-scan-derives-the-adc-sampling-phase.md` has what a flat field reported,
+and why its steadier-looking column is the artefact rather than the finding.
 
 ## What the instrument had to be
 
@@ -159,25 +159,15 @@ over 2..28; the circular concentration of `(best - sp) mod 32` was 0.509.
 relationship, and a steep multiplicative one is indistinguishable from noise
 under it, and it held the predictor nearly constant.
 
-**The PICTURE's best `PA_SP_S`, which is the quantity with the variation.**
-That is what the run above could not reach and what `phase_pair.py` measures:
-both bests, per acquisition, step 1 over both fields. Eight re-acquisitions of
-1280x720@60 in pass-through at `PLLAD_MD` 2038, every field swinging 2.3..3.1x
-so neither argmax is noise:
-
-| | across all 8 | at `SP_RT_HS_SP` 32, five of them |
-|---|---|---|
-| picture-best `PA_SP_S` | 25, 30, 1, 31, 0, 25, 4, 1 -- span 11 | 30, 1, 31, 0, 1 -- **span 3** |
-| picture-best `PA_ADC_S` | 31, 26, 6, 23, 21, 28, 7, 18 -- span 21 | 26, 6, 23, 21, 18 -- **span 20** |
-| offset concentration | **0.222** | 0.384 |
-
-**The predictor is near constant where the target swings two thirds of the
-field**, and that holds INSIDE one capture origin, so the origin's own one-step
-movement cannot account for it -- which is what the recorded witness is for.
-So the two bests do not move together, no fixed offset exists, and nothing the
-scan measures predicts the ADC optimum. **The sub-question of whether the
-`PA_SP_S` picture-best re-rolls per acquisition is answered with it: it does
-not**, where `PA_ADC_S`'s does.
+**The PICTURE's best `PA_SP_S`, which is the quantity with the variation**, and
+with it any derivation off the scan at all. Measured over eight pass-through
+re-acquisitions with both bests taken per acquisition: the sync phase's best
+spans 3 steps where the ADC phase's spans 20, inside one capture origin. A
+near-constant predictor cannot produce a target swinging two thirds of the
+field. **The `PA_SP_S` picture-best does not re-roll per acquisition**, where
+`PA_ADC_S`'s does, and that asymmetry is what closes it.
+`no-scan-derives-the-adc-sampling-phase.md` has the per-trial figures, the
+instrument, and what would reopen it.
 
 **`PA_SP_S` as a cause at all.** Held at 26, 28, 29, 30, 31 and 0 with the
 source untouched and the box held, the optimum read 4, 4, 4, 4, 6, 6 and the
@@ -252,12 +242,11 @@ which cancels. A derivation resting on a residual there has none to rest on.
   taken; the judgement is not made -- and it is a PASS-THROUGH 14%, the scaling
   path showing no response at all.
 - **The sync phase's own headroom, which is a different question from this
-  page's.** Across the eight pass-through acquisitions above the engine chose
-  30 every time while the picture's best sat 0..6 steps away, mean 3.12, on a
-  curve swinging 2.4..5.9x. **That is not licence to move it**: each best comes
-  from a sweep inside one acquisition, which writes the register without
-  re-acquiring, so it names a curve and not a value. What it bounds is worth
-  measuring properly.
+  page's.** The engine's choice is repeatable and sits a few steps off the
+  picture's best on a curve that swings several fold, and a sweep inside one
+  acquisition names a curve rather than a value, so moving it needs a
+  measurement nobody has taken.
+  `no-scan-derives-the-adc-sampling-phase.md`.
 
 `/phase?adc=N` holds the phase against the engine and `/phase?clear` gives both
 phases back. **Neither makes the engine re-choose**, and an override survives

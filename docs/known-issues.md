@@ -355,6 +355,14 @@ on the sharpest edges is worth a search before spending a session on the
 cause** -- `sharpness.py` and `adc_phase_sweep.py` take the measurement in one
 run.
 
+**AND IT IS A PASS-THROUGH COST, WHICH IS MOST OF THAT JUDGEMENT.** The
+scaling path shows no phase response at all -- 1.094x at 800x600@60 and 1.009x
+at 1280x720@60 against 3.08x in pass-through -- the VDS resampling the grating
+away before it reaches the capture. Low density does not excuse it: the
+800x600@60 reading samples 1.360 per source pixel against pass-through 720p's
+1.235. So there is nothing to win on the everyday path, and a flat field's
+argmax is noise that reads as a result either way.
+
 **No derivation is available and no on-chip search can score it, so far.** The
 chosen `PA_SP_S` is a marker rather than a cause -- held across six values the
 optimum moves about one step per step, which cannot produce the sixteen-step
@@ -365,6 +373,22 @@ a 3x contrast difference. A `PLLAD_VCORST` re-lock does not re-roll it.
 byte, `PA_SP_S`, whose slope is far too small to be it** -- a differing
 register is not a causing register, and the next one found this way wants its
 slope measured before it is believed.
+
+**THE DERIVATION IS NOW CLOSED ON THE PICTURE'S OWN BEST `PA_SP_S`**, which is
+the quantity the earlier correlation held constant and the only one with the
+variation to carry a test. Over eight pass-through acquisitions the sync
+phase's best spans 3 steps where the ADC phase's spans 20, inside ONE capture
+origin, so the origin cannot account for it and no function of the scan can
+produce it. **A search per acquisition remains the only shape that can work**,
+the optimum being stable within an acquisition and every acquisition reaching
+about the same peak. If the level readback is tried for it, the statistic is
+the SPREAD of the distribution and not `AutoGain`'s peak-and-clip, and not a
+difference between consecutive samples either -- an I2C-paced read manages
+tens of thousands a second against a pixel clock of tens of megahertz, so
+consecutive samples are hundreds of pixels apart and cannot see the detail the
+phase decides. `TEST_BUS` is ten bits across two bytes, so a robust spread is
+wanted over a variance.
+`investigations/no-scan-derives-the-adc-sampling-phase.md`
 
 **WHETHER A SYNC PHASE IS WORTH CHOOSING IS THE SYNC TYPE'S ANSWER, NOT THE
 MODE'S.** Measured at `MODE X800 Y600 C256 F60` with the arrangement set by
