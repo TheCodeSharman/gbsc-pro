@@ -81,6 +81,7 @@ static unsigned long Tim_Resolution = 0, Tim_Resolution_Start = 0;
 #include "src/tv5725/SourceMeasurement.h"
 #include "src/tv5725/ColourSpace.h"
 #include "src/tv5725/SyncMeasurement.h"
+#include "src/tv5725/BusHistogram.h"
 #include "src/tv5725/TestBus.h"
 #include "src/tv5725/AutoGain.h"
 #include "src/tv5725/TestBusRateMeasurement.h"
@@ -217,6 +218,10 @@ volatile uint16_t pendingTestBusMs = 25;
 volatile uint8_t pendingTestBusSp = 0xff;
 volatile uint8_t pendingTestBusSig = 0;
 volatile uint8_t pendingTestBusIf = 0xff;
+volatile bool pendingBusValues = false;
+volatile uint16_t pendingBusValueReads = 2000;
+volatile uint8_t pendingBusValueModule = 0xff;
+volatile uint8_t pendingBusValueSignal = 0xff;
 
 // What /sampleclock queued. Same reason: the route answers from a network
 // callback and the bus belongs to loop().
@@ -3044,6 +3049,64 @@ static void sweepTestBus(uint16_t windowMs, uint8_t spModule, uint8_t spSignal,
     debugPrintf("tb,done\n");
 }
 
+// WHAT A SYNC-PROCESSOR TEST-BUS PAIR READS, as a DISTRIBUTION, which an HTTP
+// read cannot take. Most of the pairs are live wires rather than latched
+// values -- 37 of the 64 dither inside one acquisition -- so a single read
+// samples the wire's state and says nothing about the source, and only a
+// distribution distinguishes two states.
+//
+// SP_TEST_MODULE picks one of eight stages by name, 6 being the retiming
+// module that generates the pulse the ADC PLL locks to, and
+// SP_TEST_SIGNAL_SEL one of eight signals of each. With neither asked for,
+// every pair is sampled in turn.
+// docs/investigations/the-adc-sampling-phase-is-a-lottery.md
+static void sampleBusValues(uint16_t reads, uint8_t module, uint8_t signal)
+{
+    const Tv5725::TestBus::Hold held;
+    Tv5725::TestBus::select(Tv5725::TestBus::SyncProcessor);
+    Tv5725::TestBus::enable(true);
+
+    const uint8_t firstModule = module == 0xff ? 0 : module;
+    const uint8_t lastModule = module == 0xff ? 7 : module;
+    const uint8_t firstSignal = signal == 0xff ? 0 : signal;
+    const uint8_t lastSignal = signal == 0xff ? 7 : signal;
+
+    debugPrintf("sptb,header,module,signal,count,low,high,mean,distinct,over,"
+                "values reads=%u\n", (unsigned)reads);
+
+    for (uint8_t stage = firstModule; stage <= lastModule; stage++) {
+        for (uint8_t which = firstSignal; which <= lastSignal; which++) {
+            Tv5725::SyncProcessor::driveTestBus(stage, which);
+            delay(1);
+
+            Tv5725::BusHistogram seen;
+            for (uint16_t taken = 0; taken < reads; taken++) {
+                seen.add(Tv5725::TestBus::read());
+                if ((taken & 0x3f) == 0)
+                    ESP.wdtFeed();
+            }
+
+            char values[80];
+            int at = 0;
+            for (uint8_t slot = 0; slot < seen.distinct() && at < 60; slot++)
+                at += snprintf(values + at, sizeof(values) - at, "%s%u:%lu",
+                               slot ? " " : "", (unsigned)seen.valueAt(slot),
+                               (unsigned long)seen.countAt(slot));
+            values[at] = '\0';
+
+            debugPrintf("sptb,%u,%u,%lu,%u,%u,%u,%u,%u,%s\n",
+                        (unsigned)stage, (unsigned)which,
+                        (unsigned long)seen.count(), (unsigned)seen.lowest(),
+                        (unsigned)seen.highest(), (unsigned)seen.mean(),
+                        (unsigned)seen.distinct(), seen.overflowed() ? 1 : 0,
+                        values);
+            handleWiFi(0);
+        }
+    }
+
+    debugPrintf("sptb,done\n");
+}
+
 // WHETHER THE VERTICAL INTERVAL'S STRUCTURE CAN BE MEASURED, which decides
 // whether the coast lengths can be derived from the source instead of chosen
 // per sync type. Serrations and equalisation pulses run at twice line rate and
@@ -4907,6 +4970,11 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
             sweepTestBus(pendingTestBusMs, pendingTestBusSp, pendingTestBusSig,
                          pendingTestBusIf);
         }
+        if (pendingBusValues) {
+            pendingBusValues = false;
+            sampleBusValues(pendingBusValueReads, pendingBusValueModule,
+                            pendingBusValueSignal);
+        }
         if (pendingEdgeTrace) {
             pendingEdgeTrace = false;
             traceEdges(pendingEdgeTracePeriods, pendingEdgeTraceMs,
@@ -5978,6 +6046,24 @@ void startWebserver()
         pendingTestBusIf = (uint8_t)number("if", 0xff);
         pendingTestBusSweep = true;
         request->send(200, "application/json", "{\"queued\":\"testbus\"}");
+    });
+
+    // What a sync-processor test-bus pair reads, as a distribution rather than
+    // as the one value an HTTP read catches. Answers on the console.
+    //
+    //   /sptestbus                          every pair, 2000 reads each
+    //   /sptestbus?module=6&reads=8000      the retiming module's eight signals
+    //   /sptestbus?module=6&signal=3        one pair
+    server.on("/sptestbus", HTTP_GET, [](AsyncWebServerRequest *request) {
+        auto number = [request](const char *name, int fallback) -> int {
+            return request->hasParam(name)
+                ? request->getParam(name)->value().toInt() : fallback;
+        };
+        pendingBusValueReads = (uint16_t)number("reads", 2000);
+        pendingBusValueModule = (uint8_t)number("module", 0xff);
+        pendingBusValueSignal = (uint8_t)number("signal", 0xff);
+        pendingBusValues = true;
+        request->send(200, "application/json", "{\"queued\":\"sptestbus\"}");
     });
 
     // THE VERTICAL INTERVAL'S STRUCTURE, as the gaps between successive rising

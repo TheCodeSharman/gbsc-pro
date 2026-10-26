@@ -16,7 +16,7 @@ CXXFLAGS ?= -std=c++11 -O1 -Wall -Wextra
 # embarrassingly parallel: measured 3m26s serial against 34s here.
 MAKEFLAGS += -j$(shell nproc)
 
-.PHONY: all test ir-receiver menu aspect video-signal test-bus auto-gain test-bus-rate-measurement steady-run agreement-run sync-on-green sampling-log axis source-key source-timing framing-table framing-text framing-file scale video-source-line capture-window output-window video-path source-measurement memory-window display-clock frame-sync frame-time-lock output-mode clock-ramp rate-agreement hold-ramp sync-search video-source-selection video-source-selector segment-select register-queue sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc video-route rgbhv-output write-trace settings settings-file line-volume oled-menu clean help
+.PHONY: all test ir-receiver menu aspect video-signal test-bus bus-histogram auto-gain test-bus-rate-measurement steady-run agreement-run sync-on-green sampling-log axis source-key source-timing framing-table framing-text framing-file scale video-source-line capture-window output-window video-path source-measurement memory-window display-clock frame-sync frame-time-lock output-mode clock-ramp rate-agreement hold-ramp sync-search video-source-selection video-source-selector segment-select register-queue sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc video-route rgbhv-output write-trace settings settings-file line-volume oled-menu clean help
 .DEFAULT_GOAL := test
 
 ## help: list the targets
@@ -96,6 +96,17 @@ define geometry_unit
 	  "$(HERE)/$(1).cpp" $(HOST_GEOMETRY_SRC)
 	@"$(OUT)/$(1)"
 endef
+
+## bus-histogram: host unit tests for Tv5725::BusHistogram
+#
+# Summarising what a test-bus pair reads, because most of the sync processor's
+# pairs are live wires and a single read of one samples the wire.
+bus-histogram:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
+	  -o "$(OUT)/test_bus_histogram" \
+	  "$(HERE)/test_bus_histogram.cpp" src/tv5725/BusHistogram.cpp
+	@"$(OUT)/test_bus_histogram"
 
 ## test-bus: host unit tests for Tv5725::TestBus
 #
@@ -983,7 +994,7 @@ write-trace:
 	@"$(OUT)/test_write_trace"
 
 ## test: every host unit test
-test: equalisation-measurement input-scale ir-receiver osd-row osd-screens menu aspect video-signal test-bus auto-gain test-bus-rate-measurement steady-run agreement-run source-absence detection-entry sync-measurement colour-space colour-balance framing-save-timer sync-on-green axis source-key source-timing framing-table framing-text framing-file scale sync-processor video-processor video-source-line capture-window output-window video-path source-measurement memory-window display-clock frame-sync frame-time-lock output-mode clock-ramp rate-agreement hold-ramp sync-search video-source-selection video-source-selector segment-select register-queue sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc sampling-log video-route rgbhv-output write-trace settings settings-file line-volume oled-menu
+test: bus-histogram equalisation-measurement input-scale ir-receiver osd-row osd-screens menu aspect video-signal test-bus auto-gain test-bus-rate-measurement steady-run agreement-run source-absence detection-entry sync-measurement colour-space colour-balance framing-save-timer sync-on-green axis source-key source-timing framing-table framing-text framing-file scale sync-processor video-processor video-source-line capture-window output-window video-path source-measurement memory-window display-clock frame-sync frame-time-lock output-mode clock-ramp rate-agreement hold-ramp sync-search video-source-selection video-source-selector segment-select register-queue sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc sampling-log video-route rgbhv-output write-trace settings settings-file line-volume oled-menu
 all: test
 
 ## clean: remove the compiled test binaries
