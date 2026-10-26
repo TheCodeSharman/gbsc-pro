@@ -10,6 +10,42 @@ regardless of which step is in flight.
 
 ## Reaches the picture
 
+### The sampling phase is searched before the source settles, and the answer is final
+
+**THE BAND THE SEARCH SCORES IS NOT THE BAND THE PICTURE HAS.** Read off the USB
+serial console, which survives the loop stall that costs the websocket, an
+ypbpr -> vga round trip searches 0.6 s after the bypass switch and scores this:
+
+| when | `phase scan:` | dithering band | `middleOfWidestCleanRun()` |
+|---|---|---|---|
+| +0.6 s after the switch | `................334behidfg8121..` | **16..29** | **7** |
+| the same source, settled | `......13567eadc99a81............` | **6..19** | 29 |
+
+The two are very nearly complementary, so the phase chosen against the transient
+band is reliably one the settled band calls bad. **It is deterministic** --
+`PA_SP_S` 9 on ypbpr then 6 or 7 on vga on every cycle measured -- and the
+per-line wander confirms which band is real: 0.22..0.36 px at 7, 8, 12 and 16
+against 0.117 at 0, 4, 20, 24, 28 and 30.
+
+**AND NOTHING REVISITS IT.** The early search SUCCEEDS, so `phaseFound()` is
+true and `SourceMaintenance::dueAt()`'s rule -- which needs
+`!source.samplingPhaseFound` -- never fires. Measured: two scans at +0.6 s and
++0.9 s, then none in the remaining 95 s. The transient answer stands for the
+life of the acquisition.
+
+**The early search is not gratuitous**, which is what makes the fix a choice
+rather than a deletion: `presentWhenSettled()` gives the sync pad back once the
+phase has been searched, so deferring the search defers the picture. The shape
+that fits is to let the early search present the output and then re-search once
+the source has settled, keeping the later answer -- re-arming what counted up to
+it rather than marking it done.
+
+**Two fixes already landed do NOT address this**, and are kept because they are
+correct in their own right: `5287be739` forgets the phase when the divider
+moves, and `e59a727ad` adds the source line rate to that key. Neither fires
+here, because the early search happens AFTER both the divider and the rate have
+reached their new values.
+
 ### Entering pass-through applies the held sampling phase without searching it
 
 `restartAfterBypassSwitch()` ends `Adc::latch(); setAndLatchPhaseSP();`, and
