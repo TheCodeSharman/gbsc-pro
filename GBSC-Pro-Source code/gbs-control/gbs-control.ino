@@ -159,6 +159,20 @@ const Tv5725::OutputMode *volatile pendingOutputMode = NULL;
 // 0 is nothing asked for; any other value is the slot character.
 volatile uint8_t pendingSlotSelection = 0;
 
+// Whether the debug view is showing, and the luma offset it is holding for the
+// pass-through channel while it does.
+//
+// **FIRMWARE STATE BELONGS IN THE FIRMWARE.** These lived in s5_61 and s5_62 --
+// two non-datasheet ADC addresses used as variables, read back to decide which
+// half of the toggle to run and whether a preset load should leave the view. A
+// register is an OUTPUT of the engine, so holding a flag there gives the field
+// a second owner, hides it from every reader of the code, and makes it survive
+// an ESP reset: the chip keeps its registers, so a view switched on by one boot
+// was still on as far as the next boot's first preset load was concerned.
+// ../../docs/known-issues.md
+static bool debugViewShowing = false;
+static uint8_t debugViewHeldLumaOffset = 0;
+
 #if GBS_SAMPLING_LOG
 Tv5725::SamplingLog samplingLog;
 
@@ -2431,7 +2445,7 @@ void applyPresets()
     Tv5725::VideoRoute::toScaler(); // 
 
 
-    if (GBS::ADC_UNUSED_62::read() != 0x00) {
+    if (debugViewShowing) {
 
         serialCommand = 'D';
     }
@@ -2609,7 +2623,7 @@ void enterHdBypass()
 
     externalClockGenResetClock();
     frameSync.cleanup();
-    GBS::ADC_UNUSED_62::write(0x00);
+    debugViewShowing = false;
     GBS::PA_ADC_BYPSZ::write(1);
     GBS::PA_SP_BYPSZ::write(1);
     Tv5725::SyncProcessor::forgetPositions();
@@ -4292,11 +4306,11 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     Tv5725::Adc::restartPhaseAdjusters();
                     break;
                 case 'D':; // SerialMprint(F("debug view: "));
-                    if (GBS::ADC_UNUSED_62::read() == 0x00) {
+                    if (!debugViewShowing) {
                         GBS::VDS_PK_LB_GAIN::write(0x3f);
                         GBS::VDS_PK_LH_GAIN::write(0x3f);
-                        GBS::ADC_UNUSED_61::write(GBS::HD_Y_OFFSET::read());
-                        GBS::ADC_UNUSED_62::write(1);
+                        debugViewHeldLumaOffset = (uint8_t)GBS::HD_Y_OFFSET::read();
+                        debugViewShowing = true;
                         GBS::VDS_Y_OFST::write(GBS::VDS_Y_OFST::read() + 0x24);
                         GBS::HD_Y_OFFSET::write(GBS::HD_Y_OFFSET::read() + 0x24);
                         if (!Tv5725::Adc::inputIsComponent()) {
@@ -4310,7 +4324,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                         // The luma offset is the balance's, so leaving the view
                         // asks it rather than putting back a saved copy.
                         applyColourBalance();
-                        GBS::HD_Y_OFFSET::write(GBS::ADC_UNUSED_61::read());
+                        GBS::HD_Y_OFFSET::write(debugViewHeldLumaOffset);
                         if (!Tv5725::Adc::inputIsComponent()) {
 
                             GBS::HD_DYN_BYPS::write(1);
@@ -4318,8 +4332,8 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                             GBS::HD_V_OFFSET::write(0);
                         }
 
-                        GBS::ADC_UNUSED_61::write(0);
-                        GBS::ADC_UNUSED_62::write(0);
+                        debugViewHeldLumaOffset = 0;
+                        debugViewShowing = false;
                         ; // SerialMprintln("off");
                     }
                     serialCommand = '@';
