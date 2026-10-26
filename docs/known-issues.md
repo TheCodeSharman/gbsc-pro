@@ -35,10 +35,31 @@ life of the acquisition.
 
 **The early search is not gratuitous**, which is what makes the fix a choice
 rather than a deletion: `presentWhenSettled()` gives the sync pad back once the
-phase has been searched, so deferring the search defers the picture. The shape
-that fits is to let the early search present the output and then re-search once
-the source has settled, keeping the later answer -- re-arming what counted up to
-it rather than marking it done.
+phase has been searched, so deferring the search defers the picture. `c3d2872b4`
+lets the early search present the output and reports it PROVISIONAL, which
+leaves `SourceMaintenance`'s window open so the search at acquired pass 10
+replaces its answer.
+
+**IT IS AN IMPROVEMENT AND NOT A FIX: 3 of 10 against 2 of 2.** Soaked over the
+ypbpr -> vga round trip, reading `PA_SP_S` after the maintenance window:
+
+| | result |
+|---|---|
+| before, `f174f3aba` | **2 of 2 bad**, `PA_SP_S` 6 both times |
+| after, `c3d2872b4` | **3 of 10 bad** -- 7 good at 30, and 8, 7, 8 |
+
+The good cases land on 30 and the bad ones on 7 or 8, which are the settled and
+the transient band's answers respectively -- so the failures are passes where
+the re-search did not happen or did not see the settled band.
+
+**THE PASS COUNT IS THE WRONG PROXY, AND THE NAMED CANDIDATE IS THE RESET.**
+`acquiredPasses_` is zeroed only where `sourceState_` leaves `SourceAcquired`,
+so on a transition whose source never reads absent the early search runs at a
+HIGH pass count, `PhaseSettledPasses` is already satisfied, the answer is marked
+final and nothing re-searches. `ClampReadyPasses` 4 and `CoastReadyPasses` 7
+both sit below `PhaseFirstPass` 10, so the sync processor being half configured
+is NOT the explanation. What would settle it is a precondition that resets with
+the arriving source rather than a count that may not.
 
 **Two fixes already landed do NOT address this**, and are kept because they are
 correct in their own right: `5287be739` forgets the phase when the divider
