@@ -305,6 +305,59 @@ family**, the obvious place to look next. A lock circuit restarted against an
 already locked clock is repeatable, measured: three interleaved 32-point
 sweeps, each pulsing `PA_ADC_BYPSZ` 32 times, agree to under a grey level.
 
+## The ADC PLL's own control bits do not redraw it, one at a time
+
+Each pulsed on a settled pass-through acquisition at 1280x720@60, divider 2038,
+one held wedge box, a 32-point sweep after each and a no-op leg first as the
+control. A pulse writes the complement of what the bit holds and writes it
+straight back, which is a rising edge on a bit resting high and a reset pulse
+on one resting low. Scored as the shift against the previous curve:
+
+| pulsed | what it does | shift | residual |
+|---|---|---|---|
+| none | the control | +0 | 0.25 |
+| `PLLAD_LAT` | reloads MD, ND, KS, CKOS and ICP | +0 | 0.21 |
+| `PLLAD_LEN` | the clock enable, off and on | +0 | 0.22 |
+| `PLLAD_VCORST` | the VCO held and released | +0 | 0.21 |
+| `PLLAD_PDZ` | the PLL powered down and up | +0 | 1.21 |
+| `PA_ADC_BYPSZ` | the phase adjuster's own lock circuit | +0 | 0.93 |
+
+**None of them moves the curve**, so the draw is in none of the parts the
+restart is built from -- and reloading the whole group at its own values is
+among them, which is the part the earlier reading named. `PLLAD_PDZ` left one
+phase of its sweep unlit, which is the power cycle in flight rather than a
+reading.
+
+## IT IS THE SYNC PROCESSOR'S RESET, AND NOTHING ELSE AROUND THE RESTART
+
+Pulsed the same way on the same settled acquisition, continuing the table
+above. The sweep after each is scored as the shift against the one before it:
+
+| pulsed | what it resets | shift | residual |
+|---|---|---|---|
+| none | the control | +0 | 0.13 |
+| `ADC_POWDZ` | **the converter, powered down and up** | +0 | 0.16 |
+| `SFTRST_DEC_RSTZ` | the decimation | +0 | 0.14 |
+| `SFTRST_SYNC_RSTZ` | **the sync processor** | **+16** | 10.65 |
+| `SFTRST_MODE_RSTZ` | mode detection | +0 | 4.45 |
+| `SFTRST_IF_RSTZ` | the input formatter | +0 | 0.15 |
+
+**Power-cycling the ADC does not move the sampling phase and resetting the
+sync processor does**, which places the draw outside the converter entirely.
+
+**The mechanism the register names give.** `SP_HS2PLL_INV_REG` s5_56[1] is "HS
+to PLL invert", so the ADC PLL's reference is the sync processor's RETIMED
+output rather than the separator's edge: separator, retiming, HS to PLL,
+`PLLAD`, ADC clock. Resetting the sync processor restarts the block generating
+that reference, and the phase follows it. That is also why the source's own
+rigid relationship between sync and pixels does not reach the converter -- the
+clock is locked to a pulse the chip regenerates.
+
+The leg's own sweep left one phase unlit, the source being briefly absent
+across the reset, so its residual of 10.65 is not comparable with the others
+and the peak fell from 52.0 to 49.7 and stayed there. The shift is the finding;
+the residual is the reset in flight.
+
 ## Controls that do not reach it
 
 Each measured on one held draw with the first leg repeated last as the control,
