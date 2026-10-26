@@ -21,6 +21,13 @@ upstream of both adjusters -- so both bests moving together is exactly what a
 shared hidden cause looks like, and a fixed offset between them would be a
 derivation needing no search.
 
+**WHAT IT MEASURED.** No fixed offset exists and nothing the scan measures
+predicts the ADC optimum: the picture-best `PA_SP_S` holds a 3-step span where
+the picture-best `PA_ADC_S` swings 20, inside one capture origin. The tool
+stays useful for the sync phase's own headroom and as the shape any such
+question needs.
+`docs/investigations/the-adc-sampling-phase-is-a-lottery.md`
+
 **THE ORIGIN IS RECORDED, NOT HELD.** `SP_RT_HS_SP` places the capture
 counter's origin and a wrong one costs the grating 9 to 13 times, far more than
 either phase, so an origin re-rolling per acquisition would scatter both bests
@@ -68,19 +75,26 @@ ACQUIRE_S = 22
 WITNESSES = ["PA_SP_S", "PA_ADC_S", "PLLAD_MD", "SP_RT_HS_SP",
              "STATUS_SYNC_PROC_VTOTAL", "STATUS_SYNC_PROC_HTOTAL"]
 
-# Adc::MidField, the phase the search keeps whenever the scan says nothing
-# against it.
-MID_FIELD = 16
-
 SCAN = re.compile(r"phase scan:\s*(\S+)")
+
+# Below this the field's peak and trough are the same reading and whichever
+# phase wins is noise, so the offset it feeds carries no information. The
+# SCALING path is flat by this test on every mode measured and pass-through is
+# not, the grating being resampled away before it reaches the capture --
+# test_phase_pair.py carries the figures.
+FLAT_CURVE = 1.5
+
+
+def is_flat(peak, trough):
+    return trough <= 0.0 or peak / trough < FLAT_CURVE
 
 
 class Console:
     """The engine's own lines, with the host clock that saw them.
 
     `reportScan()` prints the walk's whole scoreboard, one character per phase,
-    so what the search DISCARDED is readable from here -- which is what makes
-    the keep-the-default branch measurable without touching the firmware.
+    so what the search DISCARDED is readable from here, and a trial whose scan
+    never arrived is one whose choice has no witness.
     """
 
     def __init__(self, host):
@@ -130,29 +144,6 @@ def scan_since(console, when):
     return found
 
 
-def middle_of_widest_clean_run(scan):
-    """Adc::middleOfWidestCleanRun, off the console's own scoreboard.
-
-    scanDigit() prints '.' for a phase whose count read the divider exactly, so
-    a dot is a dither of 0 and nothing else is one.
-    """
-    width = len(scan)
-    best_start, best_length, start, length = 0, 0, 0, 0
-    for step in range(2 * width):
-        phase = step % width
-        if scan[phase] != ".":
-            length = 0
-            continue
-        if length == 0:
-            start = phase
-        length += 1
-        if length > best_length and length <= width:
-            best_length, best_start = length, start
-    if best_length == 0:
-        return MID_FIELD
-    return (best_start + best_length // 2) % width
-
-
 def apart(a, b, field=FIELD):
     """How far two phases sit, the short way round."""
     gap = (a - b) % field
@@ -176,6 +167,10 @@ def route(host, path):
     return urllib.request.urlopen(f"http://{host}{path}", timeout=10).read().decode()
 
 
+def lit(grey):
+    return bool((grey.mean(axis=0) > BLACK).any())
+
+
 def lit_box(grey):
     columns = np.where(grey.mean(axis=0) > BLACK)[0]
     rows = np.where(grey.mean(axis=1) > BLACK)[0]
@@ -186,21 +181,35 @@ def lit_box(grey):
 
 
 def sweep(host, dev, box, which, step):
-    """(best, curve) for one adjuster, the peak taken on a CIRCULAR argmax.
+    """(best, curve, dark) for one adjuster, the peak taken on a CIRCULAR argmax.
 
     The curve wraps, so assuming the field's ends are far from the peak is
     wrong -- one acquisition peaked at 30 with 0 and 31 within a grey level.
+
+    **A BLACK FRAME IS THE WORST READING, NOT A BROKEN INSTRUMENT.** At 1.36
+    ADC samples a source pixel a sync phase in the field takes the output to
+    nothing, which is the far end of the swing this measures; aborting there
+    throws away the trial that was about to name the band.
     """
-    curve = []
+    curve, dark = [], []
     for phase in range(0, PHASE_MAX + 1, step):
         route(host, f"/phase?{which}={phase}")
         time.sleep(SETTLE_S)
         greys = luma(frames(CLIP, dev, WIDTH, HEIGHT, warmup=WARMUP))
+        if not lit(greys[0]):
+            dark.append(phase)
+            curve.append((phase, 0.0, 0.0, -1))
+            continue
         contrast, movement = wedge.score(greys, box)
-        left = lit_box(greys[0])[0]
-        curve.append((phase, contrast, movement, left))
+        curve.append((phase, contrast, movement, lit_box(greys[0])[0]))
     best = max(curve, key=lambda row: row[1])[0]
-    return best, curve
+    return best, curve, dark
+
+
+def left_span(curve):
+    """How far the lit box's left edge moved, over the phases that lit at all."""
+    lefts = [row[3] for row in curve if row[3] >= 0]
+    return max(lefts) - min(lefts) if lefts else -1
 
 
 def concentration(offsets):
@@ -216,25 +225,14 @@ def circular_span(values):
     if not values:
         return 0
     ordered = sorted(set(values))
+    if len(ordered) == 1:
+        return 1
     gaps = [(ordered[(i + 1) % len(ordered)] - v) % FIELD
             for i, v in enumerate(ordered)]
     return FIELD - max(gaps)
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--host", required=True)
-    parser.add_argument("--modeserv", required=True)
-    parser.add_argument("--mode", required=True)
-    parser.add_argument("--other", default="MODE X800 Y600 C256 F60",
-                        help="a mode to bounce through, so the source really leaves")
-    parser.add_argument("--trials", type=int, default=8)
-    parser.add_argument("--step", type=int, default=1)
-    parser.add_argument("--out", default=None)
-    args = parser.parse_args()
-
-    dev = device()
-    console = Console(args.host)
+def trials(args, dev, console):
     rows = []
     for trial in range(args.trials):
         # The engine's own choices, so both holds go first.
@@ -263,20 +261,16 @@ def main():
         # The ADC first, with the engine's own sync phase in force; then the
         # sync phase with the ADC pinned where the engine left it, so each best
         # is measured against one baseline rather than against the other sweep.
-        best_adc, adc_curve = sweep(args.host, dev, box, "adc", args.step)
+        best_adc, adc_curve, adc_dark = sweep(args.host, dev, box, "adc", args.step)
         route(args.host, f"/phase?adc={held['PA_ADC_S']}")
         time.sleep(SETTLE_S)
-        best_sp, sp_curve = sweep(args.host, dev, box, "sp", args.step)
+        best_sp, sp_curve, sp_dark = sweep(args.host, dev, box, "sp", args.step)
 
         after = read_fields(args.host, ["SP_RT_HS_SP"])
         offset = (best_adc - best_sp) % FIELD
-        run_middle = middle_of_widest_clean_run(scan) if scan else None
         row = {
             "scan": scan or "",
-            "run_middle": run_middle if run_middle is not None else -1,
             "sp_off_by_chosen": apart(best_sp, held["PA_SP_S"]),
-            "sp_off_by_run": (apart(best_sp, run_middle)
-                              if run_middle is not None else -1),
             "trial": trial + 1,
             "chosen_sp": held["PA_SP_S"], "chosen_adc": held["PA_ADC_S"],
             "best_sp": best_sp, "best_adc": best_adc, "offset": offset,
@@ -288,20 +282,45 @@ def main():
             "origin_after": after["SP_RT_HS_SP"],
             "divider": held["PLLAD_MD"],
             "count": held["STATUS_SYNC_PROC_VTOTAL"],
-            "left_span": max(r[3] for r in adc_curve) - min(r[3] for r in adc_curve),
+            "left_span": left_span(adc_curve),
+            "adc_dark": len(adc_dark), "sp_dark": len(sp_dark),
         }
         rows.append(row)
         print("trial %2d: best sp %2d (chosen %2d)  best adc %2d (chosen %2d)  "
               "offset %2d  adc %5.1f/%5.1f  sp %5.1f/%5.1f  origin %4d->%4d  "
-              "left span %d  run middle %s (off %s vs chosen off %d)"
+              "left span %d  off by %d  dark adc %d sp %d"
               % (row["trial"], best_sp, row["chosen_sp"], best_adc,
                  row["chosen_adc"], offset, row["adc_peak"], row["adc_trough"],
                  row["sp_peak"], row["sp_trough"], row["origin"],
                  row["origin_after"], row["left_span"],
-                 row["run_middle"], row["sp_off_by_run"],
-                 row["sp_off_by_chosen"]), flush=True)
+                 row["sp_off_by_chosen"],
+                 row["adc_dark"], row["sp_dark"]), flush=True)
+    return rows
 
-    route(args.host, "/phase?clear")
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--host", required=True)
+    parser.add_argument("--modeserv", required=True)
+    parser.add_argument("--mode", required=True)
+    parser.add_argument("--other", default="MODE X800 Y600 C256 F60",
+                        help="a mode to bounce through, so the source really leaves")
+    parser.add_argument("--trials", type=int, default=8)
+    parser.add_argument("--step", type=int, default=1)
+    parser.add_argument("--out", default=None)
+    args = parser.parse_args()
+    if args.other.split() == args.mode.split():
+        sys.exit("--other must differ from --mode, or the bounce never makes "
+                 "the source leave and every trial samples one acquisition -- "
+                 "the fault phase_correlation.py had")
+
+    dev = device()
+    console = Console(args.host)
+    try:
+        rows = trials(args, dev, console)
+    finally:
+        # A trial that throws must not leave a phase held.
+        route(args.host, "/phase?clear")
     console.stop.set()
 
     if not rows:
@@ -327,23 +346,29 @@ def main():
         print("THE ORIGIN MOVED. It costs the grating more than either phase, "
               "so these trials are not comparable -- discard rather than "
               "interpret.")
-    scored = [r for r in rows if r["sp_off_by_run"] >= 0]
-    if scored:
-        by_chosen = float(np.mean([r["sp_off_by_chosen"] for r in scored]))
-        by_run = float(np.mean([r["sp_off_by_run"] for r in scored]))
-        print("the best sync phase sits %.2f steps from what the engine chose "
-              "and %.2f from the widest clean run's middle, over %d trials"
-              % (by_chosen, by_run, len(scored)))
-        print("REMOVING THE KEEP-THE-DEFAULT BRANCH WOULD %s"
-              % ("HELP" if by_run < by_chosen - 0.5 else
-                 "HURT" if by_run > by_chosen + 0.5 else
-                 "CHANGE NOTHING MEASURABLE"))
-    else:
-        print("no phase scan reached the console, so the branch's "
-              "counterfactual is unmeasured -- is a client taking delivery, "
-              "and is the heap gate open? docs/gbs-control-debug-interface.md")
+    flat = [r["trial"] for r in rows
+            if is_flat(float(r["adc_peak"]), float(r["adc_trough"]))]
+    if flat:
+        print("THE ADC CURVE IS FLAT on %d of %d trials (%s). Its peak and "
+              "trough are one reading, so the best phase is an argmax of noise "
+              "and the offset above carries no information -- this run cannot "
+              "support or refute a derivation. The scaling path is flat on "
+              "every mode measured; take it in pass-through."
+              % (len(flat), len(rows), ", ".join(str(t) for t in flat)))
+
+    by_chosen = float(np.mean([r["sp_off_by_chosen"] for r in rows]))
+    print("the picture's best sync phase sits %.2f steps from the phase the "
+          "engine chose, over %d trials" % (by_chosen, len(rows)))
+    if not any(r["scan"] for r in rows):
+        print("no phase scan reached the console, so the scoreboard behind "
+              "that choice is unrecorded -- is a client taking delivery, and "
+              "is the heap gate open? docs/gbs-control-debug-interface.md")
 
     if circular_span(sps) <= 1:
         print("THE BEST SYNC PHASE DID NOT MOVE, so nothing here can correlate "
               "with it whatever the ADC phase did. A run that never varied the "
               "predictor is the fault phase_correlation.py had.")
+
+
+if __name__ == "__main__":
+    main()
