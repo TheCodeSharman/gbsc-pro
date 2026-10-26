@@ -412,10 +412,31 @@ draws 3 and 8 -- and in those two scans nearly every pair including the live
 ones reads `0x40xx`, so it is the scan rather than the pair. The shifts at
 those draws were -2 and +14, which share nothing.
 
-So nothing the sync processor's test bus carries as a VALUE encodes the offset.
-The 37 live ones are not closed by this: they would need on-device sampling,
-and `/testbus` counts edges on a pair rather than reading it as a word.
-`sp_test_bus.py`.
+**SAMPLED ON THE DEVICE, THE LIVE ONES DO NOT CARRY IT EITHER.** `/sptestbus`
+takes a distribution per pair from `loop()` -- 2000 samples each, all 64 pairs
+in about a minute -- and reports its count, extremes, mean and value table, so
+a live wire has a statistic rather than one asynchronous read.
+
+Across draws whose shifts were -4 and +6, **40 of the 64 pairs have an
+identical mean** and the rest move by a few dozen counts. Five move by almost
+exactly 16384:
+
+| pair | mean, draw 1 -> draw 2 | low bound either side |
+|---|---|---|
+| 5/4 `cs_sep` | 18588 -> 2036 | 16389 -> 0 |
+| 5/6 `cs_sep` | 21049 -> 4810 | 20480 -> 4096 |
+| 6/0 `retiming` | 21334 -> 4964 | 16384 -> 0 |
+| 6/2 `retiming` | 49749 -> 33350 | 16574 -> 191 |
+| 6/4 `retiming` | 17708 -> 4964 | 16388 -> 4 |
+
+**That is bit 14 of the shared bus, and it is a RESET MARKER rather than a
+phase.** It reads 1 on the first acquisition and 0 on every draw after it --
+`[1, 0, 0, 0]` on all five pairs across four draws -- while the curve moved at
+every one of those draws. One bit cannot encode a 32-step offset in any case,
+and this one does not even move with it.
+
+So nothing the sync processor's test bus carries encodes the offset, read as a
+value or sampled as a distribution. `sp_test_bus.py`, `/sptestbus`.
 
 ## Controls that do not reach it
 
