@@ -98,10 +98,15 @@ bool VideoSourceAcquisition::acquireSamplingPhase()
     // what that becomes.
     const uint8_t oversample = Tv5725::Adc::oversampleInForce();
 
+    // ALWAYS SWEPT. The separator's level does not gate this: the scores come
+    // from the sync processor's count, which on a separate-sync source arrives
+    // on the dedicated sync line, and the separator reaches the sync processor
+    // only with SP_SOG_MODE 1 -- so there the level is inert and holds whatever
+    // the previous source left. The search reports its own bad data through
+    // SweepGoodEnough and samplingClockSuspect() besides.
+    // ../../../docs/known-issues.md
     const bool found = Tv5725::Adc::acquirePhase(
-        oversample, Tv5725::SyncOnGreen::level() > Tv5725::SyncOnGreen::StarvedLevel,
-        Tv5725::SyncProcessor::lineSamples,
-        watchdog_);
+        oversample, true, Tv5725::SyncProcessor::lineSamples, watchdog_);
 
     char line[48];
     snprintf(line, sizeof(line), "sampling phase: %s, oversample %u",

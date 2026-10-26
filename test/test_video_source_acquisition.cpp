@@ -2880,10 +2880,24 @@ TEST_CASE("a scan that blames the clock says so instead of searching again")
     CHECK(loggedContaining("sampling clock unlocked"));
 }
 
-TEST_CASE("a starved separator gets the mid of the field rather than a sweep")
+TEST_CASE("a starved separator still gets the sweep")
 {
-    // The sweep scores phases by the sync processor's count, and a starved
-    // separator makes that noise -- so there is nothing worth 34 steps of it.
+    // THE SWEEP IS NOT THE SEPARATOR'S BUSINESS, so its level does not gate it.
+    // The scores come from the sync processor's count, and on a separate-sync
+    // source that count comes from the dedicated sync line -- SyncOnGreen.h
+    // states the separator reaches the sync processor only with SP_SOG_MODE 1,
+    // so there every level is inert and the one held is whatever the previous
+    // source left. Measured on `vga` after the Wii: ADC_SOGCTRL 12, which is
+    // ComponentLevel walked down rather than DefaultLevel.
+    //
+    // Skipping the sweep wrote the mid of the field, which measured the WORST
+    // region at PLLAD_MD 2038 -- 0.349 px of per-line wander against 0.117 at
+    // the quiet band. And the search reports its own bad data through
+    // SweepGoodEnough and samplingClockSuspect(), so a pre-gate guessing at it
+    // is redundant as well as wrong. ../docs/known-issues.md
+    //
+    // The watchdog is what says the field was walked: the sweep feeds it inside
+    // its loop and the skip never feeds at all.
     seedBenchSource();
     seedLineSamples(BenchDivider);
     Acquiring unit;
@@ -2895,9 +2909,8 @@ TEST_CASE("a starved separator gets the mid of the field rather than a sweep")
     Adc::choosePhaseSyncProcessor(3);
     g_watchdogFeeds = 0;
 
-    CHECK(unit.acquisition.acquireSamplingPhase());
-    CHECK(Adc::phaseSyncProcessor() == 16);
-    CHECK(g_watchdogFeeds == 0);
+    REQUIRE(unit.acquisition.acquireSamplingPhase());
+    CHECK(g_watchdogFeeds > 0);
 }
 
 // The sync processor's three per-source writes. Each was a sketch wrapper
