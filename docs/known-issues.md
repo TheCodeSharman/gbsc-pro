@@ -10,6 +10,56 @@ regardless of which step is in flight.
 
 ## Reaches the picture
 
+### The television menu stops being DRAWN while its state machine stays live
+
+**IT IS NOT STUCK OPEN, IT IS NEVER PAINTED**, and the two look identical from
+the remote: with nothing on the screen there is no feedback, so the remote
+reads as ignored.
+
+What says so, measured in one state:
+
+| instrument | reading |
+|---|---|
+| `/menu` | answers, and `key=exit` / `key=menu` move `open` correctly |
+| console | `IR value:0xEA52609F described:1 OSD_IR:0 menu:0->0` -- the described menu CONSUMED the press |
+| `worst loop since last frame` | 4..42 ms, so `loop()` is healthy and this is not a stall |
+| the emitted frame, `open:true` | no overlay at all |
+
+**`/restart` restores it** and the overlay draws immediately on the boot that
+follows.
+
+The gate that fits the shape is `loop()`'s
+`if (oled_menuItem == 0 && !menuCommandPending()) describedMenu.drawIfNeeded()`:
+a command queue latched non-empty stops every draw while the state machine
+keeps answering. `menuCommandPending()` covers `userCommand`, `serialCommand`,
+the two pad queues and `pendingInputSelection`. **The sticky `'D'` path is
+refuted** -- `applyPresets()` sets `serialCommand = 'D'` where
+`ADC_UNUSED_62` is non-zero and the reset at the end of `web_service()` skips
+`'D'` deliberately, but that register read **0** in the failing state.
+
+**WHAT IS REFUTED, each measured with the overlay confirmed present before and
+after, on a unit where it was drawing:**
+
+| tried | overlay after |
+|---|---|
+| `/sc?B` | present |
+| `/uc?x` | present |
+| `/input?src=ypbpr` | present |
+| `PAD_SYNC_OUT_ENZ` away 8 s, then driven | present |
+| `/sc?~`, the low-power re-detect | present |
+
+So it is none of the ordinary commands and not a short loss of output sync.
+What the failing window had that none of these reproduce is minutes with no
+source at all, and a half-run `pytest --host` before it.
+
+**THE INSTRUMENT TRAP: `/menu?key=menu` TOGGLES.** A probe that opens the menu
+with it and captures lands closed every other run, which reads exactly like the
+fault -- `blue 0.000, menu open False`. Send `key=exit` first, then `key=menu`,
+and assert `open` in the same breath as the frame. The overlay itself scores
+off the USB capture as a saturated blue block in the top-left: the fraction of
+pixels with `B - R > 40` and `B - G > 40` over rows 10..170, columns 220..1230,
+which reads 0.47..0.65 present and 0.000 absent.
+
 ### 800x600@60 on composite sync rolls in 95% of frames, and the probe that takes its coast away cannot see it
 
 `vga`, `MODE X800 Y600 C256 F60` with `SYNC 1`, scaling into 1080p, `PLLAD_MD`
