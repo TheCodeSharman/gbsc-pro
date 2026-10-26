@@ -9093,17 +9093,26 @@ moves with the divider, so a value searched at one divider can be the worst
 point at another -- and the symptom is the whole picture jittering horizontally
 at high frequency, which reads as the new divider being unusable.
 
-Measured on `vga`, RISC PC at 1280x720@60 in pass-through, after
-`/sampleclock?md=1740&os=2` carried `PA_SP_S` 29 over from 2038. The per-line
-wander of four vertical edges across frames, each frame's whole-picture pan
-removed:
+**THE QUIET BANDS AT TWO DIVIDERS ARE NEARLY COMPLEMENTARY**, which is what
+makes a carried-over value actively harmful rather than merely unoptimised.
+Measured on `vga`, RISC PC at 1280x720@60 in pass-through, as the per-line
+wander of four vertical edges across frames with each frame's whole-picture pan
+removed so a displacement cannot read as a wander:
 
 | `PA_SP_S` | 0 | 4 | 8 | 12 | 16 | 20 | 24 | 28 |
 |---|---|---|---|---|---|---|---|---|
-| mean wander, px | 0.161 | 0.096 | 0.093 | **0.070** | 0.072 | 0.073 | 0.109 | **0.199** |
+| mean wander, px, md 1740 | 0.161 | 0.096 | 0.093 | **0.070** | 0.072 | 0.073 | 0.109 | **0.199** |
+| mean wander, px, md 2038 | 0.122 | 0.121 | 0.243 | **0.350** | 0.335 | 0.125 | 0.120 | 0.123 |
 
-29 is the peak. `/phase?sp=16` takes it to 0.070, below the ratio-1 control at
-2038 of 0.075..0.136 on the same edges.
+**12..20 is the quiet band at 1740 and the worst region at 2038.** The engine's
+own search lands at 29 or 30 at 2038, which reads 0.120.
+
+**AND A `/phase?sp=` OVERRIDE OUTLIVES THE DIVIDER IT WAS TUNED FOR.** It is
+held against the engine and survives re-acquisition, so a value set at one
+divider is still in force after the engine re-solves to another -- measured as a
+wander of 0.366 against 0.10, about three times, with the picture visibly
+jittering. `/phase?clear` restores the engine's value immediately and a restart
+clears every hold.
 
 **Two instruments say nothing about it.** `STATUS_SYNC_PROC_HTOTAL` reads the
 divider exactly with a spread of plus or minus one in both states, and
