@@ -382,6 +382,98 @@ whether the ten-bit level `AutoGain` already reads through
 `TestBus::selectLevel()` has the resolution to grade 32 phases.
 `investigations/the-adc-sampling-phase-is-a-lottery.md`
 
+### The sync phase costs the picture by SAMPLING DENSITY, not by sync type, and the engine's default sits on the band's edge
+
+**`PA_SP_S` 16 judders the picture where 27 does not, and the firmware already
+computes 27 and then discards it.** `Adc::acquirePhase()` ends on
+
+```cpp
+choosePhaseSyncProcessor(dither[MidField] == 0 ? MidField
+                                               : middleOfWidestCleanRun(dither));
+```
+
+so `middleOfWidestCleanRun()` decides only where the scan's band covers
+MidField. Where it does not, 16 stands -- and on the one bench mode whose
+sampling density is low, 16 is the FIRST phase after the band ends, which is
+the shoulder of a cliff.
+
+Measured off the USB capture by DISPLACEMENT in rows -- `picture_stability.py`,
+60 s a point, the engine's 16 interleaved as a control between every treatment,
+`PA_SP_S` set through `/phase?sp=`:
+
+| `PA_SP_S` | 800x600@60 separate, 1.36 samples/px | 320x256@50 separate, 4.30 | 320x256@50 composite, 4.30 |
+|---|---|---|---|
+| 0 | 0.05 | 0.00 | 0.00 |
+| 4 | 3.72 | 0.00 | 0.00 |
+| 8 | **18.38**, 59% of frames, 268 lost | 0.00 | 0.00 |
+| 12 | **11.60**, 54%, 797 lost | 0.00 | 0.00 |
+| 16, the engine's | **0.22** | 0.00 | 0.00 |
+| 20 | **0.00** | 0.00 | 0.00 |
+| 24 | **0.00** | 0.00 | 0.00 |
+| 28 | **0.00** | 0.00 | 0.00 |
+
+Controls at 16 on the low-density leg read 0.33, 0.25, 0.25, 0.22 and 0.30, so
+nothing drifted underneath it. Counts held at 627, 311 and 308 throughout, so
+the sync processor is not what moves.
+
+**EVERY LEG IS ONE ACQUISITION, AND THAT BOUNDS WHAT THE TABLE SAYS.**
+`/phase?sp=` writes the register without re-acquiring, so all fifteen points of
+a leg sample ONE acquisition's curve. The `PA_ADC_S` optimum is measured to
+re-roll per acquisition with its curve's shape held --
+`investigations/the-adc-sampling-phase-is-a-lottery.md` -- and **whether the
+`PA_SP_S` picture-best does the same is not measured anywhere**, so "27 is
+good and 16 is bad" is a statement about the acquisition it was taken in and
+not a value to write into the engine. `dedc53784`'s six composite
+acquisitions choosing 13, 8, 11, 16, 16, 16 say the SCAN moves between
+acquisitions, which is half of what would have to move together.
+
+What does NOT depend on where an optimum sits is a leg where NO phase in the
+whole field was bad: an optimum that re-rolled would still leave a bad phase
+somewhere in the field, and the high-density legs have none. So the density
+result below survives the bound and the choice of value does not.
+
+**SO SYNC TYPE IS NOT THE VARIABLE.** At 4.30 samples a source pixel the
+picture is indifferent across the whole field on BOTH arrangements -- including
+phases the scan itself marks dirty, 12 and 16 sitting inside the separate leg's
+own 12..19 band and still scoring 0.00. At 1.36 it swings by a factor of
+hundreds. That is the law the ADC phase already obeys: above about two samples
+a pixel the phase stops mattering.
+
+**AND THE SCAN IS PREDICTIVE WHERE IT MATTERS.** On the low-density leg the
+scan reads `.......11769c341................` -- dirty 7..15 -- against a
+measured bad band of 4..16, and its widest clean run WRAPS, 16 through 6, 23
+wide, middle **27**. 27 sits inside the measured 0.00 plateau. The high-density
+legs mark 28 alone on composite and 12..19 on separate, where the rule picks 12
+and 0 and nothing can distinguish them.
+
+**WHAT THIS DOES NOT SETTLE, AND WHY THE SHORTCUT IS STILL THERE.** `dedc53784`
+added it against a SHIMMER measurement -- frame-to-frame grey change, 0.86 at
+phase 12 against 0.52 at 0 on 320x256@50 composite -- and 12 is exactly what
+the clean-run rule picks there. Displacement and shimmer are different
+quantities and only displacement is measured above, so removing the shortcut
+outright would take the tied-best displacement and the worst shimmer in one
+step. A rule keyed on `SourceTiming::pixelSamples()` -- the clean-run middle
+below about two samples a pixel, MidField above it -- satisfies both sets of
+evidence and is derivable from what the engine holds, but it is a proposal
+rather than a measurement.
+
+**AND THE SHIMMER EVIDENCE CARRIES THE SAME BOUND.** `dedc53784`'s figures are
+a sweep across the field, so unless they crossed acquisitions they describe one
+acquisition's curve exactly as the table above does. Neither reading can
+license a constant until the question below is answered.
+
+**WHAT WOULD SETTLE IT: do the picture-best and the clean-run middle MOVE
+TOGETHER across acquisitions?** That is the only form in which either can be
+derived, since both re-roll or neither does, and it is what `phase_pair.py`
+was built to ask -- it records `sp_off_by_run`, the distance between the
+picture's best and `middleOfWidestCleanRun()`, once per acquisition. Run on a
+LOW-DENSITY mode, which is the regime this entry establishes the phase matters
+in at all.
+
+**The untested cell is 800x600@60 on COMPOSITE**, the low-density composite
+case, which is the state the first entry in this file records as rolling in 95%
+of frames.
+
 ### Two pass-through modes still do not reach every edge
 
 `test_passthrough_acceptance.py` runs five modes in pass-through and asks
