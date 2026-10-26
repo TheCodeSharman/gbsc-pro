@@ -369,13 +369,15 @@ acquisition recorded above**, where no phase reaches what its neighbours do,
 so a residual artefact after one is not evidence it failed.
 `investigations/no-scan-derives-the-adc-sampling-phase.md`
 
-**AND IT IS A PASS-THROUGH COST, WHICH IS MOST OF THAT JUDGEMENT.** The
-scaling path shows no phase response at all -- 1.094x at 800x600@60 and 1.009x
-at 1280x720@60 against 3.08x in pass-through -- the VDS resampling the grating
-away before it reaches the capture. Low density does not excuse it: the
-800x600@60 reading samples 1.360 per source pixel against pass-through 720p's
-1.235. So there is nothing to win on the everyday path, and a flat field's
-argmax is noise that reads as a result either way.
+**WHETHER IT IS A PASS-THROUGH-ONLY COST IS OPEN, AND AN EARLIER ENTRY HERE
+CLAIMED OTHERWISE.** The scaling path reads a flat field -- 1.094x and 1.009x
+against 3.08x in pass-through -- but `wedge.locate()` lands in a different part
+of the frequency wedge on each path, 518..652 against 691..794, and the wedge
+is a frequency sweep. Measured scaled, the located box resolves the grating
+fine at contrast 50.6, so the resampling explanation is refuted and the flat
+swing may be of coarser bars. **Anchor the box to the same source feature on
+both paths before believing either figure.**
+`investigations/the-adc-sampling-phase-is-a-lottery.md`
 
 **No derivation is available and no on-chip search can score it, so far.** The
 chosen `PA_SP_S` is a marker rather than a cause -- held across six values the

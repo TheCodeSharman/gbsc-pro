@@ -88,7 +88,7 @@ field position out of 32, so it is noted rather than pursued.
 on the sharpest edges at the worst sampling density the bench can reach, and
 2-3% over the picture as a whole. Not 3x.
 
-## Every figure here is a PASS-THROUGH figure, and the scaling path has no phase response
+## The path comparison is CONFOUNDED by where the wedge box lands
 
 Captured at the dongle's native 1920x1080 throughout, box found per trial and
 held across each sweep.
@@ -99,10 +99,29 @@ held across each sweep.
 | scaling | 800x600@60 | 1.360 | 1436 | 32.4 / 29.6 | **1.094x** |
 | scaling | 1280x720@60 | 0.875 | 1444 | 11.3 / 11.2 | 1.009x |
 
-On the scaling path the grating's column means read a flat 93..103 where
-pass-through swings 66..179 between adjacent columns: the VDS resamples the
-block away before it reaches the capture, and the absolute contrast falls with
-it. No sampling instant can decide what survives a stage downstream of it.
+**THAT TABLE DOES NOT ESTABLISH WHAT IT APPEARS TO, AND THE RESAMPLING
+EXPLANATION IS REFUTED.** `wedge.locate()` finds the box per capture, and it
+lands in a DIFFERENT PART of the frequency wedge on the two paths -- columns
+518..652 in pass-through against 691..794 scaled. Measured on the scaling path
+in one capture, the located box reads contrast 50.6 with column means spanning
+21..227, a properly resolved grating, where the pass-through box's columns read
+a flat 117..136 there. So the scaled grating is not resampled away and the
+11.3 above is a box on the wrong content.
+
+The wedge is a frequency sweep, so a box further along it is COARSER, and
+coarse bars sit well above Nyquist where no sampling instant decides anything.
+This page's own instrument section states the mechanism: a phase that aliases
+the finest block to grey slides the box onto coarser bars. **A swing measured
+through a box that relocated between the two states is a comparison of two
+spatial frequencies, not of two paths.**
+
+What survives is narrower and still useful: within ONE path at ONE divider,
+with the box genuinely held, the sweeps are sound -- the controls return
+`r = 1.000` and the lit box's left edge does not move across a phase sweep. So
+the 3.08x in pass-through is real, and so is every result below that was taken
+that way. **Whether the scaling path has a phase response is OPEN**, and
+settling it needs the box anchored to the same feature of the SOURCE card on
+both paths rather than found per capture.
 
 **PATH AND DENSITY CANNOT BE FULLY SEPARATED, BECAUSE THE ENGINE CHOOSES THE
 DIVIDER PER PATH.** The same source mode samples 2038 in pass-through and 1444
@@ -113,9 +132,9 @@ own; forcing one divider across both is what
 pass-through 720p and still reading flat** -- 1.360 against 1.235, where this
 page's own density curve does not collapse until about 2.55.
 
-So the 14% above, and every swing on this page, describes pass-through. The
-everyday scaling path shows no ADC phase response at all, which is where the
-judgement about whether a search is worth making has to start.
+So the 14% above describes pass-through, where it was taken. **It does not
+follow that the scaling path is free of the phenomenon**, only that nobody has
+measured it through a box anchored to matched content.
 
 **A FLAT FIELD'S ARGMAX IS NOISE, AND IT READS AS A RESULT EITHER WAY.**
 `phase_pair.py` refuses one below 1.5x for that reason.
