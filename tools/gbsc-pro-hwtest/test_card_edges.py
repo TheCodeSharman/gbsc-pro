@@ -39,6 +39,10 @@ def test_a_flush_frame_is_out_by_nothing():
     assert out.why is None
 
 
+def test_a_flush_frame_is_the_goal_itself():
+    assert judged(0, WIDTH - 1).level == card_edges.GREEN
+
+
 def test_the_magnitude_is_the_worst_edges_distance_from_flush():
     assert judged(9, WIDTH - 1).out_by == 9
     assert judged(0, WIDTH - 1 - 23).out_by == 23
@@ -168,6 +172,25 @@ def test_a_border_mostly_off_the_frame_fails_though_its_margin_is_flush():
     assert out.out_by == 0.75 * SOURCE_PX
     assert out.whole == (0.25, 1.0)
     assert out.why is not None
+
+
+def test_a_border_less_than_three_quarters_visible_is_not_a_pass():
+    """THE ACCEPTANCE IS THE BORDER, NOT A BUDGET. Charged in output pixels a
+    lost source pixel costs the magnification, so a wide allowance buys the
+    whole border back: measured on `vga` at 320x256@50 into 1920x1080, one
+    source pixel is 5.98 output pixels and 0.12 of the far border surviving
+    scored 5.26, inside the mode's own grid allowance, while the clip was
+    plainly visible on the panel."""
+    out = card_edges.judge(blocks(0, WIDTH - 1), ACROSS, allowance=100.0,
+                           source_px=SOURCE_PX)
+
+    assert out.level == card_edges.ORANGE
+
+
+def test_black_between_the_border_and_the_frames_edge_is_not_a_pass():
+    out = judged(7, WIDTH - 1, allowance=100.0)
+
+    assert out.level == card_edges.ORANGE
 
 
 def test_a_border_the_grid_could_have_cut_is_inside_the_allowance():

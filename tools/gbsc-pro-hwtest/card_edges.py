@@ -23,12 +23,28 @@ A margin cannot answer the first: a border sitting wholly on row 0 and one
 half off the frame above it both read 0, which is a verdict reading as perfect
 on an axis where the pixel is nearly all gone.
 
-**THEY ARE ONE BUDGET AND NOT TWO THRESHOLDS.** A window a granule late cuts
-the border and shows no black, one a granule early shows black and cuts
-nothing, and the two cost the same thing -- so an edge is out by their sum, in
-the emitted frame's own pixels, against ONE allowance. Held separately the two
-cannot both be met: three output pixels of black and a quarter of a source
-pixel of clip are the same size only where one source pixel is twelve.
+**THE VERDICT HAS THREE STATES, BECAUSE THE GOAL AND WHAT THE ENGINE CAN
+CURRENTLY PLACE ARE DIFFERENT QUESTIONS.**
+
+    green   the goal: at least BORDER_VISIBLE of the outermost source pixel on
+            the frame at every edge, and no black between it and the frame's
+            edge beyond what the design itself puts there
+    orange  inside the allowance and off the goal. Recorded rather than passed
+    red     outside the allowance, which is what a regression suite fails on
+
+Collapsed to a pass and a fail, the first state hides the second: every mode
+inside the allowance reads as correct however much of its border it lost. The
+allowance is in OUTPUT pixels, so where a source is magnified hard a whole lost
+source pixel fits inside it -- measured at 320x256@50 into 1920x1080, one
+source pixel is 5.98 output pixels and 0.12 of the far border surviving scored
+5.26, inside that mode's own grid allowance and plainly clipped on the panel.
+
+**THE RED BUDGET IS ONE PER EDGE AND NOT TWO THRESHOLDS.** A window a granule
+late cuts the border and shows no black, one a granule early shows black and
+cuts nothing, and the two cost the same thing -- so an edge is out by their
+sum, in the emitted frame's own pixels, against ONE allowance. Held separately
+the two cannot both be met: three output pixels of black and a quarter of a
+source pixel of clip are the same size only where one source pixel is twelve.
 
 **THAT ALLOWANCE IS THE ENGINE'S OWN CAPTURE GRID**, so it is a property of the
 mode rather than a constant -- allowance_for().
@@ -185,6 +201,15 @@ def allowance_for(geometry, emitted, axis):
 # corruption workaround can leave a pixel of.
 PARITY = 1
 
+# How much of the outermost SOURCE pixel has to reach the emitted frame. THE
+# ACCEPTANCE IS THE BORDER ITSELF AND NOT A BUDGET: charged in output pixels a
+# lost source pixel costs the magnification, so a budget wide enough for the
+# capture grid buys the whole border back wherever the source is magnified
+# hard. Measured on `vga` at 320x256@50 into 1920x1080, one source pixel is
+# 5.98 output pixels and 0.12 of the far border surviving scored 5.26 -- inside
+# the mode's own grid allowance, and plainly clipped on the panel.
+BORDER_VISIBLE = 0.75
+
 def greenest_along(clip, axis):
     """Each position's greenest moment across the clip, so the phase where the
     ring beside the frame is yellow cannot hide it."""
@@ -313,10 +338,30 @@ QUARTER = 4
 #
 # None for `shown` or a `margins` entry is an edge off the frame; None for
 # `out_by` is an error no feature in the frame bounds.
+# THREE STATES, BECAUSE "WITHIN WHAT THE ENGINE CAN CURRENTLY PLACE" AND "ON
+# THE GOAL" ARE DIFFERENT QUESTIONS. Collapsed to a pass/fail the first hides
+# the second, and every mode inside the budget reads as correct however much of
+# its border it lost. RED is what a regression suite fails on and is the
+# allowance exactly as it was; ORANGE is inside the allowance and off the goal.
+GREEN, ORANGE, RED = "green", "orange", "red"
+
 Judgement = collections.namedtuple("Judgement",
-                                   "shown margins out_by why whole")
+                                   "shown margins out_by why whole level "
+                                   "imprecise")
 
 ENDS = ("near", "far")
+
+LABEL = {GREEN: "ok  ", ORANGE: "near", RED: "FAIL"}
+
+
+def worst(judgements):
+    """The sweep reports one state per mode, and an axis on the goal cannot
+    make up for one off it."""
+    levels = [j.level for j in judgements]
+    for level in (RED, ORANGE):
+        if level in levels:
+            return level
+    return GREEN
 
 
 def judge(clip, axis, allowance, expected=(0.0, 0.0), source_px=1.0):
@@ -353,11 +398,12 @@ def judge(clip, axis, allowance, expected=(0.0, 0.0), source_px=1.0):
     if not near and not far:
         return Judgement(None, margins, None,
                          "neither edge: the picture overruns both ends, and "
-                         "nothing in the frame says by how much", whole)
+                         "nothing in the frame says by how much", whole,
+                         RED, None)
     # Each edge on its own, because the goal is per-edge: the near edge and both
     # vertical edges are flush, and only the far edge carries the parity. A span
     # test passes a picture that is short at one end and over at the other.
-    out_by, over = 0.0, []
+    out_by, over, imprecise = 0.0, [], []
     for end, margin, limit, surviving, want in zip(ENDS, margins,
                                                    (allowance, allowance + PARITY),
                                                    whole, expected):
@@ -377,21 +423,35 @@ def judge(clip, axis, allowance, expected=(0.0, 0.0), source_px=1.0):
         lost = max(0.0, 1.0 - surviving) * source_px
         from_design = lost if margin is None else abs(margin - black) + lost
         out_by = max(out_by, from_design)
+        against = f" against {black:.0f} by design" if black else ""
         if margin is None:
             # The border is not on the frame at all, which is the goal itself
             # failing -- no allowance covers it, and the shift that cost it is
             # sized at the other end.
             over.append(f"the {end} edge is off the frame")
-        elif from_design > limit:
-            against = f" against {black:.0f} by design" if black else ""
+            continue
+        if from_design > limit:
             cut = (f" and {1.0 - surviving:.2f} of its source pixel"
                    if surviving < 1.0 else "")
             over.append(f"{margin} at the {end} edge{against}{cut}")
+            continue
+        # INSIDE THE BUDGET AND STILL NOT THE GOAL. The budget is what the
+        # engine can currently place to; these two are the goal itself, so an
+        # edge that meets one and not the other is recorded rather than passed.
+        if surviving < BORDER_VISIBLE:
+            imprecise.append(f"{1.0 - surviving:.2f} of the {end} edge's "
+                             f"source pixel is off the frame")
+        if margin > black:
+            imprecise.append(f"{margin} black at the {end} edge{against}")
     shown = None if None in margins else margins[0] + margins[1]
     if over:
         return Judgement(shown, margins, out_by,
-                         f"out by {out_by:.1f}: " + ", ".join(over), whole)
-    return Judgement(shown, margins, out_by, None, whole)
+                         f"out by {out_by:.1f}: " + ", ".join(over), whole,
+                         RED, None)
+    if imprecise:
+        return Judgement(shown, margins, out_by, None, whole, ORANGE,
+                         ", ".join(imprecise))
+    return Judgement(shown, margins, out_by, None, whole, GREEN, None)
 
 
 def reading(judged):
@@ -438,8 +498,9 @@ def sweep_mode(host, dev, source, mode, allowance, keep_framing):
                          else allowance_for(geometry, emitted, axis),
                          source_px=source_pixel_px(mode, clip, axis))
              for name, axis in (("across", 1), ("down", 0))}
-    whys = [f"{name}: {judged.why}" for name, judged in found.items()
-            if judged.why]
+    whys = [f"{name}: {judged.why or judged.imprecise}"
+            for name, judged in found.items()
+            if judged.why or judged.imprecise]
     return found, "; ".join(whys)
 
 
@@ -470,7 +531,7 @@ def main():
               else f"{args.allowance} px")
     print(f"{len(modes)} modes, {args.host}, flush within {within} "
           f"({PARITY} px more at the far edge)\n")
-    failed = []
+    failed, imprecise = [], []
     for mode in modes:
         found, why = sweep_mode(args.host, dev, source, mode, args.allowance,
                                 args.keep_framing)
@@ -479,12 +540,18 @@ def main():
             continue
         read = "  ".join(f"{name} {reading(judged)}"
                          for name, judged in found.items())
-        print(f"  {mode:24} {'FAIL' if why else 'ok  '}  {read}"
+        level = worst(found.values())
+        print(f"  {mode:24} {LABEL[level]}  {read}"
               + (f"   [{why}]" if why else ""))
-        if why:
+        if level == RED:
             failed.append(mode)
+        elif level == ORANGE:
+            imprecise.append(mode)
 
-    print(f"\n{len(modes) - len(failed)} of {len(modes)} frame the picture")
+    framed = len(modes) - len(failed) - len(imprecise)
+    print(f"\n{framed} of {len(modes)} frame the picture on the goal")
+    if imprecise:
+        print("inside the allowance, off the goal: " + ", ".join(imprecise))
     if failed:
         print("not framed: " + ", ".join(failed))
     return 1 if failed else 0
