@@ -442,6 +442,27 @@ draw**. The two live counts differ -- 37 by ten reads, 29 by two thousand --
 because a wire that sits still through ten reads is not a wire that sits still,
 which is itself the argument for sampling on the device.
 
+**AND NOTHING CORRELATES WITH THE OFFSET, which is the statistic rather than an
+impression.** Six draws at cumulative offsets 0, -4, +2, +5, 0 and +12, every
+pair's mean against the offset:
+
+| pair | r | its means across the six |
+|---|---|---|
+| 2/1 `hs_act_det` | -0.845 | 77 77 77 77 77 **76** |
+| 7/2 `out proc` | +0.633 | 1858 1857 1858 1858 1857 1858 |
+| 6/5 `retiming` | -0.573 | 9868 9782 9604 9725 9788 9651 |
+| 5/2 `cs_sep` | +0.536 | 3012 3047 3031 3123 3067 3084 |
+
+**36 of the 64 means never move at all**, and of the 28 that do, the only one
+clearing 0.8 moves by a single count in one draw of six. The largest real
+amplitude is 2.7% of its own mean at r = -0.57, which six points cannot
+distinguish from chance before 64 candidates are accounted for.
+
+**What that does and does not establish.** Six draws against 64 candidates rule
+out a STRONG relationship, not a weak one -- but a predictor good enough to set
+a 32-step phase has to be near-deterministic, so what is ruled out is what
+would have been useful.
+
 So nothing the sync processor's test bus carries encodes the offset, read as a
 value or sampled as a distribution. `sp_test_bus.py`, `/sptestbus`.
 
