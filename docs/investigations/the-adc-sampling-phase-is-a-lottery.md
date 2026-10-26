@@ -435,6 +435,13 @@ phase.** It reads 1 on the first acquisition and 0 on every draw after it --
 every one of those draws. One bit cannot encode a 32-step offset in any case,
 and this one does not even move with it.
 
+**AND THE DEVICE'S OWN VERDICT OVER SIX DRAWS IS THE SAME.** Judged on 2000
+samples per pair rather than ten HTTP reads, **29 of the 64 dither inside a
+draw** and of the 35 that hold still, **not one reads a different value at any
+draw**. The two live counts differ -- 37 by ten reads, 29 by two thousand --
+because a wire that sits still through ten reads is not a wire that sits still,
+which is itself the argument for sampling on the device.
+
 So nothing the sync processor's test bus carries encodes the offset, read as a
 value or sampled as a distribution. `sp_test_bus.py`, `/sptestbus`.
 
