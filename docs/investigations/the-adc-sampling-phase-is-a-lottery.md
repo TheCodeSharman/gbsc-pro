@@ -88,6 +88,40 @@ field position out of 32, so it is noted rather than pursued.
 on the sharpest edges at the worst sampling density the bench can reach, and
 2-3% over the picture as a whole. Not 3x.
 
+## Every figure here is a PASS-THROUGH figure, and the scaling path has no phase response
+
+Captured at the dongle's native 1920x1080 throughout, box found per trial and
+held across each sweep.
+
+| path | mode | samples/pixel | `PLLAD_MD` | wedge peak/trough | swing |
+|---|---|---|---|---|---|
+| pass-through | 1280x720@60 | 1.235 | 2038 | 52.6 / 17.1 | **3.08x** |
+| scaling | 800x600@60 | 1.360 | 1436 | 32.4 / 29.6 | **1.094x** |
+| scaling | 1280x720@60 | 0.875 | 1444 | 11.3 / 11.2 | 1.009x |
+
+On the scaling path the grating's column means read a flat 93..103 where
+pass-through swings 66..179 between adjacent columns: the VDS resamples the
+block away before it reaches the capture, and the absolute contrast falls with
+it. No sampling instant can decide what survives a stage downstream of it.
+
+**PATH AND DENSITY CANNOT BE FULLY SEPARATED, BECAUSE THE ENGINE CHOOSES THE
+DIVIDER PER PATH.** The same source mode samples 2038 in pass-through and 1444
+scaled, so the 1280x720@60 pair moves both at once and settles nothing on its
+own; forcing one divider across both is what
+`a-hand-set-divider-cannot-be-judged-against-a-solved-window.md` refuses.
+**What carries the conclusion is 800x600@60 scaled sampling MORE densely than
+pass-through 720p and still reading flat** -- 1.360 against 1.235, where this
+page's own density curve does not collapse until about 2.55.
+
+So the 14% above, and every swing on this page, describes pass-through. The
+everyday scaling path shows no ADC phase response at all, which is where the
+judgement about whether a search is worth making has to start.
+
+**A FLAT FIELD'S ARGMAX IS NOISE, AND IT READS AS A REFUTATION.**
+`phase_pair.py` refuses one for that reason: run on 800x600@60 scaled it
+returned an offset concentration of 0.301 over eight acquisitions, which looks
+like a scattered relationship and is a scattered measurement of nothing.
+
 ## What the instrument had to be
 
 **THE WEDGE BOX IS FOUND, NOT STATED.** The card scales with the mode and its
@@ -123,8 +157,27 @@ took the three adjacent values 30, 31 and 0 while the best `PA_ADC_S` ranged
 over 2..28; the circular concentration of `(best - sp) mod 32` was 0.509.
 **That test was also mis-specified** -- it can only find an additive
 relationship, and a steep multiplicative one is indistinguishable from noise
-under it. The conclusion survives for the reason below rather than because of
-this run.
+under it, and it held the predictor nearly constant.
+
+**The PICTURE's best `PA_SP_S`, which is the quantity with the variation.**
+That is what the run above could not reach and what `phase_pair.py` measures:
+both bests, per acquisition, step 1 over both fields. Eight re-acquisitions of
+1280x720@60 in pass-through at `PLLAD_MD` 2038, every field swinging 2.3..3.1x
+so neither argmax is noise:
+
+| | across all 8 | at `SP_RT_HS_SP` 32, five of them |
+|---|---|---|
+| picture-best `PA_SP_S` | 25, 30, 1, 31, 0, 25, 4, 1 -- span 11 | 30, 1, 31, 0, 1 -- **span 3** |
+| picture-best `PA_ADC_S` | 31, 26, 6, 23, 21, 28, 7, 18 -- span 21 | 26, 6, 23, 21, 18 -- **span 20** |
+| offset concentration | **0.222** | 0.384 |
+
+**The predictor is near constant where the target swings two thirds of the
+field**, and that holds INSIDE one capture origin, so the origin's own one-step
+movement cannot account for it -- which is what the recorded witness is for.
+So the two bests do not move together, no fixed offset exists, and nothing the
+scan measures predicts the ADC optimum. **The sub-question of whether the
+`PA_SP_S` picture-best re-rolls per acquisition is answered with it: it does
+not**, where `PA_ADC_S`'s does.
 
 **`PA_SP_S` as a cause at all.** Held at 26, 28, 29, 30, 31 and 0 with the
 source untouched and the box held, the optimum read 4, 4, 4, 4, 6, 6 and the
@@ -196,7 +249,15 @@ which cancels. A derivation resting on a residual there has none to rest on.
   `AutoGain` only asks "did anything clip", a threshold question with a wide
   margin.
 - **Whether 14% on the sharpest edges is worth a search.** The measurement is
-  taken; the judgement is not made.
+  taken; the judgement is not made -- and it is a PASS-THROUGH 14%, the scaling
+  path showing no response at all.
+- **The sync phase's own headroom, which is a different question from this
+  page's.** Across the eight pass-through acquisitions above the engine chose
+  30 every time while the picture's best sat 0..6 steps away, mean 3.12, on a
+  curve swinging 2.4..5.9x. **That is not licence to move it**: each best comes
+  from a sweep inside one acquisition, which writes the register without
+  re-acquiring, so it names a curve and not a value. What it bounds is worth
+  measuring properly.
 
 `/phase?adc=N` holds the phase against the engine and `/phase?clear` gives both
 phases back. **Neither makes the engine re-choose**, and an override survives
