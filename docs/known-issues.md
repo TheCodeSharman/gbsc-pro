@@ -10,6 +10,65 @@ regardless of which step is in flight.
 
 ## Reaches the picture
 
+### Entering pass-through applies the held sampling phase without searching it
+
+`restartAfterBypassSwitch()` ends `Adc::latch(); setAndLatchPhaseSP();`, and
+`setAndLatchPhaseSP()` is `applyPhaseSyncProcessor(phaseSyncProcessor())` -- the
+HELD value, with no sweep. The bypass switch changes the divider, and
+**`PA_SP_S`'s quiet band is a property of the divider**, so the value applied is
+one tuned for a raster no longer in force.
+
+Reproduced on `vga`, RISC PC at 1280x720@60, by cycling ypbpr pass-through ->
+1080p -> vga -> pass-through. It landed on `PA_SP_S` 7 at `PLLAD_MD` 2038.
+
+**THE CONSOLE PROVES NO SEARCH RAN FOR THAT STATE.** Forced afterwards, the scan
+reports `phase scan: ......13567eadc99a81............` -- one character per
+phase, `.` being all twenty samples reading the divider exactly -- so the
+dithering band is **6..19**, the widest clean run wraps 20..5, and
+`middleOfWidestCleanRun()` returns **29**. 7 lies inside the band at dither 3,
+so no searching branch can select it: the `!sweep` branch writes `MidField` 16
+and the refusal branch restores where it entered.
+
+The cost, as the per-line wander of four vertical edges across frames with each
+frame's pan removed: **0.217 px at the inherited 7 against 0.117 at 29**, with
+the picture visibly jittering on an ordinary desktop image.
+
+**The count metric is NOT blind to this**, which is worth stating because the
+code comment invites the suspicion: the dithering band 6..19 matches the measured
+wander band -- 7 reads 0.223, 8 0.274, 12 0.358, 16 0.349, against 0.117..0.130
+at 0, 4, 20, 24, 28 and 30. The two instruments agree. **The search works; it
+does not run.**
+
+### The sampling-phase sweep is gated on the sync separator's level, which is inert on separate sync
+
+`VideoSourceAcquisition::acquireSamplingPhase()` passes
+`SyncOnGreen::level() > SyncOnGreen::StarvedLevel` as `acquirePhase()`'s `sweep`
+argument, and with `sweep` false the phase is not searched at all -- `MidField`
+16 is written, measured the **worst region** at `PLLAD_MD` 2038, 0.349 px
+against 0.117.
+
+**The gate asks a question that only matters on sync on green.** The scores come
+from `SyncProcessor::lineSamples()`, which on separate sync is driven by the
+dedicated sync line, so the separator's width cannot make them noise --
+`SyncOnGreen.h` states the separator reaches the sync processor only with
+`SP_SOG_MODE` 1. So on a separate-sync source the gate reads a control nothing
+is reading, and its value is whatever the previous source left: measured
+`ADC_SOGCTRL` 12 on `vga` after the Wii, which is `ComponentLevel` 14 walked
+down rather than `DefaultLevel` 13.
+
+**And the pre-gate is redundant**, because the search reports its own validity:
+`clean < SweepGoodEnough` refuses and `clockSuspect_` separates scatter from a
+window. The fix deletes a branch -- always sweep, and let the refusal path carry
+the unusable case.
+
+### `sampling phase: chosen` is logged when an override chose nothing
+
+`acquirePhase()`'s first branch applies `phaseOverride_` and returns true, so
+`acquireSamplingPhase()` logs the same line a successful search does, with no
+`phase scan:` beside it. A `/phase?sp=` left set therefore reads on the console
+as a search that ran. The absence of `phase scan:` is the only tell, since
+`reportScan()` is called in the sweep branch alone.
+
 ### The television menu stops being DRAWN while its state machine stays live
 
 **IT IS NOT STUCK OPEN, IT IS NEVER PAINTED**, and the two look identical from
