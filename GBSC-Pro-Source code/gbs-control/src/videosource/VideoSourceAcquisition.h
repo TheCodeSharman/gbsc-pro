@@ -126,6 +126,14 @@ public:
     // take: this asks whether a sweep is worth running at all.
     bool acquireSamplingPhase();
 
+    // Whether the phase held was searched for the sampling THIS source is read
+    // through. Tv5725::Adc forgets a phase when the divider moves, and this
+    // adds the other half of the clock: the source's line rate, which this
+    // class holds the measurement of. In pass-through the channel writes one
+    // divider for every source, so the rate is the only term that moves.
+    // ../../../docs/known-issues.md
+    bool samplingPhaseFound() const;
+
     // The sync processor's three per-source writes, each gated on the same
     // question: a window measured off a line nobody is sending clamps to
     // picture or coasts over the wrong part of it, and a dynamic write made
@@ -560,6 +568,10 @@ private:
     VideoSourceSelection::Id selectionSeen_;
     bool selectionEstablished_;
     bool runAdvanced_;
+
+    // The source line rate the sampling phase was searched at, 0 before any
+    // search has succeeded.
+    uint32_t phaseRateHz_;
 };
 
 #endif  // VIDEOSOURCE_VIDEO_SOURCE_ACQUISITION_H_

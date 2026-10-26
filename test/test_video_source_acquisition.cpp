@@ -4086,3 +4086,36 @@ TEST_CASE("a restoration landing after the solve re-solves rather than staying s
 
     CHECK(unit.path.lineUnitsOn(AxisVertical) != shortCapture);
 }
+
+TEST_CASE("a phase searched at one source's rate is not found at another's")
+{
+    // THE QUIET BAND IS A PROPERTY OF THE SAMPLING CLOCK, which is the divider
+    // and the source's line rate together. Tv5725::Adc forgets the phase when
+    // the DIVIDER moves, and in pass-through that never fires: the channel
+    // writes one divider for every source. Measured PLLAD_MD 2038 for both the
+    // Wii at 480p and the RiscPC at 1280x720@60, where the band is 6..19 at the
+    // RiscPC's rate and elsewhere at the Wii's -- so a phase carried across
+    // lands inside it, measured at 0.22 px of per-line wander against 0.117.
+    //
+    // The rate is moved through the MEASUREMENT alone, leaving the divider and
+    // Adc::phaseFound() untouched, because a source change that re-solves
+    // invalidates the phase by the divider and would pass whatever this rule
+    // did. ../docs/known-issues.md
+    seedBenchSource();
+    seedLineSamples(BenchDivider);
+    Acquiring unit;
+    unit.acquisition.useWatchdogFeed(countWatchdogFeed);
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+    REQUIRE(unit.acquisition.acquireSamplingPhase());
+    REQUIRE(unit.acquisition.samplingPhaseFound());
+    const uint32_t searchedAt = unit.acquisition.sourceLineRateHz();
+
+    seedSourceLines(524);
+    g_fieldRate = 60.0f;
+    REQUIRE(rateMeasured(measurePastGate(unit.sampling)));
+    REQUIRE(unit.acquisition.sourceLineRateHz() != searchedAt);
+    REQUIRE(Adc::phaseFound());
+
+    CHECK_FALSE(unit.acquisition.samplingPhaseFound());
+}
