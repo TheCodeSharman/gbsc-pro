@@ -691,6 +691,11 @@ private:
     static bool phaseAdcOverridden_;
     static uint8_t inputSel_;
     static uint8_t oversampleInForce_;
+    // Holds the divider, and forgets a phase searched at a different one.
+    // Every write of PLLAD_MD goes through here, so no call site has to
+    // remember that a divider change invalidates the phase.
+    static void holdDivider(uint16_t divider);
+
     static uint16_t dividerInForce_;
     static uint32_t rateInForce_;
 

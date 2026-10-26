@@ -1777,3 +1777,27 @@ TEST_CASE("forgetting the hold gives the phase back to the engine")
 
     CHECK(Adc::phaseSyncProcessor() != 13);
 }
+
+TEST_CASE("a phase found at one divider is stale once another is in force")
+{
+    // THE QUIET BAND IS A PROPERTY OF THE DIVIDER, so a phase chosen at one
+    // says nothing about another and the search has to run again. Measured on
+    // the bench at two dividers and reproducible: the dithering band is 6..19
+    // at 2038, where the per-line wander reads 0.35 px inside it against
+    // 0.117 outside, and the band sits elsewhere at 1740.
+    //
+    // Nothing at a call site has to remember this. A bypass switch, an output
+    // change and an oversample change all move the divider, and each one
+    // leaves a phase that was searched for a raster no longer in force.
+    // ../docs/known-issues.md
+    Wire.reset();
+    Adc::applySampleRate(2038, 45013, 1);
+    g_sweepDivider = Adc::PLLAD_MD::read();
+    g_badFrom = 6; g_badTo = 19;
+    REQUIRE(Adc::acquirePhase(1, true, lineSamplesAtPhase, countFeed));
+    REQUIRE(Adc::phaseFound());
+
+    Adc::applySampleRate(1740, 45013, 2);
+
+    CHECK_FALSE(Adc::phaseFound());
+}

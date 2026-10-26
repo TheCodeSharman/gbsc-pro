@@ -605,9 +605,18 @@ uint16_t Adc::dividerInForce() { return dividerInForce_; }
 
 uint32_t Adc::rateInForce() { return rateInForce_; }
 
+// PA_SP_S's quiet band is a property of the divider, so a phase searched at one
+// is not an answer at another. ../../../../docs/known-issues.md
+void Adc::holdDivider(uint16_t divider)
+{
+    if (divider != dividerInForce_)
+        phaseFound_ = false;
+    dividerInForce_ = divider;
+}
+
 void Adc::applyDivider(uint16_t divider)
 {
-    dividerInForce_ = divider;
+    holdDivider(divider);
     PLLAD_MD::write(divider);
     latch();
 }
@@ -810,7 +819,7 @@ void Adc::reapplySampleRate()
 uint8_t Adc::applySampleRate(uint16_t divider, uint32_t lineRateHz,
                              uint8_t oversample)
 {
-    dividerInForce_ = divider;
+    holdDivider(divider);
     rateInForce_ = lineRateHz;
 
     // The charge pump is part of the loop the latch loads, so it goes in here
