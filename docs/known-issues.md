@@ -33,9 +33,24 @@ above `PhaseLastPass` 60 the re-search window had closed outright.
 **settledness is `!syncOutAway()`**, the sync pad being away being the
 transition by construction, and the window is measured in `arrivedPasses_`,
 zeroed by the pad-away edge as well as by the source going away.
-**THE SOAK HAS NOT BEEN RE-RUN AGAINST IT** -- host suite only, so the 3 of 10
-figure above is the last bench reading and the mechanism behind those three is
-closed by argument rather than by measurement.
+**IT IS NOT A CURE EITHER -- measured 2 of 10 bad, which is inside the noise of
+3 of 10.** What it removed is two ways the window could never open at all; the
+answer it opens for is still the transient band's.
+
+**WHAT IS LEFT IS EXACT: the first search taken with the pad driven is final,
+and the band is still transient then.** `presentWhenSettled()` gives the pad
+back immediately after the arm's own search, so every later search is settled
+by construction, and the re-search falls due `PhaseFirstPass` 10 passes later
+-- 200 ms of tick on the arm's 300 ms, which lands at about the 0.6 s the band
+is measured transient at. An unlucky re-search then scores the same band, writes
+the same 8 and is believed, and only a divider change, a line-rate change or a
+long absence forgets a phase.
+
+**DO NOT REACH FOR A SECOND THRESHOLD.** What is unestablished is what the band
+depends on -- the measurement line before the early search reads `htotal 833`
+against a divider of 1444 and says `UNLATCHED`, so something the chip can
+report is still moving, and `STATUS_SYNC_PROC_HTOTAL` against `PLLAD_MD` is the
+comparison with a right answer. `phase_after_input_change.py` is the soak.
 
 **The websocket console cannot see this transition** -- the vga selection
 reports `DETECT: 3117ms` and the client drops with the log -- so read

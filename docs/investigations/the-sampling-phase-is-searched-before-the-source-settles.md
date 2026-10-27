@@ -69,16 +69,42 @@ against 0.10, with the picture visibly jittering on an ordinary desktop image.
 answer as provisional, so a later search replaces it. Ten ypbpr -> vga round
 trips, reading `PA_SP_S` after the window:
 
-| | result |
+| build | result |
 |---|---|
-| before | **2 of 2 bad** -- `PA_SP_S` 6 both times |
-| after, provisional keyed on the acquired run | **3 of 10 bad** -- 7 good at 30, and 8, 7, 8 |
+| no provisional rule | **2 of 2 bad** -- `PA_SP_S` 6 both times |
+| `c3d2872b4`, provisional keyed on the acquired run | **3 of 10 bad** -- 7 good at 30, and 8, 7, 8 |
+| `c3d2872b4`, re-read with `phase_after_input_change.py` | **1 of 3 bad** -- 30, 8, 30 |
+| `ce9098f38`, settledness on the sync pad | **2 of 10 bad** -- 30 30 31 **8** 26 31 31 30 30 **8** |
 
 The good cases land on the settled band's answer and the bad ones on the
-transient band's, so the remaining failures are passes where the re-search
-either did not happen or did not see the settled band. **The soak has not been
-re-run against the arriving-source rule below**, which is what closes the
-mechanism those three fall through; it is the reading to take next.
+transient band's. **The last row is not an improvement on the row above it**:
+2 of 10 against 3 of 10 is inside the noise of ten legs, and the fault stands.
+What the arriving-source rule removed is two ways the window could never open
+at all -- it did not make the answer it opens for a good one.
+
+### What is left, and it is now exact
+
+**THE FIRST SEARCH TAKEN WITH THE PAD DRIVEN IS FINAL, AND THE BAND IS STILL
+TRANSIENT THEN.** `presentWhenSettled()` gives the pad back immediately after
+the arm's own search, so every later search is settled by construction -- and
+the re-search falls due `PhaseFirstPass` 10 passes after that, 200 ms of tick
+on top of the arm's 300 ms. That lands at about the 0.6 s where the band is
+measured transient, so an unlucky re-search scores 16..29 exactly as the arm
+did, writes its 8, and is then marked final with nothing left to re-open the
+window: only a divider change, a line-rate change or a long absence forgets a
+phase.
+
+So the two bad legs are not passes where the re-search failed to happen. They
+are passes where it happened too early and its answer was believed.
+
+**A SECOND THRESHOLD IS NOT THE ANSWER** -- the first one is what this entry
+is about. What is unestablished, and is the reading to take next, is **what the
+band DEPENDS on**: the measurement line before the early search reads
+`htotal 833` against a divider of 1444 and says `UNLATCHED`, so something the
+chip can report is still moving. `STATUS_SYNC_PROC_HTOTAL` against `PLLAD_MD`
+is the comparison with a right answer, and `dividerLatched()` already asks a
+weaker form of it. Sweep when the search is taken against the band it scores,
+and against that comparison, before choosing anything.
 
 **THE PASS COUNT IS THE WRONG PROXY, IN BOTH HALVES OF THE RULE.**
 `acquiredPasses_` is zeroed only where `sourceState_` leaves `SourceAcquired`,
