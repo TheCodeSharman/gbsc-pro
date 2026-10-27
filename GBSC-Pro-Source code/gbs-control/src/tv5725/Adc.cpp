@@ -355,11 +355,6 @@ uint8_t middleOfWidestCleanRun(const uint8_t *dither)
 // immediately after that move has not settled the way the rest have.
 const uint8_t SweepSteps = 34;
 
-// How many of the sweep's samples must be clean before its answer is believed.
-// Half the field plus one: below that the good phases are not a window, they
-// are scatter.
-const uint8_t SweepGoodEnough = 17;
-
 // Samples taken at each phase before it is scored.
 const uint8_t SamplesPerPhase = 20;
 
@@ -432,7 +427,6 @@ bool Adc::acquirePhase(uint8_t oversample, bool sweep,
         return true;
     }
 
-    uint8_t clean = 0;
     uint8_t phase = phaseSyncProcessor();
     const uint8_t enteredAt = phase;
 
@@ -467,25 +461,26 @@ bool Adc::acquirePhase(uint8_t oversample, bool sweep,
         }
         dither[phase] = badHere;
         far[phase] = farHere;
-
-        if (badHere == 0)
-            ++clean;
     }
 
     reportScan(dither, far);
 
-    if (clean < SweepGoodEnough) {
-        // The clean COUNT cannot separate an unlocked clock from a wide band on
-        // a healthy source -- the pass-through path scores one count off the
-        // gate, exactly as an unlocked clock does. The clean RUN can: scatter
-        // is the clock, a window is a band.
-        uint8_t runStart = 0, runLength = 0;
-        widestCleanRun(dither, &runStart, &runLength);
-        clockSuspect_ = runLength < CleanRunIsAWindow;
+    // THE RUN DECIDES, NOT THE CLEAN COUNT. Scatter is the clock and a window
+    // is a band, and the count cannot separate them: a healthy pass-through
+    // source scores about half the field clean while leaving a contiguous
+    // window of a dozen or more, so a gate at half the field refuses it and
+    // throws away the answer the profile holds.
+    uint8_t runStart = 0, runLength = 0;
+    widestCleanRun(dither, &runStart, &runLength);
 
-        // The walk latched every phase it scored, so a bare return leaves the
-        // adjuster two steps on from where the engine last chose. Nothing chose
-        // that, and a refusal re-runs on the maintenance cadence.
+    if (runLength < CleanRunIsAWindow) {
+        clockSuspect_ = true;
+
+        // NOTHING TO CHOOSE FROM. No phase read the divider, so the profile is
+        // noise and middleOfWidestCleanRun() answers MidField out of it --
+        // picking that is worse than leaving the phase something chose. The
+        // walk latched every phase it scored, so the entry phase has to be put
+        // back explicitly, and a refusal re-runs on the maintenance cadence.
         choosePhaseSyncProcessor(enteredAt);
         applyPhaseSyncProcessor(enteredAt);
         return false;

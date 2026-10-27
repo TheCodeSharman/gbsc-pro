@@ -904,16 +904,15 @@ TEST_CASE("the sampling clock can be re-applied from what is held")
 
 TEST_CASE("a wide band with a clean window left is not reported as the clock")
 {
-    // **THE PASS-THROUGH PATH SCANS ONE COUNT OFF THE GATE, AND IT IS HEALTHY.**
-    // Measured on `vga` at 1280x720@60 handed over: twelve consecutive landings
-    // scored 17, 17, 17, 18 six times and 19 three times clean of 32, against
-    // SweepGoodEnough of 17, where the same source scaled scores 20..25. The
-    // band is wide -- thirteen to fifteen phases at up to 18 counts of 20 --
-    // The band is wide, thirteen to fifteen phases at up to 18 counts of 20.
+    // **THE PASS-THROUGH PATH SCANS ABOUT HALF THE FIELD CLEAN, AND IT IS
+    // HEALTHY.** Measured on `vga` at 1280x720@60 handed over: twelve
+    // consecutive landings scored 17, 17, 17, 18 six times and 19 three times
+    // clean of 32, where the same source scaled scores 20..25. The band is
+    // wide, thirteen to fifteen phases at up to 18 counts of 20.
     //
-    // So the clean COUNT cannot separate the two and the clean RUN can: the
-    // live fault leaves a widest run of one to three where this leaves a
-    // contiguous window of a dozen or more. docs/known-issues.md
+    // An unlocked clock leaves a widest run of one to three where this leaves a
+    // contiguous window of a dozen or more, which is the whole discriminator.
+    // docs/known-issues.md
     Wire.reset();
     Adc::PLLAD_MD::write(2230);
     g_sweepDivider = 2230;
@@ -925,7 +924,7 @@ TEST_CASE("a wide band with a clean window left is not reported as the clock")
         g_badPerPhase[p] = 14;          // a wide, heavily dirty band
     Adc::choosePhaseSyncProcessor(16);
 
-    CHECK_FALSE(Adc::acquirePhase(2, true, lineSamplesFractional, countFeed));
+    REQUIRE(Adc::acquirePhase(2, true, lineSamplesFractional, countFeed));
     CHECK_FALSE(Adc::samplingClockSuspect());
 }
 
@@ -1800,4 +1799,31 @@ TEST_CASE("a phase found at one divider is stale once another is in force")
     Adc::applySampleRate(1740, 45013, 2);
 
     CHECK_FALSE(Adc::phaseFound());
+}
+
+TEST_CASE("a wide band is accepted on the window it leaves, not on the clean count")
+{
+    // THE RIGHT ANSWER IS IN THE PROFILE AND THE COUNT GATE THREW IT AWAY.
+    // Measured on `vga` at 1280x720@60 handed over, 34 sweeps over 16 round
+    // trips: 17 scored below SweepGoodEnough, and every one of those held a
+    // contiguous clean window of 7 to 16 phases, 16 of the 17 centred on
+    // 28..31 -- which is where the sweeps that passed the gate landed. The
+    // refusal restored the setup's seed of 8 instead, which sits inside the
+    // band on every profile taken.
+    // ../docs/investigations/a-failed-phase-sweep-falls-back-onto-the-bands-middle.md
+    Wire.reset();
+    Adc::PLLAD_MD::write(2230);
+    g_sweepDivider = 2230;
+    for (uint8_t i = 0; i <= Adc::PhaseMax; ++i) {
+        g_badPerPhase[i] = 0;
+        g_seenAtPhase[i] = 0;
+    }
+    for (uint8_t p = 5; p <= 20; ++p)
+        g_badPerPhase[p] = 14;
+    Adc::choosePhaseSyncProcessor(8);
+
+    CHECK(Adc::acquirePhase(2, true, lineSamplesFractional, countFeed));
+
+    const uint8_t chosen = Adc::phaseSyncProcessor();
+    CHECK(chosen > 20);
 }
