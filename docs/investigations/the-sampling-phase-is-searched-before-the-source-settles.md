@@ -75,6 +75,7 @@ trips, reading `PA_SP_S` after the window:
 | `c3d2872b4`, provisional keyed on the acquired run | **3 of 10 bad** -- 7 good at 30, and 8, 7, 8 |
 | `c3d2872b4`, re-read with `phase_after_input_change.py` | **1 of 3 bad** -- 30, 8, 30 |
 | `ce9098f38`, settledness on the sync pad | **2 of 10 bad** -- 30 30 31 **8** 26 31 31 30 30 **8** |
+| `ce9098f38`, two further legs | **1 of 2 bad** -- **8**, 29, so 3 of 12 on that build |
 
 The good cases land on the settled band's answer and the bad ones on the
 transient band's. **The last row is not an improvement on the row above it**:
