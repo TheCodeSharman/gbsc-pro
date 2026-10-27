@@ -11,6 +11,7 @@ is quiet about what it did not run is worse than one that is slow.
 
 import argparse
 import os
+import sys
 
 import pytest
 
@@ -21,6 +22,7 @@ from gbs_unit import (
     mode_serv,
     read_reg,
     reset_framing,
+    restore_bench,
     select_input,
     wait_for_acquisition,
     write_reg,
@@ -216,6 +218,12 @@ def leave_the_bench_usable(request):
 
     Also unfreezes, because a run interrupted inside the freeze test leaves
     automation off and the unit looks dead.
+
+    **SAYS SO WHEN IT CANNOT.** reset_framing() answers None rather than
+    raising, so this used to ignore a reset that never landed and leave a
+    stored framing behind without a word -- and that framing survives a
+    restart and the ESP reset the conventions give as the --source recovery.
+    restore_bench() retries and reports. docs/known-issues.md
     """
     address = request.config.getoption("--host")
     if not address:
@@ -224,11 +232,11 @@ def leave_the_bench_usable(request):
 
     yield
 
-    try:
-        get(address, "/freeze?on=0")
-        reset_framing(address)
-    except Exception:  # noqa: BLE001 - teardown must not turn a pass into an error
-        pass
+    problems = restore_bench(address,
+                             unfreeze=lambda at: get(at, "/freeze?on=0"),
+                             reset=reset_framing)
+    for problem in problems:
+        print(f"\nBENCH NOT RESTORED: {problem}", file=sys.stderr)
 
 
 @pytest.fixture(scope="session")

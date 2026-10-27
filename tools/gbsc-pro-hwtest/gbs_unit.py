@@ -525,6 +525,48 @@ def reset_framing(host, expect=None, timeout=20.0):
     return wait_for(lambda: framing_settled(host), timeout=timeout)
 
 
+def restore_bench(host, unfreeze, reset, attempts=3):
+    """Put the bench back after a run, reporting what it could not fix.
+
+    **A TEARDOWN THAT GIVES UP QUIETLY IS THE FAULT THIS EXISTS FOR.**
+    reset_framing() answers None rather than raising, so a caller that ignores
+    the return cannot tell a reset that ran from one that did not -- and a
+    stored framing outlives the run, outlives a restart, and outlives the ESP
+    reset the conventions give as the recovery for a --source run. The unit
+    then comes back with the picture wrong and reads as a fault.
+
+    Retried, because the reset waits for the framing to SETTLE and a run that
+    has just deranged the source may need more than one window to get there.
+
+    Returns the problems rather than raising: teardown must not turn a pass
+    into an error, but it must not stay silent either.
+    """
+    problems = []
+
+    try:
+        unfreeze(host)
+    except Exception as exc:  # noqa: BLE001 - reported, never raised
+        problems.append(f"could not unfreeze automation: {exc}")
+
+    landed, raised = None, None
+    for _ in range(attempts):
+        try:
+            landed = reset(host)
+        except Exception as exc:  # noqa: BLE001 - reported, never raised
+            landed, raised = None, exc
+        if landed is not None:
+            break
+
+    if landed is None:
+        why = f" ({raised})" if raised is not None else ""
+        problems.append(
+            f"the framing never reset after {attempts} attempts{why} -- the "
+            "bench is left reframed and a restart will NOT clear it, so run "
+            "/sc?B by hand")
+
+    return problems
+
+
 # --- registers --------------------------------------------------------------
 
 
