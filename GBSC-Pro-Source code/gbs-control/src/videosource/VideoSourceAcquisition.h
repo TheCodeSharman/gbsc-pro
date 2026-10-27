@@ -130,9 +130,11 @@ public:
     // searched for the sampling THIS source is read through -- Tv5725::Adc
     // covers the divider, this covers the source's line rate.
     //
-    // It no longer asks whether the source was settled, because
-    // acquireSamplingPhase() refuses inside a transition and so every answer
-    // held is a settled one.
+    // It also asks whether this arrival has had more than one sweep, because
+    // the FIRST one scores a displaced band whether the pad is driven or not,
+    // and reporting it unfound is what leaves SourceMaintenance's window open
+    // for the sweep whose answer is worth holding.
+    // ../../../docs/investigations/a-failed-phase-sweep-falls-back-onto-the-bands-middle.md
     bool samplingPhaseFound() const;
 
     // The sync processor's three per-source writes, each gated on the same
@@ -224,6 +226,11 @@ public:
     // 3.7 s, so a blank that runs past one costs a whole second attempt.
     // docs/investigations/the-transition-is-mostly-the-encoder.md
     static const uint32_t MinimumSyncAwayMs = 300;
+
+    // How many sweeps an arrival needs before the phase it found is held. Two,
+    // because the first scores a displaced band in better than half of them.
+    static const uint8_t SweepsBeforeAnswerHolds = 2;
+
     // How long the source must read unacquired before the OUTPUT is dropped.
     //
     // DERIVED FROM WHAT THE DROP COSTS rather than chosen: presentWhenSettled()
@@ -448,6 +455,10 @@ private:
 
     bool syncAwaySeen_;
     uint32_t syncAwayMs_;
+
+    // Successful sweeps since this source arrived, saturating at the count an
+    // answer has to clear.
+    uint8_t phaseSweepsThisArrival_;
 
     bool (*mayRun_)();
     void (*passThroughSwitch_)();

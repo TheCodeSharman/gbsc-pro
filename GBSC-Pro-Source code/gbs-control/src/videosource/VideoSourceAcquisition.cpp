@@ -27,7 +27,7 @@ VideoSourceAcquisition::VideoSourceAcquisition(Tv5725::SourceMeasurement &sampli
                                    Tv5725::VideoPath &videoPath)
     : sampling_(sampling), videoPath_(videoPath), maintenanceAllowed_(false),
       channelSyncServicedEver_(false), channelSyncServicedMs_(0),
-      syncAwaySeen_(false), syncAwayMs_(0),
+      syncAwaySeen_(false), syncAwayMs_(0), phaseSweepsThisArrival_(0),
       mayRun_(0), passThroughSwitch_(0), passThroughAllowed_(false), resolution_(0),
       detectedMs_(0),
       detectedEver_(false), solvedLines_(0), solvedFrame_(0), solvedLineRateHz_(0),
@@ -89,7 +89,8 @@ const uint8_t LatchSamples = 8;
 
 bool VideoSourceAcquisition::samplingPhaseFound() const
 {
-    return Tv5725::Adc::phaseFound() && phaseRateHz_ == sampling_.lineRateHz();
+    return Tv5725::Adc::phaseFound() && phaseRateHz_ == sampling_.lineRateHz()
+           && phaseSweepsThisArrival_ >= SweepsBeforeAnswerHolds;
 }
 
 bool VideoSourceAcquisition::acquireSamplingPhase()
@@ -127,9 +128,13 @@ bool VideoSourceAcquisition::acquireSamplingPhase()
         oversample, true, Tv5725::SyncProcessor::lineSamples, watchdog_);
 
     // Recorded so a later pass can tell whether the phase still belongs to the
-    // sampling this source is read through.
-    if (found)
+    // sampling this source is read through, and how many sweeps this arrival
+    // has had -- the first one's answer is not held.
+    if (found) {
         phaseRateHz_ = sampling_.lineRateHz();
+        if (phaseSweepsThisArrival_ < SweepsBeforeAnswerHolds)
+            ++phaseSweepsThisArrival_;
+    }
 
     char line[48];
     snprintf(line, sizeof(line), "sampling phase: %s, oversample %u",
@@ -1065,6 +1070,7 @@ void VideoSourceAcquisition::presentWhenSettled(uint32_t nowMs)
             syncAwaySeen_ = true;
             syncAwayMs_ = nowMs;
             arrivedPasses_ = 0;
+            phaseSweepsThisArrival_ = 0;
         }
     } else {
         syncAwaySeen_ = false;
