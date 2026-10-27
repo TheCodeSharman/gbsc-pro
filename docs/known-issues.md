@@ -852,15 +852,25 @@ between each pass. Four consecutive scans, one character per phase:
 count moving underneath the walk. The uppercase letters are `far` counts, `T`
 being all 20 samples more than one count off the divider, where a settled scan
 on this source reads `far` zero at every phase. And every one of these reports
-`sampling phase: chosen`, because enough phases still read clean to clear
-`SweepGoodEnough`: **the gate cannot refuse a scan whose dirt moved rather than
-being dirty everywhere.** It settles two seconds later at oversample 4 with the
+`sampling phase: chosen`, because a sweeping band still leaves a wide
+contiguous clean run -- 21 phases on the first of the four: **no acceptance
+test on the profile can refuse a scan whose dirt MOVED rather than being dirty
+everywhere.** That held for the clean count the gate used when this was
+measured and holds for the clean run that replaced it in `c6573d667`. It settles two seconds later at oversample 4 with the
 usual band at 27..28 and locks at 83.4%.
 
 So a phase is chosen from a measurement taken while the thing being measured
 was being reconfigured, which is the rule in `CLAUDE.md` about not interleaving
 measuring and configuring. What a wrong phase costs here is unmeasured; the
 state recovered on both runs seen.
+
+**`17aed2510` IS A CANDIDATE AND IS NOT CONFIRMED ON THIS.** The search now
+refuses while the output is away, which a solve takes it, so searches between
+the thrashing passes may no longer happen at all. But the passes here sit about
+a second apart against a `MinimumSyncAwayMs` of 300, so the pad can be driven
+again between them and a search with it driven still runs. **Re-run the
+procedure before reading this as closed** -- park on `rgbs` for seven minutes,
+select ypbpr, and capture the scans.
 
 **IT IS NOT THE UNLOCKED-CLOCK FAULT ABOVE, and the guard tells them apart.**
 `far` is nonzero throughout this transient and zero throughout that one, so a
