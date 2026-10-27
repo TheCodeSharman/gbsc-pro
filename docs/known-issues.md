@@ -39,17 +39,44 @@ its own and the cadence not expressing it -- the window opens ten passes in
 where the pad returns after `MinimumSyncAwayMs` fifteen. **Deferring costs no
 picture**: `showOutput(true)` is unconditional and ignores the search's return,
 and the sweep sat inside the pad-away window, so leaving it out presents
-sooner. Every held answer is then settled by construction, which retired
-`phaseSettled_` and `phaseSearched_`.
+sooner. It also retired `phaseSettled_` and `phaseSearched_`, on the premise
+that every held answer was then settled by construction -- **which the entry
+below refutes**, the first sweep of an arrival scoring a displaced band with
+the pad driven.
 
 Measured **0 of 24 bad** over two runs of twelve, every leg holding 29..31,
-against 3 of 12 before it and 2 of 2 with no rule at all.
+against 3 of 12 before it and 2 of 2 with no rule at all. **That soak waits
+for the previous source to report a count before switching back**, which
+spends long enough on it for a sweep to have already run -- switching back
+about three seconds in reproduces the fault on the same build.
 `investigations/a-failed-phase-sweep-falls-back-onto-the-bands-middle.md` has
 the profiles; `phase_after_input_change.py` is the soak.
 
-**The transient band is not part of this.** The 16..29 profile measured 0.6 s
-after a bypass switch appeared in none of the 34; what the pad state changes is
-the spread, not the band's position.
+### FIXED: the first sampling-phase sweep of an arrival scores a displaced band
+
+**THE PAD BEING DRIVEN DOES NOT MAKE A SWEEP TRUSTWORTHY. ITS ORDER DOES.**
+The first sweep of an arrival scores a band about eleven of its thirty-two
+positions displaced -- 15..29 against the settled 5..22 -- in **6 of 11**
+arrivals, where all **51** later sweeps of those same arrivals read the
+settled band. Within one arrival it corrects on the next sweep.
+
+That makes the 16..29 transient band real, and retracts the reading above that
+it appeared in none of the 34 profiles: those were taken through a round trip
+slow enough that a sweep had already run.
+
+**It only became visible when the answer became final.** `17aed2510` made
+`samplingPhaseFound()` true on the first success, and `SourceMaintenance`'s
+window closes on that -- so the one sweep the engine cannot trust is the one it
+holds for the life of the lock. Bisected on one recipe: `0c8443e22` 30/31/31,
+`c6573d667` 31/31/30, `e6241e199` **6/7/7**.
+
+**The pass count is a correlate and not the rule.** `PhaseFirstPass` 10 -> 20
+measures 4 of 6 bad, because the sweep at twenty is then the first of its
+arrival.
+
+`SweepsBeforeAnswerHolds` is two. Measured 11 of 11 at 29..31 across an
+`/input` round trip, the described-menu recipe and the recipe that already
+passed.
 
 ### In pass-through the divider is one value for every source, so a divider-keyed rule cannot fire
 

@@ -45,19 +45,35 @@ against 0.117 outside the band.
 The retries are visible: one leg ran eight sweeps in 3.5 s, every one
 `no clean window`, and `PA_SP_S` read 8 afterwards.
 
-## What this supersedes
+## The displaced band is real, and the pad does not cover it
 
-**The remaining bad legs are not searches that scored a transient band.** The
-band 16..29 that
-`the-sampling-phase-is-searched-before-the-source-settles.md` measured 0.6 s
-after a bypass switch **did not appear in any of the 34 profiles here**, pad
-away or pad driven. What those profiles do show is the pad state mattering to
-the SPREAD rather than to the band's position: 16 sweeps with the pad away
-scatter from 1..22 to 5..29, where all 10 with it driven read 6..22 to a unit.
+**The band 16..29 that
+`the-sampling-phase-is-searched-before-the-source-settles.md` measured is
+genuine, and a sweep taken with the pad DRIVEN scores it.** It is the FIRST
+sweep of an arrival that scores it, whatever pass that sweep runs at.
 
-So `!syncOutAway()` is a sound settle criterion and is not what is left. What
-is left is a gate sized at half the sweep on a source that scores half the
-sweep, and a fallback onto a constant the scan has just called dirty.
+Measured on vga at 1280x720@60 into pass-through, 62 sweeps logged with their
+pass counts:
+
+| sweep of the arrival | displaced / total | bands |
+|---|---|---|
+| first | **6 of 11** | 15..29, 16..28, 16..29, 17..29 against 5..22 |
+| every later one | **0 of 51** | 4..24 |
+
+Within one arrival it corrects on the next sweep: first 16..29, second 6..21,
+and the remaining four 6..22. So the displacement is transient and lasts
+exactly one sweep.
+
+**`!syncOutAway()` is therefore NOT a sufficient settle criterion**, which is
+what the 34-profile reading above concluded and what it got wrong -- those
+profiles were taken through a round trip that leaves the previous source
+selected long enough for a sweep to have already run.
+
+**THE PASS COUNT IS A CORRELATE AND NOT THE RULE.** `PhaseFirstPass` moved
+from ten to twenty on the reading that the displacement followed the pass,
+since the sweeps at twenty and later all read the settled band. It measures 4
+of 6 bad: at twenty the sweep is then the first of its arrival. The
+displacement follows the sweep's ORDER.
 
 ## What the two changes were, and what they measure
 
@@ -82,9 +98,12 @@ opening ten passes into the run where the pad returns after
 unconditional and ignores what the search returned, and the sweep sat inside
 the pad-away window, so leaving it out presents sooner.
 
-Every answer the engine holds is then settled by construction, which retires
-the provisional machinery -- `phaseSettled_`, `phaseSearched_` and the three
-cases that pinned an early answer being replaced.
+That retired the provisional machinery -- `phaseSettled_`, `phaseSearched_`
+and the three cases that pinned an early answer being replaced -- on the
+premise that every answer held was then settled by construction. **That premise
+is refuted by the table above**, and removing the machinery is what made the
+first sweep's answer final: `samplingPhaseFound()` became true on the first
+success, and `SourceMaintenance`'s window closes on it.
 
 ### The soak
 
@@ -98,3 +117,41 @@ cases that pinned an early answer being replaced.
 The spread closed with it: every leg held 29, 30 or 31, against 8, 26, 29, 30
 and 31 before. The build it replaces failed about a quarter of its legs, so 24
 clean legs is the reading rather than a quiet run.
+
+## The first sweep of an arrival is provisional
+
+`SweepsBeforeAnswerHolds` is two: `samplingPhaseFound()` reports unfound until
+an arrival has had two successful sweeps, which is what leaves
+`SourceMaintenance`'s window open for the one whose answer is worth holding.
+`phaseSweepsThisArrival_` resets where `arrivedPasses_` does, on the sync pad
+going away.
+
+The order is the rule rather than the pad or the pass, so the criterion is
+stated in sweeps.
+
+### The bisect
+
+Same recipe, same bench, same source, `PA_SP_S` read 25 s after the switch
+back; 29..31 is the settled band's answer and 5..19 is the displaced band's.
+
+| build | result |
+|---|---|
+| `0c8443e22`, before the three | 30, 31, 31 |
+| `c6573d667`, the middle of the three | 31, 31, 30 |
+| `e6241e199`, the tip | **6, 7, 7** |
+| `PhaseFirstPass` 20 | **6, 31, 30, 6, 6, 5** |
+| two sweeps before the answer holds | 31, 30, 30, 30, 30, 30 |
+
+Four of those six passing arrivals had a displaced first sweep and the second
+read the settled band in every one.
+
+### The reproduction is not the menu
+
+An `/input` round trip that selects the other source and switches back about
+three seconds later reproduces it on its own. The described menu is not the
+trigger, and neither is the previous source failing to report a count -- one
+leg switched back with no count read at all and landed on 31.
+
+The earlier 24-leg soak reading 0 of 24 waited for the previous source to
+report a count before switching back, which spends long enough on it for a
+sweep to have run.
