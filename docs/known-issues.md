@@ -46,11 +46,20 @@ is measured transient at. An unlucky re-search then scores the same band, writes
 the same 8 and is believed, and only a divider change, a line-rate change or a
 long absence forgets a phase.
 
-**DO NOT REACH FOR A SECOND THRESHOLD.** What is unestablished is what the band
-depends on -- the measurement line before the early search reads `htotal 833`
-against a divider of 1444 and says `UNLATCHED`, so something the chip can
-report is still moving, and `STATUS_SYNC_PROC_HTOTAL` against `PLLAD_MD` is the
-comparison with a right answer. `phase_after_input_change.py` is the soak.
+**AND THE REMAINING BAD LEGS ARE A DIFFERENT FAULT, now measured: the sweep
+FAILS and falls back onto a seed inside the band.** 17 of 34 sweeps over 16
+round trips returned `no clean window`, `SweepGoodEnough` 17 of
+`SweepSteps` 34 sitting exactly on this source's clean count of 13..18 -- and
+the failure path restores the phase the sweep was entered at, which on the
+pass-through path is `Adc::SetupPhaseSyncProcessor` / its copy
+`HdBypass::EntryPhaseSyncProcessor`, both **8**, inside the 5..22 band every
+profile reads. So `PA_SP_S` 8 is a seed restored by a refusal, never an answer
+the search chose. `investigations/a-failed-phase-sweep-falls-back-onto-the-bands-middle.md`.
+
+**The transient band is not what is left.** The 16..29 band measured 0.6 s
+after a bypass switch appeared in none of those 34 profiles; what the pad state
+changes is the SPREAD, 1..22 to 5..29 with it away against 6..22 to a unit with
+it driven. `phase_after_input_change.py` is the soak.
 
 **The websocket console cannot see this transition** -- the vga selection
 reports `DETECT: 3117ms` and the client drops with the log -- so read

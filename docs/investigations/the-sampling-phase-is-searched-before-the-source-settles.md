@@ -98,14 +98,16 @@ phase.
 So the two bad legs are not passes where the re-search failed to happen. They
 are passes where it happened too early and its answer was believed.
 
-**A SECOND THRESHOLD IS NOT THE ANSWER** -- the first one is what this entry
-is about. What is unestablished, and is the reading to take next, is **what the
-band DEPENDS on**: the measurement line before the early search reads
-`htotal 833` against a divider of 1444 and says `UNLATCHED`, so something the
-chip can report is still moving. `STATUS_SYNC_PROC_HTOTAL` against `PLLAD_MD`
-is the comparison with a right answer, and `dividerLatched()` already asks a
-weaker form of it. Sweep when the search is taken against the band it scores,
-and against that comparison, before choosing anything.
+**THAT READING IS SUPERSEDED.** The profiles say the bad legs are sweeps that
+FAILED, not sweeps that scored the transient band, and the value left behind is
+a seed rather than an answer:
+`a-failed-phase-sweep-falls-back-onto-the-bands-middle.md`. The 16..29 band
+appeared in none of 34 profiles taken over 16 round trips.
+
+**What the profiles do confirm is the settle criterion.** 16 sweeps taken with
+the pad away scatter from 1..22 to 5..29, where all 10 taken with it driven
+read 6..22 to a unit -- so `!syncOutAway()` separates a search worth believing
+from one that is not, measured rather than argued.
 
 **THE PASS COUNT IS THE WRONG PROXY, IN BOTH HALVES OF THE RULE.**
 `acquiredPasses_` is zeroed only where `sourceState_` leaves `SourceAcquired`,
