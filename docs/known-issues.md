@@ -78,6 +78,33 @@ arrival.
 `/input` round trip, the described-menu recipe and the recipe that already
 passed.
 
+### The hardware suite leaves PERSISTED state behind, and a reset does not clear it
+
+**THE DOCUMENTED RECOVERY FOR A `--source` RUN IS AN ESP RESET, AND IT CANNOT
+UNDO WHAT THE SUITE WRITES TO FLASH.** Zoom and pan are not persisted, so a
+reset re-detects and re-solves those. A stored framing and a user preference
+are persisted, and they survive it -- so the unit comes back still wrong and
+reads as a fault rather than as leftover test state.
+
+Measured after one full `pytest --host=...` run on vga at 1280x720@60:
+
+| left behind | symptom | forgotten by |
+|---|---|---|
+| a stored framing for the source | picture 1106 of 1920 columns wide, margins 572 left and 242 right, the desktop squeezed to about square | `/sc?B` |
+| `preferScalingRgbhv` | the source comes back on the SCALING path where it was passed through, so `PLLAD_MD` reads 1444 against the 2038 pass-through writes | `/uc?x` |
+
+**The asymmetry is the tell that it is a stored framing rather than a declared
+4:3**, which pillarboxes evenly -- a margin of 572 against 242 is a pan, and a
+reset leaves it exactly where it was.
+
+`/sc?B` restored the default framing at once: 1726 of 1920 columns, margins 87
+and 107, the icon bar whole at both ends.
+
+**A save-and-restore fixture is NOT the fix**, for the reason the conventions
+already give -- registers are an output and the next press recomputes from
+state nobody reset. What is missing is that a test storing a framing forgets
+it, and that the suite leaves no stored framing behind.
+
 ### In pass-through the divider is one value for every source, so a divider-keyed rule cannot fire
 
 `PLLAD_MD` reads **2038** for BOTH the Wii at 480p and the RiscPC at
