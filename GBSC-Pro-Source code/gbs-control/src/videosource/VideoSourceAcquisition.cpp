@@ -44,7 +44,7 @@ VideoSourceAcquisition::VideoSourceAcquisition(Tv5725::SourceMeasurement &sampli
       unsettledPasses_(0), unsettledArmed_(false),
       passThroughFieldRateHz_(0.0f),
       unmeasuredPasses_(0), referenceRetryPasses_(0),
-      acquiredPasses_(0),
+      acquiredPasses_(0), arrivedPasses_(0),
       selectionSeen_(VideoSourceSelection::None), selectionEstablished_(false),
       runAdvanced_(false), phaseRateHz_(0), phaseSettled_(false) {}
 
@@ -118,7 +118,7 @@ bool VideoSourceAcquisition::acquireSamplingPhase()
     // sampling this source is read through.
     if (found) {
         phaseRateHz_ = sampling_.lineRateHz();
-        phaseSettled_ = acquiredPasses_ >= PhaseSettledPasses;
+        phaseSettled_ = !videoPath_.syncOutAway();
     }
 
     char line[48];
@@ -1015,8 +1015,11 @@ bool VideoSourceAcquisition::poll(uint32_t nowMs)
         referenceRetryPasses_ = 0;
         if (acquiredPasses_ < AcquiredPassCeiling)
             ++acquiredPasses_;
+        if (arrivedPasses_ < AcquiredPassCeiling)
+            ++arrivedPasses_;
     } else {
         acquiredPasses_ = 0;
+        arrivedPasses_ = 0;
         if (unmeasuredPasses_ < AcquiredPassCeiling)
             ++unmeasuredPasses_;
 
@@ -1052,6 +1055,7 @@ void VideoSourceAcquisition::presentWhenSettled(uint32_t nowMs)
             syncAwaySeen_ = true;
             syncAwayMs_ = nowMs;
             phaseSearched_ = false;
+            arrivedPasses_ = 0;
         }
     } else {
         syncAwaySeen_ = false;
@@ -1467,6 +1471,7 @@ void VideoSourceAcquisition::maintainSource()
 {
     SourceMaintenance::Source run;
     run.acquiredPasses = acquiredPasses_;
+    run.arrivedPasses = arrivedPasses_;
     run.unmeasuredPasses = unmeasuredPasses_;
     run.samplingPhaseFound = samplingPhaseFound();
     run.samplingClockSuspect = Tv5725::Adc::samplingClockSuspect();

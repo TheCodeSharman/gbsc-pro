@@ -22,6 +22,13 @@ public:
         Source();
 
         uint16_t acquiredPasses;
+
+        // The same run counted from the arriving source, never above
+        // acquiredPasses. The sampling phase is the one act measured in it,
+        // its answer belonging to the sampling a transition re-latches rather
+        // than to the source that sat through one.
+        uint16_t arrivedPasses;
+
         uint16_t unmeasuredPasses;
         bool samplingPhaseFound;
 

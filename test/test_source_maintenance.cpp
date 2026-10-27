@@ -16,6 +16,7 @@ SourceMaintenance::Due settled(SourceMaintenance &maintenance, uint16_t acquired
 {
     SourceMaintenance::Source source;
     source.acquiredPasses = acquiredPasses;
+    source.arrivedPasses = acquiredPasses;
     source.unmeasuredPasses = 0;
     source.samplingPhaseFound = true;
     return maintenance.dueAt(source);
@@ -47,24 +48,52 @@ TEST_CASE("the dynamic sync-processor settings are re-applied on a cadence")
 
 TEST_CASE("the sampling phase is tried every tenth pass until it is found")
 {
+    // A source that sat through no transition, so the two runs agree.
     SourceMaintenance maintenance;
     SourceMaintenance::Source source;
-    source.acquiredPasses = 10;
     source.unmeasuredPasses = 0;
     source.samplingPhaseFound = false;
     source.samplingClockSuspect = false;
 
+    source.acquiredPasses = source.arrivedPasses = 10;
     CHECK(maintenance.dueAt(source).samplingPhase);
 
-    source.acquiredPasses = 15;
+    source.acquiredPasses = source.arrivedPasses = 15;
     CHECK_FALSE(maintenance.dueAt(source).samplingPhase);
 
-    source.acquiredPasses = 60;
+    source.acquiredPasses = source.arrivedPasses = 60;
     CHECK(maintenance.dueAt(source).samplingPhase);
 
     // Past the window, so a phase never found is left alone rather than
     // retried for the life of the lock.
-    source.acquiredPasses = 70;
+    source.acquiredPasses = source.arrivedPasses = 70;
+    CHECK_FALSE(maintenance.dueAt(source).samplingPhase);
+}
+
+TEST_CASE("the phase window follows the arriving source, not the acquired run")
+{
+    // THE ACQUIRED RUN DOES NOT RESET ON A TRANSITION THE SOURCE SITS THROUGH.
+    // An output change re-latches the sampling clock without the source ever
+    // reading absent, so a window bounded by the acquired run has long closed
+    // by the time the arriving source wants its phase searched -- and the
+    // provisional answer the transition's own search left then stands for the
+    // life of the lock.
+    SourceMaintenance maintenance;
+    SourceMaintenance::Source source;
+    source.acquiredPasses = 200;
+    source.unmeasuredPasses = 0;
+    source.samplingPhaseFound = false;
+    source.samplingClockSuspect = false;
+
+    source.arrivedPasses = 10;
+    CHECK(maintenance.dueAt(source).samplingPhase);
+
+    source.arrivedPasses = 15;
+    CHECK_FALSE(maintenance.dueAt(source).samplingPhase);
+
+    // The give-up is per arrival too: a phase never found for THIS source is
+    // what stops being worth walking the field for.
+    source.arrivedPasses = 70;
     CHECK_FALSE(maintenance.dueAt(source).samplingPhase);
 }
 
@@ -81,14 +110,14 @@ TEST_CASE("a suspect sampling clock is retried for as long as it is suspect")
     source.samplingPhaseFound = false;
     source.samplingClockSuspect = true;
 
-    source.acquiredPasses = 70;
+    source.acquiredPasses = source.arrivedPasses = 70;
     CHECK(maintenance.dueAt(source).samplingPhase);
 
-    source.acquiredPasses = 600;
+    source.acquiredPasses = source.arrivedPasses = 600;
     CHECK(maintenance.dueAt(source).samplingPhase);
 
     // Still on the cadence, not on every pass.
-    source.acquiredPasses = 605;
+    source.acquiredPasses = source.arrivedPasses = 605;
     CHECK_FALSE(maintenance.dueAt(source).samplingPhase);
 }
 

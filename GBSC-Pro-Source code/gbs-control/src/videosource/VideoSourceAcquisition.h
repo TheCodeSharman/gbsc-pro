@@ -131,17 +131,18 @@ public:
     // through -- Tv5725::Adc covers the divider, this covers the source's line
     // rate -- and it was searched with the source SETTLED.
     //
-    // A phase searched on the first acquired passes is provisional, because the
+    // A phase searched inside a transition is provisional, because the
     // dithering band it scores there is not the band the settled source has.
     // Reporting it unfound is what re-opens SourceMaintenance's window, so the
     // early search still presents the output and a later one replaces its
     // answer. ../../../docs/known-issues.md
+    //
+    // THE SYNC PAD BEING AWAY IS THE TRANSITION, and a pass count cannot stand
+    // in for it: the acquired run carries straight through a transition the
+    // source sits through, and the arm's hold is MinimumSyncAwayMs, which is
+    // fifteen passes of the tick -- so the count is past any settle threshold
+    // by the time the arm's own search runs.
     bool samplingPhaseFound() const;
-
-    // Acquired passes before a sampling-phase search answers for the settled
-    // source. At or above SourceMaintenance's own first phase pass, or the
-    // re-search never becomes due and the provisional answer stands.
-    static const uint16_t PhaseSettledPasses = 10;
 
     // The sync processor's three per-source writes, each gated on the same
     // question: a window measured off a line nobody is sending clamps to
@@ -559,6 +560,13 @@ private:
     uint16_t referenceRetryPasses_;
 
     uint16_t acquiredPasses_;
+
+    // The same run counted from the ARRIVING source: zeroed by a transition as
+    // well as by the source going away, where acquiredPasses_ carries straight
+    // through one the source sits through. What the sampling-phase window is
+    // measured in, the phase belonging to the sampling a transition re-latches
+    // rather than to the source.
+    uint16_t arrivedPasses_;
 
 
     // The act whose window the run is in, and the one already run in it. An act

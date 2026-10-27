@@ -27,8 +27,8 @@ const uint16_t DeinterlacerFirstPass = 3;
 }  // namespace
 
 SourceMaintenance::Source::Source()
-    : acquiredPasses(0), unmeasuredPasses(0), samplingPhaseFound(false),
-      samplingClockSuspect(false)
+    : acquiredPasses(0), arrivedPasses(0), unmeasuredPasses(0),
+      samplingPhaseFound(false), samplingClockSuspect(false)
 {
 }
 
@@ -39,6 +39,7 @@ SourceMaintenance::Due SourceMaintenance::dueAt(const Source &source)
     Due due = {false, false, false, false, false, false, false, false};
 
     const uint16_t acquired = source.acquiredPasses;
+    const uint16_t arrived = source.arrivedPasses;
 
     if (source.unmeasuredPasses >= LongAbsencePasses) {
         restoreArmed_ = true;
@@ -61,12 +62,15 @@ SourceMaintenance::Due SourceMaintenance::dueAt(const Source &source)
     if (acquired == DynamicSecondPass || (acquired % DynamicEveryPasses) == 0)
         due.syncProcessorDynamic = true;
 
+    // In the ARRIVING source's run, because what the search answers for is the
+    // sampling and a transition re-latches that without the source moving.
+    //
     // The window closes on a phase never found, because walking the field again
     // buys nothing. It does NOT close while the refusal blamed the clock: that
     // refusal is the engine's only route to repairing one, so it stays due.
-    if (!source.samplingPhaseFound && acquired >= PhaseFirstPass
-        && (acquired <= PhaseLastPass || source.samplingClockSuspect)
-        && (acquired % PhaseEveryPasses) == 0)
+    if (!source.samplingPhaseFound && arrived >= PhaseFirstPass
+        && (arrived <= PhaseLastPass || source.samplingClockSuspect)
+        && (arrived % PhaseEveryPasses) == 0)
         due.samplingPhase = true;
 
     if (acquired == ForgetPositionsPass)
