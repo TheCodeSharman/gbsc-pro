@@ -59,11 +59,41 @@ So `!syncOutAway()` is a sound settle criterion and is not what is left. What
 is left is a gate sized at half the sweep on a source that scores half the
 sweep, and a fallback onto a constant the scan has just called dirty.
 
-## What a fix has to avoid
+## What the two changes were, and what they measure
 
-**Moving `SweepGoodEnough` is tuning a threshold until the gate passes**, and
-the gate is answering honestly: the band really does cover half this source's
-field. **The fallback is the derivable part** -- a failed sweep holds a full
-dither profile, so `middleOfWidestCleanRun()` is available to it and is chosen
-by the scan rather than seeded by a setup. Reporting `found = false` alongside
-keeps the retry due, which is what the refusal is for.
+**The run decides, not the clean count** (`c6573d667`). Moving
+`SweepGoodEnough` would have been tuning a threshold until the gate passed;
+deleting it is not, because the question it was asked -- is this a window or is
+it scatter -- is answered by the widest clean RUN, which the refusal branch
+already computed and used only to blame the clock. So the run decides
+acceptance and `SweepGoodEnough` goes.
+
+**Genuine scatter still refuses and still restores the entry phase**, because
+there no phase read the divider: `middleOfWidestCleanRun()` answers `MidField`
+out of noise, which is the same hardcoded fallback one layer along. That case
+did not occur once in the 34 sweeps.
+
+**And nothing is searched inside a transition** (`17aed2510`). The sixteen
+pad-away sweeps are what scattered, and `acquireSamplingPhase()` now refuses
+while the output is away -- in the search rather than at its callers, the
+sketch having three of its own and the cadence not expressing it, the window
+opening ten passes into the run where the pad returns after
+`MinimumSyncAwayMs` fifteen. Deferring costs no picture: `showOutput(true)` is
+unconditional and ignores what the search returned, and the sweep sat inside
+the pad-away window, so leaving it out presents sooner.
+
+Every answer the engine holds is then settled by construction, which retires
+the provisional machinery -- `phaseSettled_`, `phaseSearched_` and the three
+cases that pinned an early answer being replaced.
+
+### The soak
+
+| build | result |
+|---|---|
+| no provisional rule | 2 of 2 bad |
+| `c3d2872b4`, provisional on the acquired run | 3 of 10 bad, re-read 1 of 3 |
+| `ce9098f38`, settledness on the sync pad | 3 of 12 bad |
+| **`c6573d667` + `17aed2510`** | **0 of 12 bad** |
+
+The spread closed with it: the phases held were 29 or 30 on all twelve, against
+8, 26, 29, 30 and 31 before.

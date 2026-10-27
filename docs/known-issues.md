@@ -10,64 +10,46 @@ regardless of which step is in flight.
 
 ## Reaches the picture
 
-### The sampling phase is searched before the source settles, and the answer is final
+### FIXED: the phase sweep refused half its own answers and fell back onto a seed inside the band
 
-`Adc::acquirePhase()` runs 0.6 s after a bypass switch, and the dithering band
-it scores there is not the band the settled source has -- **16..29 against
-6..19**, very nearly complementary, so `middleOfWidestCleanRun()` returns **7**
-where the settled profile returns 29. The per-line wander says the settled band
-is the real one: 0.22..0.36 px at 7, 8, 12 and 16 against 0.117 outside it.
+`PA_SP_S` 8 after an input change was never a phase the search chose. The sweep
+**failed** and restored the phase it was entered at, which on the pass-through
+path is a seed -- `Adc::SetupPhaseSyncProcessor` and its copy
+`HdBypass::EntryPhaseSyncProcessor`, both 8, inside the band on every profile
+this source produces.
 
-**It is deterministic** -- `PA_SP_S` 9 on ypbpr then 6 or 7 on vga on every
-cycle -- and nothing revisits it, the early search succeeding so
-`SourceMaintenance::dueAt()`'s `!samplingPhaseFound` never fires.
+**The answer was in the profile every time.** 34 sweeps over 16 ypbpr -> vga
+round trips: 17 refused, and every one of those held a contiguous clean window
+of 7 to 16 phases, 16 of them centred on 28..31 -- exactly where the 17 that
+passed landed. `SweepGoodEnough` was 17 of `SweepSteps` 34, half the field,
+against a source scoring 13..18, so the gate sat on the source's own count.
 
-`c3d2872b4` reports an unsettled search's answer as provisional, which re-opens
-that window -- **measured 3 of 10 bad against 2 of 2 before it**, because both
-halves of the rule were keyed on `acquiredPasses_`, which is zeroed only where
-`sourceState_` leaves `SourceAcquired`. A transition the source sits through
-carries the run across it, so the arm's own search satisfied the threshold and
-above `PhaseLastPass` 60 the re-search window had closed outright.
+`c6573d667` judges the sweep on its widest clean RUN instead, which is what
+separates a band from scatter and what the refusal branch already computed to
+blame the clock with; `SweepGoodEnough` is deleted. **Genuine scatter still
+refuses and still restores the entry phase**, because there no phase read the
+divider and `middleOfWidestCleanRun()` answers `MidField` out of noise -- the
+same hardcoded fallback one layer along. It did not occur once in the 34.
 
-`ce9098f38` takes the pass count out of the settle question entirely:
-**settledness is `!syncOutAway()`**, the sync pad being away being the
-transition by construction, and the window is measured in `arrivedPasses_`,
-zeroed by the pad-away edge as well as by the source going away.
-**IT IS NOT A CURE EITHER -- measured 2 of 10 bad, which is inside the noise of
-3 of 10.** What it removed is two ways the window could never open at all; the
-answer it opens for is still the transient band's.
+`17aed2510` stops anything searching inside a transition: the 16 pad-away
+sweeps are the ones that scattered, 1..22 to 5..29, against 6..22 to a unit on
+the 10 taken with the pad driven. The refusal is in
+`acquireSamplingPhase()` rather than at its callers, the sketch having three of
+its own and the cadence not expressing it -- the window opens ten passes in
+where the pad returns after `MinimumSyncAwayMs` fifteen. **Deferring costs no
+picture**: `showOutput(true)` is unconditional and ignores the search's return,
+and the sweep sat inside the pad-away window, so leaving it out presents
+sooner. Every held answer is then settled by construction, which retired
+`phaseSettled_` and `phaseSearched_`.
 
-**WHAT IS LEFT IS EXACT: the first search taken with the pad driven is final,
-and the band is still transient then.** `presentWhenSettled()` gives the pad
-back immediately after the arm's own search, so every later search is settled
-by construction, and the re-search falls due `PhaseFirstPass` 10 passes later
--- 200 ms of tick on the arm's 300 ms, which lands at about the 0.6 s the band
-is measured transient at. An unlucky re-search then scores the same band, writes
-the same 8 and is believed, and only a divider change, a line-rate change or a
-long absence forgets a phase.
+Measured 0 of 12 bad, phases 29..30 on all twelve, against 3 of 12 before it
+and 2 of 2 with no rule at all.
+`investigations/a-failed-phase-sweep-falls-back-onto-the-bands-middle.md` has
+the profiles; `phase_after_input_change.py` is the soak.
 
-**AND THE REMAINING BAD LEGS ARE A DIFFERENT FAULT, now measured: the sweep
-FAILS and falls back onto a seed inside the band.** 17 of 34 sweeps over 16
-round trips returned `no clean window`, `SweepGoodEnough` 17 of
-`SweepSteps` 34 sitting exactly on this source's clean count of 13..18 -- and
-the failure path restores the phase the sweep was entered at, which on the
-pass-through path is `Adc::SetupPhaseSyncProcessor` / its copy
-`HdBypass::EntryPhaseSyncProcessor`, both **8**, inside the 5..22 band every
-profile reads. So `PA_SP_S` 8 is a seed restored by a refusal, never an answer
-the search chose. `investigations/a-failed-phase-sweep-falls-back-onto-the-bands-middle.md`.
-
-**The transient band is not what is left.** The 16..29 band measured 0.6 s
-after a bypass switch appeared in none of those 34 profiles; what the pad state
-changes is the SPREAD, 1..22 to 5..29 with it away against 6..22 to a unit with
-it driven. `phase_after_input_change.py` is the soak.
-
-**The websocket console cannot see this transition** -- the vga selection
-reports `DETECT: 3117ms` and the client drops with the log -- so read
-`/dev/ttyUSB0`, after `stty -F /dev/ttyUSB0 115200 -hupcl raw -echo`.
-
-Every profile, sweep and refuted model is in
-`docs/investigations/the-sampling-phase-is-searched-before-the-source-settles.md`.
-
+**The transient band is not part of this.** The 16..29 profile measured 0.6 s
+after a bypass switch appeared in none of the 34; what the pad state changes is
+the spread, not the band's position.
 
 ### In pass-through the divider is one value for every source, so a divider-keyed rule cannot fire
 
