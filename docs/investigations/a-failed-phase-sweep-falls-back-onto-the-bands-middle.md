@@ -93,7 +93,8 @@ cases that pinned an early answer being replaced.
 | no provisional rule | 2 of 2 bad |
 | `c3d2872b4`, provisional on the acquired run | 3 of 10 bad, re-read 1 of 3 |
 | `ce9098f38`, settledness on the sync pad | 3 of 12 bad |
-| **`c6573d667` + `17aed2510`** | **0 of 12 bad** |
+| **`c6573d667` + `17aed2510`** | **0 of 24 bad**, two runs of 12 |
 
-The spread closed with it: the phases held were 29 or 30 on all twelve, against
-8, 26, 29, 30 and 31 before.
+The spread closed with it: every leg held 29, 30 or 31, against 8, 26, 29, 30
+and 31 before. The build it replaces failed about a quarter of its legs, so 24
+clean legs is the reading rather than a quiet run.

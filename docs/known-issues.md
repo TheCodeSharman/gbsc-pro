@@ -42,8 +42,8 @@ and the sweep sat inside the pad-away window, so leaving it out presents
 sooner. Every held answer is then settled by construction, which retired
 `phaseSettled_` and `phaseSearched_`.
 
-Measured 0 of 12 bad, phases 29..30 on all twelve, against 3 of 12 before it
-and 2 of 2 with no rule at all.
+Measured **0 of 24 bad** over two runs of twelve, every leg holding 29..31,
+against 3 of 12 before it and 2 of 2 with no rule at all.
 `investigations/a-failed-phase-sweep-falls-back-onto-the-bands-middle.md` has
 the profiles; `phase_after_input_change.py` is the soak.
 
