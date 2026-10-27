@@ -66,26 +66,46 @@ against 0.10, with the picture visibly jittering on an ordinary desktop image.
 ## What the fix buys, measured
 
 `SourceMaintenance`'s window is re-opened by reporting an unsettled search's
-answer as provisional, so the search at acquired pass 10 replaces it. Ten
-ypbpr -> vga round trips, reading `PA_SP_S` after the window:
+answer as provisional, so a later search replaces it. Ten ypbpr -> vga round
+trips, reading `PA_SP_S` after the window:
 
 | | result |
 |---|---|
 | before | **2 of 2 bad** -- `PA_SP_S` 6 both times |
-| after | **3 of 10 bad** -- 7 good at 30, and 8, 7, 8 |
+| after, provisional keyed on the acquired run | **3 of 10 bad** -- 7 good at 30, and 8, 7, 8 |
 
 The good cases land on the settled band's answer and the bad ones on the
 transient band's, so the remaining failures are passes where the re-search
-either did not happen or did not see the settled band.
+either did not happen or did not see the settled band. **The soak has not been
+re-run against the arriving-source rule below**, which is what closes the
+mechanism those three fall through; it is the reading to take next.
 
-**THE PASS COUNT IS THE WRONG PROXY AND THE RESET IS THE CANDIDATE.**
+**THE PASS COUNT IS THE WRONG PROXY, IN BOTH HALVES OF THE RULE.**
 `acquiredPasses_` is zeroed only where `sourceState_` leaves `SourceAcquired`,
-so a transition whose source never reads absent runs the early search at a HIGH
-pass count, satisfies the threshold immediately, marks the answer final and
-never re-searches. `ClampReadyPasses` 4 and `CoastReadyPasses` 7 both sit below
-`PhaseFirstPass` 10, so a half-configured sync processor is ruled out as the
-explanation. What would settle it is a precondition that resets with the
-arriving source.
+so a transition the source sits through -- an output change, the pass-through
+switch -- carries the run straight across it. That breaks the rule twice over:
+the arm's own search satisfies the settle threshold and marks its answer final,
+and above `PhaseLastPass` 60 the re-search window has closed outright, so
+nothing replaces it for the life of the lock. `ClampReadyPasses` 4 and
+`CoastReadyPasses` 7 both sit below `PhaseFirstPass` 10, so a half-configured
+sync processor is ruled out as the explanation.
+
+**AND NO PASS COUNT CAN EXPRESS SETTLEDNESS AT ALL.** The arm holds
+`MinimumSyncAwayMs` 300, which is fifteen `DetectionIntervalMs` passes, so the
+count is past any threshold by the time the arm's own search runs. It read
+below ten on the device only because `loop()` is nowhere near a 20 ms pass
+across a selection -- the vga leg reports `DETECT: 3117ms` -- so the threshold
+was being satisfied by whatever the loop happened to cost.
+
+So the two halves take the two things that do answer the question.
+**Settledness is `!syncOutAway()`**: the sync pad being away IS the transition,
+by construction rather than by threshold, and `PhaseSettledPasses` goes. **The
+window keeps a count, because its give-up has to be bounded**, and takes one
+that resets with the arriving source -- `arrivedPasses_`, zeroed by the
+pad-away edge as well as by the source going away, and handed to
+`SourceMaintenance` as the one act measured in it. Every other act there stays
+in the acquired run, which is the run the source has actually been measurable
+for.
 
 **The early search is not removable**, which is what makes this a choice rather
 than a deletion: `presentWhenSettled()` gives the sync pad back once the phase

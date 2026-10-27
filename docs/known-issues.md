@@ -23,11 +23,19 @@ cycle -- and nothing revisits it, the early search succeeding so
 `SourceMaintenance::dueAt()`'s `!samplingPhaseFound` never fires.
 
 `c3d2872b4` reports an unsettled search's answer as provisional, which re-opens
-that window. **Measured 3 of 10 bad against 2 of 2 before it, so an improvement
-and not a cure**, and the pass count is the wrong proxy: `acquiredPasses_` is
-zeroed only where `sourceState_` leaves `SourceAcquired`, so a transition whose
-source never reads absent marks the early answer final. A precondition that
-resets with the arriving source is what would settle it.
+that window -- **measured 3 of 10 bad against 2 of 2 before it**, because both
+halves of the rule were keyed on `acquiredPasses_`, which is zeroed only where
+`sourceState_` leaves `SourceAcquired`. A transition the source sits through
+carries the run across it, so the arm's own search satisfied the threshold and
+above `PhaseLastPass` 60 the re-search window had closed outright.
+
+`ce9098f38` takes the pass count out of the settle question entirely:
+**settledness is `!syncOutAway()`**, the sync pad being away being the
+transition by construction, and the window is measured in `arrivedPasses_`,
+zeroed by the pad-away edge as well as by the source going away.
+**THE SOAK HAS NOT BEEN RE-RUN AGAINST IT** -- host suite only, so the 3 of 10
+figure above is the last bench reading and the mechanism behind those three is
+closed by argument rather than by measurement.
 
 **The websocket console cannot see this transition** -- the vga selection
 reports `DETECT: 3117ms` and the client drops with the log -- so read
@@ -78,6 +86,18 @@ nothing" was drawn from exactly that and is withdrawn.
 `phase scan:` beside it. A `/phase?sp=` left set therefore reads on the console
 as a search that ran. The absence of `phase scan:` is the only tell, since
 `reportScan()` is called in the sweep branch alone.
+
+### `SourceMaintenance::readyAt()` is reachable only from its own test
+
+Nothing in the firmware calls it. The clamp and coast windows are placed
+directly in the solve path, gated on `sourceIsSearching()` rather than on a
+pass count, and auto gain is armed from the sketch -- so `Ready`,
+`ClampReadyPasses` 4, `CoastReadyPasses` 7 and `AutoGainReadyPasses` 91 state a
+cadence nothing reads, and `test_source_maintenance.cpp` is its only caller.
+
+**The hazard is that it reads as the live gate.** The ordering argument against
+a half-configured sync processor in the sampling-phase entry above was made
+from those two constants, and they govern nothing.
 
 ### The television menu stops being DRAWN while its state machine stays live
 
