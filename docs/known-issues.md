@@ -12,97 +12,30 @@ regardless of which step is in flight.
 
 ### The sampling phase is searched before the source settles, and the answer is final
 
-**THE BAND THE SEARCH SCORES IS NOT THE BAND THE PICTURE HAS.** Read off the USB
-serial console, which survives the loop stall that costs the websocket, an
-ypbpr -> vga round trip searches 0.6 s after the bypass switch and scores this:
+`Adc::acquirePhase()` runs 0.6 s after a bypass switch, and the dithering band
+it scores there is not the band the settled source has -- **16..29 against
+6..19**, very nearly complementary, so `middleOfWidestCleanRun()` returns **7**
+where the settled profile returns 29. The per-line wander says the settled band
+is the real one: 0.22..0.36 px at 7, 8, 12 and 16 against 0.117 outside it.
 
-| when | `phase scan:` | dithering band | `middleOfWidestCleanRun()` |
-|---|---|---|---|
-| +0.6 s after the switch | `................334behidfg8121..` | **16..29** | **7** |
-| the same source, settled | `......13567eadc99a81............` | **6..19** | 29 |
+**It is deterministic** -- `PA_SP_S` 9 on ypbpr then 6 or 7 on vga on every
+cycle -- and nothing revisits it, the early search succeeding so
+`SourceMaintenance::dueAt()`'s `!samplingPhaseFound` never fires.
 
-The two are very nearly complementary, so the phase chosen against the transient
-band is reliably one the settled band calls bad. **It is deterministic** --
-`PA_SP_S` 9 on ypbpr then 6 or 7 on vga on every cycle measured -- and the
-per-line wander confirms which band is real: 0.22..0.36 px at 7, 8, 12 and 16
-against 0.117 at 0, 4, 20, 24, 28 and 30.
+`c3d2872b4` reports an unsettled search's answer as provisional, which re-opens
+that window. **Measured 3 of 10 bad against 2 of 2 before it, so an improvement
+and not a cure**, and the pass count is the wrong proxy: `acquiredPasses_` is
+zeroed only where `sourceState_` leaves `SourceAcquired`, so a transition whose
+source never reads absent marks the early answer final. A precondition that
+resets with the arriving source is what would settle it.
 
-**AND NOTHING REVISITS IT.** The early search SUCCEEDS, so `phaseFound()` is
-true and `SourceMaintenance::dueAt()`'s rule -- which needs
-`!source.samplingPhaseFound` -- never fires. Measured: two scans at +0.6 s and
-+0.9 s, then none in the remaining 95 s. The transient answer stands for the
-life of the acquisition.
+**The websocket console cannot see this transition** -- the vga selection
+reports `DETECT: 3117ms` and the client drops with the log -- so read
+`/dev/ttyUSB0`, after `stty -F /dev/ttyUSB0 115200 -hupcl raw -echo`.
 
-**The early search is not gratuitous**, which is what makes the fix a choice
-rather than a deletion: `presentWhenSettled()` gives the sync pad back once the
-phase has been searched, so deferring the search defers the picture. `c3d2872b4`
-lets the early search present the output and reports it PROVISIONAL, which
-leaves `SourceMaintenance`'s window open so the search at acquired pass 10
-replaces its answer.
+Every profile, sweep and refuted model is in
+`docs/investigations/the-sampling-phase-is-searched-before-the-source-settles.md`.
 
-**IT IS AN IMPROVEMENT AND NOT A FIX: 3 of 10 against 2 of 2.** Soaked over the
-ypbpr -> vga round trip, reading `PA_SP_S` after the maintenance window:
-
-| | result |
-|---|---|
-| before, `f174f3aba` | **2 of 2 bad**, `PA_SP_S` 6 both times |
-| after, `c3d2872b4` | **3 of 10 bad** -- 7 good at 30, and 8, 7, 8 |
-
-The good cases land on 30 and the bad ones on 7 or 8, which are the settled and
-the transient band's answers respectively -- so the failures are passes where
-the re-search did not happen or did not see the settled band.
-
-**THE PASS COUNT IS THE WRONG PROXY, AND THE NAMED CANDIDATE IS THE RESET.**
-`acquiredPasses_` is zeroed only where `sourceState_` leaves `SourceAcquired`,
-so on a transition whose source never reads absent the early search runs at a
-HIGH pass count, `PhaseSettledPasses` is already satisfied, the answer is marked
-final and nothing re-searches. `ClampReadyPasses` 4 and `CoastReadyPasses` 7
-both sit below `PhaseFirstPass` 10, so the sync processor being half configured
-is NOT the explanation. What would settle it is a precondition that resets with
-the arriving source rather than a count that may not.
-
-**Two fixes already landed do NOT address this**, and are kept because they are
-correct in their own right: `5287be739` forgets the phase when the divider
-moves, and `e59a727ad` adds the source line rate to that key. Neither fires
-here, because the early search happens AFTER both the divider and the rate have
-reached their new values.
-
-### Entering pass-through applies the held sampling phase without searching it
-
-`restartAfterBypassSwitch()` ends `Adc::latch(); setAndLatchPhaseSP();`, and
-`setAndLatchPhaseSP()` is `applyPhaseSyncProcessor(phaseSyncProcessor())` -- the
-HELD value, with no sweep. The bypass switch changes the divider, and
-**`PA_SP_S`'s quiet band is a property of the divider**, so the value applied is
-one tuned for a raster no longer in force.
-
-Reproduced on `vga`, RISC PC at 1280x720@60, by cycling ypbpr pass-through ->
-1080p -> vga -> pass-through. It landed on `PA_SP_S` 7 at `PLLAD_MD` 2038.
-
-**THE SCAN SAYS A SEARCH WOULD NOT HAVE CHOSEN IT.** Forced afterwards, it
-reports `phase scan: ......13567eadc99a81............` -- one character per
-phase, `.` being all twenty samples reading the divider exactly -- so the
-dithering band is **6..19**, the widest clean run wraps 20..5, and
-`middleOfWidestCleanRun()` returns **29**. 7 lies inside the band at dither 3,
-which no searching branch selects: the `!sweep` branch writes `MidField` 16 and
-the refusal branch restores where it entered.
-
-**WHETHER THE VALUE IS INHERITED OR SEARCHED AGAINST THE WRONG SAMPLING IS NOT
-SETTLED.** The phase MOVES across the transition -- 9 on ypbpr to 6 on vga --
-so something writes it, which an inherited value alone does not explain. The
-second candidate is a search running before the arriving source has settled,
-against a profile belonging to the departing one. Distinguishing them needs the
-`phase scan:` line from the vga leg, and every attempt to capture it lost the
-console (see the link entry below).
-
-The cost, as the per-line wander of four vertical edges across frames with each
-frame's pan removed: **0.217 px at the inherited 7 against 0.117 at 29**, with
-the picture visibly jittering on an ordinary desktop image.
-
-**The count metric is NOT blind to this**, which is worth stating because the
-code comment invites the suspicion: the dithering band 6..19 matches the measured
-wander band -- 7 reads 0.223, 8 0.274, 12 0.358, 16 0.349, against 0.117..0.130
-at 0, 4, 20, 24, 28 and 30. The two instruments agree. **The search works; it
-does not run.**
 
 ### In pass-through the divider is one value for every source, so a divider-keyed rule cannot fire
 
@@ -137,28 +70,6 @@ and `CONNECTED` the moment it was armed by hand.
 `try/except Exception: pass` around `recv()` makes a dropped connection
 indistinguishable from a quiet firmware, and a conclusion of "the engine logged
 nothing" was drawn from exactly that and is withdrawn.
-
-### The sampling-phase sweep is gated on the sync separator's level, which is inert on separate sync
-
-`VideoSourceAcquisition::acquireSamplingPhase()` passes
-`SyncOnGreen::level() > SyncOnGreen::StarvedLevel` as `acquirePhase()`'s `sweep`
-argument, and with `sweep` false the phase is not searched at all -- `MidField`
-16 is written, measured the **worst region** at `PLLAD_MD` 2038, 0.349 px
-against 0.117.
-
-**The gate asks a question that only matters on sync on green.** The scores come
-from `SyncProcessor::lineSamples()`, which on separate sync is driven by the
-dedicated sync line, so the separator's width cannot make them noise --
-`SyncOnGreen.h` states the separator reaches the sync processor only with
-`SP_SOG_MODE` 1. So on a separate-sync source the gate reads a control nothing
-is reading, and its value is whatever the previous source left: measured
-`ADC_SOGCTRL` 12 on `vga` after the Wii, which is `ComponentLevel` 14 walked
-down rather than `DefaultLevel` 13.
-
-**And the pre-gate is redundant**, because the search reports its own validity:
-`clean < SweepGoodEnough` refuses and `clockSuspect_` separates scatter from a
-window. The fix deletes a branch -- always sweep, and let the refusal path carry
-the unusable case.
 
 ### `sampling phase: chosen` is logged when an override chose nothing
 
@@ -8839,6 +8750,24 @@ same error measured on boots, where it is bounded by the confirmation.
 
 
 ## Fixed, kept here until the next session has seen them
+### FIXED `f174f3aba`: the sampling-phase sweep was gated on the separator level
+
+The gate asked a question that only matters on sync on green. The scores come
+from `SyncProcessor::lineSamples()`, which on a separate-sync source arrives on
+the dedicated sync line, and `SyncOnGreen.h` states the separator reaches the
+sync processor only with `SP_SOG_MODE` 1 -- so there every level is inert and
+holds whatever the previous source left, measured `ADC_SOGCTRL` 12 on `vga`
+after the Wii, which is `ComponentLevel` 14 walked down rather than
+`DefaultLevel` 13. With `sweep` false no search ran at all and `MidField` 16 was
+written, the **worst region** at `PLLAD_MD` 2038 -- 0.349 px of per-line wander
+against 0.117.
+
+It was redundant as well as wrong: the search reports its own bad data through
+`SweepGoodEnough` and `clockSuspect_`, so the fix deleted a branch rather than
+adding one. **`acquirePhase()`'s `sweep` parameter is now always true in
+production, so its `!sweep` branch is dead there and wants removing with the
+three `test_adc` cases that pin it.**
+
 
 ### A composite source passed through could not leave a reference clock -- FIXED
 
