@@ -126,22 +126,13 @@ public:
     // take: this asks whether a sweep is worth running at all.
     bool acquireSamplingPhase();
 
-    // Whether the phase held is one to keep. Three things have to hold: a
-    // search succeeded, it was searched for the sampling THIS source is read
-    // through -- Tv5725::Adc covers the divider, this covers the source's line
-    // rate -- and it was searched with the source SETTLED.
+    // Whether the phase held is one to keep: a search succeeded, and it was
+    // searched for the sampling THIS source is read through -- Tv5725::Adc
+    // covers the divider, this covers the source's line rate.
     //
-    // A phase searched inside a transition is provisional, because the
-    // dithering band it scores there is not the band the settled source has.
-    // Reporting it unfound is what re-opens SourceMaintenance's window, so the
-    // early search still presents the output and a later one replaces its
-    // answer. ../../../docs/known-issues.md
-    //
-    // THE SYNC PAD BEING AWAY IS THE TRANSITION, and a pass count cannot stand
-    // in for it: the acquired run carries straight through a transition the
-    // source sits through, and the arm's hold is MinimumSyncAwayMs, which is
-    // fifteen passes of the tick -- so the count is past any settle threshold
-    // by the time the arm's own search runs.
+    // It no longer asks whether the source was settled, because
+    // acquireSamplingPhase() refuses inside a transition and so every answer
+    // held is a settled one.
     bool samplingPhaseFound() const;
 
     // The sync processor's three per-source writes, each gated on the same
@@ -457,7 +448,6 @@ private:
 
     bool syncAwaySeen_;
     uint32_t syncAwayMs_;
-    bool phaseSearched_;
 
     bool (*mayRun_)();
     void (*passThroughSwitch_)();
@@ -590,9 +580,6 @@ private:
     // search has succeeded.
     uint32_t phaseRateHz_;
 
-    // Whether that search ran with the source settled rather than on the first
-    // acquired passes.
-    bool phaseSettled_;
 };
 
 #endif  // VIDEOSOURCE_VIDEO_SOURCE_ACQUISITION_H_

@@ -170,6 +170,15 @@ struct Acquiring {
                          + VideoSourceAcquisition::LatchSettlePasses); ++i)
             poll();
     }
+
+    // The sampling phase search refuses inside a transition, so a case that
+    // calls it has to wait the transition out first.
+    bool pollUntilShown()
+    {
+        for (uint8_t i = 0; i < 80 && !path.outputShown(); ++i)
+            poll();
+        return path.outputShown();
+    }
 };
 
 // The pass-through reference, as HdBypass applies it on entry: the route and
@@ -2819,6 +2828,10 @@ TEST_CASE("an unlatched divider is not worth searching the phase for")
     unit.start();
     REQUIRE(unit.pollUntilSolved());
 
+    // Presented first: the search's other precondition is the transition being
+    // over, and an unlatched divider is what stops the pad being driven at all.
+    REQUIRE(unit.pollUntilShown());
+
     // What the search is offered is a divider the ADC is not running.
     seedLineSamplesUnlocked(BenchDivider + 40);
 
@@ -2844,6 +2857,7 @@ TEST_CASE("a latched divider gets the search, and the watchdog is fed through it
     SyncOnGreen::choose(SyncOnGreen::DefaultLevel);
     g_watchdogFeeds = 0;
 
+    REQUIRE(unit.pollUntilShown());
     CHECK(unit.acquisition.acquireSamplingPhase());
     CHECK(g_watchdogFeeds > 0);
 }
@@ -2875,6 +2889,7 @@ TEST_CASE("a scan that blames the clock says so instead of searching again")
     seedLineSamplesUnlocked((uint16_t)(Adc::PLLAD_MD::read() + 1));
     g_logLines.clear();
 
+    REQUIRE(unit.pollUntilShown());
     CHECK_FALSE(unit.acquisition.acquireSamplingPhase());
     CHECK(Adc::samplingClockSuspect());
     CHECK(loggedContaining("sampling clock unlocked"));
@@ -2909,6 +2924,7 @@ TEST_CASE("a starved separator still gets the sweep")
     Adc::choosePhaseSyncProcessor(3);
     g_watchdogFeeds = 0;
 
+    REQUIRE(unit.pollUntilShown());
     REQUIRE(unit.acquisition.acquireSamplingPhase());
     CHECK(g_watchdogFeeds > 0);
 }
@@ -3383,7 +3399,7 @@ TEST_CASE("a mode change takes the sync pad away when it is armed, not when it i
     CHECK(syncPadAway());
 }
 
-TEST_CASE("the output is presented once the divider has latched and the phase is searched")
+TEST_CASE("the output is presented once the divider has latched")
 {
     seedBenchSource();
     seedLineSamples(BenchDivider);
@@ -3399,7 +3415,6 @@ TEST_CASE("the output is presented once the divider has latched and the phase is
 
     REQUIRE(pollUntilPresented(unit) < 80);
     CHECK_FALSE(syncPadAway());
-    CHECK(Adc::phaseFound());
     CHECK(setupWritesAfterPadDriven() == 0);
 }
 
@@ -4113,6 +4128,7 @@ TEST_CASE("a phase searched at one source's rate is not found at another's")
     for (uint8_t i = 0; i < 40 && !unit.path.outputShown(); ++i)
         unit.poll();
     REQUIRE(unit.path.outputShown());
+    REQUIRE(unit.pollUntilShown());
     REQUIRE(unit.acquisition.acquireSamplingPhase());
     REQUIRE(unit.acquisition.samplingPhaseFound());
     const uint32_t searchedAt = unit.acquisition.sourceLineRateHz();
@@ -4126,74 +4142,36 @@ TEST_CASE("a phase searched at one source's rate is not found at another's")
     CHECK_FALSE(unit.acquisition.samplingPhaseFound());
 }
 
-TEST_CASE("a phase searched inside a transition is provisional")
+TEST_CASE("the sampling phase is not searched inside a transition")
 {
-    // THE BAND THE SEARCH SCORES INSIDE A TRANSITION IS NOT THE SETTLED BAND.
-    // Read off the device 0.6 s after a bypass switch the dithering band is
-    // 16..29, where the same source settled scores 6..19 -- very nearly
-    // complementary, so the early answer is one the settled source calls bad,
-    // and the per-line wander confirms it at 0.22 px against 0.117.
+    // THE SEARCH WAITS FOR THE SETTLE CRITERION RATHER THAN ANSWERING BEFORE
+    // IT. A sweep taken with the sync pad away scores a band that wanders --
+    // measured 1..22 to 5..29 over sixteen of them, against 6..22 to a unit on
+    // the ten taken with the pad driven -- so its answer is not one to hold.
     //
-    // The early search still runs, because presentWhenSettled() gives the sync
-    // pad back once the phase has been searched. Reporting it unfound is what
-    // leaves SourceMaintenance's window open so a later search replaces it.
-    // ../docs/known-issues.md
+    // Deferring it costs no picture: presenting ignores what the search
+    // returned, and the sweep sat inside the pad-away window, so leaving it out
+    // presents sooner.
+    // ../docs/investigations/a-failed-phase-sweep-falls-back-onto-the-bands-middle.md
     seedBenchSource();
     seedLineSamples(BenchDivider);
     Acquiring unit;
     unit.acquisition.useWatchdogFeed(countWatchdogFeed);
     unit.start();
     REQUIRE(unit.pollUntilSolved());
-    REQUIRE(unit.path.syncOutAway());
-    REQUIRE(unit.acquisition.acquireSamplingPhase());
-    REQUIRE(Adc::phaseFound());
+    Adc::forgetPhase();
 
-    CHECK_FALSE(unit.acquisition.samplingPhaseFound());
+    // The pad is what refuses, not the divider: that is latched here, which is
+    // the other precondition and would hide this one.
+    REQUIRE(unit.path.syncOutAway());
+    REQUIRE(Adc::dividerLatched(SyncProcessor::lineSamples()));
+
+    CHECK_FALSE(unit.acquisition.acquireSamplingPhase());
+    CHECK_FALSE(Adc::phaseFound());
 }
 
-TEST_CASE("an output change makes the phase provisional again on a held source")
+TEST_CASE("and it is searched once the transition is over")
 {
-    // THE ACQUIRED RUN DOES NOT RESET ON A TRANSITION THE SOURCE SITS THROUGH.
-    // An output change re-latches the sampling clock without the source ever
-    // reading absent, so a phase search armed by that transition is the
-    // unsettled one and a rule keyed on the acquired run calls it settled.
-    //
-    // Nor can a pass count stand in: the arm holds MinimumSyncAwayMs, which is
-    // fifteen passes of the tick, so the count is past any settle threshold by
-    // the time the arm's own search runs. The sync pad being away IS the
-    // transition. ../docs/known-issues.md
-    seedBenchSource();
-    seedLineSamples(BenchDivider);
-    Acquiring unit;
-    unit.acquisition.useWatchdogFeed(countWatchdogFeed);
-    unit.start();
-    REQUIRE(unit.pollUntilSolved());
-
-    // The transition is over and the acquired run is long past any threshold a
-    // settle rule could be keyed on, which is the state the change arrives into.
-    for (uint8_t i = 0; i < 60; ++i)
-        unit.poll();
-    REQUIRE(unit.path.outputShown());
-    REQUIRE(unit.acquisition.acquiredPasses() > 30);
-    REQUIRE(unit.acquisition.acquireSamplingPhase());
-    REQUIRE(unit.acquisition.samplingPhaseFound());
-
-    REQUIRE(unit.acquisition.setOutputResolution(&Mode720p));
-    REQUIRE(unit.path.syncOutAway());
-    for (uint8_t i = 0; i < 60 && !unit.path.outputShown(); ++i)
-        unit.poll();
-    REQUIRE(unit.path.outputShown());
-
-    CHECK_FALSE(unit.acquisition.samplingPhaseFound());
-}
-
-TEST_CASE("the re-search after an output change replaces the provisional phase")
-{
-    // The transition's own search presents the output and is provisional; what
-    // makes the settled answer reachable is the phase window re-opening for the
-    // arriving source. Bounded by the acquired run it would already have
-    // closed, and the provisional answer would stand for the life of the lock.
-    // ../docs/known-issues.md
     seedBenchSource();
     seedLineSamples(BenchDivider);
     Acquiring unit;
@@ -4201,19 +4179,11 @@ TEST_CASE("the re-search after an output change replaces the provisional phase")
     unit.acquisition.allowMaintenance(true);
     unit.start();
     REQUIRE(unit.pollUntilSolved());
-    for (uint8_t i = 0; i < 60; ++i)
-        unit.poll();
-    REQUIRE(unit.acquisition.samplingPhaseFound());
-    REQUIRE(unit.acquisition.acquiredPasses() > 30);
+    Adc::forgetPhase();
+    REQUIRE(unit.pollUntilShown());
 
-    REQUIRE(unit.acquisition.setOutputResolution(&Mode720p));
-    for (uint8_t i = 0; i < 30 && !unit.path.outputShown(); ++i)
-        unit.poll();
-    REQUIRE(unit.path.outputShown());
-    REQUIRE_FALSE(unit.acquisition.samplingPhaseFound());
-
-    for (uint8_t i = 0; i < 30 && !unit.acquisition.samplingPhaseFound(); ++i)
+    for (uint8_t i = 0; i < 30 && !Adc::phaseFound(); ++i)
         unit.poll();
 
-    CHECK(unit.acquisition.samplingPhaseFound());
+    CHECK(Adc::phaseFound());
 }

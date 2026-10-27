@@ -27,7 +27,7 @@ VideoSourceAcquisition::VideoSourceAcquisition(Tv5725::SourceMeasurement &sampli
                                    Tv5725::VideoPath &videoPath)
     : sampling_(sampling), videoPath_(videoPath), maintenanceAllowed_(false),
       channelSyncServicedEver_(false), channelSyncServicedMs_(0),
-      syncAwaySeen_(false), syncAwayMs_(0), phaseSearched_(false),
+      syncAwaySeen_(false), syncAwayMs_(0),
       mayRun_(0), passThroughSwitch_(0), passThroughAllowed_(false), resolution_(0),
       detectedMs_(0),
       detectedEver_(false), solvedLines_(0), solvedFrame_(0), solvedLineRateHz_(0),
@@ -46,7 +46,7 @@ VideoSourceAcquisition::VideoSourceAcquisition(Tv5725::SourceMeasurement &sampli
       unmeasuredPasses_(0), referenceRetryPasses_(0),
       acquiredPasses_(0), arrivedPasses_(0),
       selectionSeen_(VideoSourceSelection::None), selectionEstablished_(false),
-      runAdvanced_(false), phaseRateHz_(0), phaseSettled_(false) {}
+      runAdvanced_(false), phaseRateHz_(0) {}
 
 void VideoSourceAcquisition::useRunGate(bool (*mayRun)()) { mayRun_ = mayRun; }
 
@@ -89,12 +89,24 @@ const uint8_t LatchSamples = 8;
 
 bool VideoSourceAcquisition::samplingPhaseFound() const
 {
-    return Tv5725::Adc::phaseFound() && phaseRateHz_ == sampling_.lineRateHz()
-           && phaseSettled_;
+    return Tv5725::Adc::phaseFound() && phaseRateHz_ == sampling_.lineRateHz();
 }
 
 bool VideoSourceAcquisition::acquireSamplingPhase()
 {
+    // NOT INSIDE A TRANSITION. A sweep taken with the sync pad away scores a
+    // band that wanders -- measured 1..22 to 5..29 over sixteen of them against
+    // 6..22 to a unit on ten taken with the pad driven -- so its answer is not
+    // one to hold, and the picture does not wait on it either: presenting
+    // ignores what the search returned.
+    //
+    // Here rather than at the callers because the sketch has three of its own,
+    // and the cadence cannot express it in any case: the window opens ten
+    // passes into the run where the pad comes back after MinimumSyncAwayMs.
+    // ../../../docs/investigations/a-failed-phase-sweep-falls-back-onto-the-bands-middle.md
+    if (!videoPath_.outputShown())
+        return false;
+
     if (!Tv5725::Adc::dividerLatched(Tv5725::SyncProcessor::lineSamples(),
                                      LatchSamples))
         return false;
@@ -116,10 +128,8 @@ bool VideoSourceAcquisition::acquireSamplingPhase()
 
     // Recorded so a later pass can tell whether the phase still belongs to the
     // sampling this source is read through.
-    if (found) {
+    if (found)
         phaseRateHz_ = sampling_.lineRateHz();
-        phaseSettled_ = !videoPath_.syncOutAway();
-    }
 
     char line[48];
     snprintf(line, sizeof(line), "sampling phase: %s, oversample %u",
@@ -1054,7 +1064,6 @@ void VideoSourceAcquisition::presentWhenSettled(uint32_t nowMs)
         if (!syncAwaySeen_) {
             syncAwaySeen_ = true;
             syncAwayMs_ = nowMs;
-            phaseSearched_ = false;
             arrivedPasses_ = 0;
         }
     } else {
@@ -1070,13 +1079,6 @@ void VideoSourceAcquisition::presentWhenSettled(uint32_t nowMs)
             return;
         if (!Tv5725::Adc::dividerLatched(Tv5725::SyncProcessor::lineSamples()))
             return;
-        // Once per transition, whatever the search finds: the maintenance
-        // cadence tries again on a picture that is showing, and a transition
-        // has re-latched the clock the last phase was found against.
-        if (!phaseSearched_) {
-            phaseSearched_ = true;
-            acquireSamplingPhase();
-        }
     }
 
     videoPath_.showOutput(true);
