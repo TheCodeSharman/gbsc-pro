@@ -61,11 +61,17 @@ def counted(host, want=None, other_than=None, timeout=40.0):
     return g.wait_for(arrived, timeout=timeout, interval=0.25)
 
 
-def leg(host, under_test, other, baseline, settle_s, timeout):
+def leg(host, under_test, other, baseline, settle_s, timeout, hold_s=None):
     """One round trip, returning what the input under test was left holding."""
     g.select_input(host, other)
-    if counted(host, other_than=baseline, timeout=timeout) is None:
-        return dict(ok=False, why=f"{other} never counted")
+    if hold_s is None:
+        # WAITING FOR THE OTHER SOURCE TO COUNT HIDES THE FIRST-SWEEP FAULT,
+        # because it spends long enough on it for a sweep to have already run.
+        # --hold is the short round trip that reproduces it.
+        if counted(host, other_than=baseline, timeout=timeout) is None:
+            return dict(ok=False, why=f"{other} never counted")
+    else:
+        time.sleep(hold_s)
 
     g.select_input(host, under_test)
     count = counted(host, want=baseline, timeout=timeout)
@@ -91,6 +97,10 @@ def main():
     parser.add_argument("--settle", type=float, default=22.0,
                         help="seconds after the count before reading the phase")
     parser.add_argument("--timeout", type=float, default=40.0)
+    parser.add_argument("--hold", type=float, default=None,
+                        help="seconds to hold the other input before switching "
+                             "back, instead of waiting for it to count -- about "
+                             "three reproduces the displaced first sweep")
     parser.add_argument("--bad-low", type=int, default=6)
     parser.add_argument("--bad-high", type=int, default=19)
     args = parser.parse_args()
@@ -107,7 +117,7 @@ def main():
     rows = []
     for n in range(args.legs):
         row = leg(args.host, args.input, args.other, baseline,
-                  args.settle, args.timeout)
+                  args.settle, args.timeout, args.hold)
         if not row["ok"]:
             print(f"leg {n + 1:2d}: {row['why']}", flush=True)
             rows.append(row)
