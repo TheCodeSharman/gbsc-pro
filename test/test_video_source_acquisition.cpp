@@ -2845,6 +2845,52 @@ TEST_CASE("an unlatched divider is not worth searching the phase for")
     CHECK(g_watchdogFeeds == 0);
 }
 
+TEST_CASE("the phase gate compares at a wider tolerance than the other sites")
+{
+    // THE WIDE TOLERANCE IS MEASURED, NOT A MISCALL TO TIDY AWAY. The gate
+    // passes LatchTolerance 8 where every other dividerLatched() site takes
+    // Adc::LatchedSamplesTolerance 2, and the constant it came from was written
+    // as a reading COUNT under a comment describing agreeing readings -- so it
+    // reads like the wrong parameter and was filed as one on 2026-10-23.
+    //
+    // Narrowed to 2 it is WORSE. Measured on vga at 1280x720@60 into
+    // pass-through, three blocks of an ypbpr round trip with the two arms
+    // ALTERNATED leg by leg -- blocked A-then-B cannot be read here, the
+    // fault's rate drifting over hours -- PA_SP_S landed outside the settled
+    // band 29..31 in 3 of 40 legs at a tolerance of 8 and 9 of 40 at 2. The
+    // direction held in all three blocks and survived inverting which arm ran
+    // on odd legs, so it follows the tolerance and not the leg.
+    //
+    // Why narrowing it costs anything is NOT established. Do not narrow it on
+    // the strength of the parameter reading like a count.
+    // docs/known-issues.md
+    seedBenchSource();
+    seedLineSamples(BenchDivider);
+    Acquiring unit;
+    unit.acquisition.useWatchdogFeed(countWatchdogFeed);
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+    REQUIRE(unit.pollUntilShown());
+
+    // Five off: refused at the default tolerance, searched here. The watchdog
+    // count is the assertion rather than the return, because a sweep taken
+    // through a count that is off finds no clean window and answers false
+    // anyway -- only the feeds say whether it ran.
+    seedLineSamplesUnlocked(BenchDivider + 5);
+    g_watchdogFeeds = 0;
+    unit.acquisition.acquireSamplingPhase();
+    CHECK(g_watchdogFeeds > 0);
+
+    // And the width is bounded -- a count well clear of the divider still goes
+    // unsearched, which is what the gate is for.
+    seedLineSamplesUnlocked(BenchDivider + 40);
+    Adc::choosePhaseSyncProcessor(9);
+    g_watchdogFeeds = 0;
+    CHECK_FALSE(unit.acquisition.acquireSamplingPhase());
+    CHECK(g_watchdogFeeds == 0);
+    CHECK(Adc::phaseSyncProcessor() == 9);
+}
+
 TEST_CASE("a latched divider gets the search, and the watchdog is fed through it")
 {
     seedBenchSource();

@@ -122,8 +122,8 @@ public:
     // how steadily the sync processor counts the line, and what it counts is
     // what the ADC is RUNNING -- which is the LATCHED divider, not the one
     // PLLAD_MD reports. Run against an unlatched one, every phase reads bad and
-    // the search picks noise. Eight samples rather than the two the other sites
-    // take: this asks whether a sweep is worth running at all.
+    // the search picks noise. At a WIDER tolerance than the other sites compare
+    // at, which is measured rather than inherited -- see LatchTolerance.
     bool acquireSamplingPhase();
 
     // Whether the phase held is one to keep: a search succeeded, and it was

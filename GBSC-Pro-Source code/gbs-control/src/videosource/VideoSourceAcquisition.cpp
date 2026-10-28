@@ -82,8 +82,11 @@ void VideoSourceAcquisition::useClock(uint32_t (*nowMs)())
 
 namespace {
 
-// How many agreeing readings say the divider is latched.
-const uint8_t LatchSamples = 8;
+// How far the sync processor's count may sit from the divider and still say the
+// ADC is running it. WIDER THAN Adc::LatchedSamplesTolerance, and measured so:
+// at the 2 every other site compares at, the sampling phase lands outside the
+// settled band three times as often. test_video_source_acquisition.cpp.
+const uint16_t LatchTolerance = 8;
 
 }  // namespace
 
@@ -108,7 +111,7 @@ bool VideoSourceAcquisition::acquireSamplingPhase()
         return false;
 
     if (!Tv5725::Adc::dividerLatched(Tv5725::SyncProcessor::lineSamples(),
-                                     LatchSamples))
+                                     LatchTolerance))
         return false;
 
     // What the ADC is RUNNING, not what was asked for: the request is
