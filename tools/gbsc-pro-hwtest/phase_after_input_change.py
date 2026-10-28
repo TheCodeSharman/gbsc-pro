@@ -14,10 +14,15 @@ the re-search window before reading `PA_SP_S`. **The count is what is polled,
 never `/geometry`'s `state`**, which is stale across an input change and
 answers for the source that just went away.
 
-An answer inside `--bad-low`..`--bad-high` is the transient band's, and anything
-outside it is the settled band's. Those bounds are the measured profile for the
-bench RiscPC in pass-through at `PLLAD_MD` 2038 and belong to that sampling, so
-pass the profile's own band when the source or the divider differs.
+**AN ANSWER IS SCORED BY ABSENCE FROM THE SETTLED BAND, NOT BY MEMBERSHIP OF
+THE TRANSIENT ONE.** `--settled-low`..`--settled-high` is where a settled sweep
+lands and everything else is displaced, because the transient band's own bounds
+cannot cover an answer displaced further than any yet seen -- scored the other
+way round, a `PA_SP_S` of 4 against a settled 29..31 reads as good.
+
+Those bounds are the measured profile for the bench RiscPC in pass-through at
+`PLLAD_MD` 2038 and belong to that sampling, so pass the profile's own band when
+the source or the divider differs.
 `docs/investigations/the-sampling-phase-is-searched-before-the-source-settles.md`
 
 **ONE PROCESS MAY DRIVE THE UNIT AT A TIME.** Two runs calling `/input` time
@@ -34,6 +39,12 @@ import gbs_unit as g
 # read under it is no evidence the input arrived. gbs_unit carries the same
 # floor for the same reason.
 LOCKED_VTOTAL_MIN = g.LOCKED_VTOTAL_MIN
+
+
+def displaced(phase, settled):
+    """Whether a phase is one a settled sweep would not have chosen."""
+    low, high = settled
+    return not (low <= phase <= high)
 
 
 def counted(host, want=None, other_than=None, timeout=40.0):
@@ -101,8 +112,8 @@ def main():
                         help="seconds to hold the other input before switching "
                              "back, instead of waiting for it to count -- about "
                              "three reproduces the displaced first sweep")
-    parser.add_argument("--bad-low", type=int, default=6)
-    parser.add_argument("--bad-high", type=int, default=19)
+    parser.add_argument("--settled-low", type=int, default=29)
+    parser.add_argument("--settled-high", type=int, default=31)
     args = parser.parse_args()
 
     # The count the input under test reads, taken with it already selected, so
@@ -123,7 +134,7 @@ def main():
             rows.append(row)
             continue
         phase = row["PA_SP_S"]
-        bad = args.bad_low <= phase <= args.bad_high
+        bad = displaced(phase, (args.settled_low, args.settled_high))
         rows.append(dict(row, bad=bad))
         print(f"leg {n + 1:2d}: PA_SP_S {phase:2d}  "
               f"PA_ADC_S {row['PA_ADC_S']:2d}  MD {row['PLLAD_MD']}  "
@@ -135,8 +146,8 @@ def main():
         return 1
 
     bad = [r for r in scored if r["bad"]]
-    print(f"\n{len(bad)} of {len(scored)} bad, band "
-          f"{args.bad_low}..{args.bad_high}"
+    print(f"\n{len(bad)} of {len(scored)} displaced, settled band "
+          f"{args.settled_low}..{args.settled_high}"
           f"  ({len(rows) - len(scored)} legs did not complete)")
     print("phases:", " ".join(str(r["PA_SP_S"]) for r in scored))
     return 0
