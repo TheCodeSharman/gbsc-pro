@@ -671,6 +671,38 @@ in at all.
 case, which is the state the first entry in this file records as rolling in 95%
 of frames.
 
+### 1280x720@60 in pass-through loses the card's RIGHT border, and the edge test cannot see it
+
+Reported from the panel and confirmed on the USB capture, 2026-10-28, with the
+television on FULL. Green dominance of the emitted frame, one source pixel of
+border per edge:
+
+| edge | green dominance | |
+|---|---|---|
+| top | rows 1..2, **+152 / +146** | present |
+| bottom | row 1079, **+94** | present |
+| left | cols 0..1, **+90** | present |
+| right | cols 1914..1919, **+0** | **absent** |
+
+**NOT the sampling phase.** Walked `PA_ADC_S` over 0, 6, 12, 16, 22, 28 with
+`/phase?adc=`: the right edge reads 0.4 at every one while the left moves
+80..90. **NOT the set**, which was on FULL and is not the instrument here
+anyway.
+
+**AND THE PICTURE REACHES THE EDGE.** The capture reports **0 black columns**
+at the right and the last columns read luma 238..255 -- ordinary card content.
+So nothing is blanked: the line is emitted to column 1919 and arrives there
+MISSING ITS LAST SOURCE COLUMN.
+
+**That is why `test_passthrough_reaches_every_edge[1280x720@60]` PASSES.** It
+asks whether black reaches the edge, and there is none to find. A lost source
+column is invisible to that question, which is the one the green border exists
+to answer. The two modes in the entry below fail it because they leave BLACK;
+this one does not.
+
+So the mode is not clean, and the 2026-10-24 reading that it "frames with
+nothing clipped" is a statement about black rather than about the border.
+
 ### Two pass-through modes still do not reach every edge
 
 `test_passthrough_acceptance.py` runs five modes in pass-through and asks
