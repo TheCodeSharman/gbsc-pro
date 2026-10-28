@@ -988,31 +988,48 @@ input with no source it logged `measure: the reference clock measured nothing,
 trying the next` **875 times in seven minutes**, which is the entry below this
 one seen from the console.
 
-### The gate in front of the phase search takes a reading count as a tolerance
+### CLOSED: the gate in front of the phase search compares at a wide tolerance, and it should
 
-Found 2026-10-23 while reading the path, **not measured**.
-`VideoSourceAcquisition::acquireSamplingPhase()` opens with
+Filed 2026-10-23 on a code read, measured 2026-10-29, **not a defect**.
 
-```c
-const uint8_t LatchSamples = 8;   // "How many agreeing readings say the divider is latched."
-...
-if (!Tv5725::Adc::dividerLatched(Tv5725::SyncProcessor::lineSamples(), LatchSamples))
-    return false;
-```
+`VideoSourceAcquisition::acquireSamplingPhase()` passed a constant named
+`LatchSamples` 8, commented "how many agreeing readings say the divider is
+latched", into `dividerLatched(uint16_t lineSamples, uint16_t tolerance)`. So
+the name and the comment described a reading count and the parameter is a
+tolerance -- four times the `Adc::LatchedSamplesTolerance` 2 every other site
+compares at, and no run at all.
 
-and `dividerLatched(uint16_t lineSamples, uint16_t tolerance)` takes a
-TOLERANCE in that second parameter, defaulting to
-`Adc::LatchedSamplesTolerance` of 2. So the gate is one reading within **8**
-ADC samples of the divider, where the comment beside it describes eight
-agreeing readings -- four times the tolerance anything else uses, and no run at
-all.
+**NARROWING IT TO 2 MAKES THE SAMPLING PHASE WORSE.** Measured on vga at
+1280x720@60 into pass-through, three blocks of an ypbpr round trip with
+`--hold 3`, the two arms ALTERNATED leg by leg and `PA_SP_S` read after the
+re-search window. Displaced means outside the settled band 29..31:
 
-It is what lets the phase search run through an unlocked clock: the count at
-1211/1212/1213 against a divider of 1212 passes a tolerance of 8 on any single
-read, where a run of agreeing readings would not. Tightening it is a change to
-the gate on every source, so it wants a bench comparison rather than a move --
-and the entry above repairs the clock once the search has refused, which is a
-different question from whether the search should have run.
+| block | tolerance 8 | tolerance 2 |
+|---|---|---|
+| 10 legs | 0 of 5 | 2 of 5 |
+| 30 legs | 2 of 15 | 5 of 15 |
+| 30 legs, arms swapped between odd and even legs | 1 of 15 | 2 of 15 |
+| pooled | **3 of 40** | **9 of 40** |
+
+Fisher exact on the pooled counts is p = 0.115, which is not significance.
+What carries it is the direction holding in all three blocks and surviving the
+parity swap -- the arm had been perfectly correlated with whether a leg was odd
+or even, so a period-two structure in the fault would have looked the same, and
+the third block separates them.
+
+So the value stays and the NAME was the defect: it is `LatchTolerance`, and
+`test_video_source_acquisition.cpp` pins the width with the measurement beside
+it. **Why narrowing it costs anything is not established** and no mechanism is
+offered; the parameter reading like a count is not grounds to narrow it.
+
+**THE TECHNIQUE IS THE REUSABLE PART.** The fault in front of this gate drifts
+over hours, so a blocked A-then-B comparison measures the drift -- the first
+block's baseline arm read 0 of 10 and says nothing on its own. What makes
+alternating affordable is a debug route that switches arms at runtime, costing
+no reflash, no reboot and no re-acquisition between legs. This measurement used
+an uncommitted `/phasegate?tol=` route over
+`phase_after_input_change.py`'s `leg()`, and any future arm here wants the same
+shape.
 
 ### Reported: 320x256 on the RISC PC frames wrong and sits vertically shifted
 
