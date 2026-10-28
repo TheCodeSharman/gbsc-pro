@@ -81,7 +81,21 @@ in place means the hour proves nothing. And ALTERNATE the arms leg by leg
 rather than running all of one then all of the other, so each pair sits inside
 the same two minutes.
 
-Three mechanisms have been proposed and all three are withdrawn. That the
+**THE SEARCH IS NOT CHOOSING BADLY -- ITS MEASUREMENT IS DISPLACED.** The
+sweep's own scoreboard moves about eight of its thirty-two positions, keeping
+its width and its cleanliness, so the widest clean run is then the one at the
+LEFT and the search picks from it correctly. Measured across 80 round trips on
+vga at 1280x720@60 in pass-through: 29 settled boards start at 4..8 and 5
+displaced ones at 14 or 16, with nothing between, and the displaced mean
+profile correlates with the settled one shifted by 8 at r = 0.878.
+
+`SP_RT_HS_SP` is refuted as the cause -- it reads 32 against `PLLAD_MD` 2038 on
+every board of both populations. The 500 ms settle deadline is refuted too,
+this time against a live fault with the arms alternated: 1 of 20 displaced
+against 2 of 20 with it off, and the deadline arm still produced a displaced
+answer. What shifts the board is open.
+
+Three earlier mechanisms are withdrawn. That the
 displacement follows the sweep's ORDER rather than elapsed time was never
 tested -- the only test of time moved the sweep 200 ms where the second sweep
 lands about 450 ms later. That a 500 ms settle deadline fixed it was refuted by

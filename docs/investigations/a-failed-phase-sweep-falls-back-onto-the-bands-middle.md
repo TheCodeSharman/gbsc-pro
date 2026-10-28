@@ -118,6 +118,49 @@ The spread closed with it: every leg held 29, 30 or 31, against 8, 26, 29, 30
 and 31 before. The build it replaces failed about a quarter of its legs, so 24
 clean legs is the reading rather than a quiet run.
 
+## The search is not choosing badly -- its MEASUREMENT is displaced
+
+**THE SCOREBOARD ITSELF MOVES ALONG THE PHASE AXIS, AND THE SEARCH THEN PICKS
+THE WIDEST CLEAN RUN CORRECTLY.** Measured on vga at 1280x720@60 into
+pass-through, 43 sweeps captured off the console across 80 input round trips,
+34 of them on vga, reading the first and last scored position of each board:
+
+| population | band starts at | width | sweeps |
+|---|---|---|---|
+| settled | 4, 5, 6, 7 or 8 | 15..19 | 29 |
+| displaced | **14 once, 16 four times** | 12..15 | 5 |
+
+Nothing starts between 9 and 13. The displaced boards are as CLEAN as the
+settled ones and their band is the same shape -- so the walk is scoring a
+healthy source, and the clean run it then picks from is simply the one at the
+LEFT, which is where a `PA_SP_S` of 4, 5, 6 or 7 comes from.
+
+**The displaced profile IS the settled profile, shifted about eight of the
+thirty-two positions.** Cross-correlating the mean scores:
+
+```
+settled    .......1247999668896331.........
+displaced  ................2449#####9561...
+settled+8  ...............1247999668896331.     r = +0.878
+```
+
+Shifts of 7 and 9 give r = 0.850 and 0.858, so the quantity is about a quarter
+of the phase range rather than exactly eight.
+
+**`SP_RT_HS_SP` IS REFUTED AS THE CAUSE.** The capture counter's origin is the
+obvious suspect, the phase being scored on how steadily the sync processor
+counts the line. It is identical on both populations -- `PLLAD_MD` 2038 and
+`SP_RT_HS_SP` 32 on every displaced sweep and on every settled one, measured
+with both printed beside the board for exactly this question.
+
+**What shifts it is not established.** Five boards landing on two adjacent
+starts, with a clear gap below them, is a QUANTISED displacement rather than a
+drift, and that is what any candidate has to explain.
+
+Nine further sweeps in the same capture are NOT this fault: a band only two to
+five wide at 22..26, `SP_RT_HS_SP` 1959, oversample 2. They are the Wii on
+ypbpr, the input each leg transits through.
+
 ## The two-sweep rung, and why it was reverted
 
 `SweepsBeforeAnswerHolds` was two: `samplingPhaseFound()` reported unfound
