@@ -118,16 +118,33 @@ The spread closed with it: every leg held 29, 30 or 31, against 8, 26, 29, 30
 and 31 before. The build it replaces failed about a quarter of its legs, so 24
 clean legs is the reading rather than a quiet run.
 
-## The first sweep of an arrival is provisional
+## The two-sweep rung, and why it was reverted
 
-`SweepsBeforeAnswerHolds` is two: `samplingPhaseFound()` reports unfound until
-an arrival has had two successful sweeps, which is what leaves
-`SourceMaintenance`'s window open for the one whose answer is worth holding.
-`phaseSweepsThisArrival_` resets where `arrivedPasses_` does, on the sync pad
-going away.
+`SweepsBeforeAnswerHolds` was two: `samplingPhaseFound()` reported unfound
+until an arrival had had two successful sweeps, leaving `SourceMaintenance`'s
+window open for the second. It is reverted, and the row for it in the bisect
+table below is the one reading that does not survive.
 
-The order is the rule rather than the pad or the pass, so the criterion is
-stated in sweeps.
+**It is a recovery rung and nothing derives the two.** The conventions already
+rule that out -- a fault is fixed by deriving the right value, not by trying
+one and backing off -- and the rung's whole case was a measurement.
+
+**THAT MEASUREMENT WAS BLOCKED A-THEN-B AGAINST A FAULT WHOSE RATE DRIFTS.**
+Spread over the hours that followed, a build behaviourally equal to one that
+had read 4 of 12 bad read 0 of 8, with no firmware difference between them, and
+manual input switching at the bench in the same spell switched cleanly too. So
+the fault goes quiet on its own and a comparison taken across one measures the
+drift.
+
+**The within-arrival table above is not affected by that**, because it compares
+sweeps inside the SAME arrival: the first against its own later ones, minutes
+apart at most. It is the cross-build rows that cannot be read.
+
+**So the measurement discipline is the finding.** Run the baseline arm and
+confirm it FAILS before scoring anything, and ALTERNATE the arms leg by leg so
+each pair sits inside the same two minutes. A knob that switches arms at
+runtime is what makes alternating cheap -- it costs no reflash, no reboot and
+no re-acquisition between arms.
 
 ### The bisect
 
@@ -140,10 +157,12 @@ back; 29..31 is the settled band's answer and 5..19 is the displaced band's.
 | `c6573d667`, the middle of the three | 31, 31, 30 |
 | `e6241e199`, the tip | **6, 7, 7** |
 | `PhaseFirstPass` 20 | **6, 31, 30, 6, 6, 5** |
-| two sweeps before the answer holds | 31, 30, 30, 30, 30, 30 |
+| two sweeps before the answer holds | 31, 30, 30, 30, 30, 30 -- **withdrawn, see above** |
 
-Four of those six passing arrivals had a displaced first sweep and the second
-read the settled band in every one.
+The first four rows are four runs spread over hours and consistently split, so
+the bisect stands and `17aed2510` is the commit. The last row is one block of
+six taken against no interleaved baseline, and it is the reading the revert
+withdraws.
 
 ### The reproduction is not the menu
 

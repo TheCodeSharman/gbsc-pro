@@ -52,31 +52,44 @@ about three seconds in reproduces the fault on the same build.
 `investigations/a-failed-phase-sweep-falls-back-onto-the-bands-middle.md` has
 the profiles; `phase_after_input_change.py` is the soak.
 
-### FIXED: the first sampling-phase sweep of an arrival scores a displaced band
+### The sampling phase after a short input round trip lands in the dithering band
 
-**THE PAD BEING DRIVEN DOES NOT MAKE A SWEEP TRUSTWORTHY. ITS ORDER DOES.**
-The first sweep of an arrival scores a band about eleven of its thirty-two
-positions displaced -- 15..29 against the settled 5..22 -- in **6 of 11**
-arrivals, where all **51** later sweeps of those same arrivals read the
-settled band. Within one arrival it corrects on the next sweep.
+`PA_SP_S` lands in 6..19 instead of 29..31 after an ypbpr -> vga round trip
+where the switch back comes about three seconds after the transit input is
+selected. A displaced band -- 15..29 against the settled 5..22 -- with `far`
+zero throughout, so it is NOT the count moving under the walk.
 
-That makes the 16..29 transient band real, and retracts the reading above that
-it appeared in none of the 34 profiles: those were taken through a round trip
-slow enough that a sweep had already run.
+**The reproduction is not the described menu.** A plain `/input` round trip
+reproduces it; `phase_after_input_change.py --hold 3` is the soak. A round trip
+that waits for the transit input to COUNT does not, because it spends long
+enough on it for a sweep to have run.
 
-**It only became visible when the answer became final.** `17aed2510` made
-`samplingPhaseFound()` true on the first success, and `SourceMaintenance`'s
-window closes on that -- so the one sweep the engine cannot trust is the one it
-holds for the life of the lock. Bisected on one recipe: `0c8443e22` 30/31/31,
-`c6573d667` 31/31/30, `e6241e199` **6/7/7**.
+**THE BISECT SURVIVES AND `17aed2510` IS THE COMMIT** -- four runs spread over
+hours, consistently split: `0c8443e22` reads 30/31/31, `c6573d667` 31/31/30,
+`e6241e199` 6/7/7. What follows from it is unresolved.
 
-**The pass count is a correlate and not the rule.** `PhaseFirstPass` 10 -> 20
-measures 4 of 6 bad, because the sweep at twenty is then the first of its
-arrival.
+**THE RATE DRIFTS OVER HOURS, AND EVERY BLOCKED COMPARISON TAKEN ACROSS ONE
+MEASURES THE DRIFT.** Two readings make the point: a build behaviourally equal
+to one that read 4 of 12 bad read 0 of 8 an hour later with no firmware
+difference, and manual input switching at the bench, driven independently of
+the soak tool, also switched cleanly in that spell. So the fault goes quiet on
+its own.
 
-`SweepsBeforeAnswerHolds` is two. Measured 11 of 11 at 29..31 across an
-`/input` round trip, the described-menu recipe and the recipe that already
-passed.
+**Two consequences for anyone measuring a fix here.** Run the baseline arm and
+confirm it FAILS before scoring anything -- a run that reads 0 of N with no fix
+in place means the hour proves nothing. And ALTERNATE the arms leg by leg
+rather than running all of one then all of the other, so each pair sits inside
+the same two minutes.
+
+Three mechanisms have been proposed and all three are withdrawn. That the
+displacement follows the sweep's ORDER rather than elapsed time was never
+tested -- the only test of time moved the sweep 200 ms where the second sweep
+lands about 450 ms later. That a 500 ms settle deadline fixed it was refuted by
+the same deadline turned off reading 0 of 8. And `SweepsBeforeAnswerHolds`,
+the two-sweep rung, was reverted: it is a recovery rung with nothing deriving
+the two, and it earned its place on a blocked comparison.
+
+`investigations/the-sampling-phase-is-searched-before-the-source-settles.md`.
 
 ### The hardware suite leaves PERSISTED state behind, and a reset does not clear it
 
