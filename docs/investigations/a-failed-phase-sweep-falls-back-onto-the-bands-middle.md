@@ -202,6 +202,48 @@ A later run showed settled boards at `SP_RT_HS_SP` 79 and a displaced one at
 32, which looks like a lead and is not one: the within-arrival transition above
 crosses from displaced to settled with that register unchanged.
 
+## The settled phase is a property of the SOURCE MODE, not of the divider
+
+**THE SAME MODE AT TWO DIVIDERS CHOOSES THE SAME PHASE; THE SAME DIVIDER ACROSS
+MODES DOES NOT.** Measured on vga, three re-acquisitions per mode -- out to
+ypbpr and back each time, so each reading is a re-CHOICE and not a held value --
+holding out for each mode's OWN count, since a wait for any settled count
+returns on the transit input's 524 whatever vga is doing:
+
+| mode | count | dividers seen | path | PA_SP_S over three arrivals |
+|---|---|---|---|---|
+| 1280x720@60 | 749 | 1444, 2038 | both | 31, **7**, 30 |
+| 800x600@60 | 627 | 1436, 2038 | both | 11, 10, 11 |
+| 640x480@60 | 524 | 1444, 1446 | scaling | 21, 20, 18 |
+| 1024x768@60 | 805 | 1440, 2038 | both | 26, 25, **3** |
+
+The divider and the path varying WITHIN a mode's three cycles was not intended
+and is the control that matters: 800x600 chooses 11, 10, 11 across `PLLAD_MD`
+1436 and 2038 and across both video paths, and 1024x768 chooses 26 and 25 the
+same way. A 40% change of sampling clock does not move the answer.
+
+**Pass-through pins `PLLAD_MD` at 2038 for every mode and every source**, and
+there the four modes choose 31, 10, 18 and 25 -- one divider, four answers. So
+the quantity is the SOURCE's line, and a phase that is a fixed fraction of the
+line is divider-independent by construction, which is what the readings show.
+
+**IT SURVIVES A REBOOT.** `/restart` twice on 1280x720@60 chose 30 both times,
+matching the 30 and 31 the same mode chooses across input switches.
+
+**AND IT IS NOT THE SAME FOR BOTH SOURCES AT ONE DIVIDER.** In pass-through at
+2038 the dirty band starts at 4..8 on vga over 205 boards and at 22..24 on the
+Wii over 15, never outside either range.
+
+The bold entries are the open fault: two of twelve arrivals landed outside
+their mode's own answer, which is the ~15% rate the soaks measure.
+
+**What this buys is a CHECK rather than a derivation.** The phase still cannot
+be computed -- that is what the sweep is for -- but its answer is reproducible
+per source mode, so a sweep returning something far from what the same mode
+chose last time is reporting the displacement rather than a new optimum. Before
+relying on that, it wants measuring on a source other than this one: n is three
+arrivals per mode on one bench.
+
 ## The two-sweep rung, and why it was reverted
 
 `SweepsBeforeAnswerHolds` was two: `samplingPhaseFound()` reported unfound
