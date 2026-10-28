@@ -81,6 +81,14 @@ in place means the hour proves nothing. And ALTERNATE the arms leg by leg
 rather than running all of one then all of the other, so each pair sits inside
 the same two minutes.
 
+**WHAT IT COSTS THE PICTURE IS NOW MEASURED, AND THE SOAK BAND OVER-COUNTS.**
+A joint sweep of both sampling phases inside one acquisition puts the reachable
+contrast at 53.3 for `PA_SP_S` 0, 4 and 30, 52.9 at 6, 50.8 at 7, and **27.8 at
+11** -- so a bad sync phase halves the ceiling and NO `PA_ADC_S` recovers it,
+while a phase of 0 to 5 costs nothing at all. The harmful range is roughly
+7..22, where `phase_after_input_change.py` scores 6..19.
+`investigations/the-sync-phase-sets-the-adc-families-ceiling.md`.
+
 **THE SEARCH IS NOT CHOOSING BADLY -- ITS MEASUREMENT IS DISPLACED.** The
 sweep's own scoreboard moves about eight of its thirty-two positions, keeping
 its width and its cleanliness, so the widest clean run is then the one at the
