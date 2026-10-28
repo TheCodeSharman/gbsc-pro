@@ -226,6 +226,13 @@ volatile uint8_t pendingBusValueSignal = 0xff;
 // What /sampleclock queued. Same reason: the route answers from a network
 // callback and the bus belongs to loop().
 volatile bool pendingPhase = false;
+
+// BENCH SCAFFOLDING: run N sampling-phase sweeps back to back inside ONE
+// arrival, so a board that is displaced can be asked whether it settles on its
+// own -- which separates a transient the clock is still settling through from
+// a state something wrote.
+volatile bool pendingPhaseSweep = false;
+volatile uint8_t pendingPhaseSweepCount = 0;
 volatile bool pendingPhaseClear = false;
 volatile bool pendingPhaseApply = false;
 volatile bool pendingPhaseAdc = false;
@@ -4987,6 +4994,25 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                 pendingPhaseAdc, pendingPhaseValue);
         }
 
+        if (pendingPhaseSweep) {
+            pendingPhaseSweep = false;
+            const uint32_t began = millis();
+            for (uint8_t i = 0; i < pendingPhaseSweepCount; ++i) {
+                char line[72];
+                snprintf(line, sizeof(line),
+                         "phasesweep: %u t=%lums ht=%u md=%u rt=%u lock=%u",
+                         (unsigned)(i + 1), (unsigned long)(millis() - began),
+                         (unsigned)Tv5725::SyncProcessor::lineSamples(),
+                         (unsigned)Tv5725::Adc::PLLAD_MD::read(),
+                         (unsigned)Tv5725::SyncProcessor::SP_RT_HS_SP::read(),
+                         (unsigned)GBS::STATUS_MISC_PLLAD_LOCK::read());
+                tv5725Log(line);
+                Tv5725::Adc::acquirePhase(Tv5725::Adc::oversampleInForce(), true,
+                                          Tv5725::SyncProcessor::lineSamples,
+                                          feedWatchdog);
+            }
+        }
+
         if (pendingCoast) {
             pendingCoast = false;
             applyCoastOverride(pendingCoastApply, pendingCoastClear,
@@ -6136,6 +6162,13 @@ void startWebserver()
         pendingPhaseApply = pendingPhaseClear || sp || adc;
         pendingPhase = true;
         request->send(200, "application/json", "{\"queued\":\"phase\"}");
+    });
+
+    server.on("/phasesweep", HTTP_GET, [](AsyncWebServerRequest *request) {
+        pendingPhaseSweepCount = request->hasParam("n")
+            ? (uint8_t)request->getParam("n")->value().toInt() : 4;
+        pendingPhaseSweep = true;
+        request->send(200, "application/json", "{\"queued\":\"phasesweep\"}");
     });
 
     server.on("/coast", HTTP_GET, [](AsyncWebServerRequest *request) {
