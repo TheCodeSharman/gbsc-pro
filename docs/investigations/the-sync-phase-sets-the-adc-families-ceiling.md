@@ -79,3 +79,43 @@ Averaging a shimmering picture blurs it, and blur has less high-frequency
 content than a steady one -- measured, the mean absolute second difference
 along x reads 4.20 at `PA_SP_S` 11 and 6.16 at 30, so the unstable phase scores
 as the cleaner. Score movement, or score a single frame.
+
+
+## The acquisition is not degraded -- the PICK is wrong
+
+The displaced board's clean run **contains the good arc**, so the question is
+whether a displaced acquisition can still reach a good picture at a phase the
+sweep did not choose. It can.
+
+Twenty-six arrivals of 1280x720@60 in pass-through, `/phase?clear` before each
+so every reading is the engine's own choice. On each arrival that landed in
+7..22, the chosen phase was scored against 30, 0 and 4 on THAT acquisition,
+with `PA_ADC_S` pinned where the engine left it and the chosen phase re-measured
+last so drift cannot produce the difference:
+
+| arrival | chosen | contrast at chosen | at 30 | movement at chosen | at 30 |
+|---|---|---|---|---|---|
+| 19 | 7 | 46.47, 46.61 | 49.28 | 13.34, 13.08 | 9.29 |
+| 21 | 8 | 36.79, 36.14 | 42.80 | 14.12, 14.48 | 5.61 |
+| earlier | 7 | 32.07 | 33.31 | 13.90 | 10.12 |
+
+**A good picture was reachable the whole time**, at a phase inside the clean
+run the sweep itself scored. So the displacement costs nothing by itself and
+the harm is entirely in WHICH phase comes out of that run -- which is fixable
+without knowing what shifts the board.
+
+### The rate, and why it reads lower elsewhere
+
+| | |
+|---|---|
+| harmful, 7..22 | **10 of 26** |
+| marginal, 6 | 3 of 26 |
+| good, 0 or 30..31 | 13 of 26 |
+
+**Nine of the ten harmful picks are exactly 7**, which is the signature rather
+than a spread: a displaced board's widest clean run is about 30..15 and the
+sweep takes its MIDDLE.
+
+This 38% is read 13 s after the count. `phase_after_input_change.py` waits 22 s
+and reads about 15%, and the difference is the self-correction already measured
+-- so the rate depends on when it is asked, and neither figure is wrong.
