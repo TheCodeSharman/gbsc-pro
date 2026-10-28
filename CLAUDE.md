@@ -1857,7 +1857,7 @@ BLACK between it and the picture's edge.** Read at 16:9 -- a 4:3 declaration
 pillarboxes, the bars are OUR blanking, and a strip taken at the frame's own
 edge then measures the bars instead of the picture. **And a stored framing
 answers before the computed default**, so `/sc?B` forgets this source's entry
-first or what is judged is the last session's tuning. `four_edges.py` reports
+first or what is judged is the last session's tuning. `card_edges.py` reports
 the border's green dominance and the black count at each edge together.
 
 **`PATTERN` WITH NO ARGUMENT REDRAWS THE DEFAULT rather than reporting what is
