@@ -1,5 +1,6 @@
 #include "Adc.h"
 
+#include "SyncProcessor.h"
 #include "Tv5725Log.h"
 
 #include <Arduino.h>
@@ -385,11 +386,20 @@ char scanDigit(uint8_t dither, uint8_t far)
 // is the case the counts are wanted for.
 void reportScan(const uint8_t *dither, const uint8_t *far)
 {
-    char line[Adc::PhaseMax + 16];
+    char line[Adc::PhaseMax + 64];
     int at = snprintf(line, sizeof(line), "phase scan: ");
     for (uint8_t phase = 0; phase <= Adc::PhaseMax; ++phase)
         line[at++] = scanDigit(dither[phase], far[phase]);
-    line[at] = '\0';
+
+    // WHAT THE BOARD IS MEASURED AGAINST, so a shifted band can be attributed
+    // without a second capture. The walk scores each phase by how steadily the
+    // sync processor counts the line, and where the counter STARTS is
+    // SP_RT_HS_SP -- so a board whose dirty band has moved along the phase axis
+    // is read beside the origin that places it.
+    // ../../../docs/investigations/a-failed-phase-sweep-falls-back-onto-the-bands-middle.md
+    snprintf(line + at, sizeof(line) - at, " md %u rt %u",
+             (unsigned)Adc::PLLAD_MD::read(),
+             (unsigned)SyncProcessor::SP_RT_HS_SP::read());
     tv5725Log(line);
 }
 
