@@ -161,6 +161,47 @@ Nine further sweeps in the same capture are NOT this fault: a band only two to
 five wide at 22..26, `SP_RT_HS_SP` 1959, oversample 2. They are the Wii on
 ypbpr, the input each leg transits through.
 
+## Within ONE arrival: stable, wrong, and not always self-correcting
+
+The section above compares boards ACROSS arrivals, which is all that was
+available while a sweep ran at most once per arrival. `/phasesweep?n=` runs N
+of them back to back inside one, and answers the three things that comparison
+could not.
+
+**IT IS NOT A MOVING TARGET.** Six consecutive sweeps across 1.5 s read
+16 17 16 16 17 16; another arrival read 16 16 16 16 17 across 4.5 s. The
+sweeps AGREE WITH EACH OTHER and are all wrong.
+
+**SO SWEEPING UNTIL TWO ANSWERS AGREE DOES NOT WORK**, and neither does any
+other stability rule: six agreeing boards would be accepted and the picture
+would still be read at the displaced phase. Agreement rejects noise and cannot
+reject a bias, which is the same trap `the-frame-time-lock-saturates.md`
+records in another part of the engine.
+
+**IT IS THERE FROM THE FIRST SWEEP THAT CAN BE TAKEN.** Nothing was observed
+converging into it. The qualifier is that the first sweep worth taking is later
+than it looks: fired on the source's COUNT alone, 6 of 8 attempts caught the
+pass-through divider still being installed -- `STATUS_SYNC_PROC_HTOTAL` 831
+against `PLLAD_MD` 2040 with the lock bit 0 -- and there every phase reads far
+and the board says nothing at all. Wait for the count to REACH the divider.
+
+**IT SOMETIMES CORRECTS AND SOMETIMES DOES NOT.** One arrival went from a board
+starting at 16 to one starting at 7 in 0.57 s, about 2.4 s into the arrival.
+Another was still displaced at 4.5 s, and that arrival latched `PA_SP_S` 6.
+
+**THAT IS WHY THE 500 ms DEADLINE MEASURED NOTHING.** The displacement outlives
+it by a factor of three or more, so a deadline that short cannot see it -- and
+one long enough for the first case would still not cover the second.
+
+**AND NO REGISTER DIFFERS ACROSS THE CORRECTION.** The 16-to-7 transition
+happened with `PLLAD_MD` 2038 and `SP_RT_HS_SP` 33 on BOTH boards, 0.57 s
+apart, `STATUS_MISC_PLLAD_LOCK` 1 throughout. So it is neither the divider, nor
+the retime origin, nor the ADC PLL's lock.
+
+A later run showed settled boards at `SP_RT_HS_SP` 79 and a displaced one at
+32, which looks like a lead and is not one: the within-arrival transition above
+crosses from displaced to settled with that register unchanged.
+
 ## The two-sweep rung, and why it was reverted
 
 `SweepsBeforeAnswerHolds` was two: `samplingPhaseFound()` reported unfound
