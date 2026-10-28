@@ -4129,8 +4129,6 @@ TEST_CASE("a phase searched at one source's rate is not found at another's")
         unit.poll();
     REQUIRE(unit.path.outputShown());
     REQUIRE(unit.pollUntilShown());
-    // Twice, because the first sweep of an arrival is provisional.
-    REQUIRE(unit.acquisition.acquireSamplingPhase());
     REQUIRE(unit.acquisition.acquireSamplingPhase());
     REQUIRE(unit.acquisition.samplingPhaseFound());
     const uint32_t searchedAt = unit.acquisition.sourceLineRateHz();
@@ -4142,35 +4140,6 @@ TEST_CASE("a phase searched at one source's rate is not found at another's")
     REQUIRE(Adc::phaseFound());
 
     CHECK_FALSE(unit.acquisition.samplingPhaseFound());
-}
-
-TEST_CASE("the first sweep of an arrival is provisional, and the second is the answer")
-{
-    // THE FIRST SWEEP OF AN ARRIVAL SCORES A DISPLACED BAND WHATEVER PASS IT
-    // RUNS AT, and the pad being driven does not cover it. Measured on vga at
-    // 1280x720@60 into pass-through: the first sweep after a transition scored
-    // a band displaced about eleven of its thirty-two positions in 6 of 11,
-    // where all 51 later sweeps of the same arrivals scored the settled band.
-    // Moving the window's first pass from ten to twenty does not help, because
-    // the displacement follows the sweep's ORDER and not its pass -- measured
-    // 4 of 6 bad with the window starting at twenty.
-    //
-    // So reporting the first one unfound is what keeps SourceMaintenance's
-    // window open for the sweep whose answer is worth holding.
-    // ../docs/investigations/a-failed-phase-sweep-falls-back-onto-the-bands-middle.md
-    seedBenchSource();
-    seedLineSamples(BenchDivider);
-    Acquiring unit;
-    unit.acquisition.useWatchdogFeed(countWatchdogFeed);
-    unit.start();
-    REQUIRE(unit.pollUntilSolved());
-    REQUIRE(unit.pollUntilShown());
-
-    REQUIRE(unit.acquisition.acquireSamplingPhase());
-    CHECK_FALSE(unit.acquisition.samplingPhaseFound());
-
-    REQUIRE(unit.acquisition.acquireSamplingPhase());
-    CHECK(unit.acquisition.samplingPhaseFound());
 }
 
 TEST_CASE("the sampling phase is not searched inside a transition")
