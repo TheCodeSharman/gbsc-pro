@@ -298,12 +298,54 @@ difference is not WHEN the walk runs but what it is run BY** -- the
 acquisition's call against `/phasesweep`'s -- and a fix that delays the walk
 has nothing to wait for.
 
-**The instrument this now needs does not exist**: a second walk run from
-inside the acquisition, immediately after the first, with both scans logged.
-If the second is already right the fault is in the first walk after the
-adjusters are restarted; if both are wrong it is the calling context, and only
-then is moving the call the answer. Everything reachable from outside the
-firmware is exhausted.
+**That instrument now exists and has answered**: `/phasewalk?repeat=N` runs
+the walk N times from whatever called it. Both walks of an input arrival are
+wrong, so the fault is not the first walk after the adjusters restart -- it is
+the calling context. See the section above.
+
+## IT IS THE CALLER, NOT THE CLOCK: thirteen walks of one acquisition, all wrong
+
+`acquirePhase()` repeats its field walk `walkRepeats()` times and reports every
+scan, so both readings come from the SAME caller -- which is what the arrival
+against `/phasesweep` comparison could not give. Held at 8, and the
+acquisition sometimes runs it again, so up to 13 walks land inside one
+arrival, spanning about four seconds:
+
+| arrival | walk 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | .. 13 |
+|---|---|---|---|---|---|---|---|---|---|
+| mode | 14.4 | 14.2 | 14.9 | 14.5 | 14.0 | 14.4 | 14.1 | 14.4 | |
+| input | 22.7 | 22.4 | 22.4 | 22.2 | 22.2 | 22.1 | 22.3 | 22.2 | |
+| input, another | 23.8 | 24.6 | 24.6 | 24.2 | **22.7** | 22.4 | 22.5 | 22.2 | 22.1 |
+| mode, another | 19.2 | **scatter** | scatter | scatter | **14.7** | 14.2 | 14.4 | 14.5 | 14.3 |
+
+**Every walk of an input arrival is wrong and every walk of a mode arrival is
+right**, and the run of thirteen covers four seconds. A walk from the idle loop
+moments after the same acquisition is right. **So the disturbance is not
+something that decays, at any scale between a third of a second and four
+seconds, and waiting inside the acquisition does not reach it.**
+
+This is what retires the settling account for good. An earlier reading that
+the first re-walk is already right only bounded it above 3.6 s and below the
+600 ms between two walks; thirteen walks close the middle.
+
+**AND THERE IS A SEPARATE EARLY TRANSIENT, worth not confusing with it.** The
+first three or four walks of an arrival report something else again -- a
+narrow band at 23..25 on one input arrival, and pure scatter at every phase on
+one mode arrival -- settling by walk 5 into the band that arrival then holds.
+So an arrival's FIRST walk is unreliable in a second, independent way, and the
+engine runs exactly one.
+
+### What is left
+
+The acquisition's walk is wrong and a walk from the idle loop is right, with
+no register state reproducing the difference and no amount of waiting inside
+the acquisition closing it. What distinguishes the two callers is what the
+acquisition has not finished doing: on an input arrival a second
+`rate match: the HD bypass channel carries the video` lands AFTER the walk,
+where a mode arrival has one before the walk and none after.
+
+That is the next thing to test, and it needs the rate match moved or
+suppressed rather than a register set -- nothing in a dump describes it.
 
 ## NO REGISTER CARRIES IT, which is what leaves the walk itself as the fault
 
@@ -370,3 +412,6 @@ times out and carries on leaves a short excursion that looks like one.
 | the excursion must solve the other source | four seconds on it displaces as far as a full acquisition |
 | the PLL's reference carries it | `/refclock` to the other source's divider, null with and without the divider |
 | the arrival's walk is merely early | the first re-walk is already right, at +0 s and at +20 s |
+| the first walk after the adjusters restart is the wrong one | eight to thirteen walks of one arrival, all wrong |
+| the disturbance decays and the walk must wait | thirteen walks over four seconds, no trend |
+| the search's `SP_H_PULSE_IGNOR` 16 carries it | held at 16 against controls, null, twice |
