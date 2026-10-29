@@ -359,6 +359,13 @@ const uint8_t SweepSteps = 34;
 // Samples taken at each phase before it is scored.
 const uint8_t SamplesPerPhase = 20;
 
+// Readings thrown away after the adjuster moves, before scoring starts. The
+// settle is counted in READINGS rather than in microseconds so that it is
+// observable off the device, where a delay is a no-op; each one costs an I2C
+// read, so it is also most of the dwell a phase gets.
+// ../../../../docs/investigations/the-phase-walks-band-is-bimodal.md
+const uint8_t SettleSamples = 8;
+
 // Where the walk begins, so two runs of it are comparable. The entry used to be
 // read off the adjuster, which made it whatever the previous search -- or the
 // previous SOURCE's search -- had latched: a measurement starting from a state
@@ -471,6 +478,9 @@ bool Adc::acquirePhase(uint8_t oversample, bool sweep,
         uint8_t farHere = 0;
         feedWatchdog();
         delayMicroseconds(256);
+        feedWatchdog();
+        for (uint8_t i = 0; i < SettleSamples; ++i)
+            lineSamples();
         feedWatchdog();
         for (uint8_t i = 0; i < SamplesPerPhase; ++i) {
             const uint16_t at = lineSamples();

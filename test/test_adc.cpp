@@ -1904,6 +1904,56 @@ TEST_CASE("a phase found at one divider is stale once another is in force")
     CHECK_FALSE(Adc::phaseFound());
 }
 
+// A sync processor whose count is disturbed for the first readings after the
+// adjuster MOVES, and settled from then on. The band itself never moves.
+static uint8_t g_transientBand[Adc::PhaseMax + 1];
+static uint8_t g_transientReads = 0;
+static int16_t g_transientAt = -1;
+
+// Readings disturbed by the move, fewer than the walk's own sample count so
+// that a walk which scores everything it reads still sees a settled majority.
+static const uint8_t EntryTransientReads = 6;
+
+static uint16_t lineSamplesWithEntryTransient()
+{
+    const uint8_t at = Adc::PA_SP_S::read();
+    if ((int16_t)at != g_transientAt) {
+        g_transientAt = at;
+        g_transientReads = 0;
+    }
+    if (g_transientReads++ < EntryTransientReads)
+        return (uint16_t)(g_sweepDivider + 1);
+    return g_transientBand[at] != 0 ? (uint16_t)(g_sweepDivider + 1)
+                                    : g_sweepDivider;
+}
+
+TEST_CASE("a disturbance confined to the adjuster's move does not reach the score")
+{
+    // THE WALK AND A SETTLED SWEEP OF THE SAME SURFACE DISAGREE, AND ONLY THE
+    // WALK'S ANSWER MOVES. Deep sampled from loop() at 25 ms with 140 readings
+    // a phase, two sweeps taken on arrivals that picked opposite phases differ
+    // by at most 0.125 and put the band at 6..22 both times; the walk gives
+    // each phase 256 us and 20 back-to-back samples and lands on one of two
+    // bands eight phases apart, which is the whole of the harmful pick.
+    // Settling is the only difference left between the two instruments.
+    // ../docs/investigations/the-phase-walks-band-is-bimodal.md
+    Wire.reset();
+    Adc::PLLAD_MD::write(2230);
+    g_sweepDivider = 2230;
+    for (uint8_t i = 0; i <= Adc::PhaseMax; ++i)
+        g_transientBand[i] = 0;
+    for (uint8_t i = 6; i <= 22; ++i)
+        g_transientBand[i] = 1;
+    g_transientAt = -1;
+    g_transientReads = 0;
+    Adc::choosePhaseSyncProcessor(8);
+    Adc::choosePhaseAdc(16);
+
+    REQUIRE(Adc::acquirePhase(2, true, lineSamplesWithEntryTransient, countFeed));
+
+    CHECK(g_transientBand[Adc::phaseSyncProcessor()] == 0);
+}
+
 TEST_CASE("a wide band is accepted on the window it leaves, not on the clean count")
 {
     // THE RIGHT ANSWER IS IN THE PROFILE AND THE COUNT GATE THREW IT AWAY.
