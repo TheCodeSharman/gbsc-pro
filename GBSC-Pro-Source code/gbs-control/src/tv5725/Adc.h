@@ -375,7 +375,7 @@ public:
     // knob stays because the band is a per-arrival quantity, so a point costs
     // sixteen arrivals and a reflash between them would put a build boundary
     // through the comparison.
-    // ../../../../docs/investigations/the-phase-walks-band-is-bimodal.md
+    // ../../../../docs/investigations/the-arrivals-own-walk-mismeasures-the-phase-band.md
     static const uint8_t DefaultSettleSamples = 0;
 
     // The settle in force, held against that default. Whether settling is what

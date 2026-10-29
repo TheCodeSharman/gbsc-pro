@@ -1936,7 +1936,7 @@ TEST_CASE("a disturbance confined to the adjuster's move does not reach the scor
     // each phase 256 us and 20 back-to-back samples and lands on one of two
     // bands eight phases apart, which is the whole of the harmful pick.
     // Settling is the only difference left between the two instruments.
-    // ../docs/investigations/the-phase-walks-band-is-bimodal.md
+    // ../docs/investigations/the-arrivals-own-walk-mismeasures-the-phase-band.md
     Wire.reset();
     Adc::PLLAD_MD::write(2230);
     g_sweepDivider = 2230;
@@ -1964,7 +1964,7 @@ TEST_CASE("without a settle the move itself is what every phase scores")
     // difference left between the walk and a sweep that samples the same
     // surface settled -- and the band is a per-arrival quantity, so the
     // question is a curve over arrivals and not a reflash per point.
-    // ../docs/investigations/the-phase-walks-band-is-bimodal.md
+    // ../docs/investigations/the-arrivals-own-walk-mismeasures-the-phase-band.md
     Wire.reset();
     Adc::PLLAD_MD::write(2230);
     g_sweepDivider = 2230;
