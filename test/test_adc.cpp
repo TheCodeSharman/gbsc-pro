@@ -744,6 +744,109 @@ static std::string scannedField(const char *label)
     return std::string();
 }
 
+// A sync processor whose reading SMEARS from the phase before it, which is what
+// a walk that does not settle between its steps sees. The band is fixed; only
+// the order the walk visits it in varies.
+static uint8_t g_smearBand[Adc::PhaseMax + 1];
+static uint8_t g_smearSeen[Adc::PhaseMax + 1];
+static uint8_t g_smearPrevious = 0;
+
+static uint16_t lineSamplesSmearing()
+{
+    const uint8_t at = Adc::PA_SP_S::read();
+    const uint8_t n = g_smearSeen[at]++;
+    const uint8_t own = g_smearBand[at];
+    const uint8_t carried = g_smearBand[g_smearPrevious];
+    g_smearPrevious = at;
+    const uint8_t bad = own > carried ? own : carried;
+    return (n % 20) < bad ? (uint16_t)(g_sweepDivider + 1) : g_sweepDivider;
+}
+
+static std::string sweptFrom(uint8_t enteredAt)
+{
+    Wire.reset();
+    Adc::PLLAD_MD::write(2230);
+    g_sweepDivider = 2230;
+    for (uint8_t i = 0; i <= Adc::PhaseMax; ++i) {
+        g_smearBand[i] = 0;
+        g_smearSeen[i] = 0;
+    }
+    for (uint8_t i = 6; i <= 22; ++i)
+        g_smearBand[i] = 8;        // the band, fixed wherever the walk starts
+    g_smearPrevious = enteredAt;
+    Adc::choosePhaseSyncProcessor(enteredAt);
+    Adc::choosePhaseAdc(16);
+    g_logLines.clear();
+    Adc::acquirePhase(2, true, lineSamplesSmearing, countFeed);
+    return scannedField("phase scan: ");
+}
+
+// The order the walk visits phases in, as the injected sync processor sees it.
+static uint8_t g_walkOrder[64];
+static uint8_t g_walkLen = 0;
+static int16_t g_walkPrevious = -1;
+
+static uint16_t lineSamplesRecordingOrder()
+{
+    const uint8_t at = Adc::PA_SP_S::read();
+    if ((int16_t)at != g_walkPrevious) {
+        if (g_walkLen < 64)
+            g_walkOrder[g_walkLen++] = at;
+        g_walkPrevious = at;
+    }
+    return g_sweepDivider;
+}
+
+static uint8_t firstPhaseScoredFrom(uint8_t inForce)
+{
+    Wire.reset();
+    Adc::PLLAD_MD::write(2230);
+    g_sweepDivider = 2230;
+    g_walkLen = 0;
+    g_walkPrevious = -1;
+    Adc::choosePhaseSyncProcessor(inForce);
+    Adc::choosePhaseAdc(16);
+    Adc::acquirePhase(2, true, lineSamplesRecordingOrder, countFeed);
+    return g_walkLen > 0 ? g_walkOrder[0] : (uint8_t)0xFF;
+}
+
+TEST_CASE("the walk starts where it is told, not where the adjuster was left")
+{
+    // **THE ENTRY WAS READ OFF THE ADJUSTER**, so the walk inherited whatever
+    // the previous search -- or the previous SOURCE's search -- had latched.
+    // Registers are an output of the engine and never an input to it, and a
+    // measurement that begins from a state nobody chose cannot be compared
+    // between two runs of it.
+    //
+    // This pins determinism rather than a picture outcome: the band a cyclic
+    // walk reports is already entry-independent, because the predecessor of
+    // every phase is phase - 1 whatever the entry, which the test above shows.
+    CHECK(firstPhaseScoredFrom(30) == firstPhaseScoredFrom(9));
+}
+
+TEST_CASE("the profile a sweep reports is the source's, not its entry phase's")
+{
+    // **A MEASUREMENT WHOSE ANSWER DEPENDS ON THE STATE IT WAS TAKEN FROM.**
+    // The walk started at whatever phase was in force, read off the adjuster --
+    // state inherited rather than set -- so a sweep entered inside the band
+    // smeared its scores differently from one entered outside it, and the
+    // profile moved with the entry rather than with the source. That
+    // self-latches: the pick becomes the next sweep's entry, so a displaced
+    // answer re-measures the same displaced profile and agrees with itself.
+    //
+    // Measured on `vga` at 1280x720@60: deep sampling every phase
+    // independently, 140 readings each, put the band at 6..22 on a settled
+    // arrival AND on one where the engine had just chosen 7 -- while the walk
+    // reported 16..28 on exactly those arrivals, centroid 22.3 against 14.2.
+    // Two instruments, one band, and only the walk moved.
+    // ../docs/investigations/the-adc-sampling-phase-is-a-lottery.md
+    const std::string outside = sweptFrom(30);
+    const std::string inside = sweptFrom(9);
+
+    REQUIRE_FALSE(outside.empty());
+    CHECK(outside == inside);
+}
+
 TEST_CASE("the sweep reports the scoreboard it scored on")
 {
     // Whether a band is genuinely worse than the dither the counter shows

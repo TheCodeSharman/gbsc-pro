@@ -359,6 +359,13 @@ const uint8_t SweepSteps = 34;
 // Samples taken at each phase before it is scored.
 const uint8_t SamplesPerPhase = 20;
 
+// Where the walk begins, so two runs of it are comparable. The entry used to be
+// read off the adjuster, which made it whatever the previous search -- or the
+// previous SOURCE's search -- had latched: a measurement starting from a state
+// nobody chose. Any value serves, because SweepSteps scores the first two
+// phases twice and keeps the second reading; what matters is that it is fixed.
+const uint8_t WalkEntryPhase = Adc::PhaseMax;
+
 // The shortest contiguous run of clean phases still worth calling a window.
 // Below it the clean phases are SCATTER, which is what an unlocked sampling
 // clock leaves -- the count misses the divider at every phase and whichever
@@ -437,8 +444,15 @@ bool Adc::acquirePhase(uint8_t oversample, bool sweep,
         return true;
     }
 
-    uint8_t phase = phaseSyncProcessor();
-    const uint8_t enteredAt = phase;
+    // The phase to put back if the profile turns out to be scatter, which is
+    // the adjuster's business; the walk's own start is stated below.
+    const uint8_t enteredAt = phaseSyncProcessor();
+
+    uint8_t phase = WalkEntryPhase;
+    choosePhaseSyncProcessor(phase);
+    applyPhaseSyncProcessor(phase);
+    feedWatchdog();
+    delayMicroseconds(256);
 
     // Two phases are walked twice -- the sweep is two steps longer than the
     // field -- and the second visit is the one kept.
