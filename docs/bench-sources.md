@@ -333,6 +333,14 @@ live source, so it is bench testable rather than host-test-only. It is also the
 only way to move the sync type with nothing else changing: same machine, same
 cable, same input, same raster.
 
+**WHICH MODE DECIDES WHETHER IT ACQUIRES, so choose one before designing a
+composite measurement.** 640x512@50 acquires and fills the screen with the line
+filter off, and 800x600@60 acquires and emits nothing; **1280x720@60 never
+acquires at all** -- a garbage first reading installs a 15 kHz setup and nothing
+measures past it. A composite leg scored at 720p measures that defect and not
+the thing under test. `known-issues.md`,
+`investigations/640x512-at-50-composite-emits-a-picture.md`.
+
 **ModeServ exposes it: `INTERLACE ON|OFF`.** The MDF format has ten keys and
 none is interlace, so it goes through `*TV vert,interlace` -- 0 meaning ON, the
 sense inverted -- and the mode is re-applied so the change reaches the wire.

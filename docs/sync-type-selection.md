@@ -251,38 +251,42 @@ noticed. So it missed the case it exists for and fired when nothing happened.
 
 ## What is still open
 
-**A sync type change arms a re-probe from the V-active bit.** A mode change is
-the signal the probe rides on, and a RISC PC changing its CMOS value changes no
-line count -- 311 at 320x256@50, 524 at 640x480@60, separate or composite -- so
-neither the unusable-count arm nor the unsettled-count arm can see one. 308
-against 311 is inside the source bounds and holds still.
+**A SYNC TYPE CHANGE ON ONE CABLE IS FOLLOWED, AND WHAT ARMS IT IS THE
+EXHAUSTED REFERENCE CLOCK SET.** A mode change is the signal the probe used to
+ride on, and a RISC PC changing its CMOS value changes no line count -- 311 at
+320x256@50, 524 at 640x480@60, separate or composite -- so neither the
+unusable-count arm nor the unsettled-count arm can see one. 308 against 311 is
+inside the source bounds and holds still.
 
-`VideoSourceAcquisition::sourceStoppedDrivingVsync()` counts
-`STATUS_SYNC_PROC_VSACT` reading 0 for `VsyncAbsentArmPasses` consecutive passes
-while the held type is separate sync, and it is asked in two places: between
-mode changes, where it arms a re-measure, and on every failed reading INSIDE
-a measurement, where it forgets the type so the next pass probes. The second
-is what a sync-type change needs, because the mode re-apply moves the count
-for a moment and the engine is already measuring when the separator is wanted. **The separate-sync answer is what puts the
-separator out, which is the probe's own measuring configuration**, so the bit
-read there reports whether the source drives V rather than which path is
-configured. The circularity above applies to choosing the type from an arbitrary
-state, not to checking a held one from the state that answer created.
+The arm is in the measurement's own recovery instead. The held sync type decides
+what the sync processor counts, so a source counted through the wrong
+arrangement cannot be measured through ANY clock -- and the clock set is finite.
+`VideoSourceAcquisition` counts how many of `Adc::referenceDividerCount()` have
+been tried on one unmeasurable source, and when the set is spent the clock is
+not what is wrong, so the type is re-measured rather than the clock advanced
+again. It re-arms every cycle and latches nothing.
 
-Held as composite the arm is off: the separator is then in the path and the bit
-reports the path.
+**WHAT MAKES THAT SAFE IS THE PROBE'S THIRD ANSWER, NOT THE ARM.** An absent
+source answers the V sync question exactly as a composite one does, which is why
+the two arms that read an instantaneous state as evidence about the sync type
+were deleted -- `investigations/an-absent-source-is-not-a-sync-type.md`.
+`SyncMeasurement::probe()` returns `NoSource` where no V arrives on its own pin
+AND the separator extracts no repeated frame, and holds the previous answer
+through it. So a probe taken with nothing to measure costs the window and
+concludes nothing, where discarding the held answer first would put a composite
+source on the separate arrangement.
 
-| | `VSACT`, separator out, configuration held |
-|---|---|
-| separate sync, 320x256@50 | 1, every sample |
-| composite sync, 320x256@50 | 0, every sample |
-| separate sync, 640x480@60 | 1, every sample |
-| composite sync, 640x480@60 | 0, every sample |
+Measured on the bench RISC PC at 1280x720@60 on `vga`, one cable, one raster,
+`SYNC` the only thing moving:
 
-Live and unfrozen on a healthy separate-sync source, 668 of 668 samples over
-three minutes read 1, so a run of zeros is not something a working source
-produces. The run is sized from `SyncMeasurement::OwnVsyncSettleMs`, which is
-the same reacquisition seen from the other side.
+| | before | after |
+|---|---|---|
+| separate -> composite | count 0, `HTOTAL` 1655 against `PLLAD_MD` 2040, `the reference clock measured nothing` for 60 s, no probe | re-probe at 2.47 s, `own V sync no, the separator finds V after 601ms`, arrangement composite |
+| composite -> separate | never recovered without `/sc?~` | re-probe at 5.67 s, `own V sync YES, separate H/V after 245ms`, acquired at 6.55 s, 750 lines x 60.01 Hz |
+
+**Following the change is not the same as acquiring through it.** The RISC PC's
+composite sync on `vga` is now entered correctly and still cannot be measured --
+`docs/known-issues.md`.
 
 **The line count cannot be that discriminator, and the plausibility reading is
 refuted.** Measured with the sync-processor configuration written by hand and

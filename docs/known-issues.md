@@ -2205,12 +2205,32 @@ So the earlier reading that 1280x720@60 comes up `state: absent` with
 composite and emits nothing: this one never measures the source at all, so the
 pad never returns and nothing reaches the bypass switch.
 
-**`SYNC 0` issued WHILE ALREADY AT 720p does not recover it.** It leaves
-`SP_SOG_MODE` 1 on a separate-sync source with count 97 and
-`STATUS_SYNC_PROC_HTOTAL` 10, spinning the reference clock list with no
-self-recovery in 60 s. `/sc?~` clears it in 5 s. Only a MODE change arms the
-re-probe that reaches the clean state, which is the sync-type entry's shape at
-a mode that cannot be acquired the wrong way round.
+**FIXED: `SYNC 0` issued WHILE ALREADY AT 720p now recovers it in about six
+seconds.** It used to leave `SP_SOG_MODE` 1 on a separate-sync source with count
+97 and `STATUS_SYNC_PROC_HTOTAL` 10, spinning the reference clock list with no
+self-recovery in 60 s, where `/sc?~` cleared it in 5 s and only a MODE change
+armed the re-probe. The spent reference clock set arms one now: measured
+2026-10-29 at 1280x720@60 pass-through, `own V sync YES, separate H/V after
+245ms` at 5.67 s and acquired at 6.55 s reading 750 lines x 60.01 Hz, with no
+`/sc?~` and no mode change. `sync-type-selection.md`.
+
+**The composite direction is unchanged and still fails.** `SYNC 1` is now
+ENTERED correctly -- re-probed at 2.47 s, `own V sync no, the separator finds V
+after 601ms` -- and the readings afterwards are the garbage this entry already
+describes: 711 lines at 134.45 Hz, then 375 at 3751 Hz, `the formatter followed
+it in 0 of 8` throughout. So following the change does not reach the mechanism
+below, and the re-probe then cycles about every 3 s.
+
+**WHETHER THE RE-PROBE ITSELF COSTS ANYTHING HERE IS UNMEASURED, and it is the
+first thing to check.** `SyncMeasurement::hasOwnVsync()` writes
+`applySeparation(..., Adc::dividerInForce())`, which at that point is a
+REFERENCE divider -- so the separator's pulse ignore, coast and `SP_DLT_REG` are
+sized for a line the source is not sending, which is the family this entry's
+mechanism belongs to and what `32b35ad55` prohibited for the equalisation probe.
+The first probe of the sequence runs with the previous solve's divider latched
+and answers correctly; every later one answers `UNKNOWN, nothing to separate`.
+A build with the escalation disabled, against one with it, on this mode is the
+comparison.
 
 **THE MECHANISM IS A GARBAGE FIRST READING INSTALLING A 15 kHz SETUP, AND
 NOTHING AFTERWARDS CAN MEASURE PAST IT.** Measured 2026-10-25 on the same
