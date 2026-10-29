@@ -90,6 +90,52 @@ can is `STATUS_SYNC_PROC_HTOTAL` against the divider: exactly 0 in 100.0% of
 1100 samples on every healthy state, dithering to -1..+1 only at an off-engine
 divider.
 
+## A STATIC PHASE CANNOT SHIMMER, so the shimmer is timing and not bandwidth
+
+The pass-through shimmer on PM5544's finest grating invites a Nyquist reading
+-- too few samples per grating period, so the grating aliases. **That framing is
+wrong, and one line removes it: a static sampling phase, however wrong, gives a
+static artefact.**
+
+Fewer samples per grating period means the displayed amplitude of that grating
+depends on where in each cycle the sampler lands, so a bad phase gives a DIM or
+UNEVEN grating. Shimmer is temporal. It requires the sampling INSTANT to move,
+line to line or frame to frame, and that is timing jitter -- which no bandwidth
+and no aperture can address.
+
+**Measured, the phase sets the amplitude and barely touches the movement.**
+`adc_phase_sweep.py` scores both off the same clips, `movement` being the
+standard deviation across the frames of a clip, on `vga` at 1280x720@60 in
+pass-through:
+
+| | amplitude across the 32 phases | movement across them |
+|---|---|---|
+| ratio 1, `PLLAD_MD` 2038 | 20.5..42.8, **2.09x** | 6.2..8.3, 1.35x |
+| ratio 2, `PLLAD_MD` 1740 | 16.0..26.5, **1.66x** | 5.0..5.5, 1.11x |
+
+And Nyquist is satisfied at every stage in both configurations, so there is no
+aliasing anywhere to appeal to. The source's content ends at 37.1 MHz, set by
+its own 74.25 MHz pixel clock:
+
+| stage | rate | needs | ratio 1 | ratio 2 |
+|---|---|---|---|---|
+| ADC conversion | 91.7 / 156.6 MHz | > 74.25 MHz | yes | yes |
+| decimation to kept | -- / 78.3 MHz | content < 39.15 MHz | n/a | yes, at 37.1 |
+
+So **kept samples per grating period -- 2.47 at 2038 against 2.11 at 1740 -- is
+a sampling DENSITY figure and not a Nyquist margin.** It governs how much a
+phase error costs in amplitude. It does not govern shimmer.
+
+**What this makes of the count metric is the useful part: it is not a proxy for
+the shimmer, it is a direct measurement of its cause.** A
+`STATUS_SYNC_PROC_HTOTAL` that dithers IS the capture origin landing
+differently line to line, which is the moving sampling instant the paragraph
+above requires.
+
+**And the scaling path is immune because the frame buffer decouples the capture
+instant from the output grid**, not only because it samples more densely --
+2.15 samples per source pixel there against pass-through's 1.235.
+
 ## What the shimmer is not
 
 - Not the sampling phase, and not reachable by it.
