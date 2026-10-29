@@ -224,10 +224,13 @@ static void seedPassThroughSource()
 // The sync-type probe, and how often it was asked. Whether a source carries its
 // own V sync cannot be read back, so the engine is handed a function that says.
 static bool g_hasOwnVsync = true;
+static bool g_probeFindsNothing = false;
 static unsigned g_probeCalls = 0;
 static Tv5725::SyncMeasurement::Answer probeOwnVsync()
 {
     ++g_probeCalls;
+    if (g_probeFindsNothing)
+        return Tv5725::SyncMeasurement::NoSource;
     return g_hasOwnVsync ? Tv5725::SyncMeasurement::OwnVsync
                          : Tv5725::SyncMeasurement::NoOwnVsync;
 }
@@ -1876,6 +1879,42 @@ TEST_CASE("a count that never steadies through a solved divider gets another clo
     }
 
     CHECK(loggedContaining("the reference clock measured nothing"));
+}
+
+TEST_CASE("a source no reference clock can measure has its sync type re-probed")
+{
+    // **A SOURCE THAT CHANGES ITS SYNC TYPE ON ONE CABLE IS OTHERWISE NEVER
+    // FOLLOWED.** The held type decides what the sync processor counts, so a
+    // source that went composite under a separate-sync answer cannot be
+    // measured through any clock -- and the only recovery for an unmeasurable
+    // source cycled the reference clock, which is the wrong held measurement.
+    // Measured on the bench RISC PC at 1280x720@60 on `vga`: `SYNC 1` left the
+    // count at 0 with HTOTAL 1655 against PLLAD_MD 2040, the console printing
+    // `the reference clock measured nothing, trying the next` for 60 s without
+    // one probe, and only /sc?~ recovered it.
+    //
+    // The clock set is finite, so exhausting it is what says the clock is not
+    // what is wrong. ../docs/sync-type-selection.md
+    seedBenchSource();
+    Adc::installReferenceSamplingClock();
+
+    Acquiring unit;
+    unit.path.useSyncTypeProbe(probeOwnVsync);
+    unit.acquisition.allowMaintenance(true);
+    unit.start();
+    unit.poll();
+    g_probeCalls = 0;
+
+    // Nothing the clock in force can count, with the source still pulsing --
+    // every reference clock in the set, each given its own run of passes.
+    const uint16_t passes = (uint16_t)((Adc::referenceDividerCount() + 1)
+                                       * (VideoSourceAcquisition::ReferenceRetryPasses + 2));
+    for (uint16_t i = 0; i < passes; ++i) {
+        seedSourceLines((uint16_t)(97 + (i % 60)));
+        unit.poll();
+    }
+
+    CHECK(g_probeCalls > 0);
 }
 
 TEST_CASE("each reference clock gets its own run of passes")

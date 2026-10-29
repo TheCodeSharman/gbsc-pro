@@ -549,6 +549,13 @@ private:
     // source that cannot be measured with nothing that ever tries again.
     uint16_t referenceRetryPasses_;
 
+    // How many of the reference clocks have been tried on this unmeasurable
+    // source. The set is finite, so exhausting it is the evidence that the
+    // clock is not what is wrong -- and the only other held measurement
+    // deciding whether the source can be counted is the sync type.
+    // docs/sync-type-selection.md
+    uint8_t referenceClocksTried_;
+
     uint16_t acquiredPasses_;
 
     // The same run counted from the ARRIVING source: zeroed by a transition as

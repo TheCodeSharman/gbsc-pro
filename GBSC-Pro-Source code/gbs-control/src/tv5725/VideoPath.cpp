@@ -1005,14 +1005,29 @@ void VideoPath::forgetSyncType()
     intervalMeasuredFor_ = NoSelectionSeen;
 }
 
+// THE HELD ANSWER STANDS UNTIL THE PROBE REPLACES IT. An absent source answers
+// the V sync question exactly as a composite one does, so a probe that finds
+// nothing to separate must conclude nothing -- discarding the answer first
+// instead puts a composite source on the separate arrangement, where it is
+// never counted. ../../../../docs/investigations/an-absent-source-is-not-a-sync-type.md
 bool VideoPath::reacquireSyncType()
 {
-    SyncMeasurement::forget();
-    EqualisationMeasurement::forget();
-    syncTypeApplied_ = false;
-    intervalMeasuredFor_ = NoSelectionSeen;
-    establishSyncType(syncTypeChosenFor_);
-    return SyncMeasurement::isCsync();
+    if (syncProbe_ == 0)
+        return SyncMeasurement::isCsync();
+
+    const bool applied = syncTypeApplied_;
+    const bool was = syncTypeInForce_;
+    const bool csync = SyncMeasurement::probe(syncProbe_);
+
+    // Both are measured THROUGH the sync path, so an answer that moves it
+    // invalidates them and one that confirms it leaves them alone.
+    if (!applied || csync != was) {
+        EqualisationMeasurement::forget();
+        intervalMeasuredFor_ = NoSelectionSeen;
+    }
+
+    putSyncTypeInForce(csync);
+    return csync;
 }
 
 bool VideoPath::reapplySyncTypeInForce()

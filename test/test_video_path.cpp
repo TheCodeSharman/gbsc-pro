@@ -2501,9 +2501,12 @@ TEST_CASE("the engine says which source the framing it holds is against")
 
 static unsigned g_probeCalls = 0;
 static bool g_hasOwnVsync = true;
+static bool g_probeFindsNothing = false;
 static SyncMeasurement::Answer probeOwnVsync()
 {
     ++g_probeCalls;
+    if (g_probeFindsNothing)
+        return SyncMeasurement::NoSource;
     return g_hasOwnVsync ? SyncMeasurement::OwnVsync
                          : SyncMeasurement::NoOwnVsync;
 }
@@ -2611,6 +2614,36 @@ TEST_CASE("reacquiring the sync type puts the registers on the answered path")
     engine.reacquireSyncType();
 
     CHECK(SyncProcessor::SP_SOG_MODE::read() == 0);
+}
+
+TEST_CASE("a re-probe that finds nothing to separate keeps the held sync type")
+{
+    // AN ABSENT SOURCE IS NOT A SYNC TYPE. A source that has gone away answers
+    // the V sync question exactly as a composite one does, so the escalation
+    // must not conclude anything from it -- discarding the held answer first
+    // makes a probe with nothing to measure apply the separate arrangement to a
+    // composite source, which is never counted through it.
+    // ../docs/investigations/an-absent-source-is-not-a-sync-type.md
+    seedBenchSource();
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+    VideoSourceAcquisition acquisition(sampling, engine);
+    engine.useSyncTypeProbe(probeOwnVsync);
+
+    g_hasOwnVsync = false;
+    engine.setOutputMode(benchMode());
+    engine.inputTimingsChanged(4);
+    REQUIRE(pollUntilSolved(acquisition));
+    REQUIRE(SyncMeasurement::isCsync());
+
+    g_probeFindsNothing = true;
+    const bool csync = engine.reacquireSyncType();
+    g_probeFindsNothing = false;
+    g_hasOwnVsync = true;
+
+    CHECK(csync);
 }
 
 TEST_CASE("reacquiring the sync type asks the probe again")

@@ -44,6 +44,7 @@ VideoSourceAcquisition::VideoSourceAcquisition(Tv5725::SourceMeasurement &sampli
       unsettledPasses_(0), unsettledArmed_(false),
       passThroughFieldRateHz_(0.0f),
       unmeasuredPasses_(0), referenceRetryPasses_(0),
+      referenceClocksTried_(0),
       acquiredPasses_(0), arrivedPasses_(0),
       selectionSeen_(VideoSourceSelection::None), selectionEstablished_(false),
       runAdvanced_(false), phaseRateHz_(0) {}
@@ -1026,6 +1027,7 @@ bool VideoSourceAcquisition::poll(uint32_t nowMs)
     if (sourceState_ == SourceAcquired) {
         unmeasuredPasses_ = 0;
         referenceRetryPasses_ = 0;
+        referenceClocksTried_ = 0;
         if (acquiredPasses_ < AcquiredPassCeiling)
             ++acquiredPasses_;
         if (arrivedPasses_ < AcquiredPassCeiling)
@@ -1147,6 +1149,7 @@ void VideoSourceAcquisition::restartRecovery()
 {
     unmeasuredPasses_ = 0;
     referenceRetryPasses_ = 0;
+    referenceClocksTried_ = 0;
 }
 
 bool VideoSourceAcquisition::selectionMoved()
@@ -1240,10 +1243,29 @@ bool VideoSourceAcquisition::runPass(uint32_t nowMs, bool &detectionPass)
                 (status == Tv5725::SourceMeasurement::Unmeasurable
                  || status == Tv5725::SourceMeasurement::NotSteady)
                 && sampling_.fieldRateHz() > 0.0f;
-            if (referenceRetryPasses_ > ReferenceRetryPasses
-                && videoPath_.tryNextReferenceClock(clockCannotMeasure)) {
-                referenceRetryPasses_ = 0;
-                tv5725Log("measure: the reference clock measured nothing, trying the next");
+            //
+            // **AND THE SYNC TYPE IS THE OTHER HELD MEASUREMENT THAT DECIDES
+            // WHETHER THE SOURCE CAN BE COUNTED AT ALL.** A source that changed
+            // its sync type on one cable is counted through the path the
+            // previous arrangement left, which no clock can measure -- so once
+            // the whole reference set has been tried the clock is not what is
+            // wrong, and the type is re-measured instead. It RE-ARMS rather
+            // than latching: the probe concludes nothing where there is
+            // nothing to separate, so an absent source costs the window and
+            // keeps its answer.
+            if (referenceRetryPasses_ > ReferenceRetryPasses) {
+                if (referenceClocksTried_ >= Tv5725::Adc::referenceDividerCount()) {
+                    referenceClocksTried_ = 0;
+                    referenceRetryPasses_ = 0;
+                    tv5725Log("measure: no reference clock could measure the "
+                              "source, re-probing the sync type");
+                    videoPath_.reacquireSyncType();
+                } else if (videoPath_.tryNextReferenceClock(clockCannotMeasure)) {
+                    if (referenceClocksTried_ < Tv5725::Adc::referenceDividerCount())
+                        ++referenceClocksTried_;
+                    referenceRetryPasses_ = 0;
+                    tv5725Log("measure: the reference clock measured nothing, trying the next");
+                }
             }
         }
         gaveBackPassThrough();
