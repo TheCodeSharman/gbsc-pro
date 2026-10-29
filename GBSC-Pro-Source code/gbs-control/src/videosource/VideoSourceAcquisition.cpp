@@ -30,7 +30,8 @@ VideoSourceAcquisition::VideoSourceAcquisition(Tv5725::SourceMeasurement &sampli
       syncAwaySeen_(false), syncAwayMs_(0),
       mayRun_(0), passThroughSwitch_(0), passThroughAllowed_(false), resolution_(0),
       detectedMs_(0),
-      detectedEver_(false), solvedLines_(0), solvedFrame_(0), solvedLineRateHz_(0),
+      detectedEver_(false), solvedLines_(0), solvedForInput_(0),
+      solvedFrame_(0), solvedLineRateHz_(0),
       idle_(Tv5725::SourceMeasurement::SteadySamples,
             Tv5725::SourceMeasurement::CountPairSpread),
       unusableCountArmed_(false), dynamicApplied_(false),
@@ -96,7 +97,7 @@ bool VideoSourceAcquisition::samplingPhaseFound() const
     return Tv5725::Adc::phaseFound() && phaseRateHz_ == sampling_.lineRateHz();
 }
 
-bool VideoSourceAcquisition::acquireSamplingPhase()
+bool VideoSourceAcquisition::acquireSamplingPhase(const char *reason)
 {
     // NOT INSIDE A TRANSITION. A sweep taken with the sync pad away scores a
     // band that wanders -- measured 1..22 to 5..29 over sixteen of them against
@@ -115,6 +116,23 @@ bool VideoSourceAcquisition::acquireSamplingPhase()
                                      LatchTolerance))
         return false;
 
+    // AND THE SOURCE HAS TO BE THE ONE THE SOLVE IS OF, which neither the
+    // latch nor the count can say. dividerLatched() compares
+    // STATUS_SYNC_PROC_HTOTAL against the divider, and that agrees within a
+    // quarter second of a selection while the sync processor still counts the
+    // input that went away; the count agrees with the solve there too, because
+    // both belong to that same outgoing source. A sweep taken in that state
+    // scores all 32 phases against a frame belonging to neither.
+    if (solvedForInput_ != (uint8_t)VideoSourceSelection::selected())
+        return false;
+
+    // Then the count, which catches a MODE change on one input the same way:
+    // the engine's own agreement rather than equality, because a count
+    // alternating by one is the same count.
+    if (solvedLines_ == 0
+        || !idle_.agrees(Tv5725::SyncProcessor::frameLines(), solvedLines_))
+        return false;
+
     // What the ADC is RUNNING, not what was asked for: the request is
     // OversampleAsClockAllows on every source and the crossover row decides
     // what that becomes.
@@ -127,6 +145,24 @@ bool VideoSourceAcquisition::acquireSamplingPhase()
     // the previous source left. The search reports its own bad data through
     // SweepGoodEnough and samplingClockSuspect() besides.
     // ../../../docs/known-issues.md
+    // BEFORE THE WALK, because the walk is what the state has to be read
+    // against: the band forms under the origin in force now, and reportScan()
+    // reports the one left afterwards.
+    char before[96];
+    snprintf(before, sizeof(before),
+             "sampling phase: sweeping for %s, rt %u md %u vt %u solved %u"
+             " state %u in %u/%u lock %u",
+             reason,
+             (unsigned)Tv5725::SyncProcessor::SP_RT_HS_SP::read(),
+             (unsigned)Tv5725::Adc::PLLAD_MD::read(),
+             (unsigned)GBS::STATUS_SYNC_PROC_VTOTAL::read(),
+             (unsigned)solvedLines_,
+             (unsigned)sourceState_,
+             (unsigned)VideoSourceSelection::selected(),
+             (unsigned)solvedForInput_,
+             (unsigned)GBS::STATUS_MISC_PLLAD_LOCK::read());
+    tv5725Log(before);
+
     const bool found = Tv5725::Adc::acquirePhase(
         oversample, true, Tv5725::SyncProcessor::lineSamples, watchdog_);
 
@@ -543,6 +579,7 @@ bool VideoSourceAcquisition::armMove(const char *why, uint16_t lines, bool mux)
 void VideoSourceAcquisition::holdSolvedSource()
 {
     solvedLines_ = sampling_.sourceLines();
+    solvedForInput_ = (uint8_t)VideoSourceSelection::selected();
     solvedLineRateHz_ = sampling_.lineRateHz();
     solvedFrame_ = sampling_.verticalPeriod();
 
@@ -1525,7 +1562,7 @@ void VideoSourceAcquisition::maintainSource()
         Tv5725::FrameBuffer::releaseCapture();
 
     if (due.samplingPhase)
-        acquireSamplingPhase();
+        acquireSamplingPhase("maintenance");
 
     if (due.acknowledgeSogBad)
         Tv5725::Interrupts::acknowledgeSogBad();

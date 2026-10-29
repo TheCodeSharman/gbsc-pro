@@ -124,7 +124,12 @@ public:
     // PLLAD_MD reports. Run against an unlatched one, every phase reads bad and
     // the search picks noise. At a WIDER tolerance than the other sites compare
     // at, which is measured rather than inherited -- see LatchTolerance.
-    bool acquireSamplingPhase();
+    // `reason` names the path that asked, and is logged with the origin the
+    // sweep is about to run against. Four call sites reach this and the band's
+    // position decides the pick, so a capture has to say which one took a
+    // sweep at a provisional origin -- reportScan() reads md and rt AFTER the
+    // walk and cannot.
+    bool acquireSamplingPhase(const char *reason);
 
     // Whether the phase held is one to keep: a search succeeded, and it was
     // searched for the sampling THIS source is read through -- Tv5725::Adc
@@ -460,6 +465,12 @@ private:
     // against. 0 lines means nothing has been solved, which is what bypass
     // leaves too.
     uint16_t solvedLines_;
+
+    // WHICH INPUT THE SOLVE IS OF. Right after a selection the count and the
+    // solve BOTH belong to the outgoing source, so comparing them agrees and
+    // says nothing -- only the selection tells them apart. Held as the id's
+    // width rather than its type, the way syncTypeChosenFor_ is.
+    uint8_t solvedForInput_;
     uint32_t solvedLineRateHz_;
 
     Tv5725::SteadyRun idle_;

@@ -2669,7 +2669,7 @@ void enterHdBypass()
 
     // The only phase search on this route: nothing maintains a source while it
     // is passed through, because there is no scaled path to maintain.
-    inputAcquisition.acquireSamplingPhase();
+    inputAcquisition.acquireSamplingPhase("pass-through setup");
 }
 
 void enableScanlines()
@@ -4677,7 +4677,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     Tv5725::Adc::applyOversample(GBS::PLLAD_KS::read(), wanted);
                     Tv5725::Adc::latch();
                     delay(4);
-                    inputAcquisition.acquireSamplingPhase();
+                    inputAcquisition.acquireSamplingPhase("oversample relatch");
                     ; // SerialMprint("OSR ");
                     ; // SerialMprintln("x");
                     Tv5725::Adc::forgetPhase();
@@ -5463,7 +5463,7 @@ void handleType2Command(char argument)
                 Tv5725::SyncOnGreen::choose(16);
             }
             Tv5725::SyncOnGreen::putInForce();
-            inputAcquisition.acquireSamplingPhase();
+            inputAcquisition.acquireSamplingPhase("sync on green");
             ; // SerialMprint("Phase: ");
             ; // SerialMprint(" SOG: ");
             ; // SerialMprint(Tv5725::SyncOnGreen::level());

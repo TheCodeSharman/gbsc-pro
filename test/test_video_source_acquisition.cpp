@@ -2878,7 +2878,7 @@ TEST_CASE("an unlatched divider is not worth searching the phase for")
     Adc::choosePhaseAdc(24);
     g_watchdogFeeds = 0;
 
-    CHECK_FALSE(unit.acquisition.acquireSamplingPhase());
+    CHECK_FALSE(unit.acquisition.acquireSamplingPhase("a test"));
     CHECK(Adc::phaseSyncProcessor() == 9);
     CHECK(Adc::phaseAdc() == 24);
     CHECK(g_watchdogFeeds == 0);
@@ -2917,7 +2917,7 @@ TEST_CASE("the phase gate compares at a wider tolerance than the other sites")
     // anyway -- only the feeds say whether it ran.
     seedLineSamplesUnlocked(BenchDivider + 5);
     g_watchdogFeeds = 0;
-    unit.acquisition.acquireSamplingPhase();
+    unit.acquisition.acquireSamplingPhase("a test");
     CHECK(g_watchdogFeeds > 0);
 
     // And the width is bounded -- a count well clear of the divider still goes
@@ -2925,9 +2925,80 @@ TEST_CASE("the phase gate compares at a wider tolerance than the other sites")
     seedLineSamplesUnlocked(BenchDivider + 40);
     Adc::choosePhaseSyncProcessor(9);
     g_watchdogFeeds = 0;
-    CHECK_FALSE(unit.acquisition.acquireSamplingPhase());
+    CHECK_FALSE(unit.acquisition.acquireSamplingPhase("a test"));
     CHECK(g_watchdogFeeds == 0);
     CHECK(Adc::phaseSyncProcessor() == 9);
+}
+
+TEST_CASE("no sweep while the sync processor still counts the source that left")
+{
+    // **dividerLatched() CANNOT SAY THE COUNT IS THIS SOURCE'S.** It asks only
+    // whether STATUS_SYNC_PROC_HTOTAL echoes the divider, which it does within
+    // a quarter second of a selection while the sync processor is still
+    // counting the input that went away -- so a sweep scores all 32 phases
+    // against a frame belonging to neither source.
+    //
+    // Measured on `vga` at 1280x720@60 with the Wii on `ypbpr` as the transit
+    // input: `sweeping for maintenance, rt 1959 md 2038 vt 524` at 0.24 s --
+    // 524 is 480p's count, 749 is this source's -- and that arrival settled on
+    // a dither band eight phases from where all nine arrivals without an early
+    // sweep put it, so its clean run's middle was 7 instead of 30.
+    // ../docs/investigations/the-adc-sampling-phase-is-a-lottery.md
+    seedBenchSource();
+    seedLineSamples(BenchDivider);
+    Acquiring unit;
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+    REQUIRE(unit.pollUntilShown());
+    REQUIRE(unit.acquisition.acquireSamplingPhase("the source's own count"));
+
+    // The transit input's count through this source's divider, which also
+    // refuses -- that is what catches a MODE change on one input.
+    const uint16_t own = SyncProcessor::frameLines();
+    seedSourceLines(524);
+    CHECK_FALSE(unit.acquisition.acquireSamplingPhase("a foreign count"));
+    seedSourceLines((uint16_t)(own - 1));
+
+    // **COMPARING THE COUNT AGAINST THE SOLVE IS NOT ENOUGH, and the first
+    // attempt at this gate failed on the bench for that reason.** Right after a
+    // selection BOTH belong to the outgoing source, so they agree: measured on
+    // `vga` with the Wii as the transit input, `sweeping for maintenance, rt
+    // 1959 md 2038 vt 524` still printed with the gate in force, because the
+    // solve it was checked against was the Wii's 525.
+    //
+    // So the question is whose source the solve is OF, which only the selection
+    // answers.
+    VideoSourceSelection::select(VideoSourceSelection::Ypbpr);
+
+    CHECK_FALSE(unit.acquisition.acquireSamplingPhase("another input's solve"));
+
+    VideoSourceSelection::select(VideoSourceSelection::Vga);
+}
+
+TEST_CASE("a sweep says what asked for it and the origin it ran against")
+{
+    // **reportScan() READS md AND rt AFTER THE SWEEP**, so the origin printed
+    // beside the array is not necessarily the one the band formed under -- and
+    // the band's position is what decides the pick. Measured on `vga` at
+    // 1280x720@60: two arrivals printing an identical `md 2038 rt 32` whose
+    // dirty bands sat ten phases apart, 6..21 against 16..28, the second
+    // picking 6..7 where the first picked 30.
+    //
+    // Four call sites reach the search and the console named none of them, so
+    // which path takes a sweep at the provisional origin could not be read off
+    // a capture. ../docs/investigations/the-adc-sampling-phase-is-a-lottery.md
+    seedBenchSource();
+    seedLineSamples(BenchDivider);
+    Acquiring unit;
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+    REQUIRE(unit.pollUntilShown());
+    g_logLines.clear();
+
+    REQUIRE(unit.acquisition.acquireSamplingPhase("a test"));
+
+    CHECK(loggedContaining("sweeping for a test"));
+    CHECK(loggedContaining("rt "));
 }
 
 TEST_CASE("a latched divider gets the search, and the watchdog is fed through it")
@@ -2943,7 +3014,7 @@ TEST_CASE("a latched divider gets the search, and the watchdog is fed through it
     g_watchdogFeeds = 0;
 
     REQUIRE(unit.pollUntilShown());
-    CHECK(unit.acquisition.acquireSamplingPhase());
+    CHECK(unit.acquisition.acquireSamplingPhase("a test"));
     CHECK(g_watchdogFeeds > 0);
 }
 
@@ -2975,7 +3046,7 @@ TEST_CASE("a scan that blames the clock says so instead of searching again")
     g_logLines.clear();
 
     REQUIRE(unit.pollUntilShown());
-    CHECK_FALSE(unit.acquisition.acquireSamplingPhase());
+    CHECK_FALSE(unit.acquisition.acquireSamplingPhase("a test"));
     CHECK(Adc::samplingClockSuspect());
     CHECK(loggedContaining("sampling clock unlocked"));
 }
@@ -3010,7 +3081,7 @@ TEST_CASE("a starved separator still gets the sweep")
     g_watchdogFeeds = 0;
 
     REQUIRE(unit.pollUntilShown());
-    REQUIRE(unit.acquisition.acquireSamplingPhase());
+    REQUIRE(unit.acquisition.acquireSamplingPhase("a test"));
     CHECK(g_watchdogFeeds > 0);
 }
 
@@ -4214,7 +4285,7 @@ TEST_CASE("a phase searched at one source's rate is not found at another's")
         unit.poll();
     REQUIRE(unit.path.outputShown());
     REQUIRE(unit.pollUntilShown());
-    REQUIRE(unit.acquisition.acquireSamplingPhase());
+    REQUIRE(unit.acquisition.acquireSamplingPhase("a test"));
     REQUIRE(unit.acquisition.samplingPhaseFound());
     const uint32_t searchedAt = unit.acquisition.sourceLineRateHz();
 
@@ -4251,7 +4322,7 @@ TEST_CASE("the sampling phase is not searched inside a transition")
     REQUIRE(unit.path.syncOutAway());
     REQUIRE(Adc::dividerLatched(SyncProcessor::lineSamples()));
 
-    CHECK_FALSE(unit.acquisition.acquireSamplingPhase());
+    CHECK_FALSE(unit.acquisition.acquireSamplingPhase("a test"));
     CHECK_FALSE(Adc::phaseFound());
 }
 
