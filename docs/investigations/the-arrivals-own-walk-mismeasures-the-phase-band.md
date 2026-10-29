@@ -262,15 +262,48 @@ source's divider and back is not the same thing, and it moves the band:
 | the same at oversample 4 | **16.4** | **11** |
 | coast 7/6 and back | 14.3 | 8 |
 
-Three of three, about ten standard deviations clear of the controls, and the
-oversampling ratio makes no difference to it. **But it is only four phases of
-the ten an input change produces**, so it is a contributor rather than the
-cause.
+Three of three and about ten standard deviations clear of the controls -- but
+**it is an artefact of the instrument, not a contributor to the fault**, and
+two further arms say so. Putting ANY other write between the excursion and the
+walk removes it: the same excursion followed by `/coast?clear` scores 14.5 and
+followed by a `/refclock` install scores 14.3 and 14.1. `/sampleclock`
+restarts the PLL and the phase adjusters, so what the +2 measures is a walk
+run before that restart has settled, and the trailing write is the delay that
+lets it.
 
-**What separates the two is the PLL's REFERENCE, not its divider.**
-`/sampleclock` changes the divider while the loop stays locked to `vga`'s
-hsync throughout; an input change locks it to the other source's line rate and
-back. That is the next arm and it has not been run.
+**So it is a second, much smaller effect with the same shape as the fault, and
+it must not be read as the fault scaled down.** Four phases against ten, and
+removable by a delay the real one does not answer to -- see below.
+
+**The PLL's reference is out as well.** `/refclock` installs the other
+source's reference divider, which is what an input change does and
+`/sampleclock` does not, and it moves nothing: 14.4 and 14.1 at reference 2506
+against controls at 13.8..14.4, with the divider excursion added and without.
+
+## The correction is NOT a settling time, which is what rules out waiting
+
+If the arrival's walk were simply early, a re-walk would be wrong at first and
+become right. It does not: timed from the moment `vga`'s count returns, the
+FIRST re-walk is already correct, and nothing changes after it.
+
+| | the arrival's walk | +0 s | +2 s | +5 s | +10 s | +20 s |
+|---|---|---|---|---|---|---|
+| trip 1 | 22.5 | **14.4** | 14.2 | 13.9 | 14.5 | 14.2 |
+| trip 2 | 22.2 | **13.7** | 14.3 | 14.0 | 14.1 | 14.2 |
+| trip 3 | 22.3 | **14.6** | 14.4 | 14.2 | 14.0 | 14.6 |
+
+The +0 s walk lands 3.6 s after the count returns, which is about when the
+arrival's own walk runs, and it is right while that one is wrong. **So the
+difference is not WHEN the walk runs but what it is run BY** -- the
+acquisition's call against `/phasesweep`'s -- and a fix that delays the walk
+has nothing to wait for.
+
+**The instrument this now needs does not exist**: a second walk run from
+inside the acquisition, immediately after the first, with both scans logged.
+If the second is already right the fault is in the first walk after the
+adjusters are restarted; if both are wrong it is the calling context, and only
+then is moving the call the answer. Everything reachable from outside the
+firmware is exhausted.
 
 ## NO REGISTER CARRIES IT, which is what leaves the walk itself as the fault
 
@@ -335,3 +368,5 @@ times out and carries on leaves a short excursion that looks like one.
 | the sync-type probe disturbs the walk | a same-input reselect runs two and stays right |
 | the SOG switch, the ADC mux or the coast carries it | each bounced against controls, all null |
 | the excursion must solve the other source | four seconds on it displaces as far as a full acquisition |
+| the PLL's reference carries it | `/refclock` to the other source's divider, null with and without the divider |
+| the arrival's walk is merely early | the first re-walk is already right, at +0 s and at +20 s |
