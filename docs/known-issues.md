@@ -10,6 +10,39 @@ regardless of which step is in flight.
 
 ## Reaches the picture
 
+### The sampling phase walk mismeasures its own band during an input-change acquisition
+
+`Adc::acquirePhase()` run inside an input-change acquisition reports the dirty
+band eight to ten phases further on than it is, so the middle of the widest
+clean run lands at 6 -- inside the real band -- instead of at 30. The picture
+is visibly worse there, and the pick persists, because `phaseFound_` stops the
+walk being re-run on a steady source.
+
+**The signature is the arrival kind.** On `vga`, RISC PC at 1280x720@60,
+pass-through, `PLLAD_MD` 2038, eight pairs interleaved: a mode change on `vga`
+reports the band at 6..22 and picks 28..31 in 8 of 8, an input change through
+`ypbpr` reports 15..29 and picks 5..7 in 8 of 8. No overlap.
+
+**The band does not move -- the measurement is wrong.** The same state
+re-walked seconds later through `/phasesweep`, unfrozen and with nothing else
+touched, reports 6..22 and picks 28..30, four times in four. The deep sampled
+surface, 21 walks on a frozen settled state, and the picture's own dirty band
+all agree with the re-walk.
+
+Eliminated: every register. A full 1536-address diff either side of a
+confirmed displacement differs in six bytes against three between two arrivals
+of the same kind, and writing all of them into a true-band state moves
+nothing. Also eliminated: the walk's settle, interleaved at 0, 4, 8 and 16
+readings.
+
+**What would settle it** is which part of the input-change sequence the walk is
+disturbed by. It runs three sync-type probes rather than one and sets the sync
+arrangement for the outgoing input before the arriving one; the probe writes
+`SP_EXT_SYNC_SEL` and the chip latches that as a SOG switch, which is the
+first thing to ask about and has not been tested. The fix is to take the
+measurement where what it depends on is in force rather than to re-run it.
+`investigations/the-arrivals-own-walk-mismeasures-the-phase-band.md`.
+
 ### FIXED: the phase sweep refused half its own answers and fell back onto a seed inside the band
 
 `PA_SP_S` 8 after an input change was never a phase the search chose. The sweep
