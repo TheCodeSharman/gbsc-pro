@@ -14,16 +14,23 @@ the re-search window before reading `PA_SP_S`. **The count is what is polled,
 never `/geometry`'s `state`**, which is stale across an input change and
 answers for the source that just went away.
 
-**AN ANSWER IS SCORED BY ABSENCE FROM THE SETTLED BAND, NOT BY MEMBERSHIP OF
-THE TRANSIENT ONE.** `--settled-low`..`--settled-high` is where a settled sweep
-lands and everything else is displaced, because the transient band's own bounds
-cannot cover an answer displaced further than any yet seen -- scored the other
-way round, a `PA_SP_S` of 4 against a settled 29..31 reads as good.
+**AN ANSWER IS SCORED AGAINST THE HARMFUL BAND, AND THE QUIET FAMILY IS AN ARC
+THROUGH ZERO.** `--harmful-low`..`--harmful-high` is where the picture is
+measurably worse; everything else, 23..31 and 0..6 alike, costs nothing. Scoring
+by absence from the settled 29..31 instead counted 0 and 4 as displaced, so a
+run of good arrivals read as a run of bad ones.
 
-Those bounds are the measured profile for the bench RiscPC in pass-through at
-`PLLAD_MD` 2038 and belong to that sampling, so pass the profile's own band when
-the source or the divider differs.
+That band is the measured profile for the bench RiscPC in pass-through at
+`PLLAD_MD` 2038 and belongs to that sampling, so pass the profile's own band when
+the source or the divider differs -- the Wii's dirty band is 22..24.
+`docs/investigations/the-sync-phase-sets-the-adc-families-ceiling.md`,
 `docs/investigations/the-sampling-phase-is-searched-before-the-source-settles.md`
+
+**`SP_SOG_MODE` IS READ BESIDE EVERY ANSWER, because it is the only witness to
+which sync arrangement the probe left in force** -- and the probe keys on the
+input selection, so each leg re-runs it. A leg whose source changed sync type
+underneath it is otherwise indistinguishable from one that did not.
+`docs/sync-type-selection.md`
 
 **ONE PROCESS MAY DRIVE THE UNIT AT A TIME.** Two runs calling `/input` time
 each other's source changes, which reads as an unreliable unit.
@@ -41,10 +48,14 @@ import gbs_unit as g
 LOCKED_VTOTAL_MIN = g.LOCKED_VTOTAL_MIN
 
 
-def displaced(phase, settled):
-    """Whether a phase is one a settled sweep would not have chosen."""
-    low, high = settled
-    return not (low <= phase <= high)
+# Where the picture is measurably worse, for the bench RiscPC in pass-through.
+HARMFUL = (7, 22)
+
+
+def harmful(phase, band):
+    """Whether a phase is one the picture pays for."""
+    low, high = band
+    return low <= phase <= high
 
 
 def counted(host, want=None, other_than=None, timeout=40.0):
@@ -94,7 +105,7 @@ def leg(host, under_test, other, baseline, settle_s, timeout, hold_s=None):
     time.sleep(settle_s)
 
     held = g.read_fields(host, ["PA_SP_S", "PA_ADC_S", "PLLAD_MD",
-                                "STATUS_SYNC_PROC_VTOTAL"])
+                                "STATUS_SYNC_PROC_VTOTAL", "SP_SOG_MODE"])
     return dict(ok=True, count=count, **held)
 
 
@@ -112,8 +123,8 @@ def main():
                         help="seconds to hold the other input before switching "
                              "back, instead of waiting for it to count -- about "
                              "three reproduces the displaced first sweep")
-    parser.add_argument("--settled-low", type=int, default=29)
-    parser.add_argument("--settled-high", type=int, default=31)
+    parser.add_argument("--harmful-low", type=int, default=HARMFUL[0])
+    parser.add_argument("--harmful-high", type=int, default=HARMFUL[1])
     args = parser.parse_args()
 
     # The count the input under test reads, taken with it already selected, so
@@ -134,11 +145,12 @@ def main():
             rows.append(row)
             continue
         phase = row["PA_SP_S"]
-        bad = displaced(phase, (args.settled_low, args.settled_high))
+        bad = harmful(phase, (args.harmful_low, args.harmful_high))
         rows.append(dict(row, bad=bad))
         print(f"leg {n + 1:2d}: PA_SP_S {phase:2d}  "
               f"PA_ADC_S {row['PA_ADC_S']:2d}  MD {row['PLLAD_MD']}  "
-              f"count {row['count']}  {'BAD' if bad else 'good'}", flush=True)
+              f"count {row['count']}  sog {row['SP_SOG_MODE']}  "
+              f"{'BAD' if bad else 'good'}", flush=True)
 
     scored = [r for r in rows if r.get("ok")]
     if not scored:
@@ -146,8 +158,10 @@ def main():
         return 1
 
     bad = [r for r in scored if r["bad"]]
-    print(f"\n{len(bad)} of {len(scored)} displaced, settled band "
-          f"{args.settled_low}..{args.settled_high}"
+    sog = sorted({r["SP_SOG_MODE"] for r in scored})
+    print(f"\n{len(bad)} of {len(scored)} harmful, band "
+          f"{args.harmful_low}..{args.harmful_high}, SP_SOG_MODE "
+          f"{','.join(str(v) for v in sog)}"
           f"  ({len(rows) - len(scored)} legs did not complete)")
     print("phases:", " ".join(str(r["PA_SP_S"]) for r in scored))
     return 0
