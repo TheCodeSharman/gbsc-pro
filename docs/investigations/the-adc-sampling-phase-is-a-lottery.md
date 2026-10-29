@@ -761,9 +761,104 @@ high-resolution source in pass-through is a symptom of a capture that cannot
 carry the source's finest detail, and no choice of phase, ratio or divider
 removes it.**
 
-**What remains unmeasured is the wedge contrast across the two dividers**, which
-the box relocation confounds. It would quantify the trade above; it cannot
-change its direction.
+### THE TRADE IS QUANTIFIED: 37% of the grating for half the lottery's spread
+
+Measured on `vga`, RISC PC at 1280x720@60 in pass-through, PM5544 with
+`ANIM OFF`, automation frozen, `PA_SP_S` held at the phase the walk chooses for
+each density -- 30 at 2038, 12 at 1740. Three interleaved passes over all 32
+ADC phases per density, `adc_phase_sweep.py`, console quiet on every pass.
+
+| | kept | mean | best | worst | spread | spread / mean |
+|---|---|---|---|---|---|---|
+| ratio 1 | 2038 | 33.8 | 42.8 at 18 | 20.5 at 3 | 22.3 | 66% |
+| ratio 2 | 1740 | 21.1 | 26.5 at 25 | 16.0 at 20..23 | 10.5 | 50% |
+
+**The box relocation does not confound it**, which is what makes the comparison
+available at all: `wedge.locate()` takes its box as a share of the wedge's OWN
+run rather than as a fraction of the frame, so the two boxes cover the same
+source content -- 518..633 at 2038 against 519..653 at 1740, the wider box
+being the coarser sampling spreading the same bars over more of the line.
+
+**And the clips carry their own control.** `mean |dy|` is the vertical
+gradient, which a horizontal sampling phase cannot touch, and it is read off
+the very frames the wedge is scored on:
+
+| | the finest grating | the whole picture, `mean dx` | **the control, `mean dy`** |
+|---|---|---|---|
+| ratio 1 | 33.8 | 3.051 | 2.944 |
+| ratio 2 | 21.1 | 2.849 | 2.837 |
+| ratio 2 costs | **37%** | 6.6% | **3.6%** |
+
+37% lost on content at 37.1 MHz beside 3.6% on content nowhere near it is a
+low-pass filter rather than a global softening, and it puts the decimation
+stage's shoulder where the arithmetic above puts it.
+
+**So the spread halves and the whole distribution falls below it.** 25 of the
+32 phases at ratio 1 beat the BEST phase at ratio 2 -- a draw landing anywhere
+on the ratio-1 curve beats ratio 2 at its optimum 25 times in 32. The lottery
+is milder and it is played for less, which settles the direction the section
+above could only argue.
+
+**The engine's own phase makes ratio 2 worse still rather than better.**
+`acquirePhase()` writes `MidField` 16 whatever the ratio. On the ratio-1 curve
+measured here 16 reads 42.4, within 1% of that curve's peak; on the ratio-2
+curve it reads 16.9, nine tenths of a grey level off its floor. Both are ONE
+draw of a quantity the re-latch section above shows rotating over a 14-step
+span, so neither is a property of the ratio -- but a ratio-2 reading taken as
+the firmware would actually configure it is the bottom of an already lower
+curve.
+
+**Spread is the sound statistic across densities and the optimum is not**,
+which is what this measurement turns on. The peak and the optimum's position
+both move with the draw, so a single sweep per density compares two draws; the
+spread is a property of the whole curve and survives a rotation of it.
+
+**RATIO 1 DOMINATES IT OUTRIGHT, which is what closes the trade.** The spread
+being milder would still be worth something if the two curves overlapped, and
+they do not:
+
+| | floor | ceiling | phases below ratio 2's floor |
+|---|---|---|---|
+| ratio 1, draw A | 20.5 | 42.8 | **0 of 32** |
+| ratio 1, draw B | 17.5 | 42.7 | **0 of 32** |
+| ratio 2 | 16.0 | 26.5 | -- |
+
+No phase at ratio 1 is worse than the worst phase at ratio 2, and 9 to 14 of
+ratio 2's own phases are worse than the worst of ratio 1's. **So there is no
+risk-averse case for ratio 2 either** -- it does not trade a better worst case
+for a worse best one, it loses at both ends. A milder lottery whose whole range
+sits below the other's floor is not a safer bet.
+
+### 1777 IS THE CEILING AT RATIO 2, AND ASKING PAST IT INSTALLS RATIO 1
+
+The headroom left between the divider the row forces and the converter's
+rating is 1740 against `162e6 / 2 / 45013` = 1799, so the obvious next move is
+to spend it. Measured, it is not there to spend:
+
+| asked | `PLLAD_KS` | `DEC2_BYPS` | ratio installed | mean | best |
+|---|---|---|---|---|---|
+| 1740 os 2 | 1 | 0 | **2** | 24.1 | 26.6 |
+| 1777 os 2 | 1 | 0 | **2** | 23.8 | 28.2 |
+| 1800 os 2 | 0 | 1 | **1** | 27.4 | 34.4 |
+| 1850 os 2 | 0 | 1 | **1** | 32.1 | 41.7 |
+| 2038 os 2 | 0 | 1 | **1** | 22.5 | 31.7 |
+
+**The ratio comes back reduced rather than refused**, which `oversampleFor()`
+does by design -- the post-divider row has no faster tap, so a ratio the clock
+cannot give is halved. `reportSampleClock()` prints `DEC2_BYPS`, so the console
+says which ratio actually landed; a register read taken over HTTP instead will
+report the divider asked for beside a decimator nobody looked at, and the three
+ratio-1 rows above then read as oversampling pushed further.
+
+So the usable range at ratio 2 is 1740..1777, and across it nothing moves: mean
+24.1 against 23.8. **The crossover row binds before the rating does**, and the
+3.4% of kept count the rating would still allow is not reachable.
+
+Those readings are taken at `PA_SP_S` 9, which is where the walk landed at each
+divider and which sits inside the dirty band -- so their absolute levels are
+depressed against the sweeps above and only the comparison WITHIN the table is
+sound. That is enough for the question it answers, which is where the ratio
+stops being installed.
 
 ## NO REGISTER REPORTS A MEASUREMENT OF THE PICTURE, so no on-device search
 ## can rank phases
