@@ -1,27 +1,38 @@
-# The phase walk's dirty band lands in one of two places, and nothing on the chip moves it
+# The phase walk's dirty band has two positions and the ARRIVAL KIND picks which
 
 `Adc::acquirePhase()` walks `PA_SP_S` across its field, scores each phase by
 how steadily the sync processor counts the line, and takes the middle of the
-widest clean run. On a 1280x720@60 pass-through source it picks a harmful
-phase in roughly one arrival in five.
+widest clean run. On a 1280x720@60 pass-through source it sometimes picks a
+phase the picture is visibly worse at.
 
-**The pick is entirely explained by where the walk finds the dirty band, and
-the band has exactly two positions.** Measured over 31 arrivals on `vga`, RISC
-PC at 1280x720@60, pass-through, `PLLAD_MD` 2038, `SYNC 0`:
+**The pick is entirely explained by where the walk finds the dirty band, the
+band has exactly two positions, and which one it lands in is decided by how
+the source arrived.** Measured on `vga`, RISC PC at 1280x720@60,
+pass-through, `PLLAD_MD` 2038, `SYNC 0`, eight pairs run strictly alternating:
 
-| band centroid | arrivals | clean run | run's middle | the pick |
-|---|---|---|---|---|
-| **14.0..14.6** | 6 of 9, 10 of 12, 14 of 16 | 22..5 | 30 | good |
-| **22.1..22.8** | the rest | 29..15 | **6..7** | the fault |
+| arrival | band centroid | band | clean run | run's middle | picks |
+|---|---|---|---|---|---|
+| **a mode change on `vga`** | 14.0..14.8, 8 of 8 | 6..22 | 23..5 | 30 | 28..31, good |
+| **an input change via `ypbpr`** | 22.1..22.8, 8 of 8 | 15..29 | 30..14 | **6** | 5..7, the fault |
 
-Every harmful pick came from the 22 band, and the chain from band position to
-pick is arithmetic: a band eight phases further on moves the widest clean run's
-middle from 30 to 6. The centroid is the summary two runs are compared on --
-circular, weighted by the per-phase miss counts that `dither[]` already holds.
+**Perfect separation with no overlap**, which a chance split of sixteen
+arrivals reaches once in 12870. A band eight phases further on moves the
+widest clean run's middle from 30 to 6, and that is the whole of the fault.
 
-**A recorded centroid stability of 13.7..14.9 over eight re-acquisitions is not
-contradicted by this, it is undersampled.** Those eight all landed in the
-common mode, which occurs about four arrivals in five.
+**SO IT IS NOT A LOTTERY, AND THE RATE IS A MIXING RATIO.** A harmful pick in
+about one arrival in five is the proportion of input changes in whatever was
+run, not a per-arrival draw: 20 of 23 consecutive input-change arrivals landed
+in the second position and 8 of 8 consecutive mode-change arrivals in the
+first, where an independent draw at one in five reaches the first of those
+once in 10^11. **An experiment that compares two conditions in BLOCKS will
+therefore charge a run boundary to the condition**, which is how settling came
+to look like a cause -- see below.
+
+The centroid is the summary two runs are compared on: circular, weighted by
+the per-phase miss counts that `dither[]` already holds.
+
+**A recorded centroid stability of 13.7..14.9 over eight re-acquisitions is
+not contradicted, it is one arrival kind seen alone.**
 
 ## The settled surface does NOT have two positions
 
@@ -94,6 +105,11 @@ switched away.
 Both gates written to suppress it therefore guard a legitimate state, and the
 second mode held at 2 of 16 with them in force.
 
+**It is a MARKER of the arrival kind rather than a cause of the band.** An
+input change is what leaves a maintenance sweep running against the outgoing
+source, so the early sweep and the second band both follow from the same
+excursion, and suppressing the sweep cannot move the band.
+
 ## The entry phase does not latch the sweep
 
 The walk is strictly cyclic -- `phase = (phase + 1) & PhaseMax` -- so the
@@ -102,16 +118,55 @@ predecessor of every phase is `phase - 1` whatever the entry, and `SweepSteps`
 `test_adc.cpp` passes without any change to the walk. **Do not re-propose that
 the sweep self-latches from its entry phase.**
 
-## What the two instruments differ by is SETTLING
+## SETTLING IS NOT IT, and it is the worked example of the block-comparison trap
 
 The walk gives each phase `delayMicroseconds(256)` and 20 back-to-back
-samples. The deep sweep gives each phase two seconds and 140 readings spread
-at 25 ms. Every other difference between them is accounted for above.
+readings where the deep sweep gives two seconds and 140 spread at 25 ms, which
+left settling as the last difference between two instruments that disagree.
+It is eliminated.
 
-**So the walk scores a transient the picture never runs in**, which is
-consistent with the two disagreeing and with only the walk's band moving. That
-is the surviving lead, and it is a change to the walk's budget rather than to
-anything on the chip.
+`acquirePhase()` discards `settleSamples()` readings after the adjuster moves
+before scoring, and `/phasewalk?settle=N` holds the count. Interleaved one
+settle per arrival, so that a run boundary cannot land on a single point:
+
+| settle, readings | 0 | 4 | 8 | 16 |
+|---|---|---|---|---|
+| band centroid | 22.4, 22.7 | 22.2, 22.2 | 22.5, 22.1 | 22.0 |
+
+Every point lands in the same position, so the dwell does not place the band.
+The default is zero.
+
+**The trap is worth more than the result.** Taken in BLOCKS the same two
+settles appeared to decide the band outright -- 13 of 16 arrivals in the
+harmful position at a settle of 8 against 2 of 16 at a settle of 0 -- because
+the two blocks were a run apart and a run is what the band actually has. The
+same error, in the same session, made an arrival-kind comparison read backwards
+until it was interleaved. **On this bench a comparison is interleaved or it is
+not a comparison**, and that holds for anything scored per arrival, not only
+for the settle.
+
+## WHAT THE TRANSIT CARRIES IS OPEN, and the obvious diff has not been taken
+
+The band is displaced by an input change and not by a mode change, so
+something the `ypbpr` excursion leaves behind on `vga` moves it. What that is
+is not established.
+
+A register diff across one transit found every sync-path field identical --
+`SP_SOG_MODE`, `ADC_SOGEN`, `ADC_SOGCTRL`, both coast lengths, `SP_H_CST_SP`,
+`SP_RT_HS_SP`, `SP_CLP_SRC_SEL`, `SP_HS_INV_REG`, `SP_DLT_REG`,
+`SP_H_PULSE_IGNOR`, `SP_EXT_SYNC_SEL`, both clamp edges, the divider and
+`STATUS_SYNC_PROC_HLOW_LEN`. **That diff does not count**, because the arrival
+it was taken across came out in the FIRST band -- `PA_SP_S` 30 -- so it
+compares two arrivals of the same kind. A transit is only an input-change
+arrival if the other source actually acquired, and a wait that times out and
+carries on leaves a short excursion that looks like one.
+
+So the measurement to take is the same diff across a transit CONFIRMED to have
+landed in the second band, read by its `phase scan:` line rather than assumed,
+and interleaved with a mode arrival for the control. A full
+`snapdiff.py --save` at both ends answers it over all 1536 addresses rather
+than over a chosen seventeen, which matters here because the chosen seventeen
+were chosen from a model of what a `ypbpr` excursion ought to leave.
 
 ## Instruments
 
@@ -139,3 +194,5 @@ anything on the chip.
 | the sweep self-latches from its entry phase | the walk is cyclic and scores its first two phases twice |
 | the early maintenance sweep is a bug to gate out | its logged state is a correct solve for the outgoing source |
 | the surface itself is bimodal | two deep sweeps on opposite picks differ by 0.125 |
+| the walk's settle places the band | 0, 4, 8 and 16 readings interleaved, all at centroid 22 |
+| the band is a per-arrival lottery | the arrival KIND separates it 8 of 8 against 8 of 8 |
