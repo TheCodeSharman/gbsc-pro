@@ -1,32 +1,35 @@
-# The phase walk's dirty band has two positions and the ARRIVAL KIND picks which
+# The arrival's own walk mismeasures the phase band, and a re-walk corrects it
 
 `Adc::acquirePhase()` walks `PA_SP_S` across its field, scores each phase by
 how steadily the sync processor counts the line, and takes the middle of the
-widest clean run. On a 1280x720@60 pass-through source it sometimes picks a
-phase the picture is visibly worse at.
+widest clean run. After an INPUT change it picks a phase the picture is
+visibly worse at, every time.
 
-**The pick is entirely explained by where the walk finds the dirty band, the
-band has exactly two positions, and which one it lands in is decided by how
-the source arrived.** Measured on `vga`, RISC PC at 1280x720@60,
-pass-through, `PLLAD_MD` 2038, `SYNC 0`, eight pairs run strictly alternating:
+**There is one dirty band, at 6..22, and the walk run inside an input-change
+acquisition reports it eight to ten phases further on.** Everything else
+follows from that: the widest clean run's middle moves from 30 to 6, and 6 is
+inside the real band.
 
-| arrival | band centroid | band | clean run | run's middle | picks |
-|---|---|---|---|---|---|
-| **a mode change on `vga`** | 14.0..14.8, 8 of 8 | 6..22 | 23..5 | 30 | 28..31, good |
-| **an input change via `ypbpr`** | 22.1..22.8, 8 of 8 | 15..29 | 30..14 | **6** | 5..7, the fault |
+Measured on `vga`, RISC PC at 1280x720@60, pass-through, `PLLAD_MD` 2038,
+`SYNC 0`. Eight pairs of arrivals run strictly alternating:
+
+| arrival | band the walk reports | clean run | run's middle | picks |
+|---|---|---|---|---|
+| **a mode change on `vga`** | 6..22, centroid 14.0..14.8, 8 of 8 | 23..5 | 30 | 28..31, good |
+| **an input change via `ypbpr`** | 15..29, centroid 22.1..22.8, 8 of 8 | 30..14 | **6** | 5..7, the fault |
 
 **Perfect separation with no overlap**, which a chance split of sixteen
-arrivals reaches once in 12870. A band eight phases further on moves the
-widest clean run's middle from 30 to 6, and that is the whole of the fault.
+arrivals reaches once in 12870. And the second reading is the wrong one: the
+same state re-walked seconds later reports 6..22 and picks 28..30, four times
+in four.
 
-**SO IT IS NOT A LOTTERY, AND THE RATE IS A MIXING RATIO.** A harmful pick in
-about one arrival in five is the proportion of input changes in whatever was
-run, not a per-arrival draw: 20 of 23 consecutive input-change arrivals landed
-in the second position and 8 of 8 consecutive mode-change arrivals in the
-first, where an independent draw at one in five reaches the first of those
-once in 10^11. **An experiment that compares two conditions in BLOCKS will
-therefore charge a run boundary to the condition**, which is how settling came
-to look like a cause -- see below.
+**SO IT IS NOT A LOTTERY, AND A ONE-IN-FIVE RATE IS A MIXING RATIO.** It is the
+proportion of input changes in whatever was run, not a per-arrival draw: 20 of
+23 consecutive input-change arrivals reported the displaced band and 8 of 8
+consecutive mode-change arrivals the true one, where an independent draw at
+one in five reaches the first of those once in 10^11. **An experiment that
+compares two conditions in BLOCKS will therefore charge a run boundary to the
+condition** -- which is how settling came to look like a cause, below.
 
 The centroid is the summary two runs are compared on: circular, weighted by
 the per-phase miss counts that `dither[]` already holds.
@@ -145,13 +148,86 @@ until it was interleaved. **On this bench a comparison is interleaved or it is
 not a comparison**, and that holds for anything scored per arrival, not only
 for the settle.
 
-## WHAT THE TRANSIT CARRIES IS OPEN, and the obvious diff has not been taken
+## THE BAND DOES NOT MOVE. THE ARRIVAL'S OWN WALK MISMEASURES IT
 
-The band is displaced by an input change and not by a mode change, so
-something the `ypbpr` excursion leaves behind on `vga` moves it. What that is
-is not established.
+This is the diagnosis, and it retires the whole bimodal framing above: there
+are not two band positions that something selects between. There is ONE band,
+at 6..22, and a walk run inside an input-change acquisition reports it eight
+to ten phases further on.
 
-A register diff across one transit found every sync-path field identical --
+Four `ypbpr`->`vga` arrivals, the arrival's own walk read off the console and
+then the same state re-walked at once through `/phasesweep`, unfrozen, with
+nothing else touched:
+
+| trip | the arrival's walk | re-walked seconds later |
+|---|---|---|
+| 1 | 22.7, band 16..31, pick **8** | 14.6, band 6..21, pick **30** |
+| 2 | 22.2, band 15..28, pick **6** | 13.4, band 5..31, pick **28** |
+| 3 | 22.2, band 16..28, pick **6** | 14.7, band 7..23, pick **29** |
+| 4 | 22.5, band 16..28, pick **6** | 14.1, band 5..23, pick **30** |
+
+**Four of four, and the correction is total.** Every other instrument agrees
+with the re-walk: the deep sampled surface puts the band at 6..22 on every
+arrival taken, 21 walks on a frozen settled state all report 14, and the
+picture's own dirty band at this divider is 7..22.
+
+**So the harmful pick is not a phase the walk chose from a moved band. It is a
+phase chosen from a band that was never there.**
+
+### What the acquisition is doing while it walks
+
+Both arrival kinds walk AFTER `sync pad: driven`, so the pad ordering is not
+the discriminator even though the convention calls a phase line after it a
+sequencing fault. What the input change adds, and a mode change does not have:
+
+```
+  2.28  sync arrangement: composite or SOG for input 4
+  2.89  sync arrangement: separate for input 4
+  3.62  sync arrangement: separate for input 3
+  ...
+  4.74  rate match: the HD bypass channel carries the video
+  5.04  sync pad: driven
+  5.04  sampling phase: sweeping for maintenance, rt 32 md 2038 vt 749 ...
+  5.24  phase scan: ..............1.32b7dhgjff822.1.  md 2038 rt 32 st 0
+  5.48  rate match: the HD bypass channel carries the video
+```
+
+Three sync-type probes rather than one, the sync arrangement set for the
+OUTGOING input and then the arriving one, and a second rate match landing
+after the walk. The context line reports nothing wrong -- `md` 2038, `rt` 32,
+`vt` 749, state acquired, selection and solve agreeing, lock 1 -- which is why
+the walk has no way to refuse the reading it is taking.
+
+**Which of those the walk is actually disturbed by is open.** The probe writes
+`SP_EXT_SYNC_SEL` and the chip latches that as a SOG switch, which makes the
+sync separator the first thing to ask about; nothing has been written to test
+it.
+
+### What this makes of the fix
+
+The walk measures correctly a few seconds later on the same state, so the
+value is reachable -- it is being taken at the wrong point in the sequence.
+**The fix is to move the measurement to where everything it depends on is in
+force, not to re-run it until it agrees.** A second walk layered on the first
+is a ladder rung, and the convention this project is built on is that a fault
+is fixed by taking the measurement once, at the right point.
+
+## NO REGISTER CARRIES IT, which is what leaves the walk itself as the fault
+
+If the band really moved, something the `ypbpr` excursion leaves behind on
+`vga` would have to carry it. Nothing does, and that is what points at the
+walk.
+
+A full 1536-address `snapdiff.py --save` either side of a confirmed
+displacement differs in SIX bytes, against THREE between two arrivals of the
+same kind: the three ADC gain registers, which drift in the control too,
+`MADPT_Y_MI_DET_BYPS` 0 -> 1 and `MADPT_Y_MI_OFFSET` 0 -> 127, and `PA_SP_S`
+itself, which is the walk's output rather than an input to it. **Written into
+a true-band state and re-walked, none of them moves the band**: the gain at
+139, the `MADPT` pair, and both together all score 13.6..15.3 against controls
+at 13.8..14.9, every write confirmed by read-back.
+
+An earlier seventeen-field diff found every sync-path field identical --
 `SP_SOG_MODE`, `ADC_SOGEN`, `ADC_SOGCTRL`, both coast lengths, `SP_H_CST_SP`,
 `SP_RT_HS_SP`, `SP_CLP_SRC_SEL`, `SP_HS_INV_REG`, `SP_DLT_REG`,
 `SP_H_PULSE_IGNOR`, `SP_EXT_SYNC_SEL`, both clamp edges, the divider and
@@ -161,12 +237,10 @@ compares two arrivals of the same kind. A transit is only an input-change
 arrival if the other source actually acquired, and a wait that times out and
 carries on leaves a short excursion that looks like one.
 
-So the measurement to take is the same diff across a transit CONFIRMED to have
-landed in the second band, read by its `phase scan:` line rather than assumed,
-and interleaved with a mode arrival for the control. A full
-`snapdiff.py --save` at both ends answers it over all 1536 addresses rather
-than over a chosen seventeen, which matters here because the chosen seventeen
-were chosen from a model of what a `ypbpr` excursion ought to leave.
+**Read the `phase scan:` line to confirm which band an arrival landed in
+rather than assuming the excursion produced one.** A transit is only an
+input-change arrival if the other source actually acquired, and a wait that
+times out and carries on leaves a short excursion that looks like one.
 
 ## Instruments
 
@@ -196,3 +270,5 @@ were chosen from a model of what a `ypbpr` excursion ought to leave.
 | the surface itself is bimodal | two deep sweeps on opposite picks differ by 0.125 |
 | the walk's settle places the band | 0, 4, 8 and 16 readings interleaved, all at centroid 22 |
 | the band is a per-arrival lottery | the arrival KIND separates it 8 of 8 against 8 of 8 |
+| the band moves at all | re-walking the same state corrects it 4 of 4, and no register carries it |
+| a register the transit leaves behind carries it | the 6-byte diff written back moves nothing |
