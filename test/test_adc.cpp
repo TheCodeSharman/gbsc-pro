@@ -1984,6 +1984,67 @@ TEST_CASE("without a settle the move itself is what every phase scores")
     Adc::forgetSettleSamples();
 }
 
+TEST_CASE("the walk can be repeated in place, so two scans of one call compare")
+{
+    // THE ONE THING THE BENCH CANNOT REACH. The walk an acquisition runs
+    // reports the dirty band ten phases off and a walk run from the idle loop
+    // moments later reports it correctly, and every difference between the two
+    // reachable from outside the firmware is eliminated -- the sync-type
+    // probe, the SOG and mux bounces, the coast, the divider, the PLL's
+    // reference, the settle, and waiting. What is left is whether the first
+    // walk after the phase adjusters restart is the wrong one, and that needs
+    // two walks from the SAME caller rather than one from each.
+    // ../docs/investigations/the-arrivals-own-walk-mismeasures-the-phase-band.md
+    Wire.reset();
+    Adc::PLLAD_MD::write(2230);
+    g_sweepDivider = 2230;
+    for (uint8_t i = 0; i <= Adc::PhaseMax; ++i) {
+        g_badPerPhase[i] = 0;
+        g_seenAtPhase[i] = 0;
+    }
+    for (uint8_t i = 6; i <= 22; ++i)
+        g_badPerPhase[i] = 5;
+    Adc::choosePhaseSyncProcessor(8);
+    Adc::choosePhaseAdc(16);
+    Adc::holdWalkRepeats(2);
+    g_logLines.clear();
+
+    REQUIRE(Adc::acquirePhase(2, true, lineSamplesFractional, countFeed));
+
+    size_t scans = 0;
+    for (size_t i = 0; i < g_logLines.size(); ++i)
+        if (g_logLines[i].find("phase scan: ") != std::string::npos)
+            ++scans;
+    CHECK(scans == 2);
+    CHECK(g_badPerPhase[Adc::phaseSyncProcessor()] == 0);
+
+    Adc::forgetWalkRepeats();
+}
+
+TEST_CASE("one walk is what an untouched engine runs")
+{
+    Wire.reset();
+    Adc::PLLAD_MD::write(2230);
+    g_sweepDivider = 2230;
+    for (uint8_t i = 0; i <= Adc::PhaseMax; ++i) {
+        g_badPerPhase[i] = 0;
+        g_seenAtPhase[i] = 0;
+    }
+    for (uint8_t i = 6; i <= 22; ++i)
+        g_badPerPhase[i] = 5;
+    Adc::choosePhaseSyncProcessor(8);
+    Adc::forgetWalkRepeats();
+    g_logLines.clear();
+
+    REQUIRE(Adc::acquirePhase(2, true, lineSamplesFractional, countFeed));
+
+    size_t scans = 0;
+    for (size_t i = 0; i < g_logLines.size(); ++i)
+        if (g_logLines[i].find("phase scan: ") != std::string::npos)
+            ++scans;
+    CHECK(scans == 1);
+}
+
 TEST_CASE("a wide band is accepted on the window it leaves, not on the clean count")
 {
     // THE RIGHT ANSWER IS IN THE PROFILE AND THE COUNT GATE THREW IT AWAY.

@@ -386,6 +386,19 @@ public:
     static void forgetSettleSamples();
     static uint8_t settleSamples();
 
+    // How many times the walk is run per call, keeping the last. ONE, and more
+    // is a bench instrument rather than a recovery: the walk an acquisition
+    // runs reports the dirty band ten phases off where one run from the idle
+    // loop moments later reports it correctly, and two walks from the SAME
+    // caller is what separates the first-walk-after-a-restart reading from the
+    // calling context. A second walk kept as a retry would be a ladder rung.
+    // ../../../../docs/investigations/the-arrivals-own-walk-mismeasures-the-phase-band.md
+    static const uint8_t DefaultWalkRepeats = 1;
+
+    static void holdWalkRepeats(uint8_t repeats);
+    static void forgetWalkRepeats();
+    static uint8_t walkRepeats();
+
     // Take both adjusters through their bypass and back, which is what makes a
     // newly latched phase take effect.
     static void restartPhaseAdjusters();
@@ -728,6 +741,7 @@ private:
     static bool phaseFound_;
     static bool clockSuspect_;
     static uint8_t settleSamples_;
+    static uint8_t walkRepeats_;
     static uint8_t gain_[3];
     static uint8_t offset_[3];
 

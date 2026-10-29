@@ -6179,18 +6179,30 @@ void startWebserver()
     //
     //   /phasewalk                      report, change nothing
     //   /phasewalk?settle=8             hold the settle there
+    //   /phasewalk?repeat=2             walk twice per call, keeping the last
     //   /phasewalk?clear                back to the engine's own
+    //
+    // `repeat` is what asks whether the FIRST walk after the phase adjusters
+    // restart is the wrong one: an acquisition's walk reports the dirty band
+    // ten phases off where one run from the idle loop moments later reports it
+    // correctly, and two walks from the same caller is what separates those.
     //
     // Answers from the handler rather than loop(): it moves no register.
     server.on("/phasewalk", HTTP_GET, [](AsyncWebServerRequest *request) {
-        if (request->hasParam("clear"))
+        if (request->hasParam("clear")) {
             Tv5725::Adc::forgetSettleSamples();
-        else if (request->hasParam("settle"))
+            Tv5725::Adc::forgetWalkRepeats();
+        }
+        if (request->hasParam("settle"))
             Tv5725::Adc::holdSettleSamples(
                 (uint8_t)request->getParam("settle")->value().toInt());
-        char body[32];
-        snprintf_P(body, sizeof(body), PSTR("{\"settle\":%u}"),
-            (unsigned)Tv5725::Adc::settleSamples());
+        if (request->hasParam("repeat"))
+            Tv5725::Adc::holdWalkRepeats(
+                (uint8_t)request->getParam("repeat")->value().toInt());
+        char body[48];
+        snprintf_P(body, sizeof(body), PSTR("{\"settle\":%u,\"repeat\":%u}"),
+            (unsigned)Tv5725::Adc::settleSamples(),
+            (unsigned)Tv5725::Adc::walkRepeats());
         request->send(200, "application/json", body);
     });
 

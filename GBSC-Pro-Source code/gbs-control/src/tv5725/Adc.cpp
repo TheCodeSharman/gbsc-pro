@@ -243,6 +243,8 @@ bool Adc::phaseAdcOverridden_ = false;
 // captures RGB until an input is selected.
 uint8_t Adc::settleSamples_ = Adc::DefaultSettleSamples;
 
+uint8_t Adc::walkRepeats_ = Adc::DefaultWalkRepeats;
+
 uint8_t Adc::inputSel_ = 1;
 
 // Nothing has been installed, so the ratio is one sample a clock -- the same
@@ -390,6 +392,53 @@ char scanDigit(uint8_t dither, uint8_t far)
                        : (char)('a' + (dither > 35 ? 25 : dither - 10));
 }
 
+// One pass of the field, scoring every phase by how steadily the sync
+// processor counts the line. Two phases are walked twice -- the sweep is two
+// steps longer than the field -- and the second visit is the one kept.
+void walkTheField(uint8_t *dither, uint8_t *far, uint16_t perLine,
+                  uint8_t settle, uint16_t (*lineSamples)(),
+                  void (*feedWatchdog)())
+{
+    uint8_t phase = WalkEntryPhase;
+    Adc::choosePhaseSyncProcessor(phase);
+    Adc::applyPhaseSyncProcessor(phase);
+    feedWatchdog();
+    delayMicroseconds(256);
+
+    for (uint8_t i = 0; i <= Adc::PhaseMax; ++i) {
+        dither[i] = 0;
+        far[i] = 0;
+    }
+
+    for (uint8_t step = 0; step < SweepSteps; ++step) {
+        phase = (uint8_t)((phase + 1) & Adc::PhaseMax);
+        Adc::choosePhaseSyncProcessor(phase);
+        Adc::applyPhaseSyncProcessor(phase);
+
+        uint8_t badHere = 0;
+        uint8_t farHere = 0;
+        feedWatchdog();
+        delayMicroseconds(256);
+        feedWatchdog();
+        for (uint8_t i = 0; i < settle; ++i)
+            lineSamples();
+        feedWatchdog();
+        for (uint8_t i = 0; i < SamplesPerPhase; ++i) {
+            const uint16_t at = lineSamples();
+            const uint16_t off = at > perLine ? at - perLine : perLine - at;
+            if (off > 1)
+                ++farHere;
+            if (off != 0) {
+                ++badHere;
+                feedWatchdog();
+                delayMicroseconds(384);
+            }
+        }
+        dither[phase] = badHere;
+        far[phase] = farHere;
+    }
+}
+
 // The scoreboard the walk built, indexed by phase rather than by the step it
 // was reached on. Reported whether or not the search then accepts it: a refusal
 // is the case the counts are wanted for.
@@ -414,6 +463,12 @@ void reportScan(const uint8_t *dither, const uint8_t *far)
 }
 
 }  // namespace
+
+void Adc::holdWalkRepeats(uint8_t repeats) { walkRepeats_ = repeats; }
+
+void Adc::forgetWalkRepeats() { walkRepeats_ = DefaultWalkRepeats; }
+
+uint8_t Adc::walkRepeats() { return walkRepeats_; }
 
 void Adc::holdSettleSamples(uint8_t samples) { settleSamples_ = samples; }
 
@@ -457,49 +512,13 @@ bool Adc::acquirePhase(uint8_t oversample, bool sweep,
     // the adjuster's business; the walk's own start is stated below.
     const uint8_t enteredAt = phaseSyncProcessor();
 
-    uint8_t phase = WalkEntryPhase;
-    choosePhaseSyncProcessor(phase);
-    applyPhaseSyncProcessor(phase);
-    feedWatchdog();
-    delayMicroseconds(256);
-
-    // Two phases are walked twice -- the sweep is two steps longer than the
-    // field -- and the second visit is the one kept.
     uint8_t dither[PhaseMax + 1], far[PhaseMax + 1];
-    for (uint8_t i = 0; i <= PhaseMax; ++i) {
-        dither[i] = 0;
-        far[i] = 0;
+    const uint8_t repeats = walkRepeats_ < 1 ? 1 : walkRepeats_;
+    for (uint8_t pass = 0; pass < repeats; ++pass) {
+        walkTheField(dither, far, perLine, settleSamples_, lineSamples,
+                     feedWatchdog);
+        reportScan(dither, far);
     }
-
-    for (uint8_t step = 0; step < SweepSteps; ++step) {
-        phase = (uint8_t)((phase + 1) & PhaseMax);
-        choosePhaseSyncProcessor(phase);
-        applyPhaseSyncProcessor(phase);
-
-        uint8_t badHere = 0;
-        uint8_t farHere = 0;
-        feedWatchdog();
-        delayMicroseconds(256);
-        feedWatchdog();
-        for (uint8_t i = 0; i < settleSamples_; ++i)
-            lineSamples();
-        feedWatchdog();
-        for (uint8_t i = 0; i < SamplesPerPhase; ++i) {
-            const uint16_t at = lineSamples();
-            const uint16_t off = at > perLine ? at - perLine : perLine - at;
-            if (off > 1)
-                ++farHere;
-            if (off != 0) {
-                ++badHere;
-                feedWatchdog();
-                delayMicroseconds(384);
-            }
-        }
-        dither[phase] = badHere;
-        far[phase] = farHere;
-    }
-
-    reportScan(dither, far);
 
     // THE RUN DECIDES, NOT THE CLEAN COUNT. Scatter is the clock and a window
     // is a band, and the count cannot separate them: a healthy pass-through
