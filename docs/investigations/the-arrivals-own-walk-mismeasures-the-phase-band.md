@@ -212,6 +212,66 @@ force, not to re-run it until it agrees.** A second walk layered on the first
 is a ladder rung, and the convention this project is built on is that a fault
 is fixed by taking the measurement once, at the right point.
 
+## Narrowing it: the probe is out, and a divider excursion carries part of it
+
+All interleaved with controls, all on `vga` at 1280x720@60 pass-through,
+`PLLAD_MD` 2038, band centroid as the score.
+
+**THE SYNC-TYPE PROBE IS NOT IT**, which was the standing candidate.
+`/input?src=vga` issued while already on `vga` runs the whole selection path
+and TWO sync-type probes, and the walk stays right; the same request after a
+trip to `ypbpr` runs three and the walk is wrong. Four rounds:
+
+| arm | probes | centroids | picks |
+|---|---|---|---|
+| a mode change on `vga` | 0 | 14.5, 13.9, 14.2, 14.1 | 30, 30, 30, 30 |
+| **`/input?src=vga` while on `vga`** | **2** | 14.5, 13.9, 14.2, 14.7 | 30, 29, 30, 31 |
+| `/input?src=ypbpr` then `vga` | 3 | 22.1, 22.5, 22.3, 22.1 | 6, 7, 6, 6 |
+
+**And the excursion needs no dwell.** Four seconds on `ypbpr` displaces it as
+far as a full acquisition does -- 22.2, 22.5, 22.0, 22.8 against 22.5, 22.3,
+22.3, 22.6 -- so whatever carries it is established by the move rather than by
+the other source being solved for.
+
+**No register the selection writes reproduces it.** Each bounced on a settled
+true-band state with the walk queued straight after, because the disturbance
+is transient:
+
+| arm | centroid, controls at 14.0..14.7 |
+|---|---|
+| `SP_SOG_MODE` 0 -> 1 -> 0 | 14.6 |
+| `ADC_SOGEN` 1 -> 0 -> 1 | 14.4 |
+| `ADC_INPUT_SEL` 1 -> 0 -> 1 | 13.4 |
+| all three together, as a `ypbpr` selection sets them | 14.2 |
+| `SP_SOG_MODE` LEFT at 1 | scatter at every phase |
+
+The last arm is the control on the method: leaving the separator on sync on
+green makes a source that has none uncountable, so the writes do reach the
+hardware and a null from the others is a null.
+
+### A DIVIDER EXCURSION CARRIES ABOUT HALF OF IT
+
+A PLL re-latch at the SAME divider is eliminated. An excursion to the other
+source's divider and back is not the same thing, and it moves the band:
+
+| arm | centroid | band's low edge |
+|---|---|---|
+| controls, six of them | 13.7..14.7 | 5..7 |
+| divider to 1446 and back, oversample 1 | **16.2** | **11** |
+| the same at oversample 2 | **16.0** | **10** |
+| the same at oversample 4 | **16.4** | **11** |
+| coast 7/6 and back | 14.3 | 8 |
+
+Three of three, about ten standard deviations clear of the controls, and the
+oversampling ratio makes no difference to it. **But it is only four phases of
+the ten an input change produces**, so it is a contributor rather than the
+cause.
+
+**What separates the two is the PLL's REFERENCE, not its divider.**
+`/sampleclock` changes the divider while the loop stays locked to `vga`'s
+hsync throughout; an input change locks it to the other source's line rate and
+back. That is the next arm and it has not been run.
+
 ## NO REGISTER CARRIES IT, which is what leaves the walk itself as the fault
 
 If the band really moved, something the `ypbpr` excursion leaves behind on
@@ -272,3 +332,6 @@ times out and carries on leaves a short excursion that looks like one.
 | the band is a per-arrival lottery | the arrival KIND separates it 8 of 8 against 8 of 8 |
 | the band moves at all | re-walking the same state corrects it 4 of 4, and no register carries it |
 | a register the transit leaves behind carries it | the 6-byte diff written back moves nothing |
+| the sync-type probe disturbs the walk | a same-input reselect runs two and stays right |
+| the SOG switch, the ADC mux or the coast carries it | each bounced against controls, all null |
+| the excursion must solve the other source | four seconds on it displaces as far as a full acquisition |
