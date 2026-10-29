@@ -774,10 +774,19 @@ ADC phases per density, `adc_phase_sweep.py`, console quiet on every pass.
 | ratio 2 | 1740 | 21.1 | 26.5 at 25 | 16.0 at 20..23 | 10.5 | 50% |
 
 **The box relocation does not confound it**, which is what makes the comparison
-available at all: `wedge.locate()` takes its box as a share of the wedge's OWN
-run rather than as a fraction of the frame, so the two boxes cover the same
-source content -- 518..633 at 2038 against 519..653 at 1740, the wider box
-being the coarser sampling spreading the same bars over more of the line.
+available at all: `wedge.locate()` takes its box as a share of the wedge's own
+run rather than as a fraction of the frame, so both boxes start at the wedge's
+own left edge -- 518 at 2038 against 519 at 1740.
+
+**The picture does not move or rescale between the two**, which a pass-through
+path invites doubt about: the lit box is the full frame at both densities, the
+located left edge is one pixel apart, and `mean |dx|` over the whole picture
+falls 6.6% where a horizontal compression would raise it.
+
+**What does differ is the box's RIGHT edge**, 633 against 653, the detected
+wedge run being longer at 1740. That puts the ratio-2 box 20 px further onto
+coarser bars, which biases its contrast UPWARD -- so the deficit measured
+below is the conservative end of the real one.
 
 **And the clips carry their own control.** `mean |dy|` is the vertical
 gradient, which a horizontal sampling phase cannot touch, and it is read off
