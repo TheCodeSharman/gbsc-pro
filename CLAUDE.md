@@ -65,8 +65,12 @@ PC's `INTERLACE ON` modes. `docs/investigations/interlaced-source-measurement.md
 The RISC PC's sync type is one CMOS value rather than a mode-file setting, and
 ModeServ sets it -- `SYNC 0` separate, `SYNC 1` composite, `SYNC 3` auto -- so
 **a COMPOSITE-SYNC RGBHV source exists here**, on `vga`, and a branch keyed on
-csync with RGBHV is bench testable rather than host-test-only. Sync on green is
-the Wii on `ypbpr`. No sync arrangement is out of reach from a session.
+csync with RGBHV is bench testable rather than host-test-only. **WHICH MODE
+DECIDES WHETHER IT ACQUIRES**: 640x512@50 acquires and fills the screen,
+800x600@60 acquires and emits nothing, and **1280x720@60 never acquires on
+composite at all** -- so a composite measurement taken at 720p measures that
+open defect rather than the thing under test. `docs/known-issues.md`. Sync on
+green is the Wii on `ypbpr`. No sync arrangement is out of reach from a session.
 
 **`docs/bench-sources.md` is what each source can prove; read it before
 concluding a branch is untestable**, and it carries what each one is currently
@@ -1307,12 +1311,15 @@ twelve tables while they existed, which is what `BringUp` was built from.
   **IT RUNS PER INPUT CHANGE, AND A MODE CHANGE REUSES WHAT IS HELD.**
   `establishSyncType()` keys on the input selection and says so, because a source
   changes its sync type far more rarely than it changes mode and a composite
-  source spends the whole probe window every time. **So a source that changes its
-  sync type on one cable is not followed** -- the RISC PC sets it from CMOS, and
-  a `SYNC` command leaves the engine on the path it held. Only a line count the
-  wrong path cannot produce arms a re-probe, and at 720x480@60 the wrong path
-  counts 518 against 525, which is plausible enough that nothing fires.
-  **`/sc?~` is what forgets it**, and `SP_SOG_MODE` read back is the only witness
+  source spends the whole probe window every time. **A SOURCE THAT CHANGES ITS
+  SYNC TYPE ON ONE CABLE IS NOW FOLLOWED, AND WHAT ARMS IT IS THE EXHAUSTED
+  REFERENCE CLOCK SET** -- the held type decides what the sync processor counts,
+  so a source on the wrong arrangement cannot be measured through ANY clock, and
+  the set is finite. Measured on `vga` at 1280x720@60: re-probed 2.5 s after
+  `SYNC 1`, and 5.7 s after `SYNC 0` with the source acquired at 6.6 s, where
+  before neither direction recovered without `/sc?~`. A line count cannot be
+  that discriminator -- at 720x480@60 the wrong path counts 518 against 525.
+  **`/sc?~` still forgets it**, and `SP_SOG_MODE` read back is the only witness
   that the type in force is the one the source is sending -- check it before
   believing any measurement taken across a sync-type change, and note that
   FREEZING across one blocks the re-probe outright.
