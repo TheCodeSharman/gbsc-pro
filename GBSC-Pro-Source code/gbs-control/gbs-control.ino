@@ -6172,10 +6172,10 @@ void startWebserver()
     });
 
     // The phase walk's per-phase settle, in readings discarded after the
-    // adjuster moves. The dirty band follows the walk's own dwell -- 8
-    // readings put 13 of 16 arrivals in its harmful position against 2 of 16
-    // with none -- and the band is per arrival, so the question is a curve
-    // taken over arrivals and this is what holds a point for one.
+    // adjuster moves. Settling does not place the dirty band -- 0, 4, 8 and 16
+    // readings interleaved over arrivals all land it in the same place -- and
+    // the band is per arrival, so each point costs sixteen of them and this is
+    // what holds one for a leg.
     //
     //   /phasewalk                      report, change nothing
     //   /phasewalk?settle=8             hold the settle there

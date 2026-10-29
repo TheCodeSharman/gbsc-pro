@@ -368,10 +368,13 @@ public:
     // phase it moved to, counted in READINGS rather than microseconds so that
     // it is observable off the device where a delay is a no-op.
     //
-    // **ZERO, AND SETTLING MORE IS MEASURED WORSE.** Eight readings of settle
-    // put 13 of 16 arrivals in the dirty band's harmful position against 2 of
-    // 16 with none, so the band follows the walk's own per-phase dwell rather
-    // than being a transient the dwell removes.
+    // **ZERO, AND NOTHING MEASURED MOVES WITH IT.** Settling was the last
+    // difference between the walk and a sweep of the same surface taken
+    // settled, and it is not the one that matters: interleaved over arrivals,
+    // 0, 4, 8 and 16 readings all land the dirty band in the same place. The
+    // knob stays because the band is a per-arrival quantity, so a point costs
+    // sixteen arrivals and a reflash between them would put a build boundary
+    // through the comparison.
     // ../../../../docs/investigations/the-phase-walks-band-is-bimodal.md
     static const uint8_t DefaultSettleSamples = 0;
 
