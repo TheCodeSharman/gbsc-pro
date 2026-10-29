@@ -241,6 +241,8 @@ bool Adc::phaseAdcOverridden_ = false;
 // Which of the two the chip comes up on is whatever the last boot left, and no
 // read-back can be trusted to mean the source is component, so the engine
 // captures RGB until an input is selected.
+uint8_t Adc::settleSamples_ = Adc::DefaultSettleSamples;
+
 uint8_t Adc::inputSel_ = 1;
 
 // Nothing has been installed, so the ratio is one sample a clock -- the same
@@ -359,13 +361,6 @@ const uint8_t SweepSteps = 34;
 // Samples taken at each phase before it is scored.
 const uint8_t SamplesPerPhase = 20;
 
-// Readings thrown away after the adjuster moves, before scoring starts. The
-// settle is counted in READINGS rather than in microseconds so that it is
-// observable off the device, where a delay is a no-op; each one costs an I2C
-// read, so it is also most of the dwell a phase gets.
-// ../../../../docs/investigations/the-phase-walks-band-is-bimodal.md
-const uint8_t SettleSamples = 8;
-
 // Where the walk begins, so two runs of it are comparable. The entry used to be
 // read off the adjuster, which made it whatever the previous search -- or the
 // previous SOURCE's search -- had latched: a measurement starting from a state
@@ -411,13 +406,20 @@ void reportScan(const uint8_t *dither, const uint8_t *far)
     // SP_RT_HS_SP -- so a board whose dirty band has moved along the phase axis
     // is read beside the origin that places it.
     // ../../../docs/investigations/a-failed-phase-sweep-falls-back-onto-the-bands-middle.md
-    snprintf(line + at, sizeof(line) - at, " md %u rt %u",
+    snprintf(line + at, sizeof(line) - at, " md %u rt %u st %u",
              (unsigned)Adc::PLLAD_MD::read(),
-             (unsigned)SyncProcessor::SP_RT_HS_SP::read());
+             (unsigned)SyncProcessor::SP_RT_HS_SP::read(),
+             (unsigned)Adc::settleSamples());
     tv5725Log(line);
 }
 
 }  // namespace
+
+void Adc::holdSettleSamples(uint8_t samples) { settleSamples_ = samples; }
+
+void Adc::forgetSettleSamples() { settleSamples_ = DefaultSettleSamples; }
+
+uint8_t Adc::settleSamples() { return settleSamples_; }
 
 bool Adc::phaseFound() { return phaseFound_; }
 
@@ -479,7 +481,7 @@ bool Adc::acquirePhase(uint8_t oversample, bool sweep,
         feedWatchdog();
         delayMicroseconds(256);
         feedWatchdog();
-        for (uint8_t i = 0; i < SettleSamples; ++i)
+        for (uint8_t i = 0; i < settleSamples_; ++i)
             lineSamples();
         feedWatchdog();
         for (uint8_t i = 0; i < SamplesPerPhase; ++i) {

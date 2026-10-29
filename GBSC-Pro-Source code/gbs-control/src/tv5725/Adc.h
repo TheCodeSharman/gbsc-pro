@@ -364,6 +364,25 @@ public:
     // was found against something else.
     static void forgetPhase();
 
+    // Readings thrown away after the adjuster moves, before the walk scores the
+    // phase it moved to, counted in READINGS rather than microseconds so that
+    // it is observable off the device where a delay is a no-op.
+    //
+    // **ZERO, AND SETTLING MORE IS MEASURED WORSE.** Eight readings of settle
+    // put 13 of 16 arrivals in the dirty band's harmful position against 2 of
+    // 16 with none, so the band follows the walk's own per-phase dwell rather
+    // than being a transient the dwell removes.
+    // ../../../../docs/investigations/the-phase-walks-band-is-bimodal.md
+    static const uint8_t DefaultSettleSamples = 0;
+
+    // The settle in force, held against that default. Whether settling is what
+    // places the dirty band is open, and the band is a per-arrival quantity --
+    // so it is asked as a curve over arrivals rather than as a reflash per
+    // point.
+    static void holdSettleSamples(uint8_t samples);
+    static void forgetSettleSamples();
+    static uint8_t settleSamples();
+
     // Take both adjusters through their bypass and back, which is what makes a
     // newly latched phase take effect.
     static void restartPhaseAdjusters();
@@ -705,6 +724,7 @@ private:
 
     static bool phaseFound_;
     static bool clockSuspect_;
+    static uint8_t settleSamples_;
     static uint8_t gain_[3];
     static uint8_t offset_[3];
 

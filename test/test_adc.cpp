@@ -1946,12 +1946,42 @@ TEST_CASE("a disturbance confined to the adjuster's move does not reach the scor
         g_transientBand[i] = 1;
     g_transientAt = -1;
     g_transientReads = 0;
+    Adc::holdSettleSamples(8);
     Adc::choosePhaseSyncProcessor(8);
     Adc::choosePhaseAdc(16);
 
     REQUIRE(Adc::acquirePhase(2, true, lineSamplesWithEntryTransient, countFeed));
 
     CHECK(g_transientBand[Adc::phaseSyncProcessor()] == 0);
+
+    Adc::forgetSettleSamples();
+}
+
+TEST_CASE("without a settle the move itself is what every phase scores")
+{
+    // The contrast that makes the settle the knob rather than a constant.
+    // Whether settling is what places the dirty band is open -- it is the only
+    // difference left between the walk and a sweep that samples the same
+    // surface settled -- and the band is a per-arrival quantity, so the
+    // question is a curve over arrivals and not a reflash per point.
+    // ../docs/investigations/the-phase-walks-band-is-bimodal.md
+    Wire.reset();
+    Adc::PLLAD_MD::write(2230);
+    g_sweepDivider = 2230;
+    for (uint8_t i = 0; i <= Adc::PhaseMax; ++i)
+        g_transientBand[i] = 0;
+    for (uint8_t i = 6; i <= 22; ++i)
+        g_transientBand[i] = 1;
+    g_transientAt = -1;
+    g_transientReads = 0;
+    Adc::holdSettleSamples(0);
+    Adc::choosePhaseSyncProcessor(8);
+    Adc::choosePhaseAdc(16);
+
+    CHECK_FALSE(Adc::acquirePhase(2, true, lineSamplesWithEntryTransient, countFeed));
+    CHECK(Adc::samplingClockSuspect());
+
+    Adc::forgetSettleSamples();
 }
 
 TEST_CASE("a wide band is accepted on the window it leaves, not on the clean count")

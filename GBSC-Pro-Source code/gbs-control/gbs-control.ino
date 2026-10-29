@@ -6171,6 +6171,29 @@ void startWebserver()
         request->send(200, "application/json", "{\"queued\":\"phasesweep\"}");
     });
 
+    // The phase walk's per-phase settle, in readings discarded after the
+    // adjuster moves. The dirty band follows the walk's own dwell -- 8
+    // readings put 13 of 16 arrivals in its harmful position against 2 of 16
+    // with none -- and the band is per arrival, so the question is a curve
+    // taken over arrivals and this is what holds a point for one.
+    //
+    //   /phasewalk                      report, change nothing
+    //   /phasewalk?settle=8             hold the settle there
+    //   /phasewalk?clear                back to the engine's own
+    //
+    // Answers from the handler rather than loop(): it moves no register.
+    server.on("/phasewalk", HTTP_GET, [](AsyncWebServerRequest *request) {
+        if (request->hasParam("clear"))
+            Tv5725::Adc::forgetSettleSamples();
+        else if (request->hasParam("settle"))
+            Tv5725::Adc::holdSettleSamples(
+                (uint8_t)request->getParam("settle")->value().toInt());
+        char body[32];
+        snprintf_P(body, sizeof(body), PSTR("{\"settle\":%u}"),
+            (unsigned)Tv5725::Adc::settleSamples());
+        request->send(200, "application/json", body);
+    });
+
     server.on("/coast", HTTP_GET, [](AsyncWebServerRequest *request) {
         const bool pre = request->hasParam("pre");
         const bool post = request->hasParam("post");
