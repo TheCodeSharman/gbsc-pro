@@ -1,4 +1,11 @@
-# The first walk after an input change mismeasures the phase band
+# FIXED: the first walk after an input change mismeasured the phase band
+
+**The sampling path settles for 0.42..0.61 s after an input-change setup, and a
+walk inside that window reports the dirty band eight to ten phases on.** The
+search's window opens at pass 60 of the arriving run now -- 1.2 s, about twice
+the boundary -- and the arrival's walk picks 29..31 where it picked 5..6.
+A walk in progress re-disturbs the settling, which is what made the fault look
+like the caller's and made waiting look eliminated.
 
 `Adc::acquirePhase()` walks `PA_SP_S` across its field, scores each phase by
 how steadily the sync processor counts the line, and takes the middle of the
@@ -397,20 +404,65 @@ Both halves are needed: a walk in a later pass that follows no walk is wrong
 (pass 20, above), and a walk that follows one in the SAME pass is wrong too
 (the pass-10 probe). So what clears it is a completed walk AND a pass boundary.
 
-### What this makes of the fix
+## IT IS A SETTLING TIME, AND THE WALK IS WHAT WAS HIDING IT
 
-A completed `acquirePhase()` is the only thing that applies either phase --
-`applyPhaseSyncProcessor(chosen)`, `delay(1)`, `applyPhaseAdc(chosen)` -- and
-the setup does not: `HdBypass::enter()` calls `choosePhaseAdc()` and
-`choosePhaseSyncProcessor()` and never applies either, while `restartPll()`
-restarts both adjusters. So at the first search after an input change the ADC
-phase register still holds the previous source's value and neither adjuster has
-seen a latch since its restart.
+**A walk does not repair the state and never did.** `/phase?sp=` makes
+`acquirePhase()` apply the override and return without walking, so an input
+arrival can be taken with no walk at all. Clearing the override about nine
+seconds later and probing gives the arrival's FIRST ever walk, far from the
+setup and with nothing having walked before it: **15.28, 14.43, 14.88, 14.89,
+14.66, 14.91 -- six of six on the true band.**
 
-**Applying both phases at the end of the setup is therefore the candidate**, and
-it is the convention's own shape rather than a rung: configure explicitly on the
-input-source switch, and do not let a value chosen partway through be measured
-through whatever the previous source left in force. It is untested.
+That is what retires every account above built on a completed walk. With the
+walk out of the way the quantity measures directly. Timed from `sync pad:
+driven`, swept in both directions, one arrival per point, the walk's own start
+taken as the scan line less the 0.25 s a walk takes:
+
+| walk began | 0.36 | 0.42 | 0.61 | 0.63 | 0.70 | 0.72 | 0.93 | 0.93 |
+|---|---|---|---|---|---|---|---|---|
+| band centroid | 22.41 | 22.43 | **15.20** | **15.40** | **14.84** | **15.11** | **14.75** | **15.29** |
+
+**The boundary is between 0.42 s and 0.61 s**, with no overlap either side.
+
+**And that is why a WALK made it look like the caller.** Each of the walk's 34
+steps restarts the sync-processor adjuster and waits 2 ms, so a walk in progress
+re-disturbs the settling: eight walks held inside pass 10 run from 0.48 s to
+2.37 s and all read it wrong, which reads as a disturbance that does not decay.
+A single walk followed by a probe recovers, because the probe lands past the
+boundary with nothing walking in between.
+
+**It also explains why moving the search later by one cadence step failed.** A
+detection pass is 20 ms, so pass 10 begins the walk at 0.27..0.44 s and pass 20
+at about 0.5 s -- on the threshold rather than past it.
+
+### The fix
+
+`PhaseFirstPass` is 60, which is 1.2 s and about twice the boundary, and
+`PhaseLastPass` moves to 120 with it. Four input arrivals:
+
+| leg | 1 | 2 | 3 | 4 |
+|---|---|---|---|---|
+| band centroid | 15.08 | 15.02 | 15.14 | 14.98 |
+| picks | 31 | 29 | 30 | 30 |
+
+Against a centroid of 22 and a pick of 5..6 before, and the picks are the group
+the deep sampled surface scores best and a mode change chooses. A mode change
+needs none of the wait and was always correct at pass 10, so the wait is paid on
+every arrival to cover the one kind that needs it.
+
+**What settles, and why only an input change needs it, is not established.**
+The chip's configuration is identical either side -- the 1536-address diff is
+six bytes and writing them back moves nothing -- so it is not a register, and
+every arm that wrote one is above.
+
+### Two candidates refuted on the way to it
+
+**The chosen phases never being applied is a real defect and not this one.**
+`HdBypass::enter()` picks both and `restartPll()` restarts both adjusters, which
+makes each take whatever its register holds -- the previous source's, until a
+latch. `Adc::applyPhases()` after the sampling group fixes that, and the
+arrival's walk still read the band at a centroid of 22. The metric follows the
+sync processor's count, which the ADC phase cannot reach at all.
 
 **Restarting the adjusters after the PLL is enabled and latched is NOT it.**
 `restartPll()` restarts them a millisecond into the VCO's release, which
@@ -530,6 +582,11 @@ times out and carries on leaves a short excursion that looks like one.
 - **A fixed wait for a leg to acquire reads as a regression when it expires.**
   A harness allowing 30 s for the `ypbpr` leg reported no arrival on six legs
   of a healthy unit; a direct console watch is what separated the two.
+- **`/phase?sp=N` suppresses the walk outright**, `acquirePhase()` applying the
+  override and returning, so an arrival can be taken with no walk at all and
+  the settling measured with nothing disturbing it. Clear it with
+  `/phase?clear`, and note that the override sets `phaseFound_`, so maintenance
+  runs no search of its own while it is in force.
 - **Do not name a scratch script `bisect.py`.** It shadows the standard
   library's module and `urllib.request` then fails to import.
 
@@ -561,3 +618,5 @@ times out and carries on leaves a short excursion that looks like one.
 | the ADC phase adjuster's restart state carries it | the adjuster LEFT bypassed scores 14.87 against controls at 14.82 |
 | a coast window left by the previous source carries it | `cst 256 coast 0/0` at the wrong walk and the right one alike |
 | the adjusters are restarted before their clock is stable | moved after `PLLAD_LEN` and the reload, the band still reads 17..28 |
+| a completed walk is what repairs the state | the search suppressed through the arrival, the first walk after it is right 6 of 6 |
+| the channel's unapplied entry phases carry it | applied at the setup, the arrival's walk still reads a centroid of 22 |

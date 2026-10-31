@@ -10,55 +10,6 @@ regardless of which step is in flight.
 
 ## Reaches the picture
 
-### The FIRST sampling phase walk after an input change mismeasures its own band
-
-`Adc::acquirePhase()` reports the dirty band eight to ten phases further on
-than it is, so the middle of the widest clean run lands at 6 -- inside the real
-band -- instead of at 30. The picture is visibly worse there, and the pick
-persists, because `phaseFound_` stops the walk being re-run on a steady source.
-
-**It is the FIRST walk after the input-change setup, not the caller and not the
-pass.** A probe run through `acquireSamplingPhase()` -- the acquisition's own
-function -- reads the true band from the idle loop, and a probe fired in the
-arrival's own pass 10 reads the false one, so the two callers agree. Moving the
-search later does not help: `PhaseFirstPass` 20 was flashed and the arrival's
-walk still picked 6 four of four. What clears it is a completed walk AND a pass
-boundary -- a walk following one in the same pass is still wrong.
-
-**The signature is the arrival kind.** On `vga`, RISC PC at 1280x720@60,
-pass-through, `PLLAD_MD` 2038, eight pairs interleaved: a mode change on `vga`
-reports the band at 6..22 and picks 28..31 in 8 of 8, an input change through
-`ypbpr` reports 15..29 and picks 5..7 in 8 of 8. No overlap.
-
-**The band does not move -- the measurement is wrong.** The same state
-re-walked seconds later through `/phasesweep`, unfrozen and with nothing else
-touched, reports 6..22 and picks 28..30, four times in four. The deep sampled
-surface, 21 walks on a frozen settled state, and the picture's own dirty band
-all agree with the re-walk.
-
-Eliminated: every register. A full 1536-address diff either side of a
-confirmed displacement differs in six bytes against three between two arrivals
-of the same kind, and writing all of them into a true-band state moves
-nothing. Also eliminated: the walk's settle, interleaved at 0, 4, 8 and 16
-readings.
-
-Also eliminated: the walk's settle at 0, 4, 8 and 16 readings; the sync-type
-probe; the caller and the no-op watchdog it passes; elapsed time, eight walks
-inside one pass spanning 476 ms to 2366 ms with no trend; the pass number; the
-ADC phase adjuster, which the metric cannot reach at all; a coast window left
-by the previous source, `cst 256 coast 0/0` at the wrong walk and the right
-one; and restarting the adjusters after the PLL is enabled rather than a
-millisecond into its relock.
-
-**What would settle it** is that a completed `acquirePhase()` is the only thing
-that applies either phase, and the setup does not: `HdBypass::enter()` chooses
-both and applies neither, while `restartPll()` restarts both adjusters. So the
-first search after an input change measures through the previous source's ADC
-phase with neither adjuster latched since its restart. **Applying both phases
-at the end of the setup is the untested candidate**, and it is the convention's
-own shape rather than a rung.
-`investigations/the-arrivals-own-walk-mismeasures-the-phase-band.md`.
-
 ### FIXED: the phase sweep refused half its own answers and fell back onto a seed inside the band
 
 `PA_SP_S` 8 after an input change was never a phase the search chose. The sweep
@@ -8993,6 +8944,36 @@ same error measured on boots, where it is bounded by the confirmation.
 
 
 ## Fixed, kept here until the next session has seen them
+
+### FIXED: the first sampling phase walk after an input change mismeasured its own band
+
+`Adc::acquirePhase()` ran at pass 10 of the arriving run and reported the dirty
+band eight to ten phases on, so the middle of the widest clean run landed at 6
+-- inside the real band at 6..22 -- and the picture was visibly worse there.
+The pick persisted, `phaseFound_` stopping the walk re-running on a steady
+source.
+
+**It was a settling time after an INPUT-change setup.** Not the caller: a probe
+through `acquireSamplingPhase()` from the idle loop read the true band and a
+probe in the arrival's own pass 10 read the false one. Not a walk: with the
+search suppressed through the whole arrival by a phase override, the first walk
+taken afterwards was correct, six of six. Not a pass count: `PhaseFirstPass` 20
+was flashed and the walk still picked 6, four of four, because pass 20 begins
+the walk at about 0.5 s and the boundary is 0.42..0.61 s past the pad.
+
+`PhaseFirstPass` is 60 now, 1.2 s and about twice the boundary, with
+`PhaseLastPass` moved to 120. Four input arrivals read centroid 15.08 15.02
+15.14 14.98 and picked 31 29 30 30, against 22 and 5..6 before.
+
+Also eliminated on the way, each with its evidence: the no-op watchdog the
+acquisition passes; the second rate match, a refusal that writes nothing; the
+ADC phase adjuster, which the metric cannot reach; a coast window left by the
+previous source; restarting the adjusters after the PLL is enabled rather than
+a millisecond into its relock; and the channel's chosen phases never being
+applied, which was a real defect of its own and fixed separately without moving
+the band.
+`investigations/the-arrivals-own-walk-mismeasures-the-phase-band.md`.
+
 ### FIXED `f174f3aba`: the sampling-phase sweep was gated on the separator level
 
 The gate asked a question that only matters on sync on green. The scores come
