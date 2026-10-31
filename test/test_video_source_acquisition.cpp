@@ -4338,7 +4338,9 @@ TEST_CASE("and it is searched once the transition is over")
     Adc::forgetPhase();
     REQUIRE(unit.pollUntilShown());
 
-    for (uint8_t i = 0; i < 30 && !Adc::phaseFound(); ++i)
+    // Past the window's opening pass, which waits out the sampling path's
+    // settling after an input-change setup.
+    for (uint16_t i = 0; i < 200 && !Adc::phaseFound(); ++i)
         unit.poll();
 
     CHECK(Adc::phaseFound());

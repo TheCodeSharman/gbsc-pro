@@ -55,18 +55,18 @@ TEST_CASE("the sampling phase is tried every tenth pass until it is found")
     source.samplingPhaseFound = false;
     source.samplingClockSuspect = false;
 
-    source.acquiredPasses = source.arrivedPasses = 10;
+    source.acquiredPasses = source.arrivedPasses = 60;
     CHECK(maintenance.dueAt(source).samplingPhase);
 
-    source.acquiredPasses = source.arrivedPasses = 15;
+    source.acquiredPasses = source.arrivedPasses = 65;
     CHECK_FALSE(maintenance.dueAt(source).samplingPhase);
 
-    source.acquiredPasses = source.arrivedPasses = 60;
+    source.acquiredPasses = source.arrivedPasses = 120;
     CHECK(maintenance.dueAt(source).samplingPhase);
 
     // Past the window, so a phase never found is left alone rather than
     // retried for the life of the lock.
-    source.acquiredPasses = source.arrivedPasses = 70;
+    source.acquiredPasses = source.arrivedPasses = 130;
     CHECK_FALSE(maintenance.dueAt(source).samplingPhase);
 }
 
@@ -85,16 +85,55 @@ TEST_CASE("the phase window follows the arriving source, not the acquired run")
     source.samplingPhaseFound = false;
     source.samplingClockSuspect = false;
 
-    source.arrivedPasses = 10;
+    source.arrivedPasses = 60;
     CHECK(maintenance.dueAt(source).samplingPhase);
 
-    source.arrivedPasses = 15;
+    source.arrivedPasses = 65;
     CHECK_FALSE(maintenance.dueAt(source).samplingPhase);
 
     // The give-up is per arrival too: a phase never found for THIS source is
     // what stops being worth walking the field for.
-    source.arrivedPasses = 70;
+    source.arrivedPasses = 130;
     CHECK_FALSE(maintenance.dueAt(source).samplingPhase);
+}
+
+TEST_CASE("the sampling phase search waits out the sampling path's settling")
+{
+    // THE SEARCH READS THE WRONG BAND IF IT RUNS TOO SOON AFTER AN INPUT-CHANGE
+    // SETUP, and what it waits for is a settling time rather than a walk.
+    // Measured on vga at 1280x720@60 pass-through, the walk suppressed through
+    // the arrival with a phase override so nothing disturbs the settling and
+    // nothing has walked before the one probe, timed from `sync pad: driven`
+    // and swept in both directions:
+    //
+    //   walk began  0.36  0.42 | 0.61  0.63  0.70  0.72  0.93  0.93
+    //   centroid   22.41 22.43 | 15.20 15.40 14.84 15.11 14.75 15.29
+    //
+    // The band is at 6..22 and a centroid near 14 reports it; near 22 is the
+    // fault, and the pick then lands at 6, inside the band, where the picture
+    // is visibly worse. A detection pass is 20 ms, so pass 10 began the walk at
+    // 0.27..0.44 s and pass 20 at about 0.5 s -- on the threshold, which is why
+    // 20 measured no better, four of four.
+    //
+    // 60 passes is 1.2 s, about twice the boundary. A mode change needs none of
+    // it and is correct at pass 10, so the wait is paid on every arrival to
+    // cover the one kind that needs it.
+    // ../docs/investigations/the-arrivals-own-walk-mismeasures-the-phase-band.md
+    SourceMaintenance maintenance;
+    SourceMaintenance::Source source;
+    source.acquiredPasses = 200;
+    source.unmeasuredPasses = 0;
+    source.samplingPhaseFound = false;
+    source.samplingClockSuspect = false;
+
+    source.arrivedPasses = 10;
+    CHECK_FALSE(maintenance.dueAt(source).samplingPhase);
+
+    source.arrivedPasses = 20;
+    CHECK_FALSE(maintenance.dueAt(source).samplingPhase);
+
+    source.arrivedPasses = 60;
+    CHECK(maintenance.dueAt(source).samplingPhase);
 }
 
 TEST_CASE("a suspect sampling clock is retried for as long as it is suspect")

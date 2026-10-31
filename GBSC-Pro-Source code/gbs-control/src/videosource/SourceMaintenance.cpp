@@ -3,8 +3,17 @@
 namespace {
 
 // The window the sampling phase is searched in, and how often inside it.
-const uint16_t PhaseFirstPass = 10;
-const uint16_t PhaseLastPass = 60;
+//
+// IT OPENS LATE BECAUSE THE SAMPLING PATH SETTLES AFTER AN INPUT-CHANGE SETUP.
+// A walk run before it has reports the dirty band eight to ten phases on, so
+// the middle of the widest clean run lands inside the real band and the picture
+// is worse for it. The boundary is between 0.42 s and 0.61 s past the pad being
+// driven, and a detection pass is 20 ms, so 60 passes is about twice it. What
+// it waits for is the settling and not a walk: with the search suppressed
+// through the whole arrival, the first walk taken after it is correct.
+// ../../../docs/investigations/the-arrivals-own-walk-mismeasures-the-phase-band.md
+const uint16_t PhaseFirstPass = 60;
+const uint16_t PhaseLastPass = 120;
 const uint16_t PhaseEveryPasses = 10;
 
 const uint16_t DynamicFirstPass = 2;
