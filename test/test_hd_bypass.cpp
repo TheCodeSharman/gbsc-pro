@@ -1073,6 +1073,32 @@ TEST_CASE("pass-through leaves the retime window alone with nothing measured")
 // Each recall re-armed a solve, dropping the sync pad 13 times in 75 s, and the
 // capture dongle read mean luma 0.00. Left at the threshold the load chose, the
 // same source is full screen at mean luma 134.93.
+// A CHOSEN PHASE THAT IS NEVER APPLIED IS THE PREVIOUS SOURCE'S PHASE. The
+// entry picks both and restartPll() then restarts both adjusters, which makes
+// each take whatever its register still holds -- so without an apply the
+// channel samples at the phases the source before it was read through.
+//
+// The sampling phase search is what paid for it. A completed acquirePhase() is
+// the only other thing that applies either phase, so the FIRST walk after an
+// input change was the one walk running on the outgoing source's ADC phase:
+// measured on vga at 1280x720@60 pass-through, it reported the dirty band at a
+// centroid of 22 against 14 for every walk after it and for a mode change's
+// first walk, interleaved three rounds at one pass.
+// ../docs/investigations/the-arrivals-own-walk-mismeasures-the-phase-band.md
+TEST_CASE("the channel's entry puts both sampling phases in force")
+{
+    Wire.reset();
+    Tv5725::Adc::applyPhaseSyncProcessor(3);
+    Tv5725::Adc::applyPhaseAdc(29);
+
+    HdBypass::enterFor(true, true, 31469, Unpublished, 525, BenchPulse);
+
+    CHECK((unsigned)Tv5725::Adc::PA_SP_S::read()
+          == (unsigned)HdBypass::EntryPhaseSyncProcessor);
+    CHECK((unsigned)Tv5725::Adc::PA_ADC_S::read()
+          == (unsigned)HdBypass::EntryPhaseAdc);
+}
+
 TEST_CASE("the channel's entry leaves the separation threshold alone")
 {
     Wire.reset();

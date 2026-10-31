@@ -167,10 +167,16 @@ void HdBypass::enterFor(bool component, bool csync, uint32_t lineRateHz,
     Adc::choosePhaseAdc(EntryPhaseAdc);
     Adc::choosePhaseSyncProcessor(EntryPhaseSyncProcessor);
 
-    // LAST of the group, because it installs the sampling the played-out
-    // raster is derived from, and it is the one writer of PLLAD_MD here.
+    // LAST of the sampling group, because it installs the sampling the
+    // played-out raster is derived from, and it is the one writer of PLLAD_MD
+    // here.
     applyForSource(divider, lineRateHz, timing, frameLines,
                    pulse);
+
+    // AFTER IT, because restartPll() restarts both phase adjusters and each
+    // then takes whatever its register holds -- the previous source's, until
+    // the chosen pair is latched.
+    Adc::applyPhases();
 
     Chip::dacsFollowInput();
     Chip::OUT_SYNC_CNTRL::write(1);
