@@ -233,6 +233,10 @@ volatile bool pendingPhase = false;
 // a state something wrote.
 volatile bool pendingPhaseSweep = false;
 volatile uint8_t pendingPhaseSweepCount = 0;
+volatile bool pendingPhaseSweepFeed = true;
+volatile bool pendingPhaseCall = false;
+volatile uint8_t pendingPhaseCallCount = 0;
+volatile uint16_t pendingPhaseCallAtPass = 0;
 volatile bool pendingPhaseClear = false;
 volatile bool pendingPhaseApply = false;
 volatile bool pendingPhaseAdc = false;
@@ -1381,6 +1385,12 @@ void goLowPowerWithInputDetection()
 }
 
 static void feedWatchdog() { ESP.wdtFeed(); }
+
+// WHAT THE ACQUISITION ACTUALLY PASSES. useWatchdogFeed() is never
+// called, so VideoSourceAcquisition's watchdog_ is its own no-op --
+// the one argument that differs between the two callers of the phase
+// walk, and so the first thing a bisect of them has to be able to try.
+static void noFeedWatchdog() {}
 
 static uint32_t millisNow() { return (uint32_t)millis(); }
 
@@ -5009,8 +5019,37 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                 tv5725Log(line);
                 Tv5725::Adc::acquirePhase(Tv5725::Adc::oversampleInForce(), true,
                                           Tv5725::SyncProcessor::lineSamples,
-                                          feedWatchdog);
+                                          pendingPhaseSweepFeed ? feedWatchdog
+                                                                : noFeedWatchdog);
             }
+            pendingPhaseSweepFeed = true;
+        }
+
+        // THE ACQUISITION'S OWN CALL, from the idle loop. The walk reports the
+        // dirty band eight to ten phases off when the acquisition runs it and
+        // correctly when /phasesweep does, with every register identical and
+        // no amount of waiting closing it -- so the question is whether the
+        // displacement follows the CALL or the arrival that precedes it, and
+        // that needs the acquisition's own path reachable without an arrival.
+        // ../../docs/investigations/the-arrivals-own-walk-mismeasures-the-phase-band.md
+        if (pendingPhaseCall) {
+            pendingPhaseCall = false;
+            for (uint8_t i = 0; i < pendingPhaseCallCount; ++i) {
+                char line[48];
+                snprintf(line, sizeof(line), "phasecall: %u", (unsigned)(i + 1));
+                tv5725Log(line);
+                inputAcquisition.acquireSamplingPhase("probe");
+            }
+        }
+
+        // ONE WALK ON A CHOSEN PASS of the arriving run. Nothing in the
+        // maintenance cadence falls due between pass 7 and pass 31, so which
+        // pass the band first reads right on is what names the quantity the
+        // search is waiting for.
+        if (pendingPhaseCallAtPass != 0
+            && inputAcquisition.arrivedPasses() >= pendingPhaseCallAtPass) {
+            pendingPhaseCallAtPass = 0;
+            inputAcquisition.acquireSamplingPhase("atpass");
         }
 
         if (pendingCoast) {
@@ -6167,8 +6206,24 @@ void startWebserver()
     server.on("/phasesweep", HTTP_GET, [](AsyncWebServerRequest *request) {
         pendingPhaseSweepCount = request->hasParam("n")
             ? (uint8_t)request->getParam("n")->value().toInt() : 4;
+        // wd=0 runs it with the no-op the acquisition passes.
+        pendingPhaseSweepFeed = !request->hasParam("wd")
+            || request->getParam("wd")->value().toInt() != 0;
         pendingPhaseSweep = true;
         request->send(200, "application/json", "{\"queued\":\"phasesweep\"}");
+    });
+
+    server.on("/phasecall", HTTP_GET, [](AsyncWebServerRequest *request) {
+        if (request->hasParam("atpass")) {
+            pendingPhaseCallAtPass =
+                (uint16_t)request->getParam("atpass")->value().toInt();
+            request->send(200, "application/json", "{\"armed\":\"atpass\"}");
+            return;
+        }
+        pendingPhaseCallCount = request->hasParam("n")
+            ? (uint8_t)request->getParam("n")->value().toInt() : 4;
+        pendingPhaseCall = true;
+        request->send(200, "application/json", "{\"queued\":\"phasecall\"}");
     });
 
     // The phase walk's per-phase settle, in readings discarded after the

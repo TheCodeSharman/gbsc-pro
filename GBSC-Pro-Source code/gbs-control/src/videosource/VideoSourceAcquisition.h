@@ -131,6 +131,13 @@ public:
     // walk and cannot.
     bool acquireSamplingPhase(const char *reason);
 
+    // Detection passes since the arriving source was acquired, which is the
+    // run the phase search is scheduled in. Read-only: a probe fired at a
+    // chosen pass is how the search's own window was measured, the band it
+    // reports being right at pass 20 and eight phases off at pass 10.
+    // ../../../docs/investigations/the-arrivals-own-walk-mismeasures-the-phase-band.md
+    uint16_t arrivedPasses() const;
+
     // Whether the phase held is one to keep: a search succeeded, and it was
     // searched for the sampling THIS source is read through -- Tv5725::Adc
     // covers the divider, this covers the source's line rate.

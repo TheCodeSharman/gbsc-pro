@@ -97,6 +97,8 @@ bool VideoSourceAcquisition::samplingPhaseFound() const
     return Tv5725::Adc::phaseFound() && phaseRateHz_ == sampling_.lineRateHz();
 }
 
+uint16_t VideoSourceAcquisition::arrivedPasses() const { return arrivedPasses_; }
+
 bool VideoSourceAcquisition::acquireSamplingPhase(const char *reason)
 {
     // NOT INSIDE A TRANSITION. A sweep taken with the sync pad away scores a
@@ -148,10 +150,14 @@ bool VideoSourceAcquisition::acquireSamplingPhase(const char *reason)
     // BEFORE THE WALK, because the walk is what the state has to be read
     // against: the band forms under the origin in force now, and reportScan()
     // reports the one left afterwards.
-    char before[96];
+    // THE PASS COUNTS AND THE COAST, because the search is due at a pass of the
+    // ARRIVING run while the coast and clamp windows are gated on the ACQUIRED
+    // run -- so the walk can score the sync processor's count through a window
+    // the previous source left, and nothing else says so.
+    char before[176];
     snprintf(before, sizeof(before),
              "sampling phase: sweeping for %s, rt %u md %u vt %u solved %u"
-             " state %u in %u/%u lock %u",
+             " state %u in %u/%u lock %u acq %u arr %u cst %u coast %u/%u",
              reason,
              (unsigned)Tv5725::SyncProcessor::SP_RT_HS_SP::read(),
              (unsigned)Tv5725::Adc::PLLAD_MD::read(),
@@ -160,7 +166,12 @@ bool VideoSourceAcquisition::acquireSamplingPhase(const char *reason)
              (unsigned)sourceState_,
              (unsigned)VideoSourceSelection::selected(),
              (unsigned)solvedForInput_,
-             (unsigned)GBS::STATUS_MISC_PLLAD_LOCK::read());
+             (unsigned)GBS::STATUS_MISC_PLLAD_LOCK::read(),
+             (unsigned)acquiredPasses_,
+             (unsigned)arrivedPasses_,
+             (unsigned)Tv5725::SyncProcessor::SP_H_CST_SP::read(),
+             (unsigned)Tv5725::SyncProcessor::SP_PRE_COAST::read(),
+             (unsigned)Tv5725::SyncProcessor::SP_POST_COAST::read());
     tv5725Log(before);
 
     const bool found = Tv5725::Adc::acquirePhase(
