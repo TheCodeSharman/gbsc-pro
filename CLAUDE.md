@@ -2588,6 +2588,16 @@ firmware C++.
   `--source` suite leaving the picture wrong and needing a reset. Compare the
   `Sketch uses N bytes` line, or diff `build/output/gbs-control.ino.bin`
   against the previous build; same bytes means commit on the host tests alone.
+  **PIN `GBS_BUILD_REV` TO COMPARE, OR THE COMPARISON CANNOT SUCCEED.** The
+  build compiles in `$(GIT_REV)$(GIT_DIRTY)`, so identical source at two
+  revisions -- or across one commit, or across a tree going clean -- shifts
+  every byte after the string and changes its length besides: measured 13321
+  differing bytes and 16 bytes of size between two builds of one tree.
+  `make -C build GBS_BUILD_REV=x` on both sides is what makes them comparable.
+  **It also means a flashed image legitimately differs from a fresh build of
+  the same code**, so a hash mismatch is not evidence that a flash carried
+  something else -- ask the unit's behaviour, or rebuild at the revision that
+  was flashed.
 - Firmware changes ship as a bounded commit plus a commit adding a runtime
   acceptance test. No source-parsing tests — test behaviour, not implementation.
   No tests for removals.
