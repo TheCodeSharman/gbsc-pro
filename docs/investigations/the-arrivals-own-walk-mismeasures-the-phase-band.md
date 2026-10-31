@@ -1,4 +1,4 @@
-# The arrival's own walk mismeasures the phase band, and a re-walk corrects it
+# The first walk after an input change mismeasures the phase band
 
 `Adc::acquirePhase()` walks `PA_SP_S` across its field, scores each phase by
 how steadily the sync processor counts the line, and takes the middle of the
@@ -303,49 +303,162 @@ the walk N times from whatever called it. Both walks of an input arrival are
 wrong, so the fault is not the first walk after the adjusters restart -- it is
 the calling context. See the section above.
 
-## IT IS THE CALLER, NOT THE CLOCK: thirteen walks of one acquisition, all wrong
+## IT IS NOT THE CALLER. IT IS THE FIRST WALK AFTER AN INPUT CHANGE
 
 `acquirePhase()` repeats its field walk `walkRepeats()` times and reports every
-scan, so both readings come from the SAME caller -- which is what the arrival
-against `/phasesweep` comparison could not give. Held at 8, and the
-acquisition sometimes runs it again, so up to 13 walks land inside one
-arrival, spanning about four seconds:
+scan, and held at 8 an input arrival's walks all read the band displaced --
+which was read as the calling context, the acquisition's call against
+`/phasesweep`'s. **That reading is refuted. The two callers agree, and a walk
+is wrong or right by WHEN it runs rather than by what runs it.**
 
-| arrival | walk 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | .. 13 |
-|---|---|---|---|---|---|---|---|---|---|
-| mode | 14.4 | 14.2 | 14.9 | 14.5 | 14.0 | 14.4 | 14.1 | 14.4 | |
-| input | 22.7 | 22.4 | 22.4 | 22.2 | 22.2 | 22.1 | 22.3 | 22.2 | |
-| input, another | 23.8 | 24.6 | 24.6 | 24.2 | **22.7** | 22.4 | 22.5 | 22.2 | 22.1 |
-| mode, another | 19.2 | **scatter** | scatter | scatter | **14.7** | 14.2 | 14.4 | 14.5 | 14.3 |
+`/phasecall` runs `VideoSourceAcquisition::acquireSamplingPhase()` itself from
+the idle loop, so the acquisition's own function, its four gates and its
+arguments are all reachable without an arrival. Interleaved four rounds on one
+settled state, two scans a round:
 
-**Every walk of an input arrival is wrong and every walk of a mode arrival is
-right**, and the run of thirteen covers four seconds. A walk from the idle loop
-moments after the same acquisition is right. **So the disturbance is not
-something that decays, at any scale between a third of a second and four
-seconds, and waiting inside the acquisition does not reach it.**
+| arm | band centroid, 8 readings each | mean |
+|---|---|---|
+| `/phasesweep` | 15.56 14.58 14.90 15.48 14.23 15.04 14.79 14.62 | 14.90 |
+| `/phasesweep` with the no-op watchdog | 15.05 15.17 14.46 14.75 15.13 14.85 15.47 14.77 | 14.96 |
+| **`acquireSamplingPhase()` itself** | 15.10 14.48 14.63 15.03 14.12 14.47 14.85 15.22 | **14.74** |
 
-This is what retires the settling account for good. An earlier reading that
-the first re-walk is already right only bounded it above 3.6 s and below the
-600 ms between two walks; thirteen walks close the middle.
+**All three read the true band**, so neither the function nor its gates nor its
+one differing argument carries the displacement. And a probe fired at pass 10
+of an input arrival reads **22.51** where the acquisition's own walk reads
+**22.54** in the same pass -- the same wrong answer, from the other caller.
 
-**AND THERE IS A SEPARATE EARLY TRANSIENT, worth not confusing with it.** The
-first three or four walks of an arrival report something else again -- a
-narrow band at 23..25 on one input arrival, and pure scatter at every phase on
-one mode arrival -- settling by walk 5 into the band that arrival then holds.
-So an arrival's FIRST walk is unreliable in a second, independent way, and the
-engine runs exactly one.
+**The one argument that does differ is a live defect of its own.**
+`VideoSourceAcquisition::useWatchdogFeed()` is never called, so the search runs
+with the layer's own no-op while `/phasesweep` passes `ESP.wdtFeed()`. The walk
+latches and scores 34 phases at twenty readings each with the software watchdog
+unfed, surviving only because `applyPhaseSyncProcessor()`'s `delay(2)` feeds it
+implicitly. It does not move the band -- the table above is the control -- and
+it is not a reason to leave the feed unwired.
 
-### What is left
+## THE FOUR SECONDS WERE ONE PASS, WHICH IS WHY WAITING LOOKED ELIMINATED
 
-The acquisition's walk is wrong and a walk from the idle loop is right, with
-no register state reproducing the difference and no amount of waiting inside
-the acquisition closing it. What distinguishes the two callers is what the
-acquisition has not finished doing: on an input arrival a second
-`rate match: the HD bypass channel carries the video` lands AFTER the walk,
-where a mode arrival has one before the walk and none after.
+A walk BLOCKS `loop()`, and `arrivedPasses_` advances only on a detection pass,
+so a `repeat` spends wall clock without advancing a pass at all. Eight walks
+held inside pass 10 of one input arrival, timed from `sync pad: driven`:
 
-That is the next thing to test, and it needs the rate match moved or
-suppressed rather than a register set -- nothing in a dump describes it.
+| since the pad | 476 ms | 702 | 1040 | 1239 | 1546 | 1747 | 2063 | 2366 |
+|---|---|---|---|---|---|---|---|---|
+| band centroid | 22.27 | 22.31 | 22.28 | 22.36 | 22.08 | 22.53 | 22.22 | 22.31 |
+
+Every one at pass 10, and a probe on the same arrival at pass 181 reads 14.02.
+**So elapsed time is eliminated for a reason the earlier reading did not
+have**: those four seconds were never four seconds of engine, and a repeat
+cannot test waiting.
+
+`repeat=N` is nevertheless sound as an instrument. Against N fresh calls on a
+settled state, 24 readings each: **14.81 against 14.78**, min 14.01 against
+13.72, max 15.70 against 15.53.
+
+## THE PASS NUMBER IS NOT IT EITHER, AND THE FIX THAT FOLLOWED FROM IT FAILED
+
+The search is due at `arrivedPasses` 10 and reads the band displaced; a probe in
+a LATER pass of the same arrival reads it correctly, at 20, 21, 35, 46 and on
+out to 255. That makes moving the search later the obvious fix, and
+`PhaseFirstPass` 20 was built, host-tested and flashed. **It changes nothing**
+-- the arrival's own walk at pass 20, four of four:
+
+| leg | 1 | 2 | 3 | 4 |
+|---|---|---|---|---|
+| band centroid | 22.44 | 22.46 | 22.19 | 21.95 |
+| picks | 6 | 6 | 6 | 5 |
+
+So the constant is back at 10 and **must not be raised again on the strength of
+a probe landing right in a later pass**: what reads right in a later pass is a
+walk that FOLLOWS one, not a walk that runs late.
+
+**The pass 11..20 gap cannot be probed.** One walk costs about eleven detection
+passes, so `/phasecall?atpass=11` lands at 21.
+
+## WHAT THE DISCRIMINATOR IS
+
+Interleaved three rounds, both arrival kinds landing on the same pass 20, on
+`vga` at 1280x720@60 pass-through with `SYNC 0`:
+
+| round | input change | mode change |
+|---|---|---|
+| 1 | 22.59 | 14.50 |
+| 2 | 21.95 | 14.89 |
+| 3 | 22.88 | 15.39 |
+
+**Perfect separation at one pass**, which retires the pass account and restores
+the arrival-kind one. Put together with the probe results above, the statement
+the evidence supports is:
+
+**The FIRST walk to run after an INPUT-change setup reports the band displaced,
+whichever pass it falls on and whichever caller runs it. Every walk after it
+reads the band correctly, and a MODE change's first walk reads it correctly.**
+
+Both halves are needed: a walk in a later pass that follows no walk is wrong
+(pass 20, above), and a walk that follows one in the SAME pass is wrong too
+(the pass-10 probe). So what clears it is a completed walk AND a pass boundary.
+
+### What this makes of the fix
+
+A completed `acquirePhase()` is the only thing that applies either phase --
+`applyPhaseSyncProcessor(chosen)`, `delay(1)`, `applyPhaseAdc(chosen)` -- and
+the setup does not: `HdBypass::enter()` calls `choosePhaseAdc()` and
+`choosePhaseSyncProcessor()` and never applies either, while `restartPll()`
+restarts both adjusters. So at the first search after an input change the ADC
+phase register still holds the previous source's value and neither adjuster has
+seen a latch since its restart.
+
+**Applying both phases at the end of the setup is therefore the candidate**, and
+it is the convention's own shape rather than a rung: configure explicitly on the
+input-source switch, and do not let a value chosen partway through be measured
+through whatever the previous source left in force. It is untested.
+
+**Restarting the adjusters after the PLL is enabled and latched is NOT it.**
+`restartPll()` restarts them a millisecond into the VCO's release, which
+calibrates a delay line against a clock still acquiring lock; moved after
+`PLLAD_LEN` and the reload, the arrival's walk still reads the band at 17..28.
+Reverted, an unmeasured change to a working path being no improvement.
+
+## THE ADC PHASE ADJUSTER CANNOT REACH THE METRIC
+
+The walk scores `STATUS_SYNC_PROC_HTOTAL`, which follows the SYNC PROCESSOR's
+adjuster, so nothing in the ADC phase path can move the band -- and that is
+measured rather than argued. Interleaved four rounds on a settled state:
+
+| arm | mean centroid, 8 readings |
+|---|---|
+| control | 14.82 |
+| `PA_ADC_BYPSZ` restarted | 14.93 |
+| **`PA_ADC_BYPSZ` LEFT bypassed** | **14.87** |
+| both adjusters restarted, as `restartPll()` does | 14.86 |
+
+The third arm is the one that settles it: with the ADC adjuster out of circuit
+altogether the band does not move, so an arm that writes it is not an
+elimination with a positive control -- it is a metric that cannot see it.
+
+## THE COAST IS OUT, WITH THE STATE LOGGED BESIDE IT
+
+The pre-sweep context line carries `acq`, `arr`, `cst` and both coast lengths,
+which is what makes a coast window left by the previous source a readable claim
+rather than an inference. One input arrival:
+
+```
+sweeping for maintenance ... lock 1 acq 10 arr 10 cst 256 coast 0/0   -> 22.73
+sweeping for probe       ... lock 1 acq 21 arr 21 cst 256 coast 0/0   -> 14.93
+```
+
+**Identical in every field but the pass**, 0.35 s apart, and the answers eight
+phases apart. The same pair of lines is what rules out `rt`, `md`, the count,
+the solve, the selection and the lock bit, all of which read the same at both.
+
+## THE SECOND RATE MATCH IS OUT, BY INSPECTION AND BY TIMING
+
+A second `rate match: the HD bypass channel carries the video` landing after the
+walk was the standing lead. It is closed twice over. **The message is a
+refusal**: `FrameSync::matchRate()` returns at `steerable()`'s HD-bypass check
+before anything else, so on this path it writes nothing and reads two fields.
+And **the band is already correct before it lands** -- on one arrival the walk
+read 22.20 at 11.12 s, a probe read 14.88 at 11.69 s, and the second rate match
+came at 12.05 s.
 
 ## NO REGISTER CARRIES IT, which is what leaves the walk itself as the fault
 
@@ -393,6 +506,32 @@ times out and carries on leaves a short excursion that looks like one.
 - **Polling a register over HTTP cannot time a sub-second window.** An
   injection triggered at a fixed 0.25 s lands 3 times in 8, and triggering on a
   polled `SP_RT_HS_SP` is no better. Put the information in the firmware log.
+- **`acq` and `arr` in the context line are the acquired and arriving runs in
+  detection passes**, 20 ms apart, and `cst` and `coast` are the H coast stop
+  and the pre/post pair. The pass is what distinguishes two walks that are
+  identical in every other field.
+- **`/phasecall`** runs `acquireSamplingPhase()` from the idle loop, which is
+  what asks whether a difference between two walks belongs to the caller.
+  `?n=N` repeats it as N fresh calls; `?atpass=N` runs one walk on the first
+  pass of the arriving run at or past N.
+- **`/phasesweep?wd=0`** runs the sweep with the no-op watchdog the acquisition
+  passes, so the one differing argument can be tried.
+- **Arm `atpass` AFTER `sync pad: away`**, never before the input change: the
+  arriving run's pass count is zeroed when the source goes absent, so a probe
+  armed earlier fires at once against the outgoing source's count of two
+  hundred.
+- **A walk costs about eleven detection passes**, so passes 11..20 are not
+  reachable: a probe armed for pass 11 lands at 21.
+- **Drive a harness off CONSOLE LINES rather than HTTP register reads.**
+  Waiting on `sampling phase: chosen` and `sync pad: driven` is reliable where
+  polling `STATUS_SYNC_PROC_VTOTAL` returns None mid-detection, and where a
+  reading is wanted that HTTP cannot take, the answer is a field added to a log
+  line rather than a faster poll.
+- **A fixed wait for a leg to acquire reads as a regression when it expires.**
+  A harness allowing 30 s for the `ypbpr` leg reported no arrival on six legs
+  of a healthy unit; a direct console watch is what separated the two.
+- **Do not name a scratch script `bisect.py`.** It shadows the standard
+  library's module and `urllib.request` then fails to import.
 
 ## Refuted, with the evidence that killed each
 
@@ -412,6 +551,13 @@ times out and carries on leaves a short excursion that looks like one.
 | the excursion must solve the other source | four seconds on it displaces as far as a full acquisition |
 | the PLL's reference carries it | `/refclock` to the other source's divider, null with and without the divider |
 | the arrival's walk is merely early | the first re-walk is already right, at +0 s and at +20 s |
-| the first walk after the adjusters restart is the wrong one | eight to thirteen walks of one arrival, all wrong |
-| the disturbance decays and the walk must wait | thirteen walks over four seconds, no trend |
 | the search's `SP_H_PULSE_IGNOR` 16 carries it | held at 16 against controls, null, twice |
+| the CALLER carries it | `acquireSamplingPhase()` from the idle loop reads the true band; a probe at pass 10 reads the false one |
+| the no-op watchdog the acquisition passes carries it | the sweep run with it scores 14.96 against 14.90 |
+| the second rate match carries it | it is a refusal that writes nothing, and the band is right before it lands |
+| the disturbance decays and the walk must wait | eight walks inside one pass, 476 ms to 2366 ms, no trend |
+| `repeat=N` is not the same instrument as N calls | 14.81 against 14.78 on a settled state, 24 readings each |
+| the search runs too early in the arriving run | `PhaseFirstPass` 20 flashed: the arrival's walk picks 6 four of four |
+| the ADC phase adjuster's restart state carries it | the adjuster LEFT bypassed scores 14.87 against controls at 14.82 |
+| a coast window left by the previous source carries it | `cst 256 coast 0/0` at the wrong walk and the right one alike |
+| the adjusters are restarted before their clock is stable | moved after `PLLAD_LEN` and the reload, the band still reads 17..28 |

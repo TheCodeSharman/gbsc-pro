@@ -10,13 +10,20 @@ regardless of which step is in flight.
 
 ## Reaches the picture
 
-### The sampling phase walk mismeasures its own band during an input-change acquisition
+### The FIRST sampling phase walk after an input change mismeasures its own band
 
-`Adc::acquirePhase()` run inside an input-change acquisition reports the dirty
-band eight to ten phases further on than it is, so the middle of the widest
-clean run lands at 6 -- inside the real band -- instead of at 30. The picture
-is visibly worse there, and the pick persists, because `phaseFound_` stops the
-walk being re-run on a steady source.
+`Adc::acquirePhase()` reports the dirty band eight to ten phases further on
+than it is, so the middle of the widest clean run lands at 6 -- inside the real
+band -- instead of at 30. The picture is visibly worse there, and the pick
+persists, because `phaseFound_` stops the walk being re-run on a steady source.
+
+**It is the FIRST walk after the input-change setup, not the caller and not the
+pass.** A probe run through `acquireSamplingPhase()` -- the acquisition's own
+function -- reads the true band from the idle loop, and a probe fired in the
+arrival's own pass 10 reads the false one, so the two callers agree. Moving the
+search later does not help: `PhaseFirstPass` 20 was flashed and the arrival's
+walk still picked 6 four of four. What clears it is a completed walk AND a pass
+boundary -- a walk following one in the same pass is still wrong.
 
 **The signature is the arrival kind.** On `vga`, RISC PC at 1280x720@60,
 pass-through, `PLLAD_MD` 2038, eight pairs interleaved: a mode change on `vga`
@@ -35,12 +42,21 @@ of the same kind, and writing all of them into a true-band state moves
 nothing. Also eliminated: the walk's settle, interleaved at 0, 4, 8 and 16
 readings.
 
-**What would settle it** is which part of the input-change sequence the walk is
-disturbed by. It runs three sync-type probes rather than one and sets the sync
-arrangement for the outgoing input before the arriving one; the probe writes
-`SP_EXT_SYNC_SEL` and the chip latches that as a SOG switch, which is the
-first thing to ask about and has not been tested. The fix is to take the
-measurement where what it depends on is in force rather than to re-run it.
+Also eliminated: the walk's settle at 0, 4, 8 and 16 readings; the sync-type
+probe; the caller and the no-op watchdog it passes; elapsed time, eight walks
+inside one pass spanning 476 ms to 2366 ms with no trend; the pass number; the
+ADC phase adjuster, which the metric cannot reach at all; a coast window left
+by the previous source, `cst 256 coast 0/0` at the wrong walk and the right
+one; and restarting the adjusters after the PLL is enabled rather than a
+millisecond into its relock.
+
+**What would settle it** is that a completed `acquirePhase()` is the only thing
+that applies either phase, and the setup does not: `HdBypass::enter()` chooses
+both and applies neither, while `restartPll()` restarts both adjusters. So the
+first search after an input change measures through the previous source's ADC
+phase with neither adjuster latched since its restart. **Applying both phases
+at the end of the setup is the untested candidate**, and it is the convention's
+own shape rather than a rung.
 `investigations/the-arrivals-own-walk-mismeasures-the-phase-band.md`.
 
 ### FIXED: the phase sweep refused half its own answers and fell back onto a seed inside the band
@@ -9355,6 +9371,20 @@ measurement to take either side is the rate `countBadSamples()` returns
 non-zero on a settled composite source.
 
 ## Measured wrong, no picture consequence found yet
+
+### The sampling phase search runs with the software watchdog unfed
+
+`VideoSourceAcquisition::useWatchdogFeed()` has no caller, so `watchdog_` is
+the layer's own no-op and the feed the search is handed does nothing. The walk
+latches and scores 34 phases at twenty readings each, which the setter's own
+comment says is long enough to be reset out of, and it survives only because
+`Adc::applyPhaseSyncProcessor()` ends in `delay(2)` and that feeds the watchdog
+implicitly. `/phasesweep` passes the sketch's real `feedWatchdog` and is
+otherwise the same call, so the two differ in exactly this.
+
+It does not move the band the walk reports -- the sweep run with the no-op
+scores 14.96 against 14.90 with the feed, interleaved eight readings each --
+so it is not the phase defect above. Wiring the feed costs one call at setup.
 
 ### `DAC_RGBS_ADC2DAC` reads 0 in pass-through
 
