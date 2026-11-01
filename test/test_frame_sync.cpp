@@ -768,3 +768,48 @@ TEST_CASE("observing measures and prints without steering the display clock")
         CHECK(loggedContaining("frame time lock: phase 26666/2666666"));
     }
 }
+
+TEST_CASE("the trim can spend its whole correction authority in one pass")
+{
+    // A rate mis-measured at acquisition is the trim's to answer, and the error
+    // can be larger than a cautious step: measured on vga, a source read as
+    // 50.516 mHz against a true 50.474 left the output 0.082% fast, where
+    // MaxCorrection allows 0.06%.
+    //
+    // SLEW LIMITING THE TRIM IS MEASURED WRONG AND MUST NOT BE REINSTATED. Held
+    // to 0.002% a pass it saturated on every pass, the phase drifted a
+    // sixteenth of a frame each time and wrapped the frame about every 23 s,
+    // and the read/write crossover swept the picture as a travelling tear.
+    aLockedSource();
+    g_outputOffset = g_inputPeriod / 8;   // an eighth of a frame behind target
+
+    SteerableClock board;
+    FrameSync lock(board.clock);
+    lock.init();
+    lock.initFrequency(60.0f, board.clock.hzNow());
+
+    REQUIRE(lock.runFrequency(60.0f));
+
+    CHECK(108000000u - board.clock.hzNow() > 10000u);
+}
+
+TEST_CASE("the trim's normal operating point is not clipped by the slew limit")
+{
+    // The standing error a settled lock holds, which is the rate the engine
+    // measures being a shade off the source's: 13190 ticks of a 3169926 frame
+    // on the bench, 0.42%, answered by about 1700 Hz of clock. A slew limit
+    // tight enough to clip that would leave the loop unable to null the bias,
+    // and the phase would drift instead of parking.
+    aLockedSource();
+    g_outputOffset = g_inputPeriod / 4 + (uint32_t)(g_inputPeriod * 0.00416f);
+
+    SteerableClock board;
+    FrameSync lock(board.clock);
+    lock.init();
+    lock.initFrequency(60.0f, board.clock.hzNow());
+
+    REQUIRE(lock.runFrequency(60.0f));
+
+    // Proportional, not clamped: 0.00416 frames x 0.0038 of 108 MHz.
+    CHECK(board.clock.hzNow() - 108000000u == doctest::Approx(1707.0).epsilon(0.05));
+}

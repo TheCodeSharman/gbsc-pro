@@ -34,9 +34,14 @@ const float CorrectionPerFrame = 0.0038f;
 
 // Some displays lose sync on a 0.1% frequency change, which is what switching
 // between 59.94 and 60 costs. Clamping to 0.06% keeps the output inside what a
-// sink will follow, both against the source's rate and against the last frame's
-// own output rate.
+// sink will follow.
 const float MaxCorrection = 0.0006f;
+
+// How far one pass may move the output rate, which is a different question from
+// where the rate may SIT. Tightening this to slew limit the trim is MEASURED
+// WRONG and must not be reinstated: a source whose rate sits further off than
+// one pass may move saturates it every pass, and the crossover then sweeps the
+// picture as a visible tear. A bad SAMPLE is rejected, not answered slowly.
 const float MaxFrameRateChange = 0.0006f;
 
 // Two tries at measuring the phase. One is enough where the pin is carrying
