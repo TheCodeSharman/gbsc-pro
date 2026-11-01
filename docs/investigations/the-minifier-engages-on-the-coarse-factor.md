@@ -243,30 +243,50 @@ its write enable to the line double, so with a null rate the FIFO is handed no
 write enable and writes nothing. Every earlier green frame was that, rather than
 a window spanning a line that no longer existed.
 
-## What is left is the FIFO's read side, and it is vertical
+## The counter sets the OUTPUT LINE RATE, so the ratio must not move it
 
-With the counter correct and the line emitted correctly, the card still appears
-as **two stacked copies**. The FIFO puts out two lines per source line, and
-nothing among `IF_LD_SEL_PROV`, `IF_PRGRSV_CNTRL` and `IF_SEL_WEN` stops it --
-all three were at the values the undoubled branch writes, throughout.
+With the counter correct for the compression and the line emitted correctly,
+the card still appears as **two stacked copies**. That is not a read-side
+mystery: it is the line doubler's own mechanism.
 
-**The lead is `IF_LINE_ST`/`IF_LINE_SP`, the FIFO's read window, which the engine
-places past the end of the counter.** Measured 64 / 1148 against a counter
-wrapping at 1084, and 64 / 1509 against 1445 at unity. With the FIFO bypassed
-that register pair reaches nothing and the placement is harmless, which is why
-it has never mattered; with the FIFO in it is the read reset, and a stop the
-counter never reaches is a reset that never fires.
+**Output lines per source line is `PLLAD_MD / IF_HSYNC_RST`.** The counter wraps
+once per OUTPUT line, so a counter at half the divider emits two lines per
+source line -- which is exactly how a doubled source is doubled, and nothing
+else in the block does it. A counter shortened by a ratio multiplies the lines
+by `1 / ratio` in the same way.
 
-**So minifying does not require doubling.** The vertical doubling is a separate
-fault on a path the engine has never had to configure, not a property of the
-horizontal scaler, and the payoff is not bounded by what the output can afford
-to line-double.
+| state | `PLLAD_MD` | `IF_HSYNC_RST` | predicted | measured |
+|---|---|---|---|---|
+| ratio 1/2, divider free | 2888 | 1444 | 2.000 | **2.005** |
+| ratio 3/4, divider held | 1444 | 1083 | 1.333 | duplicated |
+| the same, counter forced to 1444 | 1444 | 1444 | 1.000 | **one card, duplication gone** |
+
+The third row is the test: one register, from a state wrong in exactly one
+respect, and the vertical comes right at once -- a single card at correct
+proportions with the caption back at the foot of the frame.
+
+**So `InputFormatter::lineCounterFor()` must not apply the ratio.** The counter
+is the raw line, halved only by the doubler, because it is what sets the output
+line rate; the ratio belongs to the capture window and to everything else
+counted in IF units. `../scaling-down-path.md` said this before any of the
+above was measured and it was right: the unpinned run appeared to refute it
+only because the divider had moved too.
+
+**What is NOT yet known is where the window then belongs.** With the counter at
+the raw divider and the window left at the values the engine computed for the
+scaled one, the card sits in the left 44% of the output with the tail beyond
+it, so the written line and the counter do not relate the way placing the
+window inside `ratio x divider` would predict. That is the next measurement,
+and it needs the counter and the window to come from one solve rather than from
+a poke.
 
 Two smaller things come with it. `InputFormatter::LineDoubleReset` 160 pans the
 picture hard at this divider -- the green at the left of every minified frame --
-and it is measured on doubled modes only. And the horizontal half of the result
-holds whatever happens vertically: the ratio is the DDA's, exactly.
+and it is measured on doubled modes only. And `IF_LINE_ST`/`IF_LINE_SP` is NOT
+the fault: `CaptureWindow::progressiveWindow()` spans exactly one line from
+`ProgressiveStart` and is meant to roll past the wrap, which it does on every
+working doubled source too.
 
 **The control is clean at every step.** Unity either side of each run restores
 the frame exactly, `corr 1.000 scale 1.000`, with Nyquist detail 10.99 before
-and 10.85 after the whole sequence.
+and 10.86 after the whole sequence.

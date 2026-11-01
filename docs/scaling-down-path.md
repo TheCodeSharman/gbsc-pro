@@ -253,25 +253,33 @@ is solid green: `IF_SEL_HSCALE` hands the FIFO the block's data AND its write
 enable, so a null rate leaves it writing nothing. Every earlier green frame was
 that.
 
-**What is left is vertical and it is the read side.** With the counter correct
-and the line emitted correctly the card appears as two stacked copies, and
-`IF_LD_SEL_PROV`, `IF_PRGRSV_CNTRL` and `IF_SEL_WEN` were all at their undoubled
-values throughout. The lead is `IF_LINE_ST`/`IF_LINE_SP`, the FIFO's read
-window, which the engine places past the end of the counter -- 64 / 1148
-against a wrap at 1084, and 64 / 1509 against 1445 at unity. Bypassed, the pair
-reaches nothing and the placement has never mattered; in circuit it is the read
-reset, and a stop the counter never reaches never fires.
+## The counter is what the ratio must not move
 
-So **minifying does not require doubling**, and the payoff is not bounded by
-what the output can afford to line-double.
+**`IF_HSYNC_RST` sets the OUTPUT LINE RATE.** The counter wraps once per output
+line, so output lines per source line is `PLLAD_MD / IF_HSYNC_RST` -- which is
+how a doubled source is doubled, the counter being half the divider there. A
+counter shortened by a ratio therefore multiplies the lines by `1 / ratio`, and
+that is the vertical duplication every minified frame shows. Predicted 2.000 at
+ratio 1/2 with the divider free, measured 2.005; forcing the counter back to the
+raw divider from the duplicated state removes it outright, one card at correct
+proportions.
+
+So `InputFormatter::lineCounterFor()` must not apply the ratio. The counter is
+the raw line, halved only by the doubler; the ratio belongs to the capture
+window and to everything else counted in IF units.
+
+**Minifying does not require doubling**, and the payoff is not bounded by what
+the output can afford to line-double.
 `investigations/the-minifier-engages-on-the-coarse-factor.md` has the tables.
 
 ## What has to be established first
 
-- **Why the FIFO puts out two lines per source line, and how to stop it.** The
-  one blocker. `IF_LINE_ST`/`IF_LINE_SP` is the read window and the engine
-  writes a stop the counter never reaches; nothing among the three routing
-  registers changes the doubling.
+- **Where the capture window belongs once the counter stays raw.** The one
+  blocker. With the counter at the raw divider and the window at the values the
+  engine computed for the scaled one, the card sits in the left 44% of the
+  output, so the written line and the counter do not relate the way placing the
+  window inside `ratio x divider` would predict. The counter and the window have
+  to come from one solve to answer it.
 - **Where the FIFO's line reset belongs on a minified line.**
   `InputFormatter::LineDoubleReset` is measured on doubled modes only. Wrong, it
   pans.
