@@ -187,16 +187,14 @@ bool InputFormatter::applyScan(uint16_t divider, bool lineDoubled,
         return false;
     }
 
-    const bool progressive = !lineDoubled;
-
-    IF_LD_SEL_PROV::write(progressive ? 1 : 0);
-    IF_PRGRSV_CNTRL::write(progressive ? 1 : 0);
-    IF_LD_RAM_BYPS::write(progressive ? 1 : 0);
-    IF_SEL_WEN::write(progressive ? 1 : 0);
-    IF_HS_SEL_LPF::write(progressive ? 0 : 1);
-    IF_HS_Y_PDELAY::write(!progressive && component ? 2 : 3);
-    IF_HBIN_SP::write(progressive ? NoHeadBlanking : LineDoubleReset);
-    IF_HBIN_ST::write(progressive ? 0 : DoubledTailBlanking);
+    IF_LD_SEL_PROV::write(lineDoubled ? 0 : 1);
+    IF_PRGRSV_CNTRL::write(lineDoubled ? 0 : 1);
+    IF_LD_RAM_BYPS::write(lineDoubled ? 0 : 1);
+    IF_SEL_WEN::write(lineDoubled ? 0 : 1);
+    IF_HS_SEL_LPF::write(lineDoubled ? 1 : 0);
+    IF_HS_Y_PDELAY::write(lineDoubled && component ? 2 : 3);
+    IF_HBIN_SP::write(lineDoubled ? LineDoubleReset : NoHeadBlanking);
+    IF_HBIN_ST::write(lineDoubled ? DoubledTailBlanking : 0);
 
     IF_HSYNC_RST::write(counter);
     IF_HS_DEC_FACTOR::write(lineDoubled ? 1 : 0);

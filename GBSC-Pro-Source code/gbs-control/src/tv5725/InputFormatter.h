@@ -283,7 +283,7 @@ public:
     //
     // **A DOUBLED LINE IS THE ONLY PLACE IT MAY BE RAISED.** Against
     // NoHeadBlanking the part blanks the whole line from 18 up, so the
-    // progressive branch keeps 0 and gets no tail guard at all.
+    // undoubled branch keeps 0 and gets no tail guard at all.
     //
     // One measurement sizes it because there is one divider to size it against:
     // SamplingClock::DoubledLineSampleLimit pins every doubled line to one
@@ -309,7 +309,7 @@ public:
     // doubler is routed by, and the two that size the line for it -- the counter
     // and the decimation. ONE CALL, because a count of IF units and what an IF
     // unit IS are one fact, and the source's field rate is timed off this
-    // block's vertical: a counter sized for a doubled line beside a progressive
+    // block's vertical: a counter sized for a doubled line beside an undoubled
     // path reads the rate exactly twice.
     //
     // The colour path comes with it because the luma delay needs both: only a
