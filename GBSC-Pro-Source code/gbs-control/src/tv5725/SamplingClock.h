@@ -1,6 +1,8 @@
 #ifndef TV5725_SAMPLING_CLOCK_H_
 #define TV5725_SAMPLING_CLOCK_H_
 
+#include "InputScale.h"
+
 #include <stdint.h>
 
 namespace Tv5725 {
@@ -63,8 +65,15 @@ public:
     // the raster is the display clock over the output lines and the field rate,
     // and the display clock is the Si5351's, not the ADC PLL's.
     // ../../../docs/investigations/the-capture-may-not-outgrow-the-raster.md
+    // `scale` is the input formatter's scaling-down block, which compresses the
+    // line into fewer IF units and so frees room in the counter: the bound it
+    // lifts is the counter's, and nothing else here moves with it. The ADC's
+    // rating does not, the raster does not -- the compression is downstream of
+    // the conversion and upstream of the display scaler.
+    // ../../../docs/scaling-down-path.md
     static uint16_t recommendedDivider(uint32_t lineRateHz, uint8_t oversample,
-                                       bool lineDoubled, uint16_t dividerCeiling = 0);
+                                       bool lineDoubled, uint16_t dividerCeiling = 0,
+                                       InputScale scale = InputScale());
 };
 
 }  // namespace Tv5725

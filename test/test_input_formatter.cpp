@@ -92,6 +92,23 @@ TEST_CASE("the line counter is in the units the scaling-down block leaves")
     CHECK(InputFormatter::lineCounterFor(2888, true, threeQuarters) == 1083);
 }
 
+// What bounds the capture is counted in IF units -- the counter's own width,
+// the write limit, the raster the line has to be shown in -- and what is chosen
+// is a divider, so the conversion is wanted in both directions and the ratio is
+// a term in both. docs/scaling-down-path.md
+TEST_CASE("the divider for a count of IF units inverts the line counter")
+{
+    const Tv5725::InputScale half = Tv5725::InputScale::forRatio(1, 2);
+
+    CHECK(InputFormatter::samplesForUnits(1444, false) == 1444u);
+    CHECK(InputFormatter::samplesForUnits(1444, true) == 2888u);
+
+    // The counter the ratio frees room in: half a line of units costs twice the
+    // samples.
+    CHECK(InputFormatter::samplesForUnits(1444, false, half) == 2888u);
+    CHECK(InputFormatter::lineCounterFor(2888, false, half) == 1444u);
+}
+
 TEST_CASE("every segment takes the increment, which is the linear case")
 {
     FreshChip fresh;
@@ -121,10 +138,50 @@ TEST_CASE("a scan asked for no scaling leaves the block idle")
     CHECK(Wire.field(1, 0x0E, 0, 11) == 1444);
 }
 
+// IF_HS_DEC_FACTOR IS THE MINIFIER'S WRITE ENABLE, and the line-double FIFO is
+// the only thing that consumes one: a sparse write enable becomes a shorter
+// line only through a buffer, and that FIFO is the one RAM in the horizontal
+// path. So a ratio asked for on an undoubled source needs both, and the same
+// increment that compresses the card to a third of its width with the factor at
+// 1 does nothing whatever with it at 0.
+// docs/investigations/the-minifier-engages-on-the-coarse-factor.md
+TEST_CASE("a minifying scale engages the block on an undoubled source")
+{
+    FreshChip fresh;
+
+    REQUIRE(inputFormatter.applyScan(1444, false, false,
+                                     Tv5725::InputScale::forRatio(1, 2)));
+
+    CHECK(Wire.field(1, 0x0B, 4, 2) == 1);   // IF_HS_DEC_FACTOR, the write enable
+    CHECK(Wire.field(1, 0x0C, 0, 1) == 0);   // IF_LD_RAM_BYPS, the FIFO in circuit
+}
+
+TEST_CASE("an undoubled source asked for no ratio leaves the FIFO bypassed")
+{
+    FreshChip fresh;
+
+    REQUIRE(inputFormatter.applyScan(1444, false, false));
+
+    CHECK(Wire.field(1, 0x0B, 4, 2) == 0);
+    CHECK(Wire.field(1, 0x0C, 0, 1) == 1);
+}
+
+// IF_HBIN_SP is the FIFO's line reset whenever the FIFO is in circuit and a
+// blanking edge in the capture window's own units otherwise, so what decides
+// which it is cannot be the doubler once the minifier puts the FIFO in too.
+TEST_CASE("a minifying scale takes the FIFO's reset window with it")
+{
+    FreshChip fresh;
+
+    REQUIRE(inputFormatter.applyScan(1444, false, false,
+                                     Tv5725::InputScale::forRatio(1, 2)));
+
+    CHECK(Wire.field(1, 0x26, 0, 12) == InputFormatter::LineDoubleReset);
+    CHECK(Wire.field(1, 0x24, 0, 12) == InputFormatter::DoubledTailBlanking);
+}
+
 // The selector and the coarse factor share s1_0b with the rate's low nibble, so
-// writing one must not take the others with it. The coarse factor is the
-// doubler's and carries no part of the ratio: its three steps are halves, and
-// the twelve-bit rate beside it is finer.
+// writing one must not take the others with it.
 TEST_CASE("the rate nibble leaves the selector and the coarse factor alone")
 {
     FreshChip fresh;

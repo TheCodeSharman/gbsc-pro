@@ -18,7 +18,7 @@ namespace Tv5725 {
 // the ADC rather than the digital port, and the piecewise H-sync rate correction
 // is off. What moves per mode -- IF_HB_* and IF_LINE_SP -- is the engine's,
 // which computes the capture window rather than transcribing it; IF_HBIN_SP
-// moves with the line doubler instead, and applyScan() says why.
+// moves with the line-double FIFO instead, and applyScan() says why.
 //
 // IF_LD_ST shares s1_0c with IF_LD_RAM_BYPS (bit 0) and IF_INI_ST (bits 7-5),
 // written by applyScan() and writeLineCounterStart(). Three owners in one byte
@@ -265,11 +265,12 @@ public:
     // Public only for the ifini debug route.
     void writeLineCounterStart(uint16_t pixels);
 
-    // IF_HBIN_SP is two things, and which one depends on the scan mode. With the
-    // line-double FIFO in circuit it is that FIFO's line reset and moving it pans
-    // the whole picture; with the FIFO bypassed it is a blanking edge in the
-    // capture window's own units, so any value it holds crops the left of the
-    // picture a second time.
+    // IF_HBIN_SP is two things, and which one depends on whether the line-double
+    // FIFO is in circuit -- which the doubler and the minifier both decide. With
+    // the FIFO in it is that FIFO's line reset and moving it pans the whole
+    // picture; with the FIFO bypassed it is a blanking edge in the capture
+    // window's own units, so any value it holds crops the left of the picture a
+    // second time.
     // docs/investigations/a-standard-mode-loses-both-edges-while-every-stage-measures-correct.md
     //
     // The smallest window the part accepts: IF_HBIN_ST is 0 and a stop of 0
@@ -281,21 +282,27 @@ public:
     // contamination before the next line's sync pulse. It displaces nothing --
     // the picture's right edge does not move at any value to 160.
     //
-    // **A DOUBLED LINE IS THE ONLY PLACE IT MAY BE RAISED.** Against
-    // NoHeadBlanking the part blanks the whole line from 18 up, so the
-    // undoubled branch keeps 0 and gets no tail guard at all.
+    // **IT MAY ONLY BE RAISED WITH THE FIFO IN CIRCUIT.** Against
+    // NoHeadBlanking the part blanks the whole line from 18 up, so a line with
+    // the FIFO bypassed keeps 0 and gets no tail guard at all.
     //
-    // One measurement sizes it because there is one divider to size it against:
-    // SamplingClock::DoubledLineSampleLimit pins every doubled line to one
-    // PLLAD_MD, so a count, a fraction of the line and a time are not
-    // distinguishable there.
+    // MEASURED ON A DOUBLED LINE, which is the only place it could be measured
+    // when it was taken: SamplingClock::DoubledLineSampleLimit pins every
+    // doubled line to one PLLAD_MD, so a count, a fraction of the line and a
+    // time are not distinguishable there. What a minifying undoubled line wants
+    // is untested.
     // docs/investigations/the-hbin-start-blanks-the-captured-tail.md
     static const uint16_t DoubledTailBlanking = 96;
 
-    // The reset position, in ADC samples. It is the doubled path's whole origin
+    // The reset position, in ADC samples. It is the FIFO path's whole origin
     // term: the picture moves one sample per register unit, so a reset late by
     // N samples captures the source's line N samples early and every window the
     // solve places goes with it.
+    //
+    // MEASURED ON DOUBLED MODES ONLY, those being the only ones that put the
+    // FIFO in circuit when it was taken. A minifying undoubled line gets it
+    // because the register is the FIFO's reset there too, and a wrong value
+    // pans rather than breaks -- untested either way.
     //
     // A COUNT, not a fraction of the line and not a time. What each mode wants
     // splits by FIELD RATE over every doubled mode the bench can reach, with no
@@ -384,6 +391,16 @@ public:
     // reports another.
     static uint16_t lineCounterFor(uint16_t divider, bool lineDoubled,
                                    InputScale scale = InputScale());
+
+    // Its inverse: the ADC divider whose line is this many IF units. Every
+    // bound on the capture is stated in units -- the counter's own width, what
+    // the write path carries, what the raster can show -- while what is chosen
+    // is a divider, so the same two terms convert the other way.
+    //
+    // UNCLAMPED, because what the answer has to fit in belongs to the ADC and
+    // not to this block.
+    static uint32_t samplesForUnits(uint32_t units, bool lineDoubled,
+                                    InputScale scale = InputScale());
 
     // Which scan the block is in, as the last applyScan() left it. What an IF
     // unit is, so the capture window's counters come off it.

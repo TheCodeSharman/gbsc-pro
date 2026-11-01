@@ -37,6 +37,11 @@ uint16_t InputScale::unitsFor(uint16_t units) const
                       / ((uint32_t)Half + increment_));
 }
 
+uint32_t InputScale::samplesFor(uint32_t units) const
+{
+    return units * ((uint32_t)Half + increment_) / (uint32_t)Half;
+}
+
 uint8_t InputScale::segment() const { return (uint8_t)(increment_ >> 4); }
 
 uint8_t InputScale::low() const { return (uint8_t)(increment_ & 0x0F); }

@@ -24,8 +24,11 @@ class InputScale {
 public:
     // RD-5725-1.1 states the increment for a scaling ratio n/m as
     // 4095 x (m - n) / n, so n == m is 0 and a ratio of one half is the whole
-    // twelve bits. Nothing below a half is reachable without IF_HS_DEC_FACTOR,
-    // which the line doubler owns and which cannot carry two meanings at once.
+    // twelve bits. Nothing below a half is reachable without a second step of
+    // IF_HS_DEC_FACTOR, whose quarter step is uncharacterised: factor 2 with a
+    // unity increment compressed nothing and with the whole twelve bits gave a
+    // scale neither it nor the half fits.
+    // docs/investigations/the-minifier-engages-on-the-coarse-factor.md
     static const uint16_t Unity = 0;
     static const uint16_t Half = 4095;
 
@@ -49,6 +52,11 @@ public:
     // fewer of them. Every count placed in those units follows it -- the
     // capture window, and the counter the line wraps at.
     uint16_t unitsFor(uint16_t units) const;
+
+    // The other direction: how much uncompressed line this many compressed
+    // units hold. What bounds the capture is counted in units and what is
+    // chosen is a divider, so the ratio is a term at both ends.
+    uint32_t samplesFor(uint32_t units) const;
 
     // The two halves the registers take: IF_HS_RATE_SEG0..7 carry the top eight
     // bits and IF_HS_RATE_LOW the low nibble they share.

@@ -1109,6 +1109,29 @@ TEST_CASE("a scaling ratio shortens the counter the capture window is placed in"
     CHECK(GBS::IF_SEL_HSCALE::read() == 1);
 }
 
+// A RATIO IS A COMMAND TO RESAMPLE. The counter is what the compression frees
+// room in, so a ratio that shortens the line while the clock stays put spends
+// that room on nothing -- and the install's own test asks whether the RATE
+// moved, which a ratio does not. Measured at 1280x720@60 into 1080p, where the
+// raster's bound and the counter's both lift with it: the scaling path samples
+// 0.875 of a source pixel at the divider the solve installs, against 1.75 at
+// twice it. docs/investigations/the-minifier-engages-on-the-coarse-factor.md
+TEST_CASE("a scaling ratio spends the room it frees on sampling density")
+{
+    const uint16_t Divider = 1436;
+    const uint16_t HsyncLow = (uint16_t)(Divider * 40 / 1650);
+    SolvedEngine solved(749, 60.0f, HsyncLow, &Mode1080p, true, Divider);
+
+    const long before = Wire.field(5, 0x12, 0, 12);             // PLLAD_MD
+    REQUIRE(before != 0);
+
+    REQUIRE(solved.engine.setInputScale(Tv5725::InputScale::forRatio(1, 2)));
+
+    CHECK(Wire.field(5, 0x12, 0, 12) > before);
+    CHECK(Wire.field(1, 0x0E, 0, 11)
+          <= (long)Tv5725::InputFormatter::LineCounterMax);
+}
+
 TEST_CASE("asking for the ratio already held changes nothing")
 {
     SolvedEngine solved;

@@ -692,12 +692,16 @@ bool VideoPath::installSampling(SamplingReason reason)
     if (reason == SamplingFollowsMeasurement)
         Adc::forgetReferenceClock();
 
-    // AND OF THE SCAN, because the divider is sized against it: the scan on the
-    // chip is the one the last install put there, and the selection path leaves
-    // the reference clock's rather than this source's -- so a rate that agrees
-    // must not suppress the install that carries the scan in.
+    // AND OF THE SCAN AND THE RATIO, because the divider is sized against both:
+    // they are what an IF unit IS, so each moves the counter's bound and the
+    // raster's. The scan on the chip is the one the last install put there, and
+    // the selection path leaves the reference clock's rather than this source's
+    // -- so a rate that agrees must not suppress the install that carries them
+    // in, and a ratio asked for is a command to resample that no rate test may
+    // swallow.
     const bool alreadyInForce =
         inputFormatter_.scanIsDoubled() == lineDoubled_
+        && inputFormatter_.scanScale() == inputScale_
         && (derivedFromMeasurement
                 ? VideoSignal::ratesAgree(rate, installedRateHz_,
                                           SourceIdentityPerThousand)
@@ -1487,7 +1491,7 @@ uint16_t VideoPath::chooseDivider() const
 
     return SamplingClock::recommendedDivider(sampling_.lineRateHz(),
                                              modeOversample_, lineDoubled_,
-                                             ceiling);
+                                             ceiling, inputScale_);
 }
 
 uint16_t VideoPath::dividerCeilingForLineFilter() const
@@ -1512,7 +1516,9 @@ uint16_t VideoPath::dividerCeilingForLineFilter() const
     // delay holds bounds the picture by two of them less.
     const float units = ((float)VideoProcessor::LineBufferSamples
                          - 2.0f * (float)AxisHorizontal.captureMargin()) / active;
-    return (uint16_t)(units * (lineDoubled_ ? 2.0f : 1.0f));
+    const uint32_t divider = InputFormatter::samplesForUnits(
+        (uint32_t)units, lineDoubled_, inputScale_);
+    return divider > Adc::DividerMax ? (uint16_t)Adc::DividerMax : (uint16_t)divider;
 }
 
 uint16_t VideoPath::dividerCeilingForOutput() const
@@ -1554,8 +1560,8 @@ uint16_t VideoPath::dividerCeilingForOutput() const
     // the capture the raster can show. The head the capture never reaches is
     // the hsync pulse, which is a fraction of the very line being sized, so it
     // is not added here. docs/known-issues.md
-    const uint32_t units = (uint32_t)showable;
-    const uint32_t divider = units * (lineDoubled_ ? 2u : 1u);
+    const uint32_t divider =
+        InputFormatter::samplesForUnits(showable, lineDoubled_, inputScale_);
     return divider > Adc::DividerMax ? (uint16_t)Adc::DividerMax : (uint16_t)divider;
 }
 
@@ -1927,9 +1933,14 @@ bool VideoPath::setInputScale(InputScale wanted)
 
     const InputScale before = inputScale_;
     inputScale_ = wanted;
-    if (!applyScan(Adc::dividerInForce(), lineDoubled_) || !solveWindows()) {
+
+    // Through the install rather than straight at the scan, because the ratio
+    // moved the bound the divider is sized against: re-applying the scan alone
+    // would shorten the counter and leave the clock where it was, which is the
+    // compression paid for and none of the density it buys.
+    if (!installSampling(SamplingFollowsOutput) || !solveWindows()) {
         inputScale_ = before;
-        applyScan(Adc::dividerInForce(), lineDoubled_);
+        installSampling(SamplingFollowsOutput);
         solveWindows();
         return false;
     }

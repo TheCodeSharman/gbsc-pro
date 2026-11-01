@@ -11,11 +11,18 @@ InputFormatter::InputFormatter() : lineUnits_(0), doubled_(false) {}
 const uint16_t InputFormatter::LineCounterMax;
 const uint16_t InputFormatter::DoubleBelowLines;
 const uint16_t InputFormatter::DoubledTailBlanking;
+const uint16_t InputFormatter::LineDoubleReset;
 
 uint16_t InputFormatter::lineCounterFor(uint16_t divider, bool lineDoubled,
                                        InputScale scale)
 {
     return scale.unitsFor(lineDoubled ? (uint16_t)(divider / 2) : divider);
+}
+
+uint32_t InputFormatter::samplesForUnits(uint32_t units, bool lineDoubled,
+                                         InputScale scale)
+{
+    return scale.samplesFor(units) * (lineDoubled ? 2u : 1u);
 }
 
 VideoSourceLine InputFormatter::capturableLine(const HsyncPulse &pulse,
@@ -187,17 +194,25 @@ bool InputFormatter::applyScan(uint16_t divider, bool lineDoubled,
         return false;
     }
 
+    // THE MINIFIER'S WRITE ENABLE IS IF_HS_DEC_FACTOR AND THE FIFO IS ITS ONLY
+    // CONSUMER, so a ratio and the doubler both ask for the same four
+    // registers: a sparse write enable becomes a shorter line only through a
+    // buffer, and the line double is the one RAM in the horizontal path.
+    // Doubling is a second use of it rather than its purpose.
+    // ../../../docs/investigations/the-minifier-engages-on-the-coarse-factor.md
+    const bool fifoInCircuit = lineDoubled || scale.minifies();
+
     IF_LD_SEL_PROV::write(lineDoubled ? 0 : 1);
     IF_PRGRSV_CNTRL::write(lineDoubled ? 0 : 1);
-    IF_LD_RAM_BYPS::write(lineDoubled ? 0 : 1);
+    IF_LD_RAM_BYPS::write(fifoInCircuit ? 0 : 1);
     IF_SEL_WEN::write(lineDoubled ? 0 : 1);
     IF_HS_SEL_LPF::write(lineDoubled ? 1 : 0);
     IF_HS_Y_PDELAY::write(lineDoubled && component ? 2 : 3);
-    IF_HBIN_SP::write(lineDoubled ? LineDoubleReset : NoHeadBlanking);
-    IF_HBIN_ST::write(lineDoubled ? DoubledTailBlanking : 0);
+    IF_HBIN_SP::write(fifoInCircuit ? LineDoubleReset : NoHeadBlanking);
+    IF_HBIN_ST::write(fifoInCircuit ? DoubledTailBlanking : 0);
 
     IF_HSYNC_RST::write(counter);
-    IF_HS_DEC_FACTOR::write(lineDoubled ? 1 : 0);
+    IF_HS_DEC_FACTOR::write(fifoInCircuit ? 1 : 0);
 
     // One increment on all eight segments is the LINEAR case. The block is
     // non-linear by design -- an eighth of the line each, for an anamorphic

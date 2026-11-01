@@ -771,10 +771,10 @@ TEST_CASE("a rate that moves while the line count does not is a settling reading
 
 TEST_CASE("the IF line follows the decimation the scan mode applies")
 {
-    // IF_HS_DEC_FACTOR is the input formatter's horizontal decimation. The
-    // line-doubled path halves, the progressive path does not -- and an IF
-    // counter wrapping at half the samples the ADC delivers shows the picture
-    // twice across the screen, the second copy colour-shifted.
+    // The line doubler's own decimation halves the samples it is given and the
+    // progressive path does not -- and an IF counter wrapping at half the
+    // samples the ADC delivers shows the picture twice across the screen, the
+    // second copy colour-shifted.
     CHECK(InputFormatter::lineCounterFor(2120, true) == 1060u);
     CHECK(InputFormatter::lineCounterFor(2120, false) == 2120u);
 }
@@ -789,6 +789,27 @@ TEST_CASE("the divider ceiling follows the decimation too")
 
     CHECK(InputFormatter::lineCounterFor(doubled, true) <= InputFormatter::LineCounterMax);
     CHECK(InputFormatter::lineCounterFor(progressive, false) <= InputFormatter::LineCounterMax);
+}
+
+// The counter is what a ratio frees room in, so the divider the chooser may
+// reach follows the minifier exactly as it follows the doubler. Until it did,
+// the compression bought no sampling density at all: the room it freed was
+// never spent, and a hand-held divider past the counter was refused outright.
+// docs/investigations/the-minifier-engages-on-the-coarse-factor.md
+TEST_CASE("a minifying scale raises the divider the counter allows")
+{
+    // 1280x720@60, where the ADC's own rating leaves the counter binding first.
+    const uint32_t lineRate = 45013u;
+    const InputScale half = InputScale::forRatio(1, 2);
+
+    const uint16_t unity = SamplingClock::recommendedDivider(lineRate, 1, false);
+    const uint16_t minified =
+        SamplingClock::recommendedDivider(lineRate, 1, false, 0, half);
+
+    CHECK(InputFormatter::lineCounterFor(unity, false) <= InputFormatter::LineCounterMax);
+    CHECK(minified > unity);
+    CHECK(InputFormatter::lineCounterFor(minified, false, half)
+          <= InputFormatter::LineCounterMax);
 }
 
 // --- the line rate, measured off the chip ------------------------------------
