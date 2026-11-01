@@ -418,3 +418,51 @@ measured line rate.
   half above. **The lock steers the phase, it does not place it**, and a target
   moved 90 degrees converged over eleven corrections at a ratio of 0.62..0.67
   per step against the 0.68 the gain predicts.
+
+## The droop is nulled, and why the integral had to go on the ANCHOR
+
+The steady-state error above -- `bias / gain`, 6100 to 11270 ticks depending on
+the rate's bias -- is what proportional control on an integrator costs, and it
+is also the mechanism behind a defect it does not look related to. The clamp
+bounds the correction **against the rate the engine measured**, so where that
+measurement is off by more than the clamp the reachable set of output rates
+does not contain the source's own: there is no error at which the loop settles,
+so it saturates every pass and the phase wraps the frame for ever.
+`known-issues.md`, "A rate mis-measured at acquisition is unrecoverable".
+
+**An integral term inside the clamp cannot fix that**, which is the part worth
+keeping. It would wind up against the same wrong reference and hit the same
+clamp, because the reference is what is wrong. So the accumulator corrects the
+ANCHOR -- `rateInput x (1 + anchorTrim)` -- and the proportional loop works
+against a rate that converges on the source's however far off the measurement
+started. `MaxFrameRateChange` still bounds what one pass moves, which is what
+the sink guarantee actually rests on, and the output ends up CLOSER to the
+source's true rate rather than further from it.
+
+**The gain is chosen for damping, not speed.** The plant is an integrator, so
+adding the term makes the loop second order. At about 84 frames a pass the
+proportional term gives 0.32 per pass, so critical damping would be
+`N x Kp^2 / 4` = 3.0e-4; `AnchorPerFrame` is 2.0e-4, a damping ratio near 1.2
+and a slow root of about 19 passes.
+
+Measured on `vga` at 312 lines into 1080p, a fresh acquisition:
+
+```
+  0.0  err  -67202      <- the proportional term closing, as before
+ 13.4  err  +68568      <- overshoot, the second-order response
+ 80.3  err    6756      <- the anchor walking the droop out
+128.8  err    1098      and still falling
+```
+
+Monotone after the overshoot, no oscillation, and the figure the old loop
+parked at for ever -- 11670 on this state -- is gone. **The cost is settling
+time**: about two minutes against forty seconds, and an overshoot of 2% of a
+frame. The picture reads `hsd` 0.0032 through it, at the floor of a 20-arrival
+survey, so the sweep is below what the capture resolves.
+
+**The fault case is still not verified on hardware.** It needs a rate measured
+wrong, which happens by chance; no endpoint sets the display clock, so there is
+no way to provoke one, and the `ypbpr` twin is unreachable while the Wii at
+480p lands on the HD bypass channel, where the lock does not run. The closed
+loop in `test_frame_sync.cpp` is what pins it, with the same arrival measured
+right as its control.

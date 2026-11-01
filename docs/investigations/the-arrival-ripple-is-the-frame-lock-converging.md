@@ -83,8 +83,27 @@ the correction tapers; in the fault it holds near -220000 and sails through
 target. The residual drift at a correction near zero is the rate error, and a
 count of saturated passes is not.
 
-**What is not explained is a residual that survives into the settled picture.**
-The late scores correlate with the early ones at `r = 0.68` and span 0.0029 to
-0.0064 -- a factor of two above the bench floor, arrival to arrival, with the
-lock parked and the band width flat. Any genuine phase-related effect lives
-there, not in the figures the soak classified.
+## The residual was the last of the transient too
+
+The run above called the lock parked at `|err| < 30000`, which is reached around
+20 s while the error is still climbing to an asymptote near 11700 it does not
+hold until about 48 s. Its settled scores spanned 0.0029 to 0.0064 and
+correlated with the parked error at `r = -0.58` -- a lower error meaning less
+settled, not quieter.
+
+Twenty arrivals, scored at that criterion and again once the per-pass change had
+stopped:
+
+| | median | min | max | spread |
+|---|---|---|---|---|
+| loose, `\|err\| < 30000` | 0.0040 | 0.0030 | 0.0065 | 2.17x |
+| per-pass change under 50 | 0.0037 | 0.0030 | 0.0045 | **1.50x** |
+
+The parked error tightens from -306..17338 to **11582..12288**, and the loose
+column reproduces the previous run's settled figures exactly. **1.50x on a
+floor of 0.003 is the instrument's own repeatability**, so nothing is left to
+attribute: `PA_SP_S` landed on 0 sixteen times, 1 three times and 31 once --
+one cyclic band centre -- and `PA_ADC_S` never moved at all.
+
+**So the whole signal was the lock, and the thread is closed.** A phase effect,
+if there is one, is below what the capture resolves on this source.

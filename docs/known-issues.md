@@ -943,26 +943,35 @@ with the clock hunting over 0.120% and calls the cause unexplained. 0.131% is
 likewise past the 0.06% the trim can reach, so a rate accepted wrong at
 acquisition explains it, on `ypbpr` as here.
 
-**The drift is the fix, because it measures the error.** The phase movement per
-pass gives the rate error in units the engine already holds, so the answer is to
-re-run `matchRate()` from it rather than to keep trimming at a clamp. Not
-implemented.
+**ADDRESSED, AND THE FAULT CASE IS STILL NOT VERIFIED ON HARDWARE.** The
+correction now accumulates onto the rate ANCHOR rather than only scaling
+against it, so the proportional loop works against a rate that converges on the
+source's however far off the measurement started -- an integral term inside the
+clamp would wind up against the same wrong reference.
+`investigations/the-frame-time-lock-saturates.md` has the gain and the
+arithmetic. What remains open is the verification: a rate measured wrong
+happens by chance, no endpoint sets the display clock so there is no way to
+provoke one, and the `ypbpr` twin below is unreachable while the Wii at 480p
+lands on the HD bypass channel, where the lock does not run. A closed-loop host
+fixture pins it instead, with the same arrival measured right as its control.
 
-**BUT CONSECUTIVE SATURATION IS NOT THE TRIGGER, because a healthy arrival does
-it.** The phase error at the first pass of an arrival is up to a third of a
-frame and its sign is a draw, so the correction saturates closing it: measured
-on `vga` at 312 lines, four consecutive passes pinned at `input x 0.9994` and
-about forty seconds to park. What separates the two is whether the error
-**decelerates** -- healthy, the per-pass change shrinks from -148438 to -47484
-as the correction tapers, where the fault holds near -220000 and sails through
-target. The discriminator is residual drift at a correction near zero, never a
-count of saturated passes.
+**What the fix also removes is the droop**, which is why a settled lock now
+walks to a near-zero error instead of parking at `bias / gain`. Measured on
+`vga`: 1098 ticks and falling at 129 s against 11670 parked indefinitely
+before, at a cost of about two minutes to settle rather than forty seconds.
+
+**A COUNT OF SATURATED PASSES WAS THE WRONG TRIGGER, and that is worth keeping
+because it was the obvious one.** The phase error at the first pass of an
+arrival is up to a third of a frame and its sign is a draw, so the correction
+saturates closing it: measured on `vga` at 312 lines, four consecutive passes
+pinned at `input x 0.9994` and about forty seconds to park. A healthy arrival
+is therefore indistinguishable from the fault by that count.
 `investigations/the-arrival-ripple-is-the-frame-lock-converging.md`.
 
 **SLEW LIMITING THE TRIM IS MEASURED WRONG AND MUST NOT BE REINSTATED.**
 `MaxFrameRateChange` held to 0.00002 produces exactly the saturation above, at
 +/-2160 Hz a pass, where the unlimited trim at least reaches the clamp in one
-pass. A bad SAMPLE wants rejecting; a rate that SITS wrong wants re-measuring.
+pass. A bad SAMPLE wants rejecting; a rate that SITS wrong wants re-anchoring.
 
 Still open and separate: a phase step of about 143 500 ticks, roughly once a
 minute, with both pin periods normal either side, answered in full as an
