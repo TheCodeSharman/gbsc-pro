@@ -77,17 +77,70 @@ Three things, and they compound:
   wrong, and now that the block engages the counter has not been swept against a
   working compression.
 
-## Still open: an undoubled source emits green with the FIFO in circuit
+## The FIFO does not need the line-doubled routing
 
-At 1280x720@60 with the FIFO in circuit, the coarse factor at 1 and a DDA rate,
-the output is a solid green frame -- zeros reaching the frame buffer -- whatever
-the rate, and whether the rest of the routing is left undoubled or set to the
-whole line-doubled branch (`IF_LD_SEL_PROV` 0, `IF_PRGRSV_CNTRL` 0,
-`IF_SEL_WEN` 0, `IF_HS_SEL_LPF` 1, `IF_HBIN_SP`/`ST` 160/96).
+Searched where the block works rather than where it does not. From the
+compressing state on the 312-line source -- FIFO in, coarse factor 1, DDA 4095,
+VDS at 1:1 -- each register was flipped to the value the undoubled branch would
+write:
 
-So the mechanism is proven on a doubled line and not yet reached on an undoubled
-one, which is the case the divider ceiling binds hardest.
-`the-scaling-path-samples-below-one-to-one.md` is what that ceiling costs.
+| flipped to the undoubled value | corr | green |
+|---|---|---|
+| none, the working state | 1.000 | no |
+| `IF_LD_SEL_PROV` 1 | 0.927 | no |
+| `IF_PRGRSV_CNTRL` 1 | 1.000 | no |
+| `IF_SEL_WEN` 1 | 1.000 | no |
+| `IF_HS_SEL_LPF` 0 | 0.995 | no |
+| `IF_HBIN_SP` 2, `IF_HBIN_ST` 0 | 0.921 | no |
+| `IF_HSYNC_RST` 2200, the full line | 0.963 | no |
+| **all six at once** | **0.862** | **no** |
+
+**Not one of them breaks it**, and with all six flipped the card is still
+compressed into a column with the rest of the line empty. So the FIFO wants
+none of the line-doubled routing, and the green an undoubled source gives is
+not the routing.
+
+## Still open: the FIFO cannot be brought up by writing registers
+
+At 1280x720@60 and at 640x480@60 -- both left undoubled by the engine -- forcing
+`IF_LD_RAM_BYPS` 0 gives a solid green frame, zeros reaching the frame buffer.
+Nothing moves it:
+
+- the counter at `PLLAD_MD` or at `PLLAD_MD / 2`
+- the coarse factor at 0, 1 or 2, and any DDA increment
+- the whole line-doubled routing written beside it
+- the divider held at 1024, 1444 or 2047
+- `SFTRST_FIFO_RSTZ`, `SFTRST_IF_RSTZ`, `SFTRST_DEC_RSTZ`, `SFTRST_MEM_RSTZ`
+  and `SFTRST_MODE_RSTZ` each pulsed afterwards
+
+**What separates the working case from every failing one is who configured the
+FIFO.** It works on the source the engine SOLVED with the FIFO in circuit, and
+keeps working through six register flips afterwards; it is green on every source
+where the solve bypassed it and the register was written by hand later. That is
+the standing rule about hand-set subsets of an interdependent solve, so the next
+move is a change to `applyScan()` rather than another poke.
+
+## What the half octave would buy, and why the divider has to move with it
+
+The coarse factor at 1 halves the kept count, so the capture can be sampled at
+twice the divider the raster would otherwise allow. At 1280x720@60, line rate
+45013 Hz:
+
+| divider | kept units | ADC rate at 1x | samples per source pixel |
+|---|---|---|---|
+| 1444, what the solve installs | 1444 | 65 MHz | 0.875 |
+| 2890 with the half octave | 1445 | 130 MHz | **1.75** |
+| 3599 with the half octave and DDA 0.80 | 1445 | 162 MHz | **2.18** |
+
+All three put the same 1445 units in front of the VDS, so the raster is served
+either way and the difference is entirely sampling density.
+
+**`SamplingClock::recommendedDivider()` bounds the divider at
+`InputFormatter::LineCounterMax * samplesPerUnit` with `samplesPerUnit` 1 for an
+undoubled line, so `/sampleclock?hold=` cannot exceed 2047 there** -- measured,
+2890 and 3400 both land on 2047. The half-octave route therefore needs that term
+to follow the minifier before it can be tried at all, which is the same one
+number `docs/known-issues.md` already identifies.
 
 ## Reading these states
 
