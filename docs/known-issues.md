@@ -943,11 +943,21 @@ with the clock hunting over 0.120% and calls the cause unexplained. 0.131% is
 likewise past the 0.06% the trim can reach, so a rate accepted wrong at
 acquisition explains it, on `ypbpr` as here.
 
-**The drift is the fix, because it measures the error.** A trim saturated in one
-direction for several consecutive passes has established that the coarse step
-was wrong, and the phase movement per pass gives the rate error in units the
-engine already holds -- so the answer is to re-run `matchRate()` from it rather
-than to keep trimming at a clamp. Not implemented.
+**The drift is the fix, because it measures the error.** The phase movement per
+pass gives the rate error in units the engine already holds, so the answer is to
+re-run `matchRate()` from it rather than to keep trimming at a clamp. Not
+implemented.
+
+**BUT CONSECUTIVE SATURATION IS NOT THE TRIGGER, because a healthy arrival does
+it.** The phase error at the first pass of an arrival is up to a third of a
+frame and its sign is a draw, so the correction saturates closing it: measured
+on `vga` at 312 lines, four consecutive passes pinned at `input x 0.9994` and
+about forty seconds to park. What separates the two is whether the error
+**decelerates** -- healthy, the per-pass change shrinks from -148438 to -47484
+as the correction tapers, where the fault holds near -220000 and sails through
+target. The discriminator is residual drift at a correction near zero, never a
+count of saturated passes.
+`investigations/the-arrival-ripple-is-the-frame-lock-converging.md`.
 
 **SLEW LIMITING THE TRIM IS MEASURED WRONG AND MUST NOT BE REINSTATED.**
 `MaxFrameRateChange` held to 0.00002 produces exactly the saturation above, at

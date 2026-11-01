@@ -72,6 +72,21 @@ and 4.3 s, the picture at 5.1 s. Other transitions clear inside a second.
 healthy unit reads as a regression twice in a row: `picstate.py` run twice is
 two grabs a few seconds apart, and both land in the dead period.
 
+## AND A CLIP TAKEN WITHIN FORTY SECONDS OF AN ARRIVAL SCORES THE FRAME LOCK
+
+**Waiting for a picture is not waiting for a measurable one.** The frame time
+lock starts an arrival up to a third of a frame out of phase, saturates its
+0.06% correction closing it, and takes about **forty seconds** to park -- so the
+output rate is moving and the read/write crossover sweeps across the picture for
+that whole time. Measured over ten arrivals of one scaled mode, `picture_jitter`
+reads a median 0.0076 and a worst 0.0191 inside that window against 0.0040 and
+0.0064 once the lock has parked, early over late on nine of ten.
+
+**So a per-arrival score taken on the console's own cue is of the transient.**
+Wait on the lock's reported error settling rather than on a fixed delay, and
+read `frame time lock: ... err` beside any figure taken soon after a change.
+`investigations/the-arrival-ripple-is-the-frame-lock-converging.md`.
+
 ## AND IT DELIVERS BLACK INSIDE A SETTLED STREAM, WITH THE BOARD UNCHANGED
 
 A black frame is not evidence at any time, not only after a transition.
