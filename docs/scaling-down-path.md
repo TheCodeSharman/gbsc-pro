@@ -235,36 +235,43 @@ geometry it feeds rather than in register writes.
 `investigations/the-minifier-engages-on-the-coarse-factor.md` has the tables and
 the controls either side.
 
-## THE FIFO DOUBLES, so the minifier is only available where doubling is
+## The minifier works; what is left is the FIFO's read side
 
-Measured on `vga` at 1280x720@60 into 1080p: the engine installs the ratio
-exactly as designed -- divider 1444 to 2888, the counter unmoved at 1444, the
-PLL latched, the same capture in front of the VDS at twice the density -- and
-the frame comes back doubled VERTICALLY, row-profile scale **2.005**, with
-`IF_LD_SEL_PROV`, `IF_PRGRSV_CNTRL` and `IF_SEL_WEN` all at their undoubled
-values throughout. Doubling is what the RAM does, not a use of it that routing
-can decline.
+Measured on `vga` at 1280x720@60 into 1080p with the divider pinned by
+`/sampleclock?hold=`, so only the ratio moves. At a held 1444 with a ratio of
+three quarters the counter is 1083 and the frame carries **no shear**, which
+says the block emitted exactly `1444 x 0.75` units: **the ratio is the DDA's
+and `lineCounterFor()` is right as it stands** -- no halving from the FIFO, no
+second halving from the coarse factor.
 
-So one IF unit is two ADC samples and one IF line is a half-line whenever the
-block is engaged: **a minifying source is a line-doubled source**, and
-`lineCounterFor()` and `capturableFrame()` both have to follow. **A source the
-output cannot afford to double cannot use the minifier at all**, which is
-exactly the tall source the density was wanted for --
-`InputFormatter::shouldDoubleLine()` already refuses to double one.
+**The FIFO is required and `IF_HS_PSHIFT_BYPS` is not an alternative to it.**
+With the FIFO bypassed, the coarse factor at 0 and the phase-adjustment path in
+circuit -- which is what RD-5725-1.1 describes for a ratio above a half -- the
+same counter gives a constant slip per row, so the line was still the full
+1444 units and nothing scaled. And at unity with the FIFO forced in the frame
+is solid green: `IF_SEL_HSCALE` hands the FIFO the block's data AND its write
+enable, so a null rate leaves it writing nothing. Every earlier green frame was
+that.
+
+**What is left is vertical and it is the read side.** With the counter correct
+and the line emitted correctly the card appears as two stacked copies, and
+`IF_LD_SEL_PROV`, `IF_PRGRSV_CNTRL` and `IF_SEL_WEN` were all at their undoubled
+values throughout. The lead is `IF_LINE_ST`/`IF_LINE_SP`, the FIFO's read
+window, which the engine places past the end of the counter -- 64 / 1148
+against a wrap at 1084, and 64 / 1509 against 1445 at unity. Bypassed, the pair
+reaches nothing and the placement has never mattered; in circuit it is the read
+reset, and a stop the counter never reaches never fires.
+
+So **minifying does not require doubling**, and the payoff is not bounded by
+what the output can afford to line-double.
 `investigations/the-minifier-engages-on-the-coarse-factor.md` has the tables.
-
-**The DDA's ratio is the DDA's ratio.** The coarse factor adds no second
-halving: the whole discrepancy between what the engine computed and what the
-block emitted is the doubling, and the horizontal arithmetic closes on it
-exactly.
 
 ## What has to be established first
 
-- **Whether the MADPT vertical scaler can halve the doubling back.** It is the
-  one thing that would make the pair usable on a tall source, and it lives in
-  the deinterlacer, which an undoubled source otherwise skips.
-- **Whether the doubling can be defeated with the FIFO in circuit.** Nothing
-  among the three routing registers does it.
+- **Why the FIFO puts out two lines per source line, and how to stop it.** The
+  one blocker. `IF_LINE_ST`/`IF_LINE_SP` is the read window and the engine
+  writes a stop the counter never reaches; nothing among the three routing
+  registers changes the doubling.
 - **Where the FIFO's line reset belongs on a minified line.**
   `InputFormatter::LineDoubleReset` is measured on doubled modes only. Wrong, it
   pans.

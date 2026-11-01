@@ -200,60 +200,73 @@ with the counter left alone.
 
 `../scaling-down-path.md` is the path and its registers.
 
-## The FIFO doubles, so the minifier is only available where doubling is
+## What each half of the block does, with the divider pinned
 
 Driven through the solve on `vga` at 1280x720@60 into 1080p, scaling path,
 PM5544 with `ANIM OFF`, judged off the USB capture.
 
-**The engine drives the block exactly as designed.** `/inputscale?wanted=1&have=2`:
+**The engine installs a ratio exactly as designed.** `/inputscale?wanted=1&have=2`
+with the divider free takes `PLLAD_MD` 1444 to **2888** while `IF_HSYNC_RST`
+stays at 1444, `STATUS_SYNC_PROC_HTOTAL` following to 2889 so the PLL latched,
+and the capture window, the stride and the fetch do not move -- the same ~1445
+units in front of the VDS at 1.75 ADC samples per source pixel against 0.875.
+The console says `installing: divider from line rate 45013, doubled 0 -> 2888`.
 
-| | unity | ratio 1/2 | ratio 3/4 |
-|---|---|---|---|
-| `PLLAD_MD` | 1444 | **2888** | 1924 |
-| `IF_HSYNC_RST` | 1444 | **1444** | 1443 |
-| `IF_HS_DEC_FACTOR` | 0 | 1 | 1 |
-| `IF_LD_RAM_BYPS` | 1 | 0 | 0 |
-| `IF_HBIN_SP` / `ST` | 2 / 0 | 160 / 96 | 160 / 96 |
-| `IF_HB_SP2`..`ST2` | 224..1346 | 224..1346 | 224..1345 |
-| `STATUS_SYNC_PROC_HTOTAL` | 1444 | 2889 | 1924 |
+**PIN THE DIVIDER WITH `/sampleclock?hold=`, OR THE RATIO AND THE SAMPLING MOVE
+TOGETHER AND NOTHING IS ATTRIBUTABLE.** Held at 1444 so only the ratio changes,
+the four states separate cleanly:
 
-The divider doubles, the counter does not move, the PLL latches at the new
-value, and the capture window, the stride and the fetch stay where they were --
-the same ~1445 units in front of the VDS at twice the sampling density, 1.75
-ADC samples per source pixel against 0.875. The console says
-`installing: divider from line rate 45013, doubled 0 -> 2888` and
-`input scale: 4095, line 1445 units`.
+| state | `IF_HSYNC_RST` | frame |
+|---|---|---|
+| unity | 1444 | clean, `corr 1.000 scale 1.000` |
+| ratio 3/4, FIFO in, factor 1 | 1083 | **no shear**, card duplicated vertically |
+| ratio 3/4, FIFO out, factor 0, `IF_HS_PSHIFT_BYPS` 0 | 1083 | pure shear |
+| unity, FIFO forced in | 1444 | **solid green** |
 
-**The picture is still wrong, and the reason is VERTICAL.** Matching the frame's
-ROW profile against the unity reference's, over the left 40% where the card
-survives, gives **scale 2.005**. At ratio 3/4 the card appears as two stacked
-copies, which is the vertical counter wrapping at half the lines arriving.
+**THE MINIFIER WORKS AND ITS RATIO IS EXACTLY THE DDA'S.** The second row is the
+finding: no shear means the counter the engine wrote matches the line the block
+emitted, and `1444 x 0.75 = 1083` is what it wrote.
+`InputFormatter::lineCounterFor()` is right as it stands -- no halving from the
+FIFO, and no second halving from the coarse factor.
 
-**So the line-double FIFO DOUBLES. It is not a neutral buffer.** It did so with
-`IF_LD_SEL_PROV` 1, `IF_PRGRSV_CNTRL` 1 and `IF_SEL_WEN` 1 -- all three at the
-values the undoubled branch writes, throughout. Doubling is not a second use of
-the RAM that routing can decline; it is what the RAM does.
+**The block needs the FIFO, and `IF_HS_PSHIFT_BYPS` is not the gate.** The third
+row puts the phase-adjustment data path in circuit with the coarse factor at 0,
+which is what RD-5725-1.1 describes for a ratio above a half, and the frame is a
+constant slip per row against the same counter -- so the line was still 1444
+units and no scaling happened. The datasheet's two bands do not divide the work
+the way the field descriptions suggest.
 
-Both axes follow from that, and the horizontal arithmetic confirms it. One IF
-unit is two ADC samples with the FIFO in, so the line the block emits is
-`2888 / 2 x 0.5 = 722` units against a counter of 1444, and the capture window
-at 224..1346 is written only as far as 722 -- `(722 - 224) / 1122 = 0.44` of the
-output carrying picture, which is where the card stops. **The DDA's ratio is the
-DDA's ratio**: the coarse factor adds no second halving, and the whole
-discrepancy is the doubling.
+**The solid green is the FIFO with no write enable.** The fourth row holds the
+counter at a value known correct and leaves the block inert, and nothing reaches
+the frame buffer at all. `IF_SEL_HSCALE` sends the scaling-down block's data AND
+its write enable to the line double, so with a null rate the FIFO is handed no
+write enable and writes nothing. Every earlier green frame was that, rather than
+a window spanning a line that no longer existed.
 
-**A MINIFYING SOURCE IS A LINE-DOUBLED SOURCE**, so `lineCounterFor()` must
-halve and `capturableFrame()` must count half-lines for one.
+## What is left is the FIFO's read side, and it is vertical
 
-**AND THE PAYOFF IS BOUNDED BY THAT.** A source the output cannot afford to
-line-double cannot use the minifier, which is exactly the case the density was
-wanted for: 750 lines become 1500 half-lines against the ~1080
-`OutputWindow::maximumCapture()` allows at 1080p, and
-`InputFormatter::shouldDoubleLine()` already refuses to double a tall source for
-that reason. What is open is whether the MADPT vertical scaler can halve it
-back, which would make the pair usable, and whether the doubling can be
-defeated with the FIFO in circuit.
+With the counter correct and the line emitted correctly, the card still appears
+as **two stacked copies**. The FIFO puts out two lines per source line, and
+nothing among `IF_LD_SEL_PROV`, `IF_PRGRSV_CNTRL` and `IF_SEL_WEN` stops it --
+all three were at the values the undoubled branch writes, throughout.
 
-**The control is clean at both ends.** Unity either side of the run restores the
-frame exactly -- `corr 1.000 scale 1.000`, Nyquist detail 10.99 before, 8.11 at
-ratio 1/2, 10.98 after.
+**The lead is `IF_LINE_ST`/`IF_LINE_SP`, the FIFO's read window, which the engine
+places past the end of the counter.** Measured 64 / 1148 against a counter
+wrapping at 1084, and 64 / 1509 against 1445 at unity. With the FIFO bypassed
+that register pair reaches nothing and the placement is harmless, which is why
+it has never mattered; with the FIFO in it is the read reset, and a stop the
+counter never reaches is a reset that never fires.
+
+**So minifying does not require doubling.** The vertical doubling is a separate
+fault on a path the engine has never had to configure, not a property of the
+horizontal scaler, and the payoff is not bounded by what the output can afford
+to line-double.
+
+Two smaller things come with it. `InputFormatter::LineDoubleReset` 160 pans the
+picture hard at this divider -- the green at the left of every minified frame --
+and it is measured on doubled modes only. And the horizontal half of the result
+holds whatever happens vertically: the ratio is the DDA's, exactly.
+
+**The control is clean at every step.** Unity either side of each run restores
+the frame exactly, `corr 1.000 scale 1.000`, with Nyquist detail 10.99 before
+and 10.85 after the whole sequence.
