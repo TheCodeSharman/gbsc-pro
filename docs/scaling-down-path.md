@@ -91,9 +91,14 @@ ratio lands at or above the one asked for — a larger increment is a narrower
 picture, and a black bar is worse than an overrun. `unitsFor()` is what a count
 in IF units becomes, which is how the counter follows.
 
-**The coarse factor is NOT part of it.** `IF_HS_DEC_FACTOR` is the line
-doubler's halving, and one field cannot carry two meanings — so the reachable
-range is the twelve-bit DDA alone, 1.0x down to 0.5x.
+**The coarse factor HAS TWO OWNERS, and they collide.** RD-5725-1.1 gives
+`IF_HS_DEC_FACTOR` as the scaling-down engine's coarse octave -- "if the
+scaling ratio is less than 1/2, use it and DDA to generate the we and phase" --
+while `applyScan()` writes it from `lineDoubled` as the line doubler's halving.
+Measured on a doubled source, a non-zero DDA rate takes the halving away: the
+line becomes `PLLAD_MD x ratio` rather than `(PLLAD_MD / 2) x ratio`. So the
+reachable range through the DDA alone is 1.0x to 0.5x, and a doubled source
+cannot use it without resolving the field's ownership first.
 
 ```sh
 curl 'http://<ip>/inputscale?rate=1365'          # the increment directly
@@ -112,8 +117,12 @@ test card at a fixed framing. **It names only the coarse factor**; the 12-bit
 DDA beside it is finer and is the better tool, since the ratio wanted is rarely
 a half.
 
-This is the cheapest experiment and it needs no engine change — the registers
-can be written by hand against a frozen framing.
+**It needs no engine change and it must not be done by hand.**
+`/sampleclock?hold=N` sets the divider through the whole solve --
+`VideoPath::holdDivider()` is an early return past every ceiling, followed by
+`Geometry::resolve()` -- so capture window, scales, stride and fetch all follow.
+A hand-set subset of an interdependent solve measures the mismatch instead, and
+reading one back from a still has produced several wrong calls.
 
 ### 2. Every input and output combination can be made to fit exactly
 
@@ -180,21 +189,41 @@ because the noise fills the columns. A per-row noise threshold fires on the
 card's own frequency wedge in a frame that is clean. Judge by eye, or build a
 metric against a frame already known to be broken.
 
-**So the solve must not choose a ratio yet**, and the question below about what
-the DDA does to the count is answered in the only sense that matters: whatever
-it does to the count, the frame does not survive it.
+**So the solve must not choose a ratio yet**, and the earlier reading that the
+count question is thereby moot is superseded: the frame breaks because the
+counter and the block disagree, not because the block destroys the picture.
 
+## The counter is what the ratio must not move
+
+`IF_HSYNC_RST` is measured to hold the **unscaled** divider on an undoubled
+source. At 1280x720@60 with a ratio applied, restoring it to `PLLAD_MD`
+assembles the frame; the scaled value `lineCounterFor()` writes shears it, each
+line starting further along than the last. The eight segments, the capture
+window, the stride, the fetch and `VDS_HSCALE` all follow the ratio correctly
+in a full register diff, so the geometry is not what is wrong.
+
+On a LINE-DOUBLED source the ratio does shorten the line. At 320x256@50 with
+`PLLAD_MD` 2200 and a ratio of 0.75 the roll stops at a counter of **1650**,
+which is `PLLAD_MD x ratio` rather than `(PLLAD_MD / 2) x ratio` -- so the line
+doubler's halving is lost to the ratio, both being `IF_HS_DEC_FACTOR`.
+
+The block therefore works and what gates its write-enable on an undoubled
+source is open. `IF_HS_PSHIFT_BYPS`, `IF_HS_DEC_FACTOR`, `IF_HS_SEL_LPF` and
+`IF_LD_RAM_BYPS` are each refuted as the enable.
 
 ## What has to be established first
 
-- **What the DDA actually does to the count.** Write a known ratio against a
-  frozen framing and count the units that reach the frame buffer, rather than
-  trusting the formula. A read-back proves nothing here; only the picture and
-  the geometry can say.
+- **What gates the write-enable on an undoubled source.** The one blocker. It
+  engages on a doubled line and not on an undoubled one, with the ratio
+  registers holding the same values.
 - **Where the eight segments divide the line**, since a linear scale needs all
   eight and a wrong boundary shows as a discontinuity partway across.
-- **Whether the vertical scaler is reachable on a progressive path at all.** It
-  lives in the deinterlacer, which a progressive source otherwise skips.
-- **What it costs in sharpness.** A decimating DDA is not a filter; scaling a
-  line down before the frame buffer may alias where the VDS's interpolator
-  would not.
+- **Whether the vertical scaler is reachable on an undoubled path at all.** It
+  lives in the deinterlacer, which an undoubled source otherwise skips.
+- **What it costs in sharpness.** The block demonstrably filters -- a ratio
+  blurs the picture and shifts chroma against luma with the geometry untouched
+  -- but how well is unmeasured, and no frame has yet survived a ratio on an
+  undoubled source to measure it on.
+
+`investigations/the-scaling-path-samples-below-one-to-one.md` is what the
+missing downscale costs, measured against pass-through.

@@ -8853,41 +8853,42 @@ const uint32_t counterBound = InputFormatter::LineCounterMax * samplesPerUnit;
 if (ceiling > counterBound) ceiling = counterBound;
 ```
 
-The minifier is that same quantity running the other way, so what the change
-asks for is one term: `LineCounterMax * samplesPerUnit / ratio`.
+The minifier runs that same quantity the other way, but **not on this term** --
+the counter is measured to hold the unscaled divider, so dividing it by the
+ratio is wrong. What a ratio relieves is the OUTPUT ceiling beside it.
 
-**What the counter costs, per mode.** The divider the ADC's own
-`MaxSampleRateHz` 162 MHz allows at 1x after `RecommendedPercent`, against the
-2046 the counter permits. Every ratio is inside `InputScale`'s unity..0.5:
+**THE COUNTER HOLDS THE UNSCALED DIVIDER, so the minifier does not lift the
+2047 wall.** Measured at 720p: with a ratio applied, restoring `IF_HSYNC_RST`
+to `PLLAD_MD` assembles the frame and the engine's own scaled value shears it.
+An earlier per-mode table here put the gain at 1.72x by reading the counter as
+holding the post-scale count and the divider as free to reach the ADC's 3528;
+both are wrong, and it is superseded.
 
-| mode | counter allows | ADC allows | gain | ratio |
-|---|---|---|---|---|
-| 1280x720@60 | 2046 | **3528** | 1.72x | 0.580 |
-| 1024x768@60 | 2046 | 3282 | 1.60x | 0.623 |
-| 1280x1024@60 | 2046 | 2481 | 1.21x | 0.825 |
-| 1920x1080@60 | 2046 | 2352 | 1.15x | 0.870 |
+**What the ceiling costs is still large, and it is the raster rather than the
+counter.** At 1280x720@60 the solve installs 1444 where the counter permits
+2047 -- `VideoPath::dividerCeilingForOutput()` holds it there, because the VDS
+cannot minify and a capture wider than the display window is cropped. 720p is
+1280 active in 1650 total, so 1444 is **0.875 ADC samples per source pixel** and
+2047 is **1.24**: the scaling path samples the source below one to one.
 
-**IT IS NOT A RESOLUTION TRADE, which is the reading to avoid.** The IF still
-receives 2046 units; what changes is that each is formed from 1.72 ADC samples
-rather than one. That is oversampling delivered by the input formatter, and it
-reaches a configuration the ADC path structurally cannot: the 2x row needs CKO
-under 80 MHz and 2046 x 45000 is already 92 MHz, which is why
-`docs/sampling-table.md` reads `1x` at 720p.
+**Pass-through proves the part is not the limit.** It runs `PLLAD_MD` 2038 on
+the same source, bounded only by `HD_HSYNC_RST`, and resolves frequency bundles
+the scaling path loses entirely. Holding the scaling path's divider at 2047
+matches it.
 
-**THE WHOLE IDEA GATES ON ONE UNMEASURED PROPERTY: whether the block AVERAGES
-or DROPS.** Averaging makes the extra samples anti-aliasing; dropping makes it
-decimation with no filter, and the ADC budget is spent for nothing. Nothing in
-RD-5725-1.1 settles it -- a scaling-down engine for anamorphic stretch implies
-interpolation and that is inference.
+**The averaging question is answered enough to proceed.** The block filters --
+a ratio blurs the picture and shifts chroma against luma with the geometry
+untouched -- and 2047 at 1x beats 1444 at 2x on the card, so the kept count
+wins whether or not the filter is ideal.
 
-**Ask the block before changing the rule.** The ratio is self-consistent
-through a solve already -- `InputFormatter::applyScan()` writes it and the line
-counter shortens with it -- where a hand-raised divider is not, the divider
-being one input to a solve that also places the capture window, both scales,
-the fetch and the stride. So a ratio set through `/inputscale` on a settled
-source answers the averaging question on its own, and only an answer of
-AVERAGES justifies threading the ratio into `counterBound` and comparing two
-solved states.
+**What blocks it is that the write-enable does not engage on an undoubled
+source.** Driven through a solve at 720p the line does not shorten at any
+ratio; on a line-doubled source it does, the line becoming `PLLAD_MD x ratio`.
+`IF_HS_PSHIFT_BYPS`, `IF_HS_DEC_FACTOR`, `IF_HS_SEL_LPF` and `IF_LD_RAM_BYPS`
+are each refuted as the enable.
+`investigations/the-scaling-path-samples-below-one-to-one.md` has the
+measurements, the three reachable oversampling states and why 1763 is the one
+to try first.
 
 ### The pass-through ADC PLL does not lock, and the finest grating beats
 
