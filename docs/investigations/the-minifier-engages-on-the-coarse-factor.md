@@ -120,6 +120,39 @@ where the solve bypassed it and the register was written by hand later. That is
 the standing rule about hand-set subsets of an interdependent solve, so the next
 move is a change to `applyScan()` rather than another poke.
 
+## There is no latch and no reset: the IF-unit geometry has to move with it
+
+`VideoPath::applyScan()` is the whole code path, and it writes three things:
+`InputFormatter::applyScan()`, then `VideoProcessor::applyLineDoubling()` and
+`Deinterlacer::applyLineDoubling()` -- and those last two write only delay
+alignments, `VDS_V_DELAY`, `VDS_Y_DELAY` and the MADPT luma delay. **Nothing is
+latched and nothing is reset**, which is consistent with five soft resets
+changing nothing.
+
+A full 1536-register diff between two healthy solved states -- 320x256@50 line
+doubled with the FIFO in, and 640x480@60 undoubled with it out -- resolves to
+**39 fields**. Outside the IF's own scan fields and the geometry that must
+differ between two sources, only `DEC1_BYPS` (which the oversampling row owns)
+and `MADPT_Y_DELAY` move. So the solve holds no secret the register writes
+could not reproduce.
+
+**What the register writes missed is the IF-UNIT GEOMETRY.** The coarse factor
+halves the line, and the capture window, the line limits and the playback fetch
+are all counted in IF units, so every one of them has to halve with it. Measured
+at 640x480@60 with the FIFO in and the coarse factor at 1:
+
+| what was moved | mean | green excess | result |
+|---|---|---|---|
+| nothing but the counter | 63.6 | +141.1 | solid green |
+| `IF_HSYNC_RST`, `IF_HB_SP2`/`ST2`, `IF_LINE_SP`/`ST`, `PB_CAP_OFFSET`, `PB_FETCH_NUM` all halved | 54.5 | **+37.9** | picture, repeated across the line |
+
+So the green was the window spanning a line that no longer exists, and the
+remaining fault is a counter that does not match what the block emits. **That is
+why this cannot be finished by writing registers**: the ratio, the counter, both
+windows, the stride and the fetch are one solve, which is the standing rule
+about hand-set subsets. The change belongs in `applyScan()` and the geometry it
+feeds.
+
 ## What the half octave would buy, and why the divider has to move with it
 
 The coarse factor at 1 halves the kept count, so the capture can be sampled at
