@@ -323,59 +323,72 @@ line at the START of each counter-line and leaves the rest unwritten: the
 content sits at the left, the remainder of the frame is black, and nothing is
 stretched across the counter-line. The route is not dead.
 
-## The coarse factor IS the ratio, and the DDA increment does nothing
+## The ratio is the octave times the DDA, and the firmware spent an octave twice
 
-The same run walked the increment with the divider pinned. **The engine holds
-`window x magnification` constant by construction** -- it sizes both from the
-ratio it believes in -- so the measured scale against the unity reference is the
-block's ACTUAL ratio, read directly:
+**RETRACTED, AND THIS SECTION REPLACES IT:** an earlier reading here said the
+coarse factor is the whole ratio and the DDA increment does nothing. It came
+from a sweep driven through `/inputscale`, where the engine re-solves the window
+and the scale for each ratio it is asked for -- so `window x magnification`
+stayed at 1399 and the measured scale read 0.500 at every increment. That
+constant is not the block's ratio. It is the engine compensating correctly for a
+ratio the block was delivering at half.
 
-| increment | DDA says | window | `VDS_HSCALE` | window x mag | measured scale |
+**THE MODEL IS `ratio = 2^-IF_HS_DEC_FACTOR x 4095 / (4095 + increment)`**,
+exactly as RD-5725-1.1 describes. Measured with the divider pinned at 1444 and
+the window HELD at one solve, so the compensation is identical at every point
+and the measured scale moves only with the block:
+
+| factor | increment | model | predicted scale | measured | error |
 |---|---|---|---|---|---|
-| 0 | 1.000 | 1250 | 916 | 1398 | **1.000** |
-| 455 | 0.900 | 1125 | 824 | 1398 | **0.500** |
-| 1365 | 0.750 | 937 | 686 | 1399 | **0.500** |
-| 2730 | 0.600 | 751 | 550 | 1399 | **0.500** |
-| 4095 | 0.500 | 626 | 458 | 1400 | **0.500** |
+| 0 | 1365 | 0.7500 | 1.001 | **1.000** | -0.001 |
+| 0 | 2048 | 0.6666 | 0.890 | **0.888** | -0.002 |
+| 0 | 4095 | 0.5000 | 0.668 | **0.668** | +0.000 |
+| 1 | 0 | 0.5000 | 0.668 | **0.668** | +0.000 |
+| 1 | 1365 | 0.3750 | 0.501 | **0.500** | -0.001 |
+| 1 | 4095 | 0.2500 | 0.334 | **0.320** | -0.014 |
+| 2 | 0 | 0.2500 | 0.334 | **0.320** | -0.014 |
 
-One half at every increment from 0.9 to 0.5. And the discriminator, one
-register from the 1365 state: `IF_HS_DEC_FACTOR` forced to **0** with the FIFO
-still in circuit and the increment still 1365 reads `match across corr 0.917
-scale 1.000` -- a clean, uncompressed picture, cropped only by the window the
-solve sized for 0.75.
+The last two rows are the cross-check the model requires: one octave with the
+DDA at its limit and two octaves with the DDA idle are the same ratio, and they
+land on the same picture. The 4% deficit at the deepest ratios is unexplained
+and is the same figure for both.
 
-**So the block has two states and the DDA selects neither of them.**
-`IF_HS_DEC_FACTOR` 0 is 1:1 and 1 is exactly 1:2, whatever
-`IF_HS_RATE_SEG0..7` and `IF_HS_RATE_LOW` hold. RD-5725-1.1's "4095 x (m - n) / n"
-describes nothing this part does as it is being driven.
+**LINE DOUBLING ALREADY SPENDS THE OCTAVE.** A doubled line is two ADC samples
+per IF unit, which is that factor at 1 -- and forcing it to 0 on 320x256@50
+breaks the picture outright, near-Nyquist detail 10.96 -> 5.29 with the card
+magnified about four times and cropped, because the IF unit becomes one sample
+while the counter stays at half the line.
 
-**This refutes the earlier reading on this page that the minifier compresses by
-the DDA's ratio.** That was taken at a ratio of 3/4, where the hardware's 1/2
-and the formula's 0.75 are close enough to confuse on a frame already wrong
-vertically; the control at ratio 1/2 agreed because the two coincide there.
+So the factor belongs to the SCAN. `applyScan()` wrote it from `fifoInCircuit`,
+which spent a second octave on a minifying undoubled line: the engine sized
+every window for the ratio asked for while the block delivered half of it, and
+the card landed in the left 44% of the output. That is the whole of the fault,
+and the fix is one expression.
 
-## What a fixed half octave is worth
+## What it buys, confirmed end to end
 
-`delivered = ratio x counter` and the counter is the raw line, bounded at 2047,
-so a fixed 1:2 delivers at most **1023 units**. At 1280x720@60 into 1080p the
-raster shows 1443 and unity reaches it at divider 1444, so **the minifier is
-strictly worse than unity on that mode** -- half of the counter's wall is less
-than the raster already affords.
+`/inputscale?wanted=3&have=4` with the divider free, on the fixed firmware:
 
-It pays where twice the raster's delivered units still fits inside the counter,
-which is the small rasters rather than 1080p: a raster showing 770 units is
-served by divider 1540 at 1:2, against 770 at unity, for twice the ADC samples
-behind the same delivered count.
+| | unity | ratio 3/4 |
+|---|---|---|
+| `PLLAD_MD`, `IF_HSYNC_RST` | 1444 | **1924** |
+| `STATUS_SYNC_PROC_HTOTAL` | 1444 | 1924 |
+| delivered units | 1445 | 1443 |
+| `VDS_HSCALE` | 916 | 914 |
+| near-Nyquist detail | 6.75 | **8.30** |
 
-**What 1080p wants is a wider raster, not a narrower capture** --
-`../known-issues.md`, the display clock entry.
+33% more ADC samples behind the same delivered count, and the detail reaches
+the panel. The counter follows raw and the PLL latches at the new divider.
 
 ## Still open
 
-- **Whether the DDA can be made to act at all.** Both bands have now been seen
-  with the FIFO in circuit and the increment set, and neither scales by it.
-  `IF_HS_SEL_LPF` is written from the SCAN rather than the ratio, so a minifying
-  undoubled line runs the interpolator path rather than the low-pass one; that
-  is the untried bit.
-- **What `IF_HS_DEC_FACTOR` 2 does**, under the octave model rather than the
-  DDA one. Earlier readings of it were scored against the formula.
+- **An undoubled minifying line shows a green band at the right**, about 440 of
+  1920 columns at ratio 3/4, with the picture also panned ~70 columns left. The
+  horizontal chain is self-consistent across it -- produced 1398 into a display
+  window of 1394 -- so it is not the window overrunning what the VDS made.
+  `IF_HBIN_SP` is **not** the cause: 96, 48, 16 and 2 give the same frame, which
+  retires the guess that `InputFormatter::LineDoubleReset`, measured on doubled
+  modes alone, pans a minifying one.
+- **Why the two deepest ratios come in 4% short** of the model, identically.
+- **Whether a second octave is worth reaching.** `InputScale` tops out at 1/2
+  inside one, so factor 2 is unused; the counter is the wall either way.
