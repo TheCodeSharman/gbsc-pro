@@ -10531,23 +10531,32 @@ readable register would serve. What the block wants is a name for what it is
 doing -- prove the bus answers -- and it currently reads as a status check that
 forgot to check anything. `whole-byte-convenience-names.md`.
 
-### A minifying undoubled line shows a green band at the right
+### The line-double FIFO caps delivered units at about 1120, and only the doubled path is held off it
 
-Measured on `vga` at 1280x720@60 into 1080p at ratio 3/4: about 440 of 1920
-columns at the right are green, and the picture is panned some 70 columns left
-of where unity puts it. The horizontal chain is self-consistent across it --
-`IF_HB_SP2`/`ST2` 168..1416, `VDS_HSCALE` 914, produced 1398 against a display
-window of 1394 -- so it is not the window running past what the VDS made.
+The band at the right of a minifying undoubled frame starts at a CONSTANT count
+of delivered IF units, whatever the divider and whatever the ratio. Measured on
+`vga` at 1280x720@60 into 1080p at ratio 3/4, walking the divider with
+`/sampleclock?hold=`: delivered 1083 shows none, and 1200, 1313, 1443 and 1535
+start green at 1161, ~1181, 1134 and 1125 IF units.
 
-**`IF_HBIN_SP` is not the cause.** Walked over 96, 48, 16 and 2 with the ratio
-in force, every value gives the same frame, which retires the standing guess
-that `InputFormatter::LineDoubleReset` -- measured on doubled modes alone --
-pans a minifying undoubled one.
+**That is the line-double FIFO, and it is the same buffer
+`SamplingClock::DoubledLineSampleLimit` expresses as a divider.**
+`investigations/the-tail-green-is-the-vds-line-filter.md` measures its onset at
+1118..1128 IF units on a doubled line, and the cap's 2200 ADC samples is 1100
+units, just under it. So a doubled line never reaches the bound and a minifying
+undoubled one has no equivalent, which is the whole of the fault.
 
-The ratio itself is correct here: `PLLAD_MD` 1924 against unity's 1444 with the
-counter following raw, 1443 delivered units against 1445, `VDS_HSCALE` 914
-against 916, and near-Nyquist detail up from 6.75 to 8.30.
-`investigations/the-minifier-engages-on-the-coarse-factor.md`.
+Two consequences. **The bound belongs in IF units, applied whenever the FIFO is
+in circuit** -- through the ceilings `VideoPath` already states in delivered
+units, which subsumes a divider constant covering only half of it. And **the
+minifier cannot serve a raster needing more than ~1120 delivered units**, so
+1080p, which needs 1443, is out of its reach for this reason as well as for
+`delivered = ratio x counter`.
+
+A minifying undoubled line is also panned some 70 columns left of where unity
+puts it, and `IF_HBIN_SP` is measured not to be the cause -- 96, 48, 16 and 2
+give the same frame, which retires the standing guess about
+`InputFormatter::LineDoubleReset`.
 
 ### The scaling-down ratio was halved by the coarse factor -- FIXED
 
@@ -10604,15 +10613,33 @@ more on the doubled source: `SamplingClock::DoubledLineSampleLimit` holds a
 doubled line at 2200 ADC samples, kept 1100, and **deleting that cap has been
 tried and is measured worse** -- see the crossover-row section above.
 
-**So a single global seed does not serve both, and what is untried is the
-clock being part of the solve**: the highest seed whose raster keeps the
-magnification the capture will need under the onset. `OutputMode::solve()`
-already takes a `ceilingHz` and `dividerCeilingForOutput()` already solves the
-raster, so the shape exists. Two things have to be measured first, and neither
-is argued -- the onset is **not** a pure function of magnification (2.17 combs
-at 129.6 MHz where 2.179 is clean at 107.8, so the clock is implicated
-directly), and `A MAPPING FROM PHOTO COLUMNS TO OUTPUT PIXELS DOES NOT SURVIVE
-AN OUTPUT MODE CHANGE` applies to every frame taken across a seed change.
+**MEASURED AT BOTH SEEDS, with `/outputclock?hz=`.** The high-rate source gains
+outright and the low-rate one is clean at its default framing and not at every
+framing:
+
+| source | aspect | clock | raster | `PLLAD_MD` | magnification | frame |
+|---|---|---|---|---|---|---|
+| 1280x720@60 | 16:9 | 108 | 1599 | 1444 | ~1.1 | clean, 0.875 samples/pixel |
+| 1280x720@60 | 16:9 | **129.6** | 1919 | **1750** | ~1.1 | **clean, 1.06 samples/pixel** |
+| 320x256@50 | 4:3 | 108 | 1915 | 2200 | ~1.9 | clean |
+| 320x256@50 | 4:3 | **129.6** | 2299 | 2200 | **2.183** | **clean** |
+| 320x256@50 | 16:9 | 108 | 1915 | 2200 | 2.427 | clean |
+| 320x256@50 | 16:9 | **129.6** | 2299 | 2200 | **2.909** | **comb down the left** |
+
+So the onset at 129.6 MHz is between 2.183 and 2.909 on that source, the 2.17
+figure above does not transfer, and **the same framing that is clean at 108 is
+not at 129.6**. A global seed is therefore not available, and the earlier
+prediction that 320x256 combs at its DEFAULT framing is refuted -- the 4:3
+declaration narrows the room, so the solve magnifies 2.183 rather than the 2.36
+a full-width capture would have needed.
+
+**What is untried is the clock being part of the solve**: the highest seed whose
+raster keeps the magnification the capture will need under the onset.
+`OutputMode::solve()` takes a `ceilingHz`, `dividerCeilingForOutput()` solves
+its own raster and `VideoPath::holdOutputCeiling()` is the instrument, so the
+shape exists and what is missing is where to put the bound. Note the onset is
+**not** a pure function of magnification -- the clock is implicated directly --
+so the bound has to be measured per seed rather than carried across.
 
 ### A source's first solve after a boot can miss its stored framing
 

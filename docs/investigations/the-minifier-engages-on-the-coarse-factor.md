@@ -100,6 +100,40 @@ compressed into a column with the rest of the line empty. So the FIFO wants
 none of the line-doubled routing, and the green an undoubled source gives is
 not the routing.
 
+## The green tail is the line-double FIFO, and it caps what the minifier can deliver
+
+The band at the right of a minifying undoubled frame starts at a CONSTANT count
+of delivered IF units, whatever the divider and whatever the ratio. Measured on
+`vga` at 1280x720@60 into 1080p at ratio 3/4, the divider walked with
+`/sampleclock?hold=`:
+
+| divider | delivered units | green starts, in IF units |
+|---|---|---|
+| 1444 | 1083 | **none** |
+| 1600 | 1200 | 1161 |
+| 1750 | 1313 | ~1181 |
+| 1924 | 1443 | 1134 |
+| 2046 | 1535 | 1125 |
+
+**That is the line-double FIFO's own length**, and it is the same buffer
+`SamplingClock::DoubledLineSampleLimit` holds a doubled line off:
+[`the-tail-green-is-the-vds-line-filter.md`](the-tail-green-is-the-vds-line-filter.md)
+measures its onset at **1118..1128 IF units on a doubled line**, and the cap's
+2200 ADC samples is 1100 units, just under. A doubled line therefore never
+reaches it and a minifying undoubled one has no equivalent bound, so it walks
+straight past and the tail of every line is unwritten.
+
+**So the FIFO caps the DELIVERED count at about 1120 whenever it is in
+circuit** -- which minifying always puts it in. The consequence is sharp: a
+raster needing more delivered units than that cannot be served by the minifier
+at all, and 1080p needs 1443. **The minifier is out of reach for 1080p for this
+reason as well**, and what it can serve is the small rasters.
+
+The fix the measurement points at is one constant in IF units applied whenever
+the FIFO is in circuit, through the ceilings `VideoPath` already states in
+delivered units -- which subsumes `DoubledLineSampleLimit`, a divider constant
+covering only the doubled half of the same bound.
+
 ## Still open: the FIFO cannot be brought up by writing registers
 
 At 1280x720@60 and at 640x480@60 -- both left undoubled by the engine -- forcing
@@ -382,13 +416,10 @@ the panel. The counter follows raw and the PLL latches at the new divider.
 
 ## Still open
 
-- **An undoubled minifying line shows a green band at the right**, about 440 of
-  1920 columns at ratio 3/4, with the picture also panned ~70 columns left. The
-  horizontal chain is self-consistent across it -- produced 1398 into a display
-  window of 1394 -- so it is not the window overrunning what the VDS made.
-  `IF_HBIN_SP` is **not** the cause: 96, 48, 16 and 2 give the same frame, which
-  retires the guess that `InputFormatter::LineDoubleReset`, measured on doubled
-  modes alone, pans a minifying one.
+- **Why a minifying undoubled line is also panned** some 70 columns left of
+  where unity puts it. `IF_HBIN_SP` is not the cause: 96, 48, 16 and 2 give the
+  same frame, which retires the guess that `InputFormatter::LineDoubleReset`,
+  measured on doubled modes alone, pans a minifying one.
 - **Why the two deepest ratios come in 4% short** of the model, identically.
 - **Whether a second octave is worth reaching.** `InputScale` tops out at 1/2
   inside one, so factor 2 is unused; the counter is the wall either way.
