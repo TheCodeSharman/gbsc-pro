@@ -8829,10 +8829,6 @@ the kept count is what carries resolution and oversampling buys only freedom
 from aliasing, but a decimator after a higher divider keeps the sampling density
 that resolves the grating while handing the capture a count the window can hold.
 
-Untried. What would settle it is a divider raised past what
-`recommendedDivider()` allows with the decimator taking the difference, judged
-on the finest grating of the card against the same framing.
-
 **And `IF_HS_DEC_FACTOR` is only the coarse half of it.** Beside it sits a
 12-bit DDA -- `IF_HS_RATE_SEG0..7` with `IF_HS_RATE_LOW` -- which scales down
 continuously from 1.0x to 0.5x, where the factor steps in halves. The ratio
@@ -8840,30 +8836,35 @@ this wants is rarely a half, so the DDA is the better tool.
 `docs/scaling-down-path.md` is the whole path, both axes, and what else it
 would buy.
 
-**THE WALL IS ON THE DIVIDER ONLY BECAUSE ONE ADC SAMPLE IS ASSUMED TO BE ONE
-IF UNIT, AND THE CODE ALREADY PARAMETERISES THAT.**
-`SamplingClock::recommendedDivider()` turns the counter's own bound into a
-bound on the divider through `samplesPerUnit`, which is 2 on a doubled line and
-1 otherwise:
+**THE ENGINE NOW ASKS FOR THE ROOM AND SPENDS IT, SO WHAT IS LEFT IS A BENCH
+MEASUREMENT.** `InputFormatter::applyScan()` engages the block from the RATIO
+rather than from the scan -- `IF_HS_DEC_FACTOR` non-zero and the line-double
+FIFO in circuit, which are the two things it needs at once -- and
+`InputFormatter::samplesForUnits()` reads the counter's bound and the raster's
+back as a bound on the divider through both terms, so a held ratio reaches
+`recommendedDivider()` and both of `VideoPath`'s ceilings. `/inputscale`
+installs a divider rather than re-applying the scan at the one in force, the
+ratio being a command to resample.
 
-```
-const uint16_t samplesPerUnit = lineDoubled ? 2 : 1;
-const uint32_t counterBound = InputFormatter::LineCounterMax * samplesPerUnit;
-...
-if (ceiling > counterBound) ceiling = counterBound;
-```
+So the route is `/inputscale?wanted=1&have=2` and then reading what the solve
+installs, where before it was unreachable: the hold refused outright, the
+counter not fitting at unity.
 
-The minifier runs that same quantity the other way, but **not on this term** --
-the counter is measured to hold the unscaled divider, so dividing it by the
-ratio is wrong. What a ratio relieves is the OUTPUT ceiling beside it.
+**AN EARLIER READING THAT THE COUNTER HOLDS THE UNSCALED DIVIDER IS SUPERSEDED,
+AND SO IS THE PER-MODE TABLE THAT PRECEDED IT.** The rate registers written
+alone leave the picture unmoved because a DDA increment beside a zero coarse
+factor does nothing whatever, which is what every such reading was taken with.
+Measured with both in force: the whole card inside a third of the width at a
+DDA of one half.
 
-**THE COUNTER HOLDS THE UNSCALED DIVIDER, so the minifier does not lift the
-2047 wall.** Measured at 720p: the rate registers written alone, with the
-counter left at `PLLAD_MD`, leave the picture in place at the same size, so the
-line is not shortened and the engine's own scaled value shears it.
-An earlier per-mode table here put the gain at 1.72x by reading the counter as
-holding the post-scale count and the divider as free to reach the ADC's 3528;
-both are wrong, and it is superseded.
+**What the block's achieved ratio IS has not been pinned**, and it is the one
+thing the counter is derived from: the engine takes the DDA's own ratio, which
+is what every working line-doubled source runs. Measured scales of
+0.476 / 0.408 / 0.332 for DDA ratios 0.75 / 0.667 / 0.50 are approximate --
+`picture_match.py` reports a scale for a compressed frame rather than a scaled
+copy of the card -- so they establish the direction and not a factor. A counter
+longer than what the block emits repeats the picture across the line, which is
+the discriminator.
 
 **What the ceiling costs is still large, and it is the raster rather than the
 counter.** At 1280x720@60 the solve installs 1444 where the counter permits
@@ -8882,20 +8883,17 @@ a ratio blurs the picture and shifts chroma against luma with the geometry
 untouched -- and 2047 at 1x beats 1444 at 2x on the card, so the kept count
 wins whether or not the filter is ideal.
 
-**What blocks it is that the block does not shorten the line, on either scan
-mode.** Driven through a solve, every ratio down to 0.976 breaks the frame at
-720p and at 320x256@50 alike, with unity either side of each run restoring it
-exactly; the rate registers written alone, with the counter left where the
-unity solve put it, leave the card unmoved and the same size. So the DDA
-perturbs the sample phase rather than removing samples, and an earlier reading
-that a doubled source shortens to `PLLAD_MD x ratio` named a duplicated frame.
-What gates the block is `IF_HS_DEC_FACTOR`, which `applyScan()` writes 0 for
-every undoubled source: a DDA rate beside a zero coarse factor does nothing.
-Its write enable then needs the line-double FIFO, which `IF_SEL_HSCALE` makes
-its only consumer and which an undoubled source also bypasses. Both in force on
-a line-doubled source compress the picture with the ratio; on an undoubled one
-the FIFO in circuit gives a solid green frame, and that is what is unreached.
-`investigations/the-minifier-engages-on-the-coarse-factor.md`.
+**What blocked it was the block being disabled and its consumer bypassed
+wherever a ratio was wanted**, so every ratio driven through a solve broke the
+frame at 720p and at 320x256@50 alike and the rate registers written alone left
+the card unmoved. An earlier reading that the DDA perturbs the sample phase
+rather than removing samples was taken in that state, as was the reading that a
+doubled source shortening to `PLLAD_MD x ratio` named a duplicated frame.
+**The solid green an undoubled source gave with the FIFO forced in by hand was
+the window spanning a line that no longer existed** -- the capture window, the
+line limits and the playback fetch are all counted in IF units and none of them
+had been halved with it. The engine derives every one of them from the counter,
+so it cannot leave them behind.
 `investigations/the-minifier-engages-on-the-coarse-factor.md`.
 `investigations/the-scaling-path-samples-below-one-to-one.md` has the
 measurements, the three reachable oversampling states and why 1763 is the one
@@ -9545,6 +9543,26 @@ otherwise the same call, so the two differ in exactly this.
 It does not move the band the walk reports -- the sweep run with the no-op
 scores 14.96 against 14.90 with the feed, interleaved eight readings each --
 so it is not the phase defect above. Wiring the feed costs one call at setup.
+
+### The separator's lead on the capture origin does not follow the input ratio
+
+`VideoSourceLine::forDuty()` converts `SeparatorPulseEndLeadSamples`, a count of
+66 ADC samples, into IF units by dividing by 2 on a doubled line and 1
+otherwise. That was the whole conversion while an IF unit was one or two
+samples; the scaling-down block makes it more than that, so the lead arrives a
+factor of `1 / ratio` too large. At a ratio of one half on an undoubled source
+it is 66 units where 33 is wanted, which moves the capture window's origin by 33
+units -- a pan of roughly that many source pixels, not a break.
+
+It is the fifth copy of the samples-to-units conversion and the one
+`InputFormatter::samplesForUnits()` did not absorb, because `VideoSourceLine` is
+below `InputFormatter` in the include order and the obvious rearrangement --
+handing `forDuty()` a lead already in units -- rounds differently from the
+present expression on a doubled line, which is live on the bench.
+
+**It reaches nothing yet**: the lead applies only where the source's hsync is
+regenerated by the separator, composite sync and sync on green, and nothing
+chooses a ratio. Asking for one by hand on the Wii is what would show it.
 
 ### `DAC_RGBS_ADC2DAC` reads 0 in pass-through
 

@@ -2,14 +2,17 @@
 
 The part has a non-linear scaling-down engine on both axes, upstream of the
 frame buffer and entirely separate from the VDS. The horizontal half is now
-reachable: `Tv5725::InputScale` states the ratio, `InputFormatter::applyScan()`
-writes it with the scan, and the line counter shortens with it so every window
-placed in IF units follows. `/inputscale` asks for one.
+reachable and the block engages: `Tv5725::InputScale` states the ratio,
+`InputFormatter::applyScan()` writes it with the scan and turns the block on
+from the ratio rather than the scan, the line counter shortens with it so every
+window placed in IF units follows, and the divider rises to spend the room the
+counter has gained. `/inputscale` asks for one.
 
 **Nothing chooses a ratio.** The solve still runs at unity, which is what the
-bring-up wrote and what the block has always held. Making it automatic needs the
-capture window, both scales and both output windows to come from one decision
-with the ratio, and what the block does to the count has to be measured first.
+bring-up wrote and what the block has always held. What a ratio would be chosen
+FOR is sampling density, and how much the block's own filtering costs against
+what the extra samples buy is unmeasured -- so the mechanism works and the
+policy is absent.
 
 This page is what it is, what it would buy, and what has to be measured before
 any of that is believed. The vertical half is untouched.
@@ -91,15 +94,24 @@ ratio lands at or above the one asked for — a larger increment is a narrower
 picture, and a black bar is worse than an overrun. `unitsFor()` is what a count
 in IF units becomes, which is how the counter follows.
 
-**The coarse factor HAS TWO OWNERS, and they collide.** RD-5725-1.1 gives
-`IF_HS_DEC_FACTOR` as the scaling-down engine's coarse octave -- "if the
-scaling ratio is less than 1/2, use it and DDA to generate the we and phase" --
-while `applyScan()` writes it from `lineDoubled` as the line doubler's halving.
-So the reachable range through the DDA alone is 1.0x to 0.5x, and a doubled
-source cannot use it without resolving the field's ownership first. **What the
-collision costs is unmeasured**: the reading that a non-zero DDA rate takes the
-halving away rested on a counter that produced a duplicate rather than a
-picture, and setting the factor to 1 on an undoubled source changes nothing.
+**THE COARSE FACTOR IS THE BLOCK'S WRITE ENABLE AND THE FIFO IS ITS ONLY
+CONSUMER.** RD-5725-1.1 gives `IF_HS_DEC_FACTOR` as the scaling-down engine's
+coarse octave -- "if the scaling ratio is less than 1/2, use it and DDA to
+generate the we and phase" -- and that sentence is about the write enable: a
+DDA increment beside a zero factor does nothing whatever, measured. The enable
+then needs somewhere for a sparse write to become a shorter line, which is the
+line-double FIFO -- `IF_SEL_HSCALE` sends the scaled data and its write enable
+there, and it is the one RAM in the horizontal path. **So the factor and
+`IF_LD_RAM_BYPS` both follow the ratio now**, doubling being a second use of the
+same RAM rather than its purpose, and `IF_HBIN_SP`/`ST` go with them because
+what those two mean is decided by the bypass bit.
+
+**The factor is an enable and not a second ratio term.** An increment of 0
+leaves the block inert whatever the factor holds, which is what every
+line-doubled source has run since the factor was written from the scan, so the
+counter is derived from the DDA's ratio alone. **The quarter step is
+uncharacterised**: factor 2 with a unity increment compressed nothing and with
+the whole twelve bits gave a scale that fits neither it nor the half.
 `investigations/the-minifier-engages-on-the-coarse-factor.md`.
 
 ```sh
@@ -112,18 +124,19 @@ curl 'http://<ip>/inputscale?rate=0'             # back to unity
 
 ### 1. Sampling density stops being bounded by the output
 
-The one already written down. `docs/known-issues.md` proposes raising the
-divider past `SamplingClock::recommendedDivider()`'s ceiling and letting
-`IF_HS_DEC_FACTOR` take the difference, judged on the finest grating of the
-test card at a fixed framing. **It names only the coarse factor**; the 12-bit
-DDA beside it is finer and is the better tool, since the ratio wanted is rarely
-a half.
+The one already written down, and the one the mechanism now reaches.
+`SamplingClock::recommendedDivider()` and both of `VideoPath`'s ceilings read
+the counter's bound and the raster's back as a bound on the divider through
+`InputFormatter::samplesForUnits()`, so a held ratio raises all three and the
+solve spends the room on density. At 1280x720@60 into 1080p the solve installs
+1444 and samples 0.875 of a source pixel; a ratio of one half reaches 2890 and
+1.75, putting the same ~1445 units in front of the VDS either way.
 
-**It needs no engine change and it must not be done by hand.**
-`/sampleclock?hold=N` sets the divider through the whole solve --
-`VideoPath::holdDivider()` is an early return past every ceiling, followed by
-`Geometry::resolve()` -- so capture window, scales, stride and fetch all follow.
-A hand-set subset of an interdependent solve measures the mismatch instead, and
+**Ask for the ratio and let the solve choose the divider.** `/inputscale`
+installs one rather than re-applying the scan at the divider in force, so the
+capture window, both scales, the stride and the fetch all follow from one
+decision; `/sampleclock?hold=N` is the same discipline from the other end. A
+hand-set subset of an interdependent solve measures the mismatch instead, and
 reading one back from a still has produced several wrong calls.
 
 ### 2. Every input and output combination can be made to fit exactly
@@ -150,7 +163,12 @@ right-hand edge — goes.
 than build on it**, and it only earns that if the mechanism is understood. A
 parity satisfied by construction that still shears has explained nothing.
 
-## What the bench says: the block breaks the picture at every ratio
+## What the bench said while the block was disabled
+
+Every reading in this section was taken with `IF_HS_DEC_FACTOR` at 0, the FIFO
+bypassed, or both, which is what `applyScan()` wrote for an undoubled source
+until the enable followed the ratio. **They are kept for their register tables
+and their controls, and none of them is evidence about the block.**
 
 **Driven through the solve, every ratio tried breaks the frame.** `/inputscale`
 re-solves from one decision, so this is the whole solve rather than a hand-set
@@ -191,40 +209,42 @@ because the noise fills the columns. A per-row noise threshold fires on the
 card's own frequency wedge in a frame that is clean. Judge by eye, or build a
 metric against a frame already known to be broken.
 
-**So the solve must not choose a ratio yet**, and the earlier reading that the
-count question is thereby moot is superseded: the frame breaks because the
-counter and the block disagree, not because the block destroys the picture.
+The frame broke because the counter had been shortened against a line the block
+was still emitting whole, which is the two halves of one setting written apart.
+An earlier reading that the block destroys the picture, and a later one that the
+count question is thereby moot, are both superseded.
 
-## The counter is what the ratio must not move
+## What the block does when it is enabled
 
-`IF_HSYNC_RST` is measured to hold the **unscaled** divider on an undoubled
-source. At 1280x720@60 with a ratio applied, restoring it to `PLLAD_MD`
-assembles the frame; the scaled value `lineCounterFor()` writes shears it, each
-line starting further along than the last. The eight segments, the capture
-window, the stride, the fetch and `VDS_HSCALE` all follow the ratio correctly
-in a full register diff, so the geometry is not what is wrong.
+With the write enable set and the FIFO in circuit on a line-doubled source the
+picture compresses with the ratio: at `PLLAD_MD` 2200, the counter held at 1100
+and the VDS at 1:1, a DDA of 4095 puts the whole card inside a third of the
+width -- circle, colour bars, grating, greyscale and both captions legible in a
+narrow column -- and the same DDA with the coarse factor at 0 changes nothing.
 
-**THE BLOCK NEEDS TWO THINGS AT ONCE AND THE UNDOUBLED BRANCH GIVES NEITHER.**
-`IF_HS_DEC_FACTOR` must be non-zero -- a DDA rate beside a zero coarse factor
-does nothing whatever, measured -- and `IF_LD_RAM_BYPS` must be 0, because
-`IF_SEL_HSCALE` sends the write enable TO the line double and that FIFO is the
-only RAM in the horizontal path, so it is what turns sparse writes into a
-shorter line. `applyScan()` writes 0 and 1 for every undoubled source.
+Six registers were then flipped to the values the undoubled branch would write,
+individually and all at once, and **not one of them breaks it**, so the FIFO
+wants none of the line-doubled routing.
 
-With both in force on a line-doubled source the picture compresses with the
-ratio: at `PLLAD_MD` 2200, the counter held at 1100 and the VDS at 1:1, a DDA
-of 4095 puts the whole card inside a third of the width, and the same DDA with
-the coarse factor at 0 changes nothing.
-`investigations/the-minifier-engages-on-the-coarse-factor.md` has the table,
-the controls either side, and what is still open on an undoubled source.
+The solid green an undoubled source gave with the FIFO forced in by hand was the
+capture window spanning a line that no longer existed: halving `IF_HSYNC_RST`,
+`IF_HB_SP2`/`ST2`, `IF_LINE_SP`/`ST`, `PB_CAP_OFFSET` and `PB_FETCH_NUM` with it
+gave a picture. Every one of those is derived from the counter, so the engine
+cannot leave them behind -- which is why this finished in `applyScan()` and the
+geometry it feeds rather than in register writes.
+`investigations/the-minifier-engages-on-the-coarse-factor.md` has the tables and
+the controls either side.
 
 ## What has to be established first
 
-- **How the line-double FIFO is run on a progressive source.** The one blocker.
-  `IF_SEL_HSCALE` sends the scaling-down write enable TO the line double, so the
-  FIFO is its only consumer -- and an undoubled source bypasses it, while
-  putting it in circuit gives a solid green frame. Its read side has never had
-  to be configured for a source that is already progressive.
+- **What ratio the block actually applies.** The counter is derived from the
+  DDA's own ratio, which is what every working line-doubled source runs. The
+  measured scales are approximate, so a counter longer than what the block emits
+  is still possible, and what it shows is the picture repeated across the line.
+- **Where the FIFO's line reset belongs on an undoubled line.**
+  `InputFormatter::LineDoubleReset` is measured on doubled modes only, those
+  being the only ones that put the FIFO in circuit when it was taken. Wrong, it
+  pans.
 - **Where the eight segments divide the line**, since a linear scale needs all
   eight and a wrong boundary shows as a discontinuity partway across.
 - **Whether the vertical scaler is reachable on an undoubled path at all.** It
