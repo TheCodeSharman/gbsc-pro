@@ -1363,9 +1363,12 @@ twelve tables while they existed, which is what `BringUp` was built from.
   so it stayed there for the life of the boot. Removed once the bench measured
   what it was costing: 800x600 at VTOTAL 627 scales sharp and full screen, with
   `PLLAD_MD` 1124 latched against the bypass switch's hardcoded 1856.
-  **`preferScalingRgbhv` decides now**,
-  both ways, and bypass is still reachable by turning it off (`/uc?x`).
-  `docs/rgbhv-bypass-trap.md`.
+  **THE ROUTE IS STORED PER SOURCE NOW**, in the same record as the framing and
+  the shape, because whether pass-through works is decided by the source rather
+  than by the output. `/uc?x` stores a choice against the source in force and
+  `/uc?P` moves the default a source with nothing stored takes
+  (`preferScalingRgbhv`); `/geometry` reports both as `route` and `routeStored`.
+  `docs/rgbhv-bypass-trap.md`, `docs/framing-presets.md`.
 - **`produced` IS `capture x 1024 / scale`** — a simple multiply, both axes, no
   loss term at either end. It did not look like one because the deficit against
   it *changes sign* with magnification, so four models were proposed in one
