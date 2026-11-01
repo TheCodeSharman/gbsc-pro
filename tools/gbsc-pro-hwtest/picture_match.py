@@ -46,14 +46,16 @@ import hdmi_capture as hc
 EDGE = 8
 
 
-def profile(frame):
-    """The frame's column profile, mean removed.
+def profile(frame, axis="h"):
+    """The frame's profile along `axis`, mean removed.
 
-    Column rather than row because the horizontal axis is the one every
-    scaling-down question moves, and collapsing the rows keeps a feature that
-    spans only part of the frame's height.
+    "h" collapses the rows to a column profile and "v" the columns to a row
+    profile. BOTH are wanted: the line counter sets the OUTPUT LINE RATE, so a
+    counter that disagrees with the line the block emits duplicates the picture
+    vertically while every column metric reports it as clean.
+    docs/investigations/the-minifier-engages-on-the-coarse-factor.md
     """
-    p = frame.mean(axis=0)
+    p = frame.mean(axis=0 if axis == "h" else 1)
     return p - p.mean()
 
 
@@ -68,14 +70,21 @@ def _best_shift(a, b):
     return float(cc[k] / norm), k if k <= n // 2 else k - n
 
 
-def match(frame, ref, scales=None):
-    """Best (correlation, scale, shift) of `frame` against `ref`.
+# The search has to reach BELOW the compression being looked for, or a working
+# ratio reads as none: a floor of 0.55 clamped every reading taken of a 3:1 and
+# reported it at the floor.
+SCALE_MIN = 0.15
+SCALE_MAX = 1.85
+
+
+def match(frame, ref, scales=None, axis="h"):
+    """Best (correlation, scale, shift) of `frame` against `ref` on `axis`.
 
     `scale` above one means `frame` shows the reference's content magnified.
     """
     if scales is None:
-        scales = np.arange(0.55, 1.85, 0.005)
-    pf, pr = profile(frame), profile(ref)
+        scales = np.arange(SCALE_MIN, SCALE_MAX, 0.005)
+    pf, pr = profile(frame, axis), profile(ref, axis)
     x = np.arange(pr.size)
     best = (-1.0, 1.0, 0)
     for scale in scales:
@@ -112,6 +121,8 @@ def main():
     ap.add_argument("--png")
     ap.add_argument("--frames", type=int, default=2)
     ap.add_argument("--label", default="")
+    ap.add_argument("--scale-min", type=float, default=SCALE_MIN)
+    ap.add_argument("--scale-max", type=float, default=SCALE_MAX)
     args = ap.parse_args()
 
     rgb = hc.frames(args.frames, hc.device())
@@ -127,8 +138,12 @@ def main():
           f"top {edges['top']} bottom {edges['bottom']}")
     print(f"detail  {detail(frame):.2f}")
     if args.ref:
-        corr, scale, shift = match(frame, np.load(args.ref))
-        print(f"match   corr {corr:.3f} scale {scale:.3f} shift {shift}")
+        ref = np.load(args.ref)
+        scales = np.arange(args.scale_min, args.scale_max, 0.005)
+        for axis, name in (("h", "across"), ("v", "down  ")):
+            corr, scale, shift = match(frame, ref, scales, axis)
+            print(f"match {name} corr {corr:.3f} scale {scale:.3f} "
+                  f"shift {shift}")
     elif not args.save:
         sys.exit("nothing to do: pass --ref to judge or --save to record one")
 

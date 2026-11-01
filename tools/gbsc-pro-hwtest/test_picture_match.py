@@ -81,6 +81,61 @@ def test_a_magnified_frame_matches_and_names_its_scale():
     assert abs(scale - 1.25) < 0.03
 
 
+def two_axis_card(width=640, height=480):
+    """A card with real structure on BOTH axes, which `card()` has only across."""
+    across = np.arange(width)
+    down = np.arange(height)
+    row = 50.0 * np.sin(across * 0.013) + 30.0 * np.sin(across * 0.071)
+    col = 50.0 * np.sin(down * 0.021) + 30.0 * np.sin(down * 0.083)
+    return (120.0 + np.add.outer(col, row)).astype(np.float32)
+
+
+def stacked(frame, copies=2):
+    """The picture repeated DOWN the frame, which is what a line counter
+    wrapping more than once per source line emits."""
+    height = frame.shape[0]
+    one = frame[: height // copies]
+    return np.tile(one, (copies, 1))[:height]
+
+
+# A column-only metric reports a vertically duplicated frame as clean, and that
+# is not hypothetical: the counter sets the output line rate, so the very fault
+# a scaling ratio provokes is invisible across and plain down.
+def test_a_vertically_duplicated_frame_is_rejected_down_and_not_across():
+    ref = two_axis_card()
+    doubled = stacked(ref)
+
+    across, _, _ = pm.match(doubled, ref, axis="h")
+    down, _, _ = pm.match(doubled, ref, axis="v")
+
+    assert across > 0.99
+    assert down < 0.9
+
+
+def compressed(frame, by):
+    """The content squeezed into the left `by` of the line, the rest left at the
+    frame's own mean -- which is what a window placed over a minified line with
+    nothing written past it shows."""
+    width = frame.shape[1]
+    kept = int(width * by)
+    out = np.full_like(frame, frame.mean())
+    x = np.arange(kept) / by
+    out[:, :kept] = np.stack(
+        [np.interp(x, np.arange(width), row) for row in frame])
+    return out
+
+
+# The search has to reach below the compression being looked for: at the old
+# floor of 0.55 a working 3:1 reported as 0.55, which reads as no compression
+# having happened.
+def test_a_compression_past_the_old_floor_is_named_rather_than_clamped():
+    ref = card()
+    corr, scale, _ = pm.match(compressed(ref, 1.0 / 3.0), ref)
+
+    assert corr > 0.9
+    assert abs(scale - 1.0 / 3.0) < 0.03
+
+
 def test_detail_falls_when_the_picture_is_filtered():
     ref = card()
     softened = np.stack([np.convolve(row, np.ones(5) / 5, "valid") for row in ref])
