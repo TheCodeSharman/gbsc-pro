@@ -76,10 +76,17 @@ Because the live state is already mode-independent, storage is the same four
 proportions per source with no conversion. `/framing.txt`, one source a line:
 
 ```
-# framing, one source a line: <lines>@<fieldRateHz> = originH extentH originV extentV
+# framing, one source a line: <key> = originH extentH originV extentV [shape] [route]
 # in ten-thousandths of the capturable region
-311@50 = 364 8525 932 8167
+311@50.08/1213-- = 364 8525 932 8167 13333 1
 ```
+
+**Every field after the fourth is optional on READ, and that is what keeps a
+file written by an older build.** The shape is the fifth and the route the
+sixth; absent is not the same as zero, so a record that ends after the fourth
+number chooses no shape and no route rather than choosing to fill and to scale.
+A field that is present and unreadable is malformed like any other line.
+`FramingLine::moreOnLine()` is what tells the two apart.
 
 Ten-thousandths because the ESP's printf has no `%f`, and they are enough
 because one input unit is at least eight of them on any line this chip
@@ -106,8 +113,8 @@ second sync type.
 **What makes the count affordable is the stored form.** `FramingEntry` holds the
 record as what a save and a load keeps rather than as what the engine works in:
 the key's rate quantised to `RateStepsPerHz`, the sync width and the four
-framing terms in ten-thousandths, the two polarities and the two tuned axes
-packed into one byte, and the shape. An entry is **18 bytes** where the live
+framing terms in ten-thousandths, the two polarities, the two tuned axes and
+the route packed into one byte, and the shape. An entry is **18 bytes** where the live
 `SourceKey` and `PanAndZoom` are 46, so the table's whole cost went from 740
 bytes at sixteen entries to 2308 at a hundred and twenty-eight — measured on the
 target as globals of 51360 against 52980, +1620 bytes for eight times the
@@ -133,6 +140,30 @@ stack — a cost that grows with every source the table can hold.
 **Only a framing the user touched takes a place.** Every solve seeds the framing
 from the placement it computed, so a table that stored whatever the framing held
 would fill with computed defaults and refuse the first real tuning.
+
+## The route is stored with the framing
+
+**Whether a source is scaled or passed through is a property of the SOURCE**,
+not of the output resolution: 1080p works for every mode, and whether
+pass-through works at all is decided by the raster and the line rate arriving.
+`HdBypass::suitsSource()` says only whether it is POSSIBLE; what the user wants
+is the sixth field.
+
+`Tv5725::Route` is the value, and it has three states rather than two: a source
+nobody has chosen for takes the unit's `scale-rgbhv` preference, and one that
+was chosen for overrides it. A pair of bools expresses the same thing and lets
+"not stored but passing through" be written down.
+
+`VideoPath::routeWanted()` is the one owner of that rule -- the OSD row reports
+its answer and `VideoSourceAcquisition::passThroughSuitsSource()` acts on it, so
+the menu and the engine cannot disagree. `/uc?x` stores a choice against the
+source in force, `/uc?P` moves the default, and choosing an output resolution
+stores the scaled route against that source alone.
+
+**The route shares the record, so a framing press has to carry it.**
+`rememberFraming()` reads the stored route back before writing, because the
+record is replaced whole and a press that defaulted the field would forget the
+choice on the first pad press after it.
 
 ## Slots
 

@@ -12,9 +12,12 @@ capture's write limit bounds a line at about 1024 IF units however it is placed,
 so the sampling divider has to fall as the line rate rises: a VESA-class source
 is softer scaled than handed over untouched. `capture-limits.md`.
 
-`preferScalingRgbhv` is the user's override, defaulting off, and no longer the
-decision. A global boolean cannot express a per-source choice and it is due to
-be replaced by one stored against the `SourceKey` the framing uses.
+`preferScalingRgbhv` is the DEFAULT a source with nothing stored against it
+takes, and no longer the decision. The choice is per source, stored against the
+`SourceKey` the framing uses and carried in the same record -- `/uc?x` stores
+one, `/uc?P` moves the default. `Tv5725::Route` is the value and
+`VideoPath::routeWanted()` the one owner of "stored wins, else the default".
+`docs/framing-presets.md`.
 `tools/gbsc-pro-hwtest/test_rgbhv_bypass.py` covers both directions and needs
 `--modeserv` to drive the source across the range.
 
