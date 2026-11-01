@@ -153,27 +153,31 @@ windows, the stride and the fetch are one solve, which is the standing rule
 about hand-set subsets. The change belongs in `applyScan()` and the geometry it
 feeds.
 
-## What the half octave would buy, and why the divider has to move with it
+## What the compression buys, and the counter that caps it
 
-The coarse factor at 1 halves the kept count, so the capture can be sampled at
-twice the divider the raster would otherwise allow. At 1280x720@60, line rate
-45013 Hz:
+**SUPERSEDED IN ITS FIGURES.** This section read 1.75 and 2.18 samples per
+source pixel from a divider of 2890 and 3599, on the premise that the counter
+follows the ratio so the compression frees room in it. The counter sets the
+output line rate and does not -- see the last section -- so the divider is
+capped at **2047** undoubled at every ratio, and the three bounds are:
 
-| divider | kept units | ADC rate at 1x | samples per source pixel |
-|---|---|---|---|
-| 1444, what the solve installs | 1444 | 65 MHz | 0.875 |
-| 2890 with the half octave | 1445 | 130 MHz | **1.75** |
-| 3599 with the half octave and DDA 0.80 | 1445 | 162 MHz | **2.18** |
+| bound at 1280x720@60, line rate 45013, into 1080p | divider |
+|---|---|
+| ADC rating at 1x, 98% | 3527 |
+| line counter, 11 bits, RAW | **2047** |
+| raster, 1443 delivered units / ratio | 1443 / r |
 
-All three put the same 1445 units in front of the VDS, so the raster is served
-either way and the difference is entirely sampling density.
+The counter and the raster cross at `r = 1443 / 2047 = 0.705`, which is the best
+the mode can do: **divider 2047, 1.24 ADC samples per source pixel against the
+0.875 the solve installs at unity.** A 42% gain rather than a doubling, and
+still worth having -- pass-through runs 2038 on this source and resolves bundles
+the scaling path loses.
 
-**`SamplingClock::recommendedDivider()` bounds the divider at
-`InputFormatter::LineCounterMax * samplesPerUnit` with `samplesPerUnit` 1 for an
-undoubled line, so `/sampleclock?hold=` cannot exceed 2047 there** -- measured,
-2890 and 3400 both land on 2047. The half-octave route therefore needs that term
-to follow the minifier before it can be tried at all, which is the same one
-number `docs/known-issues.md` already identifies.
+**The DELIVERED count is 1443 either way**, so the gain is in how those 1443
+units are arrived at: decimated from 2047 samples rather than sampled at 1443 and
+aliased. Resolution at the panel is bounded by the raster, and no ratio lifts
+that -- `delivered = ratio x counter`, so the compression can only ever reduce
+it. What would lift it is a wider raster, which is the display clock.
 
 ## Reading these states
 
@@ -272,13 +276,25 @@ counted in IF units. `../scaling-down-path.md` said this before any of the
 above was measured and it was right: the unpinned run appeared to refute it
 only because the divider had moved too.
 
-**What is NOT yet known is where the window then belongs.** With the counter at
-the raw divider and the window left at the values the engine computed for the
-scaled one, the card sits in the left 44% of the output with the tail beyond
-it, so the written line and the counter do not relate the way placing the
-window inside `ratio x divider` would predict. That is the next measurement,
-and it needs the counter and the window to come from one solve rather than from
-a poke.
+**The split is in the firmware.** `lineCounterFor()` takes no ratio and is the
+raw line; `InputFormatter::usableUnits()` is the counter's span compressed by
+the ratio, which is what the FIFO delivers and what `capturableLine()` and every
+count placed in IF units is measured in. `recommendedDivider()` takes no ratio
+either, the counter bounding the raw line, and the compression reaches the
+divider only through the two ceilings `VideoPath` states in delivered units.
+
+**What is NOT yet known is where the window then belongs.** The reading that
+raised it -- the counter forced to the raw divider by hand while the window held
+values the engine had computed for the scaled one, the card in the left 44% of
+the output -- is a state wrong in two respects and says nothing about either.
+Two candidates remain and a frame separates them:
+
+- **The FIFO delivers the compressed line at the START of each counter-line**,
+  so the written region is `0..ratio x counter` and the rest of the line is
+  unwritten. The window belongs inside it, which is what the solve now places,
+  and the picture fills.
+- **The FIFO stretches the compressed line across the whole counter-line**, in
+  which case the minifier buys nothing and the route is dead.
 
 Two smaller things come with it. `InputFormatter::LineDoubleReset` 160 pans the
 picture hard at this divider -- the green at the left of every minified frame --

@@ -10540,6 +10540,53 @@ Capture()` now -- 721 at the 2298 raster -- leaving real travel rather than
 none. 129.6 MHz is already measured as working
 and sharp, and buys a third more horizontal resolution. Not tried.
 
+**WHAT IT BUYS IS DELIVERED UNITS, AND THAT IS WHAT DECIDES SHARPNESS.** The
+raster is `clock / (frameLines x sourceFieldRate)` and
+`VideoPath::dividerCeilingForOutput()` converts what it can show back into a
+divider, so the capture scales with the clock. At 1280x720@60 into 1080p, where
+`DisplayClock::Seeds` offers 108 then 129.6 and nothing between:
+
+| clock | raster | delivered units | divider | units per source pixel |
+|---|---|---|---|---|
+| 108 MHz | 1600 | 1443 | 1444 | **0.875** |
+| 129.6 MHz | 1920 | 1732 | 1734 | **1.051** |
+
+Under one unit per source pixel is sub-Nyquist on the source's own pixels --
+1650 per line there -- and nothing downstream recovers it, so this mode cannot
+be shown sharp at 108 MHz at all. **The input minifier does not substitute**:
+`delivered = ratio x counter`, so a ratio can only ever reduce the delivered
+count, and what it buys is ADC density behind an unchanged delivered count --
+2047 samples decimated to 1443 rather than 1443 sampled and aliased.
+`../docs/scaling-down-path.md`.
+
+**WHAT BLOCKS DOING IT GLOBALLY IS THE RUN-UP, AND IT BITES A LOW LINE RATE
+RATHER THAN A HIGH ONE.** A wider raster forces more magnification for the same
+fill, and past an onset the playback pipeline has no data for the head of each
+line -- green, then a grey comb.
+`investigations/display-window-opens-early.md` measures the comb from
+magnification 2.222 at 129.6 MHz. Against that:
+
+| source | delivered units | capture | mag at 108 MHz | mag at 129.6 MHz |
+|---|---|---|---|---|
+| 1280x720@60 | 1443 / 1732 | the raster's own | ~1.1 | **~1.1** |
+| 320x256@50, doubled | 1100 | 973 | 1.97 | **~2.36** |
+
+So the high-rate source is nowhere near the onset at either clock and the
+15 kHz one is past it at the higher one. The gap cannot be closed by capturing
+more on the doubled source: `SamplingClock::DoubledLineSampleLimit` holds a
+doubled line at 2200 ADC samples, kept 1100, and **deleting that cap has been
+tried and is measured worse** -- see the crossover-row section above.
+
+**So a single global seed does not serve both, and what is untried is the
+clock being part of the solve**: the highest seed whose raster keeps the
+magnification the capture will need under the onset. `OutputMode::solve()`
+already takes a `ceilingHz` and `dividerCeilingForOutput()` already solves the
+raster, so the shape exists. Two things have to be measured first, and neither
+is argued -- the onset is **not** a pure function of magnification (2.17 combs
+at 129.6 MHz where 2.179 is clean at 107.8, so the clock is implicated
+directly), and `A MAPPING FROM PHOTO COLUMNS TO OUTPUT PIXELS DOES NOT SURVIVE
+AN OUTPUT MODE CHANGE` applies to every frame taken across a seed change.
+
 ### A source's first solve after a boot can miss its stored framing
 
 `/framing.txt` holds a framing per source keyed on the measured pair, and the

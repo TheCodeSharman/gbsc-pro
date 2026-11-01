@@ -4,9 +4,10 @@ The part has a non-linear scaling-down engine on both axes, upstream of the
 frame buffer and entirely separate from the VDS. The horizontal half is now
 reachable and the block engages: `Tv5725::InputScale` states the ratio,
 `InputFormatter::applyScan()` writes it with the scan and turns the block on
-from the ratio rather than the scan, the line counter shortens with it so every
-window placed in IF units follows, and the divider rises to spend the room the
-counter has gained. `/inputscale` asks for one.
+from the ratio rather than the scan, the line counter stays RAW while
+`usableUnits()` carries the ratio so every window placed in IF units follows it,
+and the divider rises to spend the room the raster has gained. `/inputscale`
+asks for one.
 
 **Nothing chooses a ratio.** The solve still runs at unity, which is what the
 bring-up wrote and what the block has always held. What a ratio would be chosen
@@ -92,7 +93,8 @@ both `MADPT_*_VSCALE_BYPS`; nothing reaches the vertical half.
 increment that shows `have` units of line in `wanted` of them, truncated so the
 ratio lands at or above the one asked for — a larger increment is a narrower
 picture, and a black bar is worse than an overrun. `unitsFor()` is what a count
-in IF units becomes, which is how the counter follows.
+in IF units becomes, which is how the DELIVERED units follow. The counter does
+not: see below.
 
 **THE COARSE FACTOR IS THE BLOCK'S WRITE ENABLE AND THE FIFO IS ITS ONLY
 CONSUMER.** RD-5725-1.1 gives `IF_HS_DEC_FACTOR` as the scaling-down engine's
@@ -124,13 +126,36 @@ curl 'http://<ip>/inputscale?rate=0'             # back to unity
 
 ### 1. Sampling density stops being bounded by the output
 
-The one already written down, and the one the mechanism now reaches.
-`SamplingClock::recommendedDivider()` and both of `VideoPath`'s ceilings read
-the counter's bound and the raster's back as a bound on the divider through
-`InputFormatter::samplesForUnits()`, so a held ratio raises all three and the
-solve spends the room on density. At 1280x720@60 into 1080p the solve installs
-1444 and samples 0.875 of a source pixel; a ratio of one half reaches 2890 and
-1.75, putting the same ~1445 units in front of the VDS either way.
+The one already written down, and the one the mechanism now reaches. **Two of
+the three bounds follow the ratio and the third does not**, because what each
+one counts differs:
+
+| bound | counted in | follows the ratio |
+|---|---|---|
+| the line counter's own 2047 | RAW line | **no** -- the counter wraps per output line |
+| the raster, `dividerCeilingForOutput()` | delivered units | yes |
+| the line filter's buffer, `dividerCeilingForLineFilter()` | delivered units | yes |
+
+`InputFormatter::samplesForUnits()` converts the two that do, and
+`SamplingClock::recommendedDivider()` takes no ratio at all. So the counter is
+the wall the compression cannot lift, and the best a mode can do is where the
+two cross. At 1280x720@60 into 1080p:
+
+| bound | divider |
+|---|---|
+| ADC rating at 1x, 98% | 3527 |
+| line counter, 11 bits, raw | **2047** |
+| raster, 1443 delivered units / ratio | 1443 / r |
+
+They cross at `r = 1443 / 2047 = 0.705`: divider 2047, **1.24 ADC samples per
+source pixel against the 0.875 the solve installs at unity**. A 42% gain, not
+the doubling an earlier reading gave -- that one assumed the counter follows the
+ratio.
+
+**The delivered count is unchanged by any of this**, 1443 either way, so the
+gain is in how the 1443 are arrived at: filtered down from 2047 samples rather
+than aliased at 1443. Resolution at the panel is bounded by the raster and the
+compression cannot lift it.
 
 **Ask for the ratio and let the solve choose the divider.** `/inputscale`
 installs one rather than re-applying the scan at the divider in force, so the
@@ -264,9 +289,12 @@ ratio 1/2 with the divider free, measured 2.005; forcing the counter back to the
 raw divider from the duplicated state removes it outright, one card at correct
 proportions.
 
-So `InputFormatter::lineCounterFor()` must not apply the ratio. The counter is
-the raw line, halved only by the doubler; the ratio belongs to the capture
-window and to everything else counted in IF units.
+So `InputFormatter::lineCounterFor()` does not apply the ratio. The counter is
+the raw line, halved only by the doubler, and `InputFormatter::usableUnits()` is
+the second quantity: the counter's span compressed by the ratio, which is what
+the block delivers and what the capture window and everything else counted in IF
+units is measured in. One register takes the first, every count takes the
+second.
 
 **Minifying does not require doubling**, and the payoff is not bounded by what
 the output can afford to line-double.
@@ -275,11 +303,15 @@ the output can afford to line-double.
 ## What has to be established first
 
 - **Where the capture window belongs once the counter stays raw.** The one
-  blocker. With the counter at the raw divider and the window at the values the
-  engine computed for the scaled one, the card sits in the left 44% of the
-  output, so the written line and the counter do not relate the way placing the
-  window inside `ratio x divider` would predict. The counter and the window have
-  to come from one solve to answer it.
+  blocker, and the solve that answers it now exists. The reading that raised it
+  was taken with the counter forced to the raw divider by hand while the window
+  held the values the engine had computed for the scaled one, which put the card
+  in the left 44% of the output -- a state wrong in two respects, so it says
+  nothing about either. Two candidates remain and a frame separates them: the
+  FIFO delivers the compressed line at the START of each counter-line, in which
+  case the window belongs in `0..ratio x counter` and the picture fills; or it
+  stretches the compressed line across the whole counter-line, in which case the
+  minifier buys nothing and the route is dead.
 - **Where the FIFO's line reset belongs on a minified line.**
   `InputFormatter::LineDoubleReset` is measured on doubled modes only. Wrong, it
   pans.

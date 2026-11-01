@@ -154,6 +154,14 @@ Nothing bounds the undoubled divider by this buffer.
 `VideoPath::dividerCeilingForOutput()` caps it by what the raster can show,
 which is 1436 here, and the capture reaches 1091 unopposed.
 
+**SUPERSEDED: `DoubledLineSampleLimit` IS NOT THIS BUFFER, AND IT IS NOT DEAD
+WEIGHT.** Measured later with the delay bypassed, the band is still there and it
+is the capture path -- and deleting the cap is measured worse, the engine
+solving divider 4012 at oversample 2 into a solid green block with the sink
+dropping the link. `../known-issues.md`, the crossover-row section, carries that
+reading, and the paragraph below is the one it replaces. Nothing here licenses
+lifting the cap to buy a doubled source more delivered units.
+
 **`SamplingClock::DoubledLineSampleLimit` is this buffer.** Its onset of
 2236..2256 ADC samples is 1118..1128 IF units on a doubled line, which is 1024
 captured samples once the window's head is off. Two things follow. Its stated
