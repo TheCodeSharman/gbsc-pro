@@ -8858,8 +8858,9 @@ the counter is measured to hold the unscaled divider, so dividing it by the
 ratio is wrong. What a ratio relieves is the OUTPUT ceiling beside it.
 
 **THE COUNTER HOLDS THE UNSCALED DIVIDER, so the minifier does not lift the
-2047 wall.** Measured at 720p: with a ratio applied, restoring `IF_HSYNC_RST`
-to `PLLAD_MD` assembles the frame and the engine's own scaled value shears it.
+2047 wall.** Measured at 720p: the rate registers written alone, with the
+counter left at `PLLAD_MD`, leave the picture in place at the same size, so the
+line is not shortened and the engine's own scaled value shears it.
 An earlier per-mode table here put the gain at 1.72x by reading the counter as
 holding the post-scale count and the divider as free to reach the ADC's 3528;
 both are wrong, and it is superseded.
@@ -8881,11 +8882,16 @@ a ratio blurs the picture and shifts chroma against luma with the geometry
 untouched -- and 2047 at 1x beats 1444 at 2x on the card, so the kept count
 wins whether or not the filter is ideal.
 
-**What blocks it is that the write-enable does not engage on an undoubled
-source.** Driven through a solve at 720p the line does not shorten at any
-ratio; on a line-doubled source it does, the line becoming `PLLAD_MD x ratio`.
-`IF_HS_PSHIFT_BYPS`, `IF_HS_DEC_FACTOR`, `IF_HS_SEL_LPF` and `IF_LD_RAM_BYPS`
-are each refuted as the enable.
+**What blocks it is that the block does not shorten the line, on either scan
+mode.** Driven through a solve, every ratio down to 0.976 breaks the frame at
+720p and at 320x256@50 alike, with unity either side of each run restoring it
+exactly; the rate registers written alone, with the counter left where the
+unity solve put it, leave the card unmoved and the same size. So the DDA
+perturbs the sample phase rather than removing samples, and an earlier reading
+that a doubled source shortens to `PLLAD_MD x ratio` named a duplicated frame.
+`IF_HS_PSHIFT_BYPS`, `IF_HS_DEC_FACTOR`, `IF_HS_SEL_LPF`, `IF_LD_RAM_BYPS` and
+`IF_SEL_WEN` are each refuted as the enable.
+`investigations/the-minifier-does-not-shorten-the-line.md`.
 `investigations/the-scaling-path-samples-below-one-to-one.md` has the
 measurements, the three reachable oversampling states and why 1763 is the one
 to try first.

@@ -95,10 +95,12 @@ in IF units becomes, which is how the counter follows.
 `IF_HS_DEC_FACTOR` as the scaling-down engine's coarse octave -- "if the
 scaling ratio is less than 1/2, use it and DDA to generate the we and phase" --
 while `applyScan()` writes it from `lineDoubled` as the line doubler's halving.
-Measured on a doubled source, a non-zero DDA rate takes the halving away: the
-line becomes `PLLAD_MD x ratio` rather than `(PLLAD_MD / 2) x ratio`. So the
-reachable range through the DDA alone is 1.0x to 0.5x, and a doubled source
-cannot use it without resolving the field's ownership first.
+So the reachable range through the DDA alone is 1.0x to 0.5x, and a doubled
+source cannot use it without resolving the field's ownership first. **What the
+collision costs is unmeasured**: the reading that a non-zero DDA rate takes the
+halving away rested on a counter that produced a duplicate rather than a
+picture, and setting the factor to 1 on an undoubled source changes nothing.
+`investigations/the-minifier-does-not-shorten-the-line.md`.
 
 ```sh
 curl 'http://<ip>/inputscale?rate=1365'          # the increment directly
@@ -202,28 +204,34 @@ line starting further along than the last. The eight segments, the capture
 window, the stride, the fetch and `VDS_HSCALE` all follow the ratio correctly
 in a full register diff, so the geometry is not what is wrong.
 
-On a LINE-DOUBLED source the ratio does shorten the line. At 320x256@50 with
-`PLLAD_MD` 2200 and a ratio of 0.75 the roll stops at a counter of **1650**,
-which is `PLLAD_MD x ratio` rather than `(PLLAD_MD / 2) x ratio` -- so the line
-doubler's halving is lost to the ratio, both being `IF_HS_DEC_FACTOR`.
+**A LINE-DOUBLED SOURCE IS NO DIFFERENT, and the reading that it was is
+superseded.** At 320x256@50 every ratio down to 0.976 breaks the frame just as
+it does at 720p; what differs is only how the break LOOKS, the doubled source
+duplicating real content across the line where the undoubled one shreds into
+noise. The counter of 1650 that the roll was said to stop at carries the left
+third of the card twice with two thirds of the line black, and holds perfectly
+still, which is why it read as working.
 
-The block therefore works and what gates its write-enable on an undoubled
-source is open. `IF_HS_PSHIFT_BYPS`, `IF_HS_DEC_FACTOR`, `IF_HS_SEL_LPF` and
-`IF_LD_RAM_BYPS` are each refuted as the enable.
+**The rate registers alone leave the picture where it is.** Written for a ratio
+of 0.75 with the counter left at the unity solve's value, the card is unmoved
+and the same size and only the sample phase is disturbed -- so the block
+perturbs phase rather than removing samples, and the shortened counter is what
+destroys the frame. `investigations/the-minifier-does-not-shorten-the-line.md`
+has both sweeps, the controls either side of each, and the enables refuted.
 
 ## What has to be established first
 
-- **What gates the write-enable on an undoubled source.** The one blocker. It
-  engages on a doubled line and not on an undoubled one, with the ratio
-  registers holding the same values.
+- **Whether the block can be made to thin the stream at all.** The one blocker,
+  and it is not the scan mode: no configuration reached so far shortens the
+  line on either. `IF_HS_PSHIFT_BYPS`, `IF_HS_DEC_FACTOR`, `IF_HS_SEL_LPF`,
+  `IF_LD_RAM_BYPS` and `IF_SEL_WEN` are each refuted as the enable.
 - **Where the eight segments divide the line**, since a linear scale needs all
   eight and a wrong boundary shows as a discontinuity partway across.
 - **Whether the vertical scaler is reachable on an undoubled path at all.** It
   lives in the deinterlacer, which an undoubled source otherwise skips.
-- **What it costs in sharpness.** The block demonstrably filters -- a ratio
-  blurs the picture and shifts chroma against luma with the geometry untouched
-  -- but how well is unmeasured, and no frame has yet survived a ratio on an
-  undoubled source to measure it on.
+- **What it costs in sharpness.** Unmeasurable until a frame survives a ratio.
+  Near-Nyquist detail does not fall when the rate registers are written alone,
+  so the filtering a ratio was thought to cost is not established either.
 
 `investigations/the-scaling-path-samples-below-one-to-one.md` is what the
 missing downscale costs, measured against pass-through.

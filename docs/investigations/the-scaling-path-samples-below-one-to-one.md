@@ -58,8 +58,8 @@ beats the anti-aliasing on this source -- which is the asymmetry
 `SamplingClock::recommendedDivider()` already states. Pass-through is a second
 instance of it: 2038 at 1x, sharper than 1444 at 2x.
 
-**1763 is the configuration to try first.** It keeps the 2x row, needs a ratio
-of only 0.82 to fit the raster against 2047's 0.71, and still clears one to one.
+**1763 needs the same ratio as 2047 and is blocked with it.** It keeps the 2x
+row and asks only 0.82 against 2047's 0.71, but the block applies neither.
 
 ## Sampling density is not the only thing the missing downscale costs
 
@@ -75,7 +75,7 @@ written to memory stops being the count the ADC kept: the divider can serve
 sampling density while the written count serves the raster. `../scaling-down-path.md`
 carries the third thing it would buy, the width parity.
 
-## The minifier is the mechanism, and it does not engage on an undoubled source
+## The minifier would be the mechanism, and it does not shorten the line
 
 `Tv5725::InputScale` writes the scaling-down DDA, which shrinks the count
 written to memory without touching the rate the ADC samples at. That is the one
@@ -85,17 +85,18 @@ Driven through a solve at 720p it does not shorten the line. With the engine
 holding divider 2047 and a ratio of 0.706 -- `IF_HSYNC_RST` 1445, capture 1446,
 `VDS_HSCALE` 823, stride and fetch all following -- the frame carries the card's
 vertical structure in the right places with every line shredded horizontally,
-which is a counter of 1445 against a line still 2047 units long. Restoring the
-counter to the unscaled divider assembles the frame.
+which is a counter of 1445 against a line still 2047 units long.
 
-**On a line-doubled source it does engage.** At 320x256@50, `PLLAD_MD` 2200 and
-a ratio of 0.75, the roll stops at a counter of **1650**, which is
-`PLLAD_MD x ratio` and not `(PLLAD_MD / 2) x ratio`: the line shortens with the
-ratio, and the line doubler's halving is lost to it, both fields of
-`IF_HS_DEC_FACTOR` being the same register.
+**A LINE-DOUBLED SOURCE DOES NO BETTER**, and the reading that it did is
+superseded. At 320x256@50 every ratio down to 0.976 breaks the frame as it does
+here; the counter of 1650 that the roll was said to stop at holds a duplicate of
+the left third of the card. What differs between the two sources is only how the
+break looks.
 
-So the block is not broken, and what makes its write-enable engage on an
-undoubled source is open.
+**The block perturbs the sample phase and does not shorten the line.** Written
+with the counter left at the unity solve's value, a ratio of 0.75 leaves the
+card unmoved and the same size. So the minifier does not lift this ceiling, and
+`the-minifier-does-not-shorten-the-line.md` is the evidence.
 
 ## Refuted
 
@@ -109,8 +110,11 @@ Each tested directly at 720p against a solved state:
   a clean halving either.
 - **`IF_HS_SEL_LPF` with it is not the enable.** The pair that makes an
   undoubled source resemble the doubled path leaves the frame sheared.
-- **`IF_LD_RAM_BYPS` 0 is not available.** Routing an undoubled source through
-  the line-doubler RAM gives a solid green frame.
+- **`IF_LD_RAM_BYPS` 0 is not the enable.** It leaves the sheared frame
+  unchanged, with or without `IF_SEL_WEN` 0 beside it. An earlier reading that
+  it gives a solid green frame does not hold once a ratio is applied.
+- **`IF_SEL_WEN` 0 is not the enable**, alone or with `IF_LD_RAM_BYPS` 0, though
+  the datasheet makes it the write-enable select for the line doubler.
 
 ## Reading these states
 
@@ -123,7 +127,13 @@ line exactly gives a stable, repeated picture -- doubled rather than rolling --
 so duplication without a roll is a counter error of an exact factor.
 
 Mean luma separates none of them: a frame decimated by two has the same mean as
-one that is not. Compare the frames, or the spectral power above half-Nyquist.
+one that is not. **`tools/gbsc-pro-hwtest/picture_match.py` is what does**, by
+asking whether the frame is still the reference and at what scale; a duplicate
+carries two copies where the reference has one, so it matches at no scale.
+
+**A hand-set counter walk is not repeatable here** and nothing about the line
+length should rest on one -- the same counter gave opposite verdicts in two
+walks over the same range with nothing else changed.
 
 `../scaling-down-path.md` is the path and its registers. `../known-issues.md`
 carries what the divider ceiling costs per mode.
