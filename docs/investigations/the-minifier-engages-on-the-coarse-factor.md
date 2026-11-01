@@ -199,3 +199,61 @@ was uninformative for that reason. Make the change from a clean solved state
 with the counter left alone.
 
 `../scaling-down-path.md` is the path and its registers.
+
+## The FIFO doubles, so the minifier is only available where doubling is
+
+Driven through the solve on `vga` at 1280x720@60 into 1080p, scaling path,
+PM5544 with `ANIM OFF`, judged off the USB capture.
+
+**The engine drives the block exactly as designed.** `/inputscale?wanted=1&have=2`:
+
+| | unity | ratio 1/2 | ratio 3/4 |
+|---|---|---|---|
+| `PLLAD_MD` | 1444 | **2888** | 1924 |
+| `IF_HSYNC_RST` | 1444 | **1444** | 1443 |
+| `IF_HS_DEC_FACTOR` | 0 | 1 | 1 |
+| `IF_LD_RAM_BYPS` | 1 | 0 | 0 |
+| `IF_HBIN_SP` / `ST` | 2 / 0 | 160 / 96 | 160 / 96 |
+| `IF_HB_SP2`..`ST2` | 224..1346 | 224..1346 | 224..1345 |
+| `STATUS_SYNC_PROC_HTOTAL` | 1444 | 2889 | 1924 |
+
+The divider doubles, the counter does not move, the PLL latches at the new
+value, and the capture window, the stride and the fetch stay where they were --
+the same ~1445 units in front of the VDS at twice the sampling density, 1.75
+ADC samples per source pixel against 0.875. The console says
+`installing: divider from line rate 45013, doubled 0 -> 2888` and
+`input scale: 4095, line 1445 units`.
+
+**The picture is still wrong, and the reason is VERTICAL.** Matching the frame's
+ROW profile against the unity reference's, over the left 40% where the card
+survives, gives **scale 2.005**. At ratio 3/4 the card appears as two stacked
+copies, which is the vertical counter wrapping at half the lines arriving.
+
+**So the line-double FIFO DOUBLES. It is not a neutral buffer.** It did so with
+`IF_LD_SEL_PROV` 1, `IF_PRGRSV_CNTRL` 1 and `IF_SEL_WEN` 1 -- all three at the
+values the undoubled branch writes, throughout. Doubling is not a second use of
+the RAM that routing can decline; it is what the RAM does.
+
+Both axes follow from that, and the horizontal arithmetic confirms it. One IF
+unit is two ADC samples with the FIFO in, so the line the block emits is
+`2888 / 2 x 0.5 = 722` units against a counter of 1444, and the capture window
+at 224..1346 is written only as far as 722 -- `(722 - 224) / 1122 = 0.44` of the
+output carrying picture, which is where the card stops. **The DDA's ratio is the
+DDA's ratio**: the coarse factor adds no second halving, and the whole
+discrepancy is the doubling.
+
+**A MINIFYING SOURCE IS A LINE-DOUBLED SOURCE**, so `lineCounterFor()` must
+halve and `capturableFrame()` must count half-lines for one.
+
+**AND THE PAYOFF IS BOUNDED BY THAT.** A source the output cannot afford to
+line-double cannot use the minifier, which is exactly the case the density was
+wanted for: 750 lines become 1500 half-lines against the ~1080
+`OutputWindow::maximumCapture()` allows at 1080p, and
+`InputFormatter::shouldDoubleLine()` already refuses to double a tall source for
+that reason. What is open is whether the MADPT vertical scaler can halve it
+back, which would make the pair usable, and whether the doubling can be
+defeated with the FIFO in circuit.
+
+**The control is clean at both ends.** Unity either side of the run restores the
+frame exactly -- `corr 1.000 scale 1.000`, Nyquist detail 10.99 before, 8.11 at
+ratio 1/2, 10.98 after.

@@ -235,15 +235,38 @@ geometry it feeds rather than in register writes.
 `investigations/the-minifier-engages-on-the-coarse-factor.md` has the tables and
 the controls either side.
 
+## THE FIFO DOUBLES, so the minifier is only available where doubling is
+
+Measured on `vga` at 1280x720@60 into 1080p: the engine installs the ratio
+exactly as designed -- divider 1444 to 2888, the counter unmoved at 1444, the
+PLL latched, the same capture in front of the VDS at twice the density -- and
+the frame comes back doubled VERTICALLY, row-profile scale **2.005**, with
+`IF_LD_SEL_PROV`, `IF_PRGRSV_CNTRL` and `IF_SEL_WEN` all at their undoubled
+values throughout. Doubling is what the RAM does, not a use of it that routing
+can decline.
+
+So one IF unit is two ADC samples and one IF line is a half-line whenever the
+block is engaged: **a minifying source is a line-doubled source**, and
+`lineCounterFor()` and `capturableFrame()` both have to follow. **A source the
+output cannot afford to double cannot use the minifier at all**, which is
+exactly the tall source the density was wanted for --
+`InputFormatter::shouldDoubleLine()` already refuses to double one.
+`investigations/the-minifier-engages-on-the-coarse-factor.md` has the tables.
+
+**The DDA's ratio is the DDA's ratio.** The coarse factor adds no second
+halving: the whole discrepancy between what the engine computed and what the
+block emitted is the doubling, and the horizontal arithmetic closes on it
+exactly.
+
 ## What has to be established first
 
-- **What ratio the block actually applies.** The counter is derived from the
-  DDA's own ratio, which is what every working line-doubled source runs. The
-  measured scales are approximate, so a counter longer than what the block emits
-  is still possible, and what it shows is the picture repeated across the line.
-- **Where the FIFO's line reset belongs on an undoubled line.**
-  `InputFormatter::LineDoubleReset` is measured on doubled modes only, those
-  being the only ones that put the FIFO in circuit when it was taken. Wrong, it
+- **Whether the MADPT vertical scaler can halve the doubling back.** It is the
+  one thing that would make the pair usable on a tall source, and it lives in
+  the deinterlacer, which an undoubled source otherwise skips.
+- **Whether the doubling can be defeated with the FIFO in circuit.** Nothing
+  among the three routing registers does it.
+- **Where the FIFO's line reset belongs on a minified line.**
+  `InputFormatter::LineDoubleReset` is measured on doubled modes only. Wrong, it
   pans.
 - **Where the eight segments divide the line**, since a linear scale needs all
   eight and a wrong boundary shows as a discontinuity partway across.
