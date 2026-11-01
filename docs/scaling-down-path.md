@@ -221,10 +221,11 @@ has both sweeps, the controls either side of each, and the enables refuted.
 
 ## What has to be established first
 
-- **Whether the block can be made to thin the stream at all.** The one blocker,
-  and it is not the scan mode: no configuration reached so far shortens the
-  line on either. `IF_HS_PSHIFT_BYPS`, `IF_HS_DEC_FACTOR`, `IF_HS_SEL_LPF`,
-  `IF_LD_RAM_BYPS` and `IF_SEL_WEN` are each refuted as the enable.
+- **How the line-double FIFO is run on a progressive source.** The one blocker.
+  `IF_SEL_HSCALE` sends the scaling-down write enable TO the line double, so the
+  FIFO is its only consumer -- and an undoubled source bypasses it, while
+  putting it in circuit gives a solid green frame. Its read side has never had
+  to be configured for a source that is already progressive.
 - **Where the eight segments divide the line**, since a linear scale needs all
   eight and a wrong boundary shows as a discontinuity partway across.
 - **Whether the vertical scaler is reachable on an undoubled path at all.** It

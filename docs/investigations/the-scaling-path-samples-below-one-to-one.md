@@ -110,11 +110,15 @@ Each tested directly at 720p against a solved state:
   a clean halving either.
 - **`IF_HS_SEL_LPF` with it is not the enable.** The pair that makes an
   undoubled source resemble the doubled path leaves the frame sheared.
-- **`IF_LD_RAM_BYPS` 0 is not the enable.** It leaves the sheared frame
-  unchanged, with or without `IF_SEL_WEN` 0 beside it. An earlier reading that
-  it gives a solid green frame does not hold once a ratio is applied.
-- **`IF_SEL_WEN` 0 is not the enable**, alone or with `IF_LD_RAM_BYPS` 0, though
-  the datasheet makes it the write-enable select for the line doubler.
+- **`IF_LD_RAM_BYPS` 0 gives a solid green frame**, confirmed from a clean
+  solved state with the half octave and with the DDA at 4095. That is the
+  line-double FIFO in circuit and not reading out, and it is the one place the
+  write-enable question is still live -- `IF_SEL_HSCALE` sends the scaling-down
+  write enable TO the line double, so the FIFO is its only consumer.
+- **`IF_SEL_WEN` is untested in a state that could answer.** Toggled at a
+  shortened counter it changes nothing, but neither does anything else there:
+  a routing moved on an already-destroyed frame cannot be told from one that
+  does nothing.
 
 ## Reading these states
 

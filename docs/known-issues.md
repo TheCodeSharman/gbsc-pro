@@ -8889,8 +8889,9 @@ exactly; the rate registers written alone, with the counter left where the
 unity solve put it, leave the card unmoved and the same size. So the DDA
 perturbs the sample phase rather than removing samples, and an earlier reading
 that a doubled source shortens to `PLLAD_MD x ratio` named a duplicated frame.
-`IF_HS_PSHIFT_BYPS`, `IF_HS_DEC_FACTOR`, `IF_HS_SEL_LPF`, `IF_LD_RAM_BYPS` and
-`IF_SEL_WEN` are each refuted as the enable.
+What blocks it is the line-double FIFO, which `IF_SEL_HSCALE` makes the write
+enable's only consumer: an undoubled source bypasses it, and putting it in
+circuit gives a solid green frame.
 `investigations/the-minifier-does-not-shorten-the-line.md`.
 `investigations/the-scaling-path-samples-below-one-to-one.md` has the
 measurements, the three reachable oversampling states and why 1763 is the one

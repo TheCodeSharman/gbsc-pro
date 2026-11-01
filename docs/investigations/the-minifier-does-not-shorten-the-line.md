@@ -96,23 +96,45 @@ same counter gave opposite verdicts in two walks over the same range with
 nothing else changed, so the state depends on how the walk arrived rather than
 on the register. Nothing about the line length should rest on one.
 
-## Refuted as the thing that gates the block
+## The line is not shortened while the FIFO is bypassed
 
-Each tested directly at 720p against a solved state at ratio 0.75, and each
-leaving the sheared frame unchanged to three decimal places on every measure:
+The clearest form of the measurement takes the VDS to 1:1 -- `VDS_HSCALE` 1023,
+the closest a ten-bit field reaches -- so one captured unit is one output pixel
+and a compression shows as the card occupying less of the screen. At unity the
+card fills the left 1445 px of 1920, with the playback's fetch past the picture
+after it; a shortened line would move that boundary.
 
-- **`IF_SEL_WEN` 0.** The datasheet makes it the write-enable select for the
-  line doubler, which is the most promising name in the set, and clearing it
-  does nothing.
-- **`IF_SEL_WEN` 0 with `IF_LD_RAM_BYPS` 0.** The datasheet's own prescription
-  — the line double FIFO is to be bypassed when progressive data cannot do
-  scaling-down, so progressive data that is doing scaling-down wants it in
-  circuit. It changes nothing.
-- **`IF_HS_DEC_FACTOR` 1** on an undoubled source.
+Asked for a half and for a quarter, with the counter left where the unity solve
+put it:
 
-`IF_LD_RAM_BYPS` 0 on an undoubled source does **not** give a green frame once a
-ratio is applied, which corrects the earlier reading; it gives the same sheared
-frame as before.
+| state | card width | card position |
+|---|---|---|
+| unity | full | unmoved |
+| DDA 4095, ratio 0.50 | full | unmoved |
+| `IF_HS_DEC_FACTOR` 1, the half octave | full | unmoved |
+| `IF_HS_DEC_FACTOR` 2, the quarter octave | full | unmoved |
+
+**A block compressing 4:1 cannot leave the card the same width and in the same
+place.** Only the colour striping changes, which is the DDA disturbing sample
+phase.
+
+## The FIFO is the consumer, and on a progressive source it emits green
+
+`IF_SEL_HSCALE` 1 sends the scaling-down data **and its write enable to the
+line double**, so the line-double FIFO is the only thing the datasheet names
+that could turn that write enable into a shorter line -- and an undoubled
+source bypasses it, `IF_LD_RAM_BYPS` 1.
+
+Put in circuit from a clean solved state at 720p, with either the half octave or
+the DDA at 4095 beside it, **the output is a solid green frame**. That confirms
+the earlier reading rather than correcting it.
+
+So neither `IF_LD_RAM_BYPS` nor `IF_SEL_WEN` is refuted: a routing toggled on a
+frame that is ALREADY destroyed cannot be told apart from one that does nothing,
+and that is what every reading of those two at a shortened counter measured.
+What is established is narrower and firmer -- **with the FIFO bypassed the DDA
+does not shorten the line, and with it in circuit a progressive source produces
+no picture at all.**
 
 ## What follows
 
@@ -122,11 +144,21 @@ measurement supports its doing so. Nothing ships in that state —
 — so this is a bound on what the block can be asked for rather than a defect in
 the engine.
 
-**The minifier therefore does not lift the divider ceiling**, which is what it
-was wanted for. `the-scaling-path-samples-below-one-to-one.md` is what that
-ceiling costs, and the three reachable oversampling states are unchanged by
-this. `../scaling-down-path.md` is the path and its registers.
+**So the minifier does not lift the divider ceiling in any configuration
+reached so far**, which is what it was wanted for: the chain it was to serve is
+a divider above the output's ceiling, the DDA compressing the captured line back
+to what the raster can hold, and the VDS magnifying that to fill the screen.
+`the-scaling-path-samples-below-one-to-one.md` is what the ceiling costs, and
+the three reachable oversampling states are unchanged by this.
+`../scaling-down-path.md` is the path and its registers.
 
-What is open is whether the block can be made to thin the stream at all. The
-eight segment boundaries are undocumented and unmeasured, and a linear ratio
-written across all eight is the only configuration anything here has asked for.
+**The open question is how the line-double FIFO is run on a progressive
+source**, not which bit enables the DDA. Its read side -- `IF_LD_SEL_PROV`,
+`IF_LD_ST`, `IF_LD_WRST_SEL`, `IF_HBIN_SP`/`ST` and `IF_HSYNC_RST`, which
+RD-5725-1.1 calls the total pixel number per line and ties to generating
+progressive timing from interlace data -- has never had to be configured for a
+source that is already progressive, because such a source has always bypassed
+the FIFO. The green frame is that read side, and it is where the question now
+lives. The eight segment boundaries are undocumented and unmeasured besides,
+and a linear ratio across all eight is the only configuration anything here has
+asked for.
