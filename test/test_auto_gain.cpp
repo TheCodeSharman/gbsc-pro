@@ -398,3 +398,53 @@ TEST_CASE("a source arriving starts a settled walk again")
 
     CHECK(Wire.touched[0][0x4D]);
 }
+
+TEST_CASE("the readings a clipping pass-through source gives ask for less gain")
+{
+    // MEASURED ON THE BENCH, and the threshold has to clear these rather than
+    // a figure chosen for tidiness. The RISC PC desktop at 1280x720 in
+    // pass-through, at the RGB seed, rails peak white flat -- the capture
+    // reads 238.9 at gains 123, 140 and 160 alike while the grey steps below
+    // it scale normally. AutoGain's own reading across three passes of that
+    // state:
+    //
+    //     1020/1020/1020  over 1/3/3    7 of 72
+    //     1020/1020/1020  over 1/1/4    6 of 72
+    //     1020/1020/1020  over 5/2/2    9 of 72
+    //
+    // All three channels pegged, and the count straddling a threshold of 8 --
+    // so a step is a coin flip and a step needs two consecutive firings. The
+    // walk crawled 123 to 139 in the time this took to measure.
+    Wire.reset();
+
+    const AutoGain::Levels clipping[3] = {
+        {{1020, 1}, {1020, 3}, {1020, 3}},
+        {{1020, 1}, {1020, 1}, {1020, 4}},
+        {{1020, 5}, {1020, 2}, {1020, 2}},
+    };
+
+    for (int pass = 0; pass < 3; ++pass)
+        CHECK(AutoGain::gainFor(123, clipping[pass]) == 123 + AutoGain::Step);
+}
+
+TEST_CASE("the readings a correctly gained source gives ask for nothing")
+{
+    // The other end of the same sweep, and what the threshold must stay above.
+    // At gain 240 the same source is well off the rail -- capture white 202.4
+    // against the rail's 238.9 -- and the counts are the floor the header
+    // warns of rather than a picture that is clipping.
+    //
+    //     952/944/1020  over 0/0/1    1 of 72
+    //     1016/940/972  over 1/0/0    1 of 72
+    //     900/944/956   over 0/0/0    0 of 72
+    Wire.reset();
+
+    const AutoGain::Levels clean[3] = {
+        {{952, 0}, {944, 0}, {1020, 1}},
+        {{1016, 1}, {940, 0}, {972, 0}},
+        {{900, 0}, {944, 0}, {956, 0}},
+    };
+
+    for (int pass = 0; pass < 3; ++pass)
+        CHECK(AutoGain::gainFor(240, clean[pass]) == 240);
+}

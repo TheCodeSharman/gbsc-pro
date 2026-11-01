@@ -57,17 +57,24 @@ public:
     static const uint8_t SamplesPerChannel = 24;
 
     // How many of a pass's samples -- three channels of SamplesPerChannel --
-    // must reach BackOffLevel before the gain moves. About a twelfth of them,
-    // so the walk answers to a picture whose top is too high rather than to an
-    // edge that overshoots.
+    // must reach BackOffLevel before the gain moves.
+    //
+    // **IT IS SET BY WHAT A CLIPPING SOURCE ACTUALLY COUNTS, which is far
+    // fewer samples than the picture's white area suggests.** Only the samples
+    // that happen to land on peak white count, so a source railing peak white
+    // flat counts 6 to 9 of 72 and a correctly gained one counts 0 to 1. At a
+    // twelfth -- 8 -- the threshold sits inside the clipping spread rather
+    // than above it, so stepping is a coin flip, and a step needs two
+    // consecutive firings: the walk then crawls where it should take a second,
+    // and the picture holds a clipped white for tens of minutes.
     //
     // The floor it has to clear is a read that comes back with every bit set,
-    // a few times a pass, on whichever channel's turn it falls. The counts past
-    // the knee and below it leave a gap either side of this.
+    // on whichever channel's turn it falls, which is the 0 to 1 above.
     //
     // A pass that misses costs nothing, because the next one steps; a pass
     // that fires wrongly costs a step the walk can never take back.
-    static const uint8_t OverToStep = 8;
+    // docs/investigations/the-auto-gain-walk-cannot-see-the-clipping-it-exists-for.md
+    static const uint8_t OverToStep = 4;
 
     // How long a step needs before the measurement can judge it. The level is
     // read after the frame buffer, so a gain change is a frame or two away

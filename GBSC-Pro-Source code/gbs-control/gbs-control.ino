@@ -213,6 +213,11 @@ volatile uint8_t pendingEdgeTraceSel = 0x0a;
 volatile uint8_t pendingEdgeTraceSp = 5;
 volatile uint8_t pendingEdgeTraceSig = 6;
 volatile uint8_t pendingEdgeTraceIf = 0xff;
+// What /gainpeaks queued: how many passes of AutoGain's own reading to print.
+// The walk only backs off, so whether it moves at all is whether this reading
+// calls the picture saturated -- and nothing else can see it.
+volatile uint8_t pendingGainPeaks = 0;
+
 volatile bool pendingTestBusSweep = false;
 volatile uint16_t pendingTestBusMs = 25;
 volatile uint8_t pendingTestBusSp = 0xff;
@@ -3022,6 +3027,29 @@ static void holdSampleClock(uint16_t divider)
 // sweep taken on each sync type says which stage stops carrying vertical sync.
 // A stage carries several signals, so the signal is asked for too: selecting a
 // module alone reports whichever signal the last caller left.
+// AutoGain's own reading, printed rather than acted on. The walk only backs
+// off and only when `over` clears AutoGain::OverToStep, so a picture that
+// clips while this reports no overs is a walk that will never move -- which no
+// register dump can show, the levels living on the test bus.
+static void reportGainPeaks(uint8_t passes)
+{
+    for (uint8_t pass = 0; pass < passes; ++pass) {
+        const Tv5725::AutoGain::Levels measured = Tv5725::AutoGain::peaks();
+        char line[112];
+        snprintf_P(line, sizeof(line),
+                   PSTR("gain peaks: %u/%u/%u over %u/%u/%u of %u, gain %u, "
+                        "backoff %u, needs %u"),
+                   measured.red.peak, measured.green.peak, measured.blue.peak,
+                   measured.red.over, measured.green.over, measured.blue.over,
+                   (unsigned)(3 * Tv5725::AutoGain::SamplesPerChannel),
+                   (unsigned)Tv5725::Adc::gain(),
+                   (unsigned)Tv5725::AutoGain::BackOffLevel,
+                   (unsigned)Tv5725::AutoGain::OverToStep);
+        tv5725Log(line);
+        delay(20);
+    }
+}
+
 static void sweepTestBus(uint16_t windowMs, uint8_t spModule, uint8_t spSignal,
                          uint8_t ifSel)
 {
@@ -4982,6 +5010,12 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
             tv5725Log(line);
         }
 
+        if (pendingGainPeaks) {
+            const uint8_t passes = pendingGainPeaks;
+            pendingGainPeaks = 0;
+            reportGainPeaks(passes);
+        }
+
         if (pendingTestBusSweep) {
             pendingTestBusSweep = false;
             sweepTestBus(pendingTestBusMs, pendingTestBusSp, pendingTestBusSig,
@@ -6100,6 +6134,14 @@ void startWebserver()
     //   /testbus?ms=25&sp=4            with the sync processor's vs_act_det out
     //   /testbus?ms=25&sp=4&sig=1      that stage's signal 1 rather than 0
     //   /testbus?ms=25&if=0            with an input formatter signal out
+    // What AutoGain's own reading says, which decides whether the walk steps
+    // at all. Answers on the console: the bus belongs to loop().
+    server.on("/gainpeaks", HTTP_GET, [](AsyncWebServerRequest *request) {
+        pendingGainPeaks = request->hasParam("passes")
+            ? (uint8_t)request->getParam("passes")->value().toInt() : 4;
+        request->send(200, "application/json", "{\"queued\":\"gainpeaks\"}");
+    });
+
     server.on("/testbus", HTTP_GET, [](AsyncWebServerRequest *request) {
         auto number = [request](const char *name, int fallback) -> int {
             return request->hasParam(name)
