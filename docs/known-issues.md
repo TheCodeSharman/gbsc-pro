@@ -8840,6 +8840,55 @@ this wants is rarely a half, so the DDA is the better tool.
 `docs/scaling-down-path.md` is the whole path, both axes, and what else it
 would buy.
 
+**THE WALL IS ON THE DIVIDER ONLY BECAUSE ONE ADC SAMPLE IS ASSUMED TO BE ONE
+IF UNIT, AND THE CODE ALREADY PARAMETERISES THAT.**
+`SamplingClock::recommendedDivider()` turns the counter's own bound into a
+bound on the divider through `samplesPerUnit`, which is 2 on a doubled line and
+1 otherwise:
+
+```
+const uint16_t samplesPerUnit = lineDoubled ? 2 : 1;
+const uint32_t counterBound = InputFormatter::LineCounterMax * samplesPerUnit;
+...
+if (ceiling > counterBound) ceiling = counterBound;
+```
+
+The minifier is that same quantity running the other way, so what the change
+asks for is one term: `LineCounterMax * samplesPerUnit / ratio`.
+
+**What the counter costs, per mode.** The divider the ADC's own
+`MaxSampleRateHz` 162 MHz allows at 1x after `RecommendedPercent`, against the
+2046 the counter permits. Every ratio is inside `InputScale`'s unity..0.5:
+
+| mode | counter allows | ADC allows | gain | ratio |
+|---|---|---|---|---|
+| 1280x720@60 | 2046 | **3528** | 1.72x | 0.580 |
+| 1024x768@60 | 2046 | 3282 | 1.60x | 0.623 |
+| 1280x1024@60 | 2046 | 2481 | 1.21x | 0.825 |
+| 1920x1080@60 | 2046 | 2352 | 1.15x | 0.870 |
+
+**IT IS NOT A RESOLUTION TRADE, which is the reading to avoid.** The IF still
+receives 2046 units; what changes is that each is formed from 1.72 ADC samples
+rather than one. That is oversampling delivered by the input formatter, and it
+reaches a configuration the ADC path structurally cannot: the 2x row needs CKO
+under 80 MHz and 2046 x 45000 is already 92 MHz, which is why
+`docs/sampling-table.md` reads `1x` at 720p.
+
+**THE WHOLE IDEA GATES ON ONE UNMEASURED PROPERTY: whether the block AVERAGES
+or DROPS.** Averaging makes the extra samples anti-aliasing; dropping makes it
+decimation with no filter, and the ADC budget is spent for nothing. Nothing in
+RD-5725-1.1 settles it -- a scaling-down engine for anamorphic stretch implies
+interpolation and that is inference.
+
+**Ask the block before changing the rule.** The ratio is self-consistent
+through a solve already -- `InputFormatter::applyScan()` writes it and the line
+counter shortens with it -- where a hand-raised divider is not, the divider
+being one input to a solve that also places the capture window, both scales,
+the fetch and the stride. So a ratio set through `/inputscale` on a settled
+source answers the averaging question on its own, and only an answer of
+AVERAGES justifies threading the ratio into `counterBound` and comparing two
+solved states.
+
 ### The pass-through ADC PLL does not lock, and the finest grating beats
 
 `STATUS_MISC_PLLAD_LOCK` reads 1 in **2 of 38** samples in pass-through against
