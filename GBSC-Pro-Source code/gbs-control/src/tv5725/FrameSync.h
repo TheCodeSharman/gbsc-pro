@@ -170,6 +170,12 @@ private:
     // established. Kept across reset(): callers reset without re-establishing
     // it and expect runFrequency() to keep working.
     float clockPerFrameRate_;
+
+    // How far the rate the engine measured has to be corrected to reach the
+    // source's own, as a fraction of it. Accumulated from the standing phase
+    // error, because a proportional correction alone cannot null a rate offset
+    // bigger than its clamp.
+    float anchorTrim_;
 };
 
 }  // namespace Tv5725

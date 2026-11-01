@@ -797,7 +797,7 @@ TEST_CASE("the trim's normal operating point is not clipped by the slew limit")
 {
     // The standing error a settled lock holds, which is the rate the engine
     // measures being a shade off the source's: 13190 ticks of a 3169926 frame
-    // on the bench, 0.42%, answered by about 1700 Hz of clock. A slew limit
+    // on the bench, 0.42%, answered by about 1800 Hz of clock. A slew limit
     // tight enough to clip that would leave the loop unable to null the bias,
     // and the phase would drift instead of parking.
     aLockedSource();
@@ -810,6 +810,124 @@ TEST_CASE("the trim's normal operating point is not clipped by the slew limit")
 
     REQUIRE(lock.runFrequency(60.0f));
 
-    // Proportional, not clamped: 0.00416 frames x 0.0038 of 108 MHz.
-    CHECK(board.clock.hzNow() - 108000000u == doctest::Approx(1707.0).epsilon(0.05));
+    // Both terms on one pass and neither clamped: 0.00416 frames x 0.0038
+    // proportional, plus the same error's first step of anchor at 0.0002.
+    CHECK(board.clock.hzNow() - 108000000u == doctest::Approx(1797.0).epsilon(0.05));
+}
+
+namespace {
+
+// The loop closed, which no single-pass test can be. The output period follows
+// the steered clock and the phase integrates the difference between the two
+// rates, so a run of passes shows whether the lock converges rather than what
+// one correction did.
+//
+// WHAT IT EXISTS FOR is a rate the engine measured WRONG: the correction is
+// proportional and clamped, so an error past the clamp saturates it and the
+// phase cannot come back. Only a run of passes can see that.
+struct ClosedLoop {
+    SteerableClock board;
+    FrameSync lock;
+    float trueRateHz;       // what the source is really doing
+    float believedRateHz;   // what the engine measured and hands the lock
+    uint32_t clockPerFrame;
+
+    // The ratio is the raster's, so it is derived from the rate the output is
+    // to run at rather than carried as a constant: the clock starts at the
+    // source's own rate, which is where a solve's rate match leaves it.
+    ClosedLoop(float trueHz, float believedHz)
+        : lock(board.clock), trueRateHz(trueHz), believedRateHz(believedHz),
+          clockPerFrame((uint32_t)(108000000.0f / trueHz))
+    {
+        g_inputPeriod = ticksForHz(trueHz);
+        g_outputPeriod = ticksForHz(trueHz);
+        lock.init();
+        lock.initFrequency((float)board.clock.hzNow() / clockPerFrame,
+                           board.clock.hzNow());
+    }
+
+    float outputRateHz() const
+    {
+        return (float)board.clock.hzNow() / clockPerFrame;
+    }
+
+    // One interval: the pointers slip by the rate difference, then the lock
+    // measures and corrects.
+    //
+    // THE SIGN IS THE PHYSICS AND IT IS EASY TO INVERT. The offset is how far
+    // after the input pulse the output pulse sits, so a FASTER output arrives
+    // earlier each frame and the offset falls. Measured on vga: an output
+    // 0.030 Hz slow moved the error +155820 ticks a pass against the 160000
+    // this computes.
+    void step()
+    {
+        const float seconds = FrameSync::LockIntervalMs / 1000.0f;
+        const float slipFrames = (trueRateHz - outputRateHz()) * seconds;
+        const int32_t slip = (int32_t)(slipFrames * (float)g_inputPeriod);
+
+        g_outputOffset = (uint32_t)(((int32_t)g_outputOffset + slip
+                                     + (int32_t)g_inputPeriod)
+                                    % (int32_t)g_inputPeriod);
+        g_outputPeriod = ticksForHz(outputRateHz());
+        lock.runFrequency(believedRateHz);
+    }
+
+    // Distance from the target, in ticks, the short way round -- the quantity
+    // the lock itself works in.
+    int32_t errorTicks() const
+    {
+        const int32_t period = (int32_t)g_inputPeriod;
+        const int32_t target = period / 4;
+        int32_t error = (int32_t)g_outputOffset - target;
+        if (error > period / 2)
+            error -= period;
+        if (error < -period / 2)
+            error += period;
+        return error;
+    }
+};
+
+}  // namespace
+
+TEST_CASE("the lock converges on a source whose rate the engine measured right")
+{
+    // The control the fault case is read against. An arrival starts up to a
+    // third of a frame out of phase with an arbitrary sign, the correction
+    // saturates closing it, and the phase lands on the droop the standing
+    // correction needs. Measured on vga: four consecutive saturated passes and
+    // about forty seconds to park.
+    aLockedSource();
+    theGeneratorDrivesTheDisplay();
+
+    ClosedLoop loop(50.474f, 50.474f);
+    g_outputOffset = g_inputPeriod / 4 + g_inputPeriod / 3;
+
+    for (int pass = 0; pass < 40; ++pass)
+        loop.step();
+
+    CHECK(abs(loop.errorTicks()) < (int32_t)(g_inputPeriod / 50));
+}
+
+TEST_CASE("a rate measured past the clamp still converges")
+{
+    // Measured on vga: the engine read 50516 mHz against a true 50474, so
+    // matchRate() left the output 0.083% fast where MaxCorrection allows
+    // 0.06%. A proportional correction cannot null an offset bigger than its
+    // own clamp -- it saturates every pass, the phase drifts a sixteenth of a
+    // frame a pass and wraps the frame about every 23 s, and the read/write
+    // crossover sweeps the picture as a travelling tear.
+    //
+    // docs/known-issues.md, "A rate mis-measured at acquisition is
+    // unrecoverable".
+    aLockedSource();
+    theGeneratorDrivesTheDisplay();
+
+    ClosedLoop loop(50.474f, 50.516f);
+    // Where matchRate() leaves the clock when it is handed the wrong rate.
+    loop.board.clock.slewTo((uint32_t)(50.516f * loop.clockPerFrame));
+
+    for (int pass = 0; pass < 60; ++pass)
+        loop.step();
+
+    CHECK(abs(loop.errorTicks()) < (int32_t)(g_inputPeriod / 50));
 }

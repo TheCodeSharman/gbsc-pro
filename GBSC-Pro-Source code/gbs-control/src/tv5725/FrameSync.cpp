@@ -44,6 +44,27 @@ const float MaxCorrection = 0.0006f;
 // picture as a visible tear. A bad SAMPLE is rejected, not answered slowly.
 const float MaxFrameRateChange = 0.0006f;
 
+// How fast the ANCHOR follows a standing phase error, per frame of it.
+//
+// The clamp above bounds the correction against the rate the engine measured,
+// so where that measurement is wrong by more than the clamp the reachable set
+// of output rates excludes the source's own and a proportional correction has
+// no settling point: it saturates and the phase wraps the frame for ever. This
+// moves the anchor itself, so the proportional loop works against a rate that
+// converges on the source's however far off the measurement started.
+//
+// Chosen for damping rather than speed. The plant is an integrator, so the
+// loop is second order: with about 84 frames a pass the proportional term
+// gives 0.32 per pass and this gives 0.017, a damping ratio near 1.2 and a
+// slow root of about 19 passes. Raising it towards the critical 3.0e-4 buys
+// speed and overshoots the target phase.
+const float AnchorPerFrame = 0.0002f;
+
+// How far the anchor may be moved in total, which bounds the windup where the
+// phase cannot be closed for a reason the loop cannot see. Measured mistakes
+// are a tenth of this.
+const float MaxAnchorTrim = 0.005f;
+
 // Two tries at measuring the phase. One is enough where the pin is carrying
 // vsync at all, and a second costs a frame period; more than that is a signal
 // that is not there, which the caller's forgiveness count is for.
@@ -72,7 +93,7 @@ int32_t framePeriodTicks(float sourceFieldRateHz)
 FrameSync::FrameSync(DisplayClock &clock)
     : clock_(clock), targetPhase_(DefaultTargetPhase), ready_(false),
       delayLock_(0), lastCorrection_(0), disturbedMs_(0), observeOnly_(false),
-      clockPerFrameRate_(-1.0f) {}
+      clockPerFrameRate_(-1.0f), anchorTrim_(0.0f) {}
 
 void FrameSync::defer(uint32_t nowMs) { disturbedMs_ = nowMs; }
 
@@ -358,6 +379,11 @@ void FrameSync::clearFrequency() { clockPerFrameRate_ = -1.0f; }
 void FrameSync::initFrequency(float outFramesPerS, uint32_t displayClockHz)
 {
     clockPerFrameRate_ = (float)displayClockHz / outFramesPerS;
+
+    // The anchor is a correction OF the rate the engine measured, so a fresh
+    // ratio -- which is what a rate match or a solved raster establishes --
+    // leaves nothing for it to carry.
+    anchorTrim_ = 0.0f;
 }
 
 bool FrameSync::runFrequency(float sourceFieldRateHz)
@@ -409,13 +435,19 @@ bool FrameSync::runFrequency(float sourceFieldRateHz)
     // read pointer is falling behind, so the output rate goes up.
     const float latencyErrFrames = (float)error / ticksPerSecond * rateInput;
 
+    anchorTrim_ += AnchorPerFrame * latencyErrFrames;
+    if (anchorTrim_ > MaxAnchorTrim)
+        anchorTrim_ = MaxAnchorTrim;
+    if (anchorTrim_ < -MaxAnchorTrim)
+        anchorTrim_ = -MaxAnchorTrim;
+
     float correction = CorrectionPerFrame * latencyErrFrames;
     if (correction > MaxCorrection)
         correction = MaxCorrection;
     if (correction < -MaxCorrection)
         correction = -MaxCorrection;
 
-    const float rawRateOutput = rateInput * (1 + correction);
+    const float rawRateOutput = rateInput * (1 + anchorTrim_) * (1 + correction);
     const float previousRateOutput = (float)clock_.hzNow() / clockPerFrameRate_;
 
     // Where the input rate is measured wrong the raw figure can be far from the
