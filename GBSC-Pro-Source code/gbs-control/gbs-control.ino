@@ -275,6 +275,11 @@ volatile uint16_t pendingHeldDivider = 0;
 volatile bool pendingInputScale = false;
 volatile uint16_t pendingInputScaleRate = 0;
 
+// What /outputclock queued. The ceiling decides the raster, so it re-solves
+// everything the raster carries.
+volatile bool pendingOutputCeiling = false;
+volatile uint32_t pendingOutputCeilingHz = 0;
+
 // What /framing/full queued, for the same reason.
 volatile bool pendingFullFramingChange = false;
 volatile bool pendingFullFraming = false;
@@ -5143,6 +5148,17 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
             debugPrintf("input scale: %u %s\n", (unsigned)wanted.increment(),
                         geometry.setInputScale(wanted) ? "applied" : "refused");
         }
+        if (pendingOutputCeiling) {
+            pendingOutputCeiling = false;
+            geometry.holdOutputCeiling(pendingOutputCeilingHz);
+            // The mode-change entry, because the ceiling moves the RASTER: the
+            // encoder has to re-acquire on it, which is what takeOutputAway()
+            // in there is for, and resolveFromSource() alone leaves the raster
+            // the last solve wrote.
+            geometry.inputTimingsChanged();
+            debugPrintf("output clock: ceiling %lu Hz\n",
+                        (unsigned long)geometry.outputCeilingHz());
+        }
         if (pendingFullFramingChange) {
             pendingFullFramingChange = false;
             geometry.forceFullFraming(pendingFullFraming);
@@ -6441,6 +6457,28 @@ void startWebserver()
                    PSTR("{\"queued\":\"inputscale\",\"rate\":%u,\"held\":%u}"),
                    (unsigned)pendingInputScaleRate,
                    (unsigned)geometry.inputScale().increment());
+        request->send(200, "application/json", body);
+    });
+    // The display clock ceiling the raster is solved against. A wider raster
+    // carries more delivered units and so more ADC samples per source pixel,
+    // and costs magnification -- so what a seed is worth is a property of the
+    // source, and this asks without a rebuild per seed.
+    //
+    //   /outputclock              report, change nothing
+    //   /outputclock?hz=129600000 solve the raster against this ceiling
+    //   /outputclock?hz=0         release it, back to EngineCeilingHz
+    server.on("/outputclock", HTTP_GET, [](AsyncWebServerRequest *request) {
+        char body[112];
+        if (request->hasParam("hz")) {
+            pendingOutputCeilingHz =
+                (uint32_t)request->getParam("hz")->value().toInt();
+            pendingOutputCeiling = true;
+        }
+        snprintf_P(body, sizeof(body),
+                   PSTR("{\"queued\":%s,\"hz\":%lu,\"held\":%lu}"),
+                   pendingOutputCeiling ? "true" : "false",
+                   (unsigned long)pendingOutputCeilingHz,
+                   (unsigned long)geometry.outputCeilingHz());
         request->send(200, "application/json", body);
     });
 #endif

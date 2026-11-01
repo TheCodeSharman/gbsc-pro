@@ -160,6 +160,37 @@ TEST_CASE("a settled source gets the computed raster, not the table's")
     CHECK(horizontalTotalWritten() != 1602);
 }
 
+// THE CEILING IS A USABILITY LIMIT RATHER THAN AN ELECTRICAL ONE, so it is the
+// one term in the raster a measurement might move: a wider raster carries more
+// delivered units and so more ADC samples per source pixel, and costs
+// magnification, which is where the run-up lives. The held ceiling is the
+// instrument that asks what each seed is worth on a given source without a
+// rebuild per seed. OutputMode.h carries the three ceilings and what each
+// answers.
+TEST_CASE("a held output clock ceiling widens the raster the solve writes")
+{
+    SettledEngine settled;
+
+    settled.engine.setOutputMode(&Mode1080p);
+    settled.engine.inputTimingsChanged(4);
+    REQUIRE(pollUntilSolved(settled.acquisition));
+    const uint16_t atDefault = horizontalTotalWritten();
+
+    settled.engine.holdOutputCeiling(Tv5725::OutputMode::WorkingCeilingHz);
+    settled.engine.inputTimingsChanged(4);
+    REQUIRE(pollUntilSolved(settled.acquisition));
+
+    CHECK(horizontalTotalWritten() > atDefault);
+
+    SUBCASE("and releasing it puts the raster back") {
+        settled.engine.holdOutputCeiling(0);
+        settled.engine.inputTimingsChanged(4);
+        REQUIRE(pollUntilSolved(settled.acquisition));
+
+        CHECK(horizontalTotalWritten() == atDefault);
+    }
+}
+
 TEST_CASE("an unsettled line count is waited out, not solved against")
 {
     SettledEngine settled;

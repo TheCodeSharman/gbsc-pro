@@ -52,7 +52,8 @@ VideoPath::VideoPath(DisplayClock &displayClock, SourceMeasurement &sampling,
       syncTypeInForce_(false), syncTypeChosenFor_(NoSelectionSeen), intervalMeasuredFor_(NoSelectionSeen), intervalMeasuredLines_(0), syncProbe_(0), equalisationProbe_(countThroughThreshold),
       framings_(framings),
       solvePending_(false), modePending_(false), modeOversample_(4),
-      heldDivider_(0), fullFraming_(false), installedRateHz_(0),
+      heldDivider_(0), heldOutputCeilingHz_(0), fullFraming_(false),
+      installedRateHz_(0),
       mode_(0),
       showing_(false), scalingRgbhv_(false),
       syncOut_(false), syncOutEver_(false),
@@ -371,8 +372,7 @@ bool VideoPath::solveRaster()
     // docs/firmware-geometry-engine.md
     // EngineCeilingHz, not the higher WorkingCeilingHz the part is measured to
     // run at: a wider raster costs zoom travel. See the constant.
-    OutputTiming raster = mode->solve(framedKey_.rateHz(),
-                                        OutputMode::EngineCeilingHz);
+    OutputTiming raster = mode->solve(framedKey_.rateHz(), outputCeilingHz());
     if (!raster.usable()) {
         // Refused, not deferred: the frame height and the rate are settled, so
         // waiting produces the same answer at the cost of a measurement a pass.
@@ -1531,7 +1531,7 @@ uint16_t VideoPath::dividerCeilingForOutput() const
     // sampling clock decides. Running it here costs one solve and keeps the
     // write order raster -> clock -> windows intact.
     const SourceKey arriving = arrivingKey();
-    OutputTiming raster = mode_->solve(arriving.rateHz(), OutputMode::EngineCeilingHz);
+    OutputTiming raster = mode_->solve(arriving.rateHz(), outputCeilingHz());
     if (!raster.usable())
         return 0;
 
@@ -1926,6 +1926,17 @@ InputScale VideoPath::inputScale() const { return inputScale_; }
 // Not through step(): the block is ahead of the capture window, so what it
 // moves is how much source an IF unit holds rather than which units the window
 // spans -- the registers the press comparison watches do not move.
+void VideoPath::holdOutputCeiling(uint32_t hz)
+{
+    heldOutputCeilingHz_ = hz;
+}
+
+uint32_t VideoPath::outputCeilingHz() const
+{
+    return heldOutputCeilingHz_ != 0 ? heldOutputCeilingHz_
+                                     : OutputMode::EngineCeilingHz;
+}
+
 bool VideoPath::setInputScale(InputScale wanted)
 {
     if (wanted == inputScale_)

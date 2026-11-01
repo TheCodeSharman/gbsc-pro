@@ -257,6 +257,19 @@ public:
     bool setInputScale(InputScale wanted);
     InputScale inputScale() const;
 
+    // The display clock ceiling the raster is solved against, or 0 for
+    // OutputMode::EngineCeilingHz. A wider raster carries more delivered units
+    // and so more ADC samples per source pixel, and costs magnification -- and
+    // the run-up lives in magnification, so what each seed is worth is a
+    // property of the SOURCE rather than of the part.
+    //
+    // HELD rather than chosen: nothing picks a ceiling per solve yet, and this
+    // is the instrument that asks what one would be worth without a rebuild
+    // per seed. OutputMode.h carries the three ceilings and what each answers.
+    // ../../../docs/known-issues.md
+    void holdOutputCeiling(uint32_t hz);
+    uint32_t outputCeilingHz() const;
+
     // Supplies the probe. Without one the engine leaves the sync path alone.
     //
     // **Per mode change, not per input.** A source can change its sync type
@@ -843,6 +856,7 @@ private:
     bool modePending_;
     uint8_t modeOversample_;
     uint16_t heldDivider_;
+    uint32_t heldOutputCeilingHz_;
     bool fullFraming_;
 
     // The line rate the divider in force was sized from, so a pass asking for
