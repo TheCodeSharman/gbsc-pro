@@ -75,7 +75,7 @@ written to memory stops being the count the ADC kept: the divider can serve
 sampling density while the written count serves the raster. `../scaling-down-path.md`
 carries the third thing it would buy, the width parity.
 
-## The minifier would be the mechanism, and it does not shorten the line
+## The minifier is the mechanism, and the undoubled branch disables it
 
 `Tv5725::InputScale` writes the scaling-down DDA, which shrinks the count
 written to memory without touching the rate the ADC samples at. That is the one
@@ -87,16 +87,15 @@ holding divider 2047 and a ratio of 0.706 -- `IF_HSYNC_RST` 1445, capture 1446,
 vertical structure in the right places with every line shredded horizontally,
 which is a counter of 1445 against a line still 2047 units long.
 
-**A LINE-DOUBLED SOURCE DOES NO BETTER**, and the reading that it did is
-superseded. At 320x256@50 every ratio down to 0.976 breaks the frame as it does
-here; the counter of 1650 that the roll was said to stop at holds a duplicate of
-the left third of the card. What differs between the two sources is only how the
-break looks.
+**WHAT GATES IT IS `IF_HS_DEC_FACTOR`, WHICH THE UNDOUBLED BRANCH WRITES 0.**
+A DDA rate beside a zero coarse factor does nothing, and the write enable it
+generates needs the line-double FIFO in circuit to consume it -- which an
+undoubled source also bypasses. With both in force on a line-doubled source the
+picture compresses with the ratio.
+`the-minifier-engages-on-the-coarse-factor.md` has the table.
 
-**The block perturbs the sample phase and does not shorten the line.** Written
-with the counter left at the unity solve's value, a ratio of 0.75 leaves the
-card unmoved and the same size. So the minifier does not lift this ceiling, and
-`the-minifier-does-not-shorten-the-line.md` is the evidence.
+So the ceiling stands here for now, but the block is not the reason: what is
+unreached is the FIFO on an undoubled line, which emits green.
 
 ## Refuted
 
@@ -110,11 +109,9 @@ Each tested directly at 720p against a solved state:
   a clean halving either.
 - **`IF_HS_SEL_LPF` with it is not the enable.** The pair that makes an
   undoubled source resemble the doubled path leaves the frame sheared.
-- **`IF_LD_RAM_BYPS` 0 gives a solid green frame**, confirmed from a clean
-  solved state with the half octave and with the DDA at 4095. That is the
-  line-double FIFO in circuit and not reading out, and it is the one place the
-  write-enable question is still live -- `IF_SEL_HSCALE` sends the scaling-down
-  write enable TO the line double, so the FIFO is its only consumer.
+- **`IF_LD_RAM_BYPS` 0 gives a solid green frame on an undoubled source**,
+  whatever the rate and whatever the rest of the routing. It is the FIFO in
+  circuit, and it is the one thing still unreached.
 - **`IF_SEL_WEN` is untested in a state that could answer.** Toggled at a
   shortened counter it changes nothing, but neither does anything else there:
   a routing moved on an already-destroyed frame cannot be told from one that

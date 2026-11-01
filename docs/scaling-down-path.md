@@ -100,7 +100,7 @@ source cannot use it without resolving the field's ownership first. **What the
 collision costs is unmeasured**: the reading that a non-zero DDA rate takes the
 halving away rested on a counter that produced a duplicate rather than a
 picture, and setting the factor to 1 on an undoubled source changes nothing.
-`investigations/the-minifier-does-not-shorten-the-line.md`.
+`investigations/the-minifier-engages-on-the-coarse-factor.md`.
 
 ```sh
 curl 'http://<ip>/inputscale?rate=1365'          # the increment directly
@@ -204,20 +204,19 @@ line starting further along than the last. The eight segments, the capture
 window, the stride, the fetch and `VDS_HSCALE` all follow the ratio correctly
 in a full register diff, so the geometry is not what is wrong.
 
-**A LINE-DOUBLED SOURCE IS NO DIFFERENT, and the reading that it was is
-superseded.** At 320x256@50 every ratio down to 0.976 breaks the frame just as
-it does at 720p; what differs is only how the break LOOKS, the doubled source
-duplicating real content across the line where the undoubled one shreds into
-noise. The counter of 1650 that the roll was said to stop at carries the left
-third of the card twice with two thirds of the line black, and holds perfectly
-still, which is why it read as working.
+**THE BLOCK NEEDS TWO THINGS AT ONCE AND THE UNDOUBLED BRANCH GIVES NEITHER.**
+`IF_HS_DEC_FACTOR` must be non-zero -- a DDA rate beside a zero coarse factor
+does nothing whatever, measured -- and `IF_LD_RAM_BYPS` must be 0, because
+`IF_SEL_HSCALE` sends the write enable TO the line double and that FIFO is the
+only RAM in the horizontal path, so it is what turns sparse writes into a
+shorter line. `applyScan()` writes 0 and 1 for every undoubled source.
 
-**The rate registers alone leave the picture where it is.** Written for a ratio
-of 0.75 with the counter left at the unity solve's value, the card is unmoved
-and the same size and only the sample phase is disturbed -- so the block
-perturbs phase rather than removing samples, and the shortened counter is what
-destroys the frame. `investigations/the-minifier-does-not-shorten-the-line.md`
-has both sweeps, the controls either side of each, and the enables refuted.
+With both in force on a line-doubled source the picture compresses with the
+ratio: at `PLLAD_MD` 2200, the counter held at 1100 and the VDS at 1:1, a DDA
+of 4095 puts the whole card inside a third of the width, and the same DDA with
+the coarse factor at 0 changes nothing.
+`investigations/the-minifier-engages-on-the-coarse-factor.md` has the table,
+the controls either side, and what is still open on an undoubled source.
 
 ## What has to be established first
 

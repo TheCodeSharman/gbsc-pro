@@ -8889,10 +8889,14 @@ exactly; the rate registers written alone, with the counter left where the
 unity solve put it, leave the card unmoved and the same size. So the DDA
 perturbs the sample phase rather than removing samples, and an earlier reading
 that a doubled source shortens to `PLLAD_MD x ratio` named a duplicated frame.
-What blocks it is the line-double FIFO, which `IF_SEL_HSCALE` makes the write
-enable's only consumer: an undoubled source bypasses it, and putting it in
-circuit gives a solid green frame.
-`investigations/the-minifier-does-not-shorten-the-line.md`.
+What gates the block is `IF_HS_DEC_FACTOR`, which `applyScan()` writes 0 for
+every undoubled source: a DDA rate beside a zero coarse factor does nothing.
+Its write enable then needs the line-double FIFO, which `IF_SEL_HSCALE` makes
+its only consumer and which an undoubled source also bypasses. Both in force on
+a line-doubled source compress the picture with the ratio; on an undoubled one
+the FIFO in circuit gives a solid green frame, and that is what is unreached.
+`investigations/the-minifier-engages-on-the-coarse-factor.md`.
+`investigations/the-minifier-engages-on-the-coarse-factor.md`.
 `investigations/the-scaling-path-samples-below-one-to-one.md` has the
 measurements, the three reachable oversampling states and why 1763 is the one
 to try first.
