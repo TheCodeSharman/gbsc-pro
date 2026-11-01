@@ -79,34 +79,58 @@ TEST_CASE("the bring-up line counter fits the register it is written to")
 // changes with the doubler -- and the counter and every window placed in those
 // units follow. docs/scaling-down-path.md
 
-TEST_CASE("the line counter is in the units the scaling-down block leaves")
+// THE COUNTER SETS THE OUTPUT LINE RATE, so the ratio must not reach it.
+// Output lines per source line is PLLAD_MD / IF_HSYNC_RST -- the counter wraps
+// once per output line, which is how a doubled source is doubled -- so a
+// counter shortened by the ratio multiplies the output lines by 1 / ratio.
+// Measured: ratio 3/4 at a held divider of 1444 duplicated the card
+// vertically, and forcing the counter back to 1444 cured it in one register.
+// docs/investigations/the-minifier-engages-on-the-coarse-factor.md
+TEST_CASE("the line counter is the raw line, whatever the block compresses it to")
 {
+    FreshChip fresh;
     // Three quarters of the line, which is the increment the datasheet's own
     // formula gives as 1365.
     const Tv5725::InputScale threeQuarters = Tv5725::InputScale::forRatio(3, 4);
 
     CHECK(InputFormatter::lineCounterFor(1444, false) == 1444);
-    CHECK(InputFormatter::lineCounterFor(1444, false, threeQuarters) == 1083);
+    CHECK(InputFormatter::lineCounterFor(2888, true) == 1444);
 
-    // The doubler halves first, the block compressing what it is given.
-    CHECK(InputFormatter::lineCounterFor(2888, true, threeQuarters) == 1083);
+    REQUIRE(inputFormatter.applyScan(1444, false, false, threeQuarters));
+    CHECK(Wire.field(1, 0x0E, 0, 11) == 1444);
 }
 
-// What bounds the capture is counted in IF units -- the counter's own width,
-// the write limit, the raster the line has to be shown in -- and what is chosen
-// is a divider, so the conversion is wanted in both directions and the ratio is
-// a term in both. docs/scaling-down-path.md
-TEST_CASE("the divider for a count of IF units inverts the line counter")
+// The other half of the split: the counter is the raw line and the ratio is
+// carried by the units the block DELIVERS, which is what every window placed
+// in IF units is measured in.
+TEST_CASE("the units a window sits in are the ones the block delivers")
+{
+    FreshChip fresh;
+    const Tv5725::InputScale threeQuarters = Tv5725::InputScale::forRatio(3, 4);
+    const HsyncPulse pulse(0.0718f);
+
+    REQUIRE(inputFormatter.applyScan(1444, false, false, threeQuarters));
+
+    // The counter wraps at 1445 raw units and the block leaves three quarters
+    // of them.
+    CHECK(inputFormatter.usableUnits() == 1083);
+    CHECK(inputFormatter.capturableLine(pulse, false).units() == 1083);
+}
+
+// What bounds the capture is counted in IF units -- the write limit, the raster
+// the line has to be shown in -- and what is chosen is a divider, so the
+// conversion is wanted in both directions and the ratio is a term in both.
+// The counter's own width is NOT one of them: it bounds the raw line.
+// docs/scaling-down-path.md
+TEST_CASE("the divider for a count of delivered units carries the ratio back")
 {
     const Tv5725::InputScale half = Tv5725::InputScale::forRatio(1, 2);
 
     CHECK(InputFormatter::samplesForUnits(1444, false) == 1444u);
     CHECK(InputFormatter::samplesForUnits(1444, true) == 2888u);
 
-    // The counter the ratio frees room in: half a line of units costs twice the
-    // samples.
+    // Half a line of delivered units costs twice the samples.
     CHECK(InputFormatter::samplesForUnits(1444, false, half) == 2888u);
-    CHECK(InputFormatter::lineCounterFor(2888, false, half) == 1444u);
 }
 
 TEST_CASE("every segment takes the increment, which is the linear case")
@@ -122,8 +146,8 @@ TEST_CASE("every segment takes the increment, which is the linear case")
         CHECK(Wire.field(1, reg, 0, 8) == threeQuarters.segment());
     CHECK(Wire.field(1, 0x0B, 0, 4) == threeQuarters.low());
 
-    CHECK(Wire.field(1, 0x0E, 0, 11) == 1083);
-    CHECK(inputFormatter.lineUnits() == 1084);
+    CHECK(Wire.field(1, 0x0E, 0, 11) == 1444);
+    CHECK(inputFormatter.usableUnits() == 1083);
 }
 
 TEST_CASE("a scan asked for no scaling leaves the block idle")
@@ -193,18 +217,18 @@ TEST_CASE("the rate nibble leaves the selector and the coarse factor alone")
     CHECK(Wire.field(1, 0x0B, 4, 2) == 1);   // IF_HS_DEC_FACTOR, the doubler's
 }
 
-// A line too long for the eleven-bit counter is refused, and compressing it is
-// what makes it fit -- which is the whole of what the block buys the sampling
-// density. docs/scaling-down-path.md
-TEST_CASE("a line the counter cannot hold fits once it is scaled down")
+// THE COUNTER BOUNDS THE RAW LINE, SO COMPRESSION BUYS NO ROOM IN IT. The
+// counter wraps once per output line, so it has to be the line the ADC is
+// actually clocking whatever the block then delivers -- which makes the
+// eleven-bit wall a wall on the DIVIDER, at every ratio.
+// docs/investigations/the-minifier-engages-on-the-coarse-factor.md
+TEST_CASE("a line the counter cannot hold is refused at every ratio")
 {
     FreshChip fresh;
 
     CHECK_FALSE(inputFormatter.applyScan(2506, false, false));
-
-    CHECK(inputFormatter.applyScan(2506, false, false,
-                                   Tv5725::InputScale::forRatio(1, 2)));
-    CHECK(Wire.field(1, 0x0E, 0, 11) == 1253);
+    CHECK_FALSE(inputFormatter.applyScan(2506, false, false,
+                                         Tv5725::InputScale::forRatio(1, 2)));
 }
 
 // IF_HSYNC_RST is eleven bits and the register takes the low bits of whatever
@@ -227,7 +251,7 @@ TEST_CASE("a line counter the register cannot hold is refused, not truncated")
 
     CHECK(Wire.field(1, 0x0E, 0, 11) != 458);
     CHECK(Wire.field(1, 0x0E, 0, 11) == 1438);
-    CHECK(inputFormatter.lineUnits() == 1439);
+    CHECK(inputFormatter.usableUnits() == 1439);
 }
 
 // THE SCAN MODE IS ONE FACT AND THE TWO REGISTERS THAT CARRY IT MUST AGREE.
@@ -593,7 +617,7 @@ TEST_CASE("the block holds the line counter it wrote")
     InputFormatter block;
 
     SUBCASE("nothing is held before the first write") {
-        CHECK(block.lineUnits() == 0);
+        CHECK(block.usableUnits() == 0);
     }
 
     SUBCASE("the write derives the counter from the divider and the scan mode") {
@@ -601,13 +625,13 @@ TEST_CASE("the block holds the line counter it wrote")
         // sample. LineCounterMax is what keeps an undoubled divider under 2048.
         block.applyScan(1438, false, false);
         CHECK(Wire.field(1, 0x0E, 0, 11) == 1438);
-        CHECK(block.lineUnits() == 1439);
+        CHECK(block.usableUnits() == 1439);
 
         // Doubled, the counter takes half of them, which is what lets a 2553
         // divider fit an eleven-bit counter at all.
         block.applyScan(2553, true, false);
         CHECK(Wire.field(1, 0x0E, 0, 11) == 1276);
-        CHECK(block.lineUnits() == 1277);
+        CHECK(block.usableUnits() == 1277);
     }
 
     SUBCASE("the counter follows a divider that changes") {
@@ -625,7 +649,7 @@ TEST_CASE("the block holds the line counter it wrote")
     SUBCASE("the counter it offers a capture window is the one it wrote") {
         block.applyScan(2000, true, false);
         CHECK(block.capturableLine(HsyncPulse(0.0718f), false).units()
-              == block.lineUnits());
+              == block.usableUnits());
     }
 }
 

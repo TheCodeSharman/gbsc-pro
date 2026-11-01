@@ -248,9 +248,13 @@ public:
     // the bring-up where a preset table would have been loaded.
     void init();
 
-    // The span the counter wraps at, which is one past what it was written
-    // with. 0 until the first write.
-    uint16_t lineUnits() const;
+    // The units the scaling-down block DELIVERS out of the line the counter
+    // wrapped: the counter's own span, compressed by the ratio. What every
+    // window placed in IF units is measured in, and 0 until the first write.
+    //
+    // It is not the counter's span, and the two are one quantity only at unity.
+    // docs/scaling-down-path.md
+    uint16_t usableUnits() const;
 
     // The block's vertical window, opened wide before a measurement is taken
     // through it. The source's field rate is timed off this block's test bus,
@@ -384,18 +388,31 @@ public:
     // applies it: PLLAD_MD 2553 against 1276 doubled, 2553 against 2553 not. A
     // counter wrapping at half the samples arriving repeats the picture.
     //
+    // **THE SCALING-DOWN RATIO IS NOT A TERM HERE.** This counter sets the
+    // OUTPUT LINE RATE -- it wraps once per output line, so output lines per
+    // source line is `divider / counter`, which is how a doubled source is
+    // doubled and the only mechanism in the block that does it. A counter
+    // shortened by the ratio therefore multiplies the output lines by
+    // `1 / ratio`: measured at a held divider of 1444, ratio 3/4 gave a counter
+    // of 1083 and a vertically duplicated card, and forcing the counter back to
+    // 1444 cured it in one register. The ratio belongs to usableUnits() and to
+    // everything counted in them.
+    // ../../../docs/investigations/the-minifier-engages-on-the-coarse-factor.md
+    //
     // It states the rule, which is what a divider has to be checked against
     // before it is chosen. **The engine does not re-derive the counter from
     // it** -- applyScan() applies it once and holds the result, because between a
     // divider write and PLLAD_LAT the ADC runs one value while the register
     // reports another.
-    static uint16_t lineCounterFor(uint16_t divider, bool lineDoubled,
-                                   InputScale scale = InputScale());
+    static uint16_t lineCounterFor(uint16_t divider, bool lineDoubled);
 
-    // Its inverse: the ADC divider whose line is this many IF units. Every
-    // bound on the capture is stated in units -- the counter's own width, what
-    // the write path carries, what the raster can show -- while what is chosen
-    // is a divider, so the same two terms convert the other way.
+    // The ADC divider whose line DELIVERS this many IF units. What bounds the
+    // capture is stated in delivered units -- what the write path carries, what
+    // the raster can show -- while what is chosen is a divider, so the two
+    // terms convert the other way.
+    //
+    // The counter's own width is NOT such a bound: it bounds the RAW line, so
+    // lineCounterFor() is its inverse and this is not.
     //
     // UNCLAMPED, because what the answer has to fit in belongs to the ADC and
     // not to this block.
@@ -411,7 +428,10 @@ public:
     InputScale scanScale() const;
 
 private:
-    uint16_t lineUnits_;
+    // The counter's own span, raw, kept so a refused scan can say what it is
+    // still counting to.
+    uint16_t counterUnits_;
+    uint16_t usableUnits_;
     bool doubled_;
     InputScale scale_;
 

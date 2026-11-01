@@ -9,16 +9,16 @@ const uint16_t SamplingClock::RecommendedPercent;
 const uint16_t SamplingClock::DoubledLineSampleLimit;
 
 uint16_t SamplingClock::recommendedDivider(uint32_t lineRateHz, uint8_t oversample,
-                                           bool lineDoubled, uint16_t dividerCeiling,
-                                           InputScale scale)
+                                           bool lineDoubled,
+                                           uint16_t dividerCeiling)
 {
     if (lineRateHz == 0)
         return 0;
 
-    // The line counter's own bound read as a bound on the divider, through the
-    // two terms that say what an IF unit costs in ADC samples.
+    // The line counter's own bound read as a bound on the divider. The counter
+    // is the RAW line, so the only term is the decimation.
     const uint32_t counterBound = InputFormatter::samplesForUnits(
-        InputFormatter::LineCounterMax, lineDoubled, scale);
+        InputFormatter::LineCounterMax, lineDoubled);
 
     uint32_t chosen = 0;
     for (uint8_t ratio = oversample < 1 ? 1 : oversample; ratio != 0;

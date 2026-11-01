@@ -1491,7 +1491,7 @@ uint16_t VideoPath::chooseDivider() const
 
     return SamplingClock::recommendedDivider(sampling_.lineRateHz(),
                                              modeOversample_, lineDoubled_,
-                                             ceiling, inputScale_);
+                                             ceiling);
 }
 
 uint16_t VideoPath::dividerCeilingForLineFilter() const
@@ -1660,7 +1660,7 @@ bool VideoPath::sizeCaptureWindow(CaptureWindow &capture)
         return false;
     }
 
-    if (inputFormatter_.lineUnits() < 64)
+    if (inputFormatter_.usableUnits() < 64)
         return fail();
 
     // **A MEASUREMENT IN RANGE IS NOT A MEASUREMENT THAT SETTLED**, and the
@@ -1948,7 +1948,7 @@ bool VideoPath::setInputScale(InputScale wanted)
     char line[64];
     snprintf(line, sizeof(line), "input scale: %u, line %u units",
              (unsigned)inputScale_.increment(),
-             (unsigned)inputFormatter_.lineUnits());
+             (unsigned)inputFormatter_.usableUnits());
     tv5725Log(line);
     return true;
 }

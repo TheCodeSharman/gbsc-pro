@@ -1092,20 +1092,28 @@ TEST_CASE("the engine holds no scaling down until it is asked for one")
     CHECK(GBS::IF_HS_RATE_LOW::read() == 0);
 }
 
-TEST_CASE("a scaling ratio shortens the counter the capture window is placed in")
+// THE COUNTER STAYS RAW. It wraps once per OUTPUT line, so a counter carrying
+// the ratio multiplies the output lines by 1 / ratio: measured at a held
+// divider of 1444, ratio 3/4 wrote a counter of 1083 and the card appeared as
+// two stacked copies, and forcing the counter back to 1444 cured it in one
+// register. The ratio belongs to the units the capture window is placed in.
+// docs/investigations/the-minifier-engages-on-the-coarse-factor.md
+TEST_CASE("a scaling ratio leaves the line counter raw")
 {
     SolvedEngine solved;
+    const Tv5725::InputScale threeQuarters = Tv5725::InputScale::forRatio(3, 4);
     const uint16_t before = GBS::IF_HSYNC_RST::read();
     REQUIRE(before != 0);
 
-    REQUIRE(solved.engine.setInputScale(Tv5725::InputScale::forRatio(3, 4)));
+    REQUIRE(solved.engine.setInputScale(threeQuarters));
 
-    CHECK(GBS::IF_HSYNC_RST::read() == Tv5725::InputScale::forRatio(3, 4)
-                                           .unitsFor(before));
-    CHECK(GBS::IF_HS_RATE_SEG0::read()
-          == Tv5725::InputScale::forRatio(3, 4).segment());
-    CHECK(GBS::IF_HS_RATE_SEG7::read()
-          == Tv5725::InputScale::forRatio(3, 4).segment());
+    const bool doubled = GBS::IF_PRGRSV_CNTRL::read() == 0;
+    CHECK(GBS::IF_HSYNC_RST::read()
+          == Tv5725::InputFormatter::lineCounterFor(Tv5725::Adc::dividerInForce(),
+                                                    doubled));
+    CHECK(GBS::IF_HSYNC_RST::read() != threeQuarters.unitsFor(before));
+    CHECK(GBS::IF_HS_RATE_SEG0::read() == threeQuarters.segment());
+    CHECK(GBS::IF_HS_RATE_SEG7::read() == threeQuarters.segment());
     CHECK(GBS::IF_SEL_HSCALE::read() == 1);
 }
 

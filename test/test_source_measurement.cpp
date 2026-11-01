@@ -791,25 +791,40 @@ TEST_CASE("the divider ceiling follows the decimation too")
     CHECK(InputFormatter::lineCounterFor(progressive, false) <= InputFormatter::LineCounterMax);
 }
 
-// The counter is what a ratio frees room in, so the divider the chooser may
-// reach follows the minifier exactly as it follows the doubler. Until it did,
-// the compression bought no sampling density at all: the room it freed was
-// never spent, and a hand-held divider past the counter was refused outright.
+// THE COUNTER BOUNDS THE RAW LINE AND A RATIO FREES NO ROOM IN IT, because the
+// counter wraps once per OUTPUT line: shortened by the ratio it would multiply
+// the output lines by 1 / ratio rather than compress anything. So the chooser's
+// counter bound carries no ratio, and what the compression lifts is the bound
+// the RASTER puts on delivered units -- which VideoPath converts and hands in as
+// dividerCeiling.
 // docs/investigations/the-minifier-engages-on-the-coarse-factor.md
-TEST_CASE("a minifying scale raises the divider the counter allows")
+TEST_CASE("the counter bounds the divider at its own raw width")
 {
-    // 1280x720@60, where the ADC's own rating leaves the counter binding first.
-    const uint32_t lineRate = 45013u;
-    const InputScale half = InputScale::forRatio(1, 2);
+    // 1280x720@60, where the ADC's own rating leaves the counter binding first:
+    // the 1x row affords 3527 and the counter 2047, even so the counter divides
+    // the line exactly.
+    const uint16_t chosen = SamplingClock::recommendedDivider(45013u, 1, false);
 
-    const uint16_t unity = SamplingClock::recommendedDivider(lineRate, 1, false);
-    const uint16_t minified =
-        SamplingClock::recommendedDivider(lineRate, 1, false, 0, half);
-
-    CHECK(InputFormatter::lineCounterFor(unity, false) <= InputFormatter::LineCounterMax);
-    CHECK(minified > unity);
-    CHECK(InputFormatter::lineCounterFor(minified, false, half)
+    CHECK(chosen == 2046u);
+    CHECK(InputFormatter::lineCounterFor(chosen, false)
           <= InputFormatter::LineCounterMax);
+}
+
+// The raster is what the compression buys room against, so a ceiling stated in
+// delivered units reaches a divider the raster alone could not. 1443 delivered
+// units is what 1080p affords a 59.94 Hz source on the engine's display clock;
+// compressed to 0.705 of the line they cost the whole counter.
+TEST_CASE("a ceiling in delivered units is what the ratio lifts")
+{
+    const InputScale threeQuarters = InputScale::forRatio(3, 4);
+    const uint32_t lineRate = 45013u;
+
+    const uint16_t raster = InputFormatter::samplesForUnits(1443, false);
+    const uint16_t compressed =
+        (uint16_t)InputFormatter::samplesForUnits(1443, false, threeQuarters);
+
+    CHECK(SamplingClock::recommendedDivider(lineRate, 1, false, compressed)
+          > SamplingClock::recommendedDivider(lineRate, 1, false, raster));
 }
 
 // --- the line rate, measured off the chip ------------------------------------

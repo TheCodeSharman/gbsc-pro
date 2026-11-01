@@ -6,17 +6,19 @@
 
 namespace Tv5725 {
 
-InputFormatter::InputFormatter() : lineUnits_(0), doubled_(false) {}
+InputFormatter::InputFormatter()
+    : counterUnits_(0), usableUnits_(0), doubled_(false)
+{
+}
 
 const uint16_t InputFormatter::LineCounterMax;
 const uint16_t InputFormatter::DoubleBelowLines;
 const uint16_t InputFormatter::DoubledTailBlanking;
 const uint16_t InputFormatter::LineDoubleReset;
 
-uint16_t InputFormatter::lineCounterFor(uint16_t divider, bool lineDoubled,
-                                       InputScale scale)
+uint16_t InputFormatter::lineCounterFor(uint16_t divider, bool lineDoubled)
 {
-    return scale.unitsFor(lineDoubled ? (uint16_t)(divider / 2) : divider);
+    return lineDoubled ? (uint16_t)(divider / 2) : divider;
 }
 
 uint32_t InputFormatter::samplesForUnits(uint32_t units, bool lineDoubled,
@@ -28,7 +30,7 @@ uint32_t InputFormatter::samplesForUnits(uint32_t units, bool lineDoubled,
 VideoSourceLine InputFormatter::capturableLine(const HsyncPulse &pulse,
                                                bool separated) const
 {
-    return VideoSourceLine::forDuty(lineUnits_, pulse, doubled_, separated);
+    return VideoSourceLine::forDuty(usableUnits_, pulse, doubled_, separated);
 }
 
 VideoSourceLine InputFormatter::capturableFrame(uint16_t sourceLines,
@@ -150,7 +152,7 @@ void InputFormatter::init()
     IF_AUTO_OFST_V_RANGE::write(0x0);            // s1_2a[7:4]
 }
 
-uint16_t InputFormatter::lineUnits() const { return lineUnits_; }
+uint16_t InputFormatter::usableUnits() const { return usableUnits_; }
 
 bool InputFormatter::scanIsDoubled() const { return doubled_; }
 
@@ -184,12 +186,13 @@ void InputFormatter::writeLineCounterStart(uint16_t pixels)
 bool InputFormatter::applyScan(uint16_t divider, bool lineDoubled,
                                bool component, InputScale scale)
 {
-    const uint16_t counter = lineCounterFor(divider, lineDoubled, scale);
+    const uint16_t counter = lineCounterFor(divider, lineDoubled);
     if (counter > LineCounterMax) {
         char line[72];
         snprintf(line, sizeof(line),
                  "if line counter: %u does not fit, holding %u",
-                 (unsigned)counter, (unsigned)(lineUnits_ ? lineUnits_ - 1 : 0));
+                 (unsigned)counter,
+                 (unsigned)(counterUnits_ ? counterUnits_ - 1 : 0));
         tv5725Log(line);
         return false;
     }
@@ -229,8 +232,10 @@ bool InputFormatter::applyScan(uint16_t divider, bool lineDoubled,
     IF_HS_RATE_LOW::write(scale.low());
 
     // The counter wraps one past its last value, so the span is the register
-    // plus one.
-    lineUnits_ = (uint16_t)(counter + 1);
+    // plus one -- and what the block DELIVERS out of that span is the ratio's
+    // share of it. The two part company here and nowhere else.
+    counterUnits_ = (uint16_t)(counter + 1);
+    usableUnits_ = scale.unitsFor(counterUnits_);
     doubled_ = lineDoubled;
     scale_ = scale;
     return true;
