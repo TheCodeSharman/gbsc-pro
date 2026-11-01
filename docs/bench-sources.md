@@ -307,6 +307,22 @@ mode the machine can hold. That reads exactly like a dead board. A mode file
 lists timings the MONITOR will accept and says nothing about what VIDC20 can
 clock, so the generator cannot be the thing that knows.
 
+### It presents TWO 312-line modes, and which one is a property of the TITLE
+
+On `vga` at 312 lines the machine emits either **15625 Hz / 50.081 Hz** or
+**15748 Hz / 50.475 Hz**, and the field rate is selected by which ADFFS title is
+launched rather than by any mode request. Measured: Nevryon, Cannon Fodder,
+James Pond and Lemmings all present 15748 / 50.475, where Zool and Lemmings 2
+present 15625 / 50.081. The split is Archimedes originals against the 32-bit
+re-releases -- ADFFS translates VIDC1 registers to VIDC20 for Arc-coded titles
+and takes the monitor definition's timings otherwise.
+
+So **two field rates are reachable on one cable with no bench trip**, which is
+what a rate-following change wants: same input, same count, same sync
+arrangement, only the field rate moving. **The odd line rate is not itself
+unstable** -- Lemmings on 15748 holds the frame lock parked over 40 s, so a
+fault seen there is not explained by the rate being off-standard.
+
 ### It is the only source that can put ONE divider under two line rates
 
 The engine halves `PLLAD_MD` when the line rate doubles, and at 1096 the ADC PLL

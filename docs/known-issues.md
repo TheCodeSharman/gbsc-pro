@@ -910,6 +910,57 @@ evidence.
 RISC PC modes on `vga`, so a statement about the suite is not a statement about
 the Wii -- which is what let the entry above through.
 
+### A rate mis-measured at acquisition is unrecoverable, and the crossover sweeps the picture
+
+Measured 2026-11-01 on `vga`, the RISC PC at 312 lines into 1920x1080.
+
+ADFFS presents a title's timing deterministically -- four titles read exactly
+50474 mHz across many acquisitions. One acquisition of the same title read
+**50516 mHz**, 0.083% high. `matchRate()` sets the display clock from that
+reading, so the output ran 0.083% fast for the life of that acquisition.
+
+**`MaxCorrection` is 0.0006, so the trim cannot answer 0.00083.** It saturates
+every pass and the phase never comes back:
+
+```
+err   771012  dErr        0  step +2160
+err   555722  dErr  -215290  step +2160
+err  -124776  dErr  -231258  step -2160
+err -1468055  dErr  -202478  step -2168
+err  1504504  dErr  2972559   <- wrapped the frame
+```
+
+The drift confirms the mis-measurement independently: 220 000 ticks a pass,
+over 84.3 frames of a 3 169 926 frame, is 8.23e-4 against the 8.32e-4 the two
+rate readings differ by. The read/write crossover then sweeps the picture as a
+travelling tear, wrapping about every 23 s, which is visible on the panel.
+Re-acquiring the same source read 50475 mHz and the lock parked at once, so it
+is the READING that varies and not the source.
+
+**THE ENTRY BELOW IS THE SAME FAULT.** "The frame time lock stopped converging
+on a settled source" records the output period sitting 0.131% from the input's
+with the clock hunting over 0.120% and calls the cause unexplained. 0.131% is
+likewise past the 0.06% the trim can reach, so a rate accepted wrong at
+acquisition explains it, on `ypbpr` as here.
+
+**The drift is the fix, because it measures the error.** A trim saturated in one
+direction for several consecutive passes has established that the coarse step
+was wrong, and the phase movement per pass gives the rate error in units the
+engine already holds -- so the answer is to re-run `matchRate()` from it rather
+than to keep trimming at a clamp. Not implemented.
+
+**SLEW LIMITING THE TRIM IS MEASURED WRONG AND MUST NOT BE REINSTATED.**
+`MaxFrameRateChange` held to 0.00002 produces exactly the saturation above, at
++/-2160 Hz a pass, where the unlimited trim at least reaches the clamp in one
+pass. A bad SAMPLE wants rejecting; a rate that SITS wrong wants re-measuring.
+
+Still open and separate: a phase step of about 143 500 ticks, roughly once a
+minute, with both pin periods normal either side, answered in full as an
+18 544 Hz clock step and twenty to thirty seconds of ramp. Seen on ONE title
+only, and not reproduced on three others at the same line rate on the same
+input, so it tracks that title rather than the mode or the board. Cause
+unestablished.
+
 ### The frame time lock stopped converging on a settled source, and the ADC PLL did not care
 
 Measured 2026-10-23 on `ypbpr`, the Wii at 480p into 1920x1080, across an hour
