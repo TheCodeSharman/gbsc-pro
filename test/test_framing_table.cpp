@@ -370,3 +370,36 @@ TEST_CASE("a store that collapses two records keeps the shape just stored")
     REQUIRE(table.find(at(50.474f), (PanAndZoom *)NULL, &shape));
     CHECK(shape.tenThousandths() == Aspect(Aspect::FourThree).tenThousandths());
 }
+
+TEST_CASE("a source nobody has chosen a route for stores none")
+{
+    // Not the same as one stored as scaled: the first takes the unit's
+    // default and the second overrides it.
+    FramingTable table;
+    REQUIRE(table.remember(Bench, Framed));
+
+    Route route = Route::passedThrough();
+    REQUIRE(table.find(Bench, 0, 0, &route));
+    CHECK_FALSE(route.stored());
+}
+
+TEST_CASE("the route remembered for a source comes back")
+{
+    FramingTable table;
+    REQUIRE(table.remember(Bench, Framed, Aspect(), Route::passedThrough()));
+
+    Route route;
+    REQUIRE(table.find(Bench, 0, 0, &route));
+    CHECK(route == Route::passedThrough());
+}
+
+TEST_CASE("a source stored as scaled is told apart from one stored as nothing")
+{
+    FramingTable table;
+    REQUIRE(table.remember(Bench, Framed, Aspect(), Route::scaled()));
+
+    Route route;
+    REQUIRE(table.find(Bench, 0, 0, &route));
+    CHECK(route.stored());
+    CHECK_FALSE(route.passesThrough());
+}

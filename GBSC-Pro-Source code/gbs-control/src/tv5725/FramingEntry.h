@@ -18,6 +18,7 @@
 
 #include "Aspect.h"
 #include "PanAndZoom.h"
+#include "Route.h"
 #include "SourceKey.h"
 
 namespace Tv5725 {
@@ -25,15 +26,17 @@ namespace Tv5725 {
 class FramingEntry {
 public:
     FramingEntry();
-    FramingEntry(const SourceKey &key, const PanAndZoom &framing, Aspect shape);
+    FramingEntry(const SourceKey &key, const PanAndZoom &framing, Aspect shape,
+                 Route route);
 
     SourceKey key() const;
     PanAndZoom framing() const;
     Aspect shape() const;
+    Route route() const;
 
-    // The stored key stands: what a re-tune replaces is the framing and the
-    // shape, and the reading that found the entry is not what identifies it.
-    void reframe(const PanAndZoom &framing, Aspect shape);
+    // The stored key stands: what a re-tune replaces is everything the user
+    // chose, and the reading that found the entry is not what identifies it.
+    void reframe(const PanAndZoom &framing, Aspect shape, Route route);
 
     // The grammar's unit, and the store's. Clamped rather than wrapped: a
     // proportion outside the region it is a proportion of describes no window,
@@ -51,12 +54,15 @@ private:
         VsyncPolarityShift = 2,
         PolarityBits = 0x03,
         HorizontalTuned = 0x10,
-        VerticalTuned = 0x20
+        VerticalTuned = 0x20,
+        RouteStored = 0x40,
+        RoutePassesThrough = 0x80
     };
 
     static uint8_t polarityAt(SourceKey::Polarity polarity, uint8_t shift);
     SourceKey::Polarity polarityAt(uint8_t shift) const;
     void frame(const PanAndZoom &framing);
+    void take(Route route);
 
     uint16_t lines_;
     uint16_t rateCentihertz_;

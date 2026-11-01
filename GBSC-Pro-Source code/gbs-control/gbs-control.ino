@@ -2634,6 +2634,29 @@ static void applyPassThroughPreference()
     inputAcquisition.allowPassThrough(!uopt->preferScalingRgbhv);
 }
 
+// Whether a source is passed through is a property of the SOURCE -- the chip
+// decides only whether it is possible -- so a toggle stores against the source
+// in force. The unit's preference is what a source with nothing stored takes,
+// and 'P' is what moves that.
+static void togglePassThroughForSource()
+{
+    const Tv5725::Route wanted =
+        Tv5725::Route::chosen(!geometry.routeWanted().passesThrough());
+    if (!geometry.chooseRoute(wanted)) {
+        debugPrintf("route: not stored, no source identified\n");
+        return;
+    }
+    inputAcquisition.resolveFromSource(millisNow());
+}
+
+// A resolution is a command to scale THIS source: pass-through holds a source
+// off the resolution just chosen. The unit's preference is left alone, so no
+// other source changes route because one was given a resolution.
+static void scaleSourceForResolution()
+{
+    geometry.chooseRoute(Tv5725::Route::scaled());
+}
+
 void enterHdBypass()
 {
     if (!Tv5725::Chip::hasPower()) {
@@ -4499,9 +4522,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     // preference is the permission, and the pass that follows
                     // acts on it. Entering from here as well left the row with
                     // no way to say OFF.
-                    uopt->preferScalingRgbhv = uopt->preferScalingRgbhv ? 0 : 1;
-                    applyPassThroughPreference();
-                    saveUserPrefs();
+                    togglePassThroughForSource();
                     break;
                 case 'T':; // SerialMprint(F("auto gain "));
                     if (!geometry.pictureOptions().autoGain()) {
@@ -5201,8 +5222,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
             // off the resolution just chosen, so choosing one leaves it, and
             // before the change or the next pass routes the source back.
             chooseOutputMode(wanted);
-            uopt->preferScalingRgbhv = 1;
-            applyPassThroughPreference();
+            scaleSourceForResolution();
             changeOutputResolution();
             saveUserPrefs();
         }
@@ -5361,8 +5381,7 @@ void handleType2Command(char argument)
             // the source's own timing to the encoder and the engine's raster
             // reaches nothing -- so choosing one leaves it. Before the change,
             // or the next pass routes the source straight back.
-            uopt->preferScalingRgbhv = 1;
-            applyPassThroughPreference();
+            scaleSourceForResolution();
 
             changeOutputResolution();
             saveUserPrefs();
@@ -5509,14 +5528,18 @@ void handleType2Command(char argument)
             uopt->applyAspect = geometry.appliesAspect() ? 1 : 0;
             saveUserPrefs();
             break;
-        case 'x':
+        case 'P':
+            // The default a source with nothing stored against it takes. The
+            // per-source choice is 'x', and it overrides this.
             uopt->preferScalingRgbhv = !uopt->preferScalingRgbhv;
             applyPassThroughPreference();
             saveUserPrefs();
-            // Applied to the source in force rather than at the next one. The
-            // preference is the user's veto on the route, and a bypass
-            // reference has to be reachable while a source stands still.
             inputAcquisition.resolveFromSource(millisNow());
+            break;
+        case 'x':
+            // Applied to the source in force rather than at the next one: a
+            // bypass reference has to be reachable while a source stands still.
+            togglePassThroughForSource();
             break;
         case 'X':; // SerialMprint(F("ExternalClockGenerator "));
             if (uopt->disableExternalClockGenerator == 0) {
@@ -6763,6 +6786,7 @@ void startWebserver()
                  "\"poh\":%d,\"peh\":%d,\"pov\":%d,\"pev\":%d,"
                  "\"lineRateHz\":%lu,\"lowLineRate\":%s,"
                  "\"aspect\":%u,\"shaping\":%s,\"shaped\":%s,"
+                 "\"route\":\"%s\",\"routeStored\":%s,"
                  "\"present\":%s,\"state\":\"%s\"}"),
             geometry.originUnitsOn(Tv5725::AxisHorizontal),
             geometry.extentUnitsOn(Tv5725::AxisHorizontal),
@@ -6800,6 +6824,11 @@ void startWebserver()
             // False where an axis had to fill because the part cannot minify
             // into the shape. No register distinguishes that from no shape.
             geometry.shapeHonoured() ? "true" : "false",
+            // Which way this source is wanted, and whether the source itself
+            // chose it. A source with nothing stored reports the unit's
+            // default, so `route` alone cannot say whether a choice was made.
+            geometry.routeWanted().passesThrough() ? "passThrough" : "scale",
+            geometry.storedRouteChosen() ? "true" : "false",
             // The engine's own answer to "is a source there": a steadiness run
             // over the line count paired with one reading of what the sync
             // processor counts against the divider, not a live reading of

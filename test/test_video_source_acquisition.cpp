@@ -4345,3 +4345,91 @@ TEST_CASE("and it is searched once the transition is over")
 
     CHECK(Adc::phaseFound());
 }
+
+// The key the pass-through source forms, taken from a run rather than built by
+// hand: what identifies a source is a measurement, and a key written out here
+// would pin the identity rules rather than the route.
+static SourceKey passThroughSourceKey()
+{
+    seedBenchSource();
+    seedPassThroughSource();
+
+    Acquiring unit;
+    unit.acquisition.usePassThroughSwitch(enterPassThrough);
+    unit.acquisition.allowPassThrough(true);
+    unit.start();
+    REQUIRE(unit.pollUntilSolved(8));
+    return unit.path.framedKey();
+}
+
+TEST_CASE("a source stored as scaled is scaled although the unit would pass it through")
+{
+    // Whether pass-through is wanted is a property of the SOURCE -- the chip
+    // decides only whether it is possible -- so a choice stored against one
+    // source overrides the unit's default without reaching any other.
+    const SourceKey stored = passThroughSourceKey();
+
+    seedBenchSource();
+    seedPassThroughSource();
+    g_passThroughSwitches = 0;
+
+    Acquiring unit;
+    REQUIRE(unit.framings.remember(stored, PanAndZoom(), Aspect(),
+                                   Route::scaled()));
+    unit.acquisition.usePassThroughSwitch(enterPassThrough);
+    unit.acquisition.allowPassThrough(true);
+    unit.start();
+
+    REQUIRE(unit.pollUntilSolved(8));
+    CHECK_FALSE(unit.path.outputMode()->isBypass());
+    CHECK(g_passThroughSwitches == 0);
+}
+
+TEST_CASE("a source stored as passed through is passed through although the unit would scale")
+{
+    const SourceKey stored = passThroughSourceKey();
+
+    seedBenchSource();
+    seedPassThroughSource();
+    g_passThroughSwitches = 0;
+
+    Acquiring unit;
+    REQUIRE(unit.framings.remember(stored, PanAndZoom(), Aspect(),
+                                   Route::passedThrough()));
+    unit.acquisition.usePassThroughSwitch(enterPassThrough);
+    unit.acquisition.allowPassThrough(false);
+    unit.start();
+
+    REQUIRE(unit.pollUntilSolved(8));
+    CHECK(unit.path.outputMode()->isBypass());
+    CHECK(g_passThroughSwitches == 1);
+}
+
+TEST_CASE("a framing press does not forget the route stored for the source")
+{
+    // The framing and the route live in one record, so a press that writes the
+    // record has to carry what it is not changing. Asked on the SCALED path,
+    // because a passed-through source has no capture window for a press to
+    // move and the check would pass without exercising anything.
+    seedBenchSource();
+
+    Acquiring first;
+    first.start();
+    REQUIRE(first.pollUntilSolved());
+    const SourceKey bench = first.path.framedKey();
+    REQUIRE(bench.valid());
+
+    seedBenchSource();
+
+    Acquiring unit;
+    REQUIRE(unit.framings.remember(bench, PanAndZoom(), Aspect(),
+                                   Route::scaled()));
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+
+    REQUIRE(unit.path.pan(8, 0));
+
+    Route route;
+    REQUIRE(unit.framings.find(bench, 0, 0, &route));
+    CHECK(route == Route::scaled());
+}

@@ -98,8 +98,14 @@ bool FramingLine::empty(const char *line)
     return *at == '\0' || *at == '#';
 }
 
+bool FramingLine::moreOnLine(const char *at)
+{
+    const char *next = skipSpace(at);
+    return *next != '\0' && *next != '#' && *next != '\n' && *next != '\r';
+}
+
 bool FramingLine::read(const char *&at, SourceKey &key, PanAndZoom &framing,
-                       Aspect &shape)
+                       Aspect &shape, Route &route)
 {
     long lines = 0, width = 0;
     float rate = 0.0f;
@@ -140,16 +146,22 @@ bool FramingLine::read(const char *&at, SourceKey &key, PanAndZoom &framing,
 
     // Absent and unreadable are not the same: a record from before the shape
     // existed ends after the fourth number, and one whose fifth field is
-    // rubbish is malformed like any other line.
+    // rubbish is malformed like any other line. The sixth, the route, is the
+    // same bargain one field later.
     long shown = Aspect::Fill;
-    const char *afterFraming = skipSpace(at);
-    if (*afterFraming != '\0' && *afterFraming != '#' && *afterFraming != '\n'
-        && *afterFraming != '\r') {
-        if (!number(at, shown) || shown < 0 || shown > 0xFFFF)
+    if (moreOnLine(at) && (!number(at, shown) || shown < 0 || shown > 0xFFFF))
+        return false;
+
+    Route chosen;
+    if (moreOnLine(at)) {
+        long passesThrough = 0;
+        if (!number(at, passesThrough) || passesThrough < 0 || passesThrough > 1)
             return false;
+        chosen = Route::chosen(passesThrough != 0);
     }
 
     key = read;
+    route = chosen;
     framing = PanAndZoom(proportionOf(value[0]), proportionOf(value[1]),
                          proportionOf(value[2]), proportionOf(value[3]));
     shape = Aspect((uint16_t)shown);
@@ -172,7 +184,7 @@ int FramingLine::writeKey(char *out, uint8_t size, const SourceKey &key)
 }
 
 int FramingLine::write(char *out, uint8_t size, const SourceKey &key,
-                       const PanAndZoom &framing, Aspect shape)
+                       const PanAndZoom &framing, Aspect shape, Route route)
 {
     const int named = writeKey(out, size, key);
     if (named < 0)
@@ -187,7 +199,18 @@ int FramingLine::write(char *out, uint8_t size, const SourceKey &key,
         tenThousandthsOf(framing.extentOn(AxisVertical)),
         (unsigned)shape.tenThousandths());
 
-    return written > 0 && written < room ? named + written : -1;
+    if (written <= 0 || written >= room)
+        return -1;
+    if (!route.stored())
+        return named + written;
+
+    // Only where the user chose, because the field's absence IS the third
+    // state: writing a 0 for an unchosen source stores a choice nobody made.
+    const int tail = snprintf(out + named + written, (size_t)(room - written),
+                              " %u", route.passesThrough() ? 1u : 0u);
+    if (tail <= 0 || tail >= room - written)
+        return -1;
+    return named + written + tail;
 }
 
 }  // namespace Tv5725

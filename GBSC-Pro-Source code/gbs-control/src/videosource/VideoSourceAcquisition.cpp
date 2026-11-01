@@ -28,7 +28,7 @@ VideoSourceAcquisition::VideoSourceAcquisition(Tv5725::SourceMeasurement &sampli
     : sampling_(sampling), videoPath_(videoPath), maintenanceAllowed_(false),
       channelSyncServicedEver_(false), channelSyncServicedMs_(0),
       syncAwaySeen_(false), syncAwayMs_(0),
-      mayRun_(0), passThroughSwitch_(0), passThroughAllowed_(false), resolution_(0),
+      mayRun_(0), passThroughSwitch_(0), resolution_(0),
       detectedMs_(0),
       detectedEver_(false), solvedLines_(0), solvedForInput_(0),
       solvedFrame_(0), solvedLineRateHz_(0),
@@ -207,9 +207,9 @@ bool VideoSourceAcquisition::acquireSamplingPhase(const char *reason)
 // choosing a resolution appeared to do nothing.
 void VideoSourceAcquisition::allowPassThrough(bool allowed)
 {
-    if (passThroughAllowed_ == allowed)
+    if (videoPath_.prefersPassThrough() == allowed)
         return;
-    passThroughAllowed_ = allowed;
+    videoPath_.preferPassThrough(allowed);
     videoPath_.inputTimingsChanged();
 }
 
@@ -304,7 +304,7 @@ bool VideoSourceAcquisition::gaveBackPassThrough()
 
 bool VideoSourceAcquisition::passThroughSuitsSource() const
 {
-    return passThroughAllowed_
+    return videoPath_.routeWanted().passesThrough()
            && Tv5725::HdBypass::suitsSource(sampling_.sourceLines(),
                                   sampling_.fieldRateHz())
            && Tv5725::HdBypass::suitsLineRate(sampling_.lineRateHz());

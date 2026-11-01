@@ -39,7 +39,8 @@ static uint16_t countThroughThreshold(bool rejectsEqualisation);
 VideoPath::VideoPath(DisplayClock &displayClock, SourceMeasurement &sampling,
                      FramingTable &framings, InputFormatter &inputFormatter)
     : displayClock_(displayClock), inputFormatter_(inputFormatter),
-      applyAspect_(true), framedKeyRateConfirmed_(false),
+      applyAspect_(true), prefersPassThrough_(false),
+      framedKeyRateConfirmed_(false),
       usableHorizontal_(0), usableVertical_(0),
       reachHorizontal_(0), reachVertical_(0),
       firstHorizontal_(0), firstVertical_(0),
@@ -1806,13 +1807,42 @@ void VideoPath::write(const OutputWindow &solved, const CaptureWindow &capture)
 // register dump both report the live framing, which the press did move.
 void VideoPath::rememberFraming()
 {
-    if (framings_.remember(framedKey_, framing_, aspect_))
+    // Carried rather than defaulted. The route shares the record, so a press
+    // that wrote it back without one would forget the choice on the first pad
+    // press after it.
+    Route route;
+    framings_.find(framedKey_, NULL, NULL, &route);
+    if (framings_.remember(framedKey_, framing_, aspect_, route))
         return;
 
     char line[64];
     snprintf(line, sizeof(line), "framing: not stored, %u sources held",
              (unsigned)framings_.count());
     tv5725Log(line);
+}
+
+Route VideoPath::storedRoute() const
+{
+    Route route;
+    framings_.find(arrivingKey(), NULL, NULL, &route);
+    return route;
+}
+
+Route VideoPath::routeWanted() const
+{
+    const Route stored = storedRoute();
+    return stored.stored() ? stored : Route::chosen(prefersPassThrough_);
+}
+
+bool VideoPath::storedRouteChosen() const { return storedRoute().stored(); }
+
+void VideoPath::preferPassThrough(bool prefer) { prefersPassThrough_ = prefer; }
+
+bool VideoPath::prefersPassThrough() const { return prefersPassThrough_; }
+
+bool VideoPath::chooseRoute(Route route)
+{
+    return framings_.remember(framedKey_, framing_, aspect_, route);
 }
 
 bool VideoPath::step(const PanAndZoom &wanted)

@@ -12,6 +12,7 @@
 #include <stdint.h>
 
 #include "FramingEntry.h"
+#include "Route.h"
 
 namespace Tv5725 {
 
@@ -30,18 +31,18 @@ public:
 
     FramingTable();
 
-    // The framing stored against this source, if there is one. Either pointer
-    // may be null when only the other, or only the presence, matters.
+    // What is stored against this source, if anything is. Any pointer may be
+    // null when only the others, or only the presence, matters.
     bool find(const SourceKey &key, PanAndZoom *into,
-              Aspect *shape = NULL) const;
+              Aspect *shape = NULL, Route *route = NULL) const;
 
     // Replaces an entry for the same source rather than adding one, so
     // re-tuning does not fill the table with its own history. False when the
     // key identifies nothing, or when the table is full and this is new.
     bool remember(const SourceKey &key, const PanAndZoom &framing,
-                  Aspect shape = Aspect());
+                  Aspect shape = Aspect(), Route route = Route());
 
-    // Takes every entry another table holds, shapes included. The file is read
+    // Takes every entry another table holds, whole. The file is read
     // into a scratch table so a read failing part way cannot leave the live one
     // holding half a file, and this is what crosses that gap. False when any
     // entry would not fit; what fitted is kept.
@@ -62,6 +63,7 @@ public:
     SourceKey keyAt(uint16_t index) const;
     PanAndZoom framingAt(uint16_t index) const;
     Aspect aspectAt(uint16_t index) const;
+    Route routeAt(uint16_t index) const;
 
     void clear();
 

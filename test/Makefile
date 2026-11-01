@@ -287,8 +287,9 @@ framing-table:
 	@mkdir -p "$(OUT)"
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_framing_table" \
-	  "$(HERE)/test_framing_table.cpp" src/tv5725/FramingTable.cpp \
-	  src/tv5725/FramingEntry.cpp src/tv5725/SourceKey.cpp $(SAMPLING_SRC) \
+	  "$(HERE)/test_framing_table.cpp" src/tv5725/FramingTable.cpp src/tv5725/Route.cpp \
+	  src/tv5725/FramingEntry.cpp \
+	  src/tv5725/SourceKey.cpp $(SAMPLING_SRC) \
  src/tv5725/PanAndZoom.cpp src/tv5725/Aspect.cpp src/tv5725/Axis.cpp \
 	  src/tv5725/Scale.cpp src/tv5725/BlankingTiming.cpp \
 	  src/tv5725/OutputMapping.cpp src/tv5725/RasterFit.cpp \
@@ -350,6 +351,7 @@ framing-file:
 	  -o "$(OUT)/test_framing_file" \
 	  "$(HERE)/test_framing_file.cpp" src/prefs/FramingFile.cpp \
 	  src/tv5725/FramingText.cpp src/tv5725/FramingLine.cpp \
+	  src/tv5725/Route.cpp \
 	  src/tv5725/FramingTable.cpp src/tv5725/FramingEntry.cpp \
 	  src/tv5725/SourceKey.cpp \
 	  $(SAMPLING_SRC) \
@@ -364,7 +366,7 @@ framing-text:
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_framing_text" \
 	  "$(HERE)/test_framing_text.cpp" src/tv5725/FramingText.cpp \
-	  src/tv5725/FramingLine.cpp \
+	  src/tv5725/FramingLine.cpp src/tv5725/Route.cpp \
 	  src/tv5725/FramingTable.cpp src/tv5725/FramingEntry.cpp \
 	  src/tv5725/SourceKey.cpp \
 	  $(SAMPLING_SRC) \

@@ -40,7 +40,7 @@ void FramingTable::collapseOnto(uint16_t kept, const SourceKey &identified)
 }
 
 bool FramingTable::find(const SourceKey &key, PanAndZoom *into,
-                        Aspect *shape) const
+                        Aspect *shape, Route *route) const
 {
     const int16_t at = indexOf(key);
     if (at < 0)
@@ -49,18 +49,20 @@ bool FramingTable::find(const SourceKey &key, PanAndZoom *into,
         *into = entries_[at].framing();
     if (shape)
         *shape = entries_[at].shape();
+    if (route)
+        *route = entries_[at].route();
     return true;
 }
 
 bool FramingTable::remember(const SourceKey &key, const PanAndZoom &framing,
-                            Aspect shape)
+                            Aspect shape, Route route)
 {
     if (!key.valid())
         return false;
 
     const int16_t at = indexOf(key);
     if (at >= 0) {
-        entries_[at].reframe(framing, shape);
+        entries_[at].reframe(framing, shape, route);
         collapseOnto((uint16_t)at, key);
         moved();
         return true;
@@ -68,7 +70,7 @@ bool FramingTable::remember(const SourceKey &key, const PanAndZoom &framing,
     if (count_ >= Entries)
         return false;
 
-    entries_[count_] = FramingEntry(key, framing, shape);
+    entries_[count_] = FramingEntry(key, framing, shape, route);
     ++count_;
     moved();
     return true;
@@ -78,7 +80,8 @@ bool FramingTable::adopt(const FramingTable &other)
 {
     bool whole = true;
     for (uint16_t i = 0; i < other.count(); ++i)
-        if (!remember(other.keyAt(i), other.framingAt(i), other.aspectAt(i)))
+        if (!remember(other.keyAt(i), other.framingAt(i), other.aspectAt(i),
+                      other.routeAt(i)))
             whole = false;
     return whole;
 }
@@ -116,6 +119,11 @@ PanAndZoom FramingTable::framingAt(uint16_t index) const
 Aspect FramingTable::aspectAt(uint16_t index) const
 {
     return entries_[index].shape();
+}
+
+Route FramingTable::routeAt(uint16_t index) const
+{
+    return entries_[index].route();
 }
 
 void FramingTable::clear()

@@ -295,3 +295,51 @@ TEST_CASE("filling is written out, so a shape turned off is not read back as abs
     REQUIRE(read.find(Bench, (PanAndZoom *)NULL, &shape));
     CHECK(shape.fills());
 }
+
+TEST_CASE("a stored route survives being written out and read back")
+{
+    FramingTable written;
+    const PanAndZoom framing(0.0364f, 0.8525f, 0.0740f, 0.8553f);
+    REQUIRE(written.remember(Bench, framing, Aspect(), Route::passedThrough()));
+
+    char line[64];
+    rendered(written, 0, line);
+
+    FramingTable read;
+    FramingText(read).readLine(line);
+
+    Route back;
+    REQUIRE(read.find(Bench, 0, 0, &back));
+    CHECK(back == Route::passedThrough());
+}
+
+TEST_CASE("a record written before routes existed reads back as choosing none")
+{
+    // Five numbers is every file already on a unit. Rejecting one, or reading
+    // the absent field as scaling, overrides a default the user never set.
+    FramingTable read;
+    FramingText(read).readLine("311@50.08/1213-- = 364 8525 740 8553 13333");
+
+    Route route = Route::passedThrough();
+    REQUIRE(read.find(Bench, 0, 0, &route));
+    CHECK_FALSE(route.stored());
+}
+
+TEST_CASE("a record choosing to scale is told apart from one choosing nothing")
+{
+    FramingTable read;
+    FramingText(read).readLine("311@50.08/1213-- = 364 8525 740 8553 13333 0");
+
+    Route route;
+    REQUIRE(read.find(Bench, 0, 0, &route));
+    CHECK(route.stored());
+    CHECK_FALSE(route.passesThrough());
+}
+
+TEST_CASE("a sixth field that is not a route is malformed like any other line")
+{
+    FramingTable read;
+    FramingText(read).readLine("311@50.08/1213-- = 364 8525 740 8553 13333 7");
+
+    CHECK_FALSE(read.find(Bench, 0));
+}

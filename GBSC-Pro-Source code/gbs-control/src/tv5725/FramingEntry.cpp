@@ -42,6 +42,16 @@ SourceKey::Polarity FramingEntry::polarityAt(uint8_t shift) const
     return (SourceKey::Polarity)((flags_ >> shift) & PolarityBits);
 }
 
+void FramingEntry::take(Route route)
+{
+    flags_ &= (uint8_t)~(RouteStored | RoutePassesThrough);
+    if (!route.stored())
+        return;
+    flags_ |= RouteStored;
+    if (route.passesThrough())
+        flags_ |= RoutePassesThrough;
+}
+
 void FramingEntry::frame(const PanAndZoom &framing)
 {
     horizontalOrigin_ = tenThousandthsOf(framing.originOn(AxisHorizontal));
@@ -57,7 +67,7 @@ void FramingEntry::frame(const PanAndZoom &framing)
 }
 
 FramingEntry::FramingEntry(const SourceKey &key, const PanAndZoom &framing,
-                           Aspect shape)
+                           Aspect shape, Route route)
     : lines_(key.lines()),
       rateCentihertz_((uint16_t)lrintf(key.rateHz() * RateCentihertz)),
       syncWidth_(tenThousandthsOf(key.syncWidth())),
@@ -66,12 +76,14 @@ FramingEntry::FramingEntry(const SourceKey &key, const PanAndZoom &framing,
                        | polarityAt(key.vsyncPolarity(), VsyncPolarityShift)))
 {
     frame(framing);
+    take(route);
 }
 
-void FramingEntry::reframe(const PanAndZoom &framing, Aspect shape)
+void FramingEntry::reframe(const PanAndZoom &framing, Aspect shape, Route route)
 {
     frame(framing);
     shape_ = shape.tenThousandths();
+    take(route);
 }
 
 SourceKey FramingEntry::key() const
@@ -95,5 +107,12 @@ PanAndZoom FramingEntry::framing() const
 }
 
 Aspect FramingEntry::shape() const { return Aspect(shape_); }
+
+Route FramingEntry::route() const
+{
+    if (!(flags_ & RouteStored))
+        return Route();
+    return Route::chosen((flags_ & RoutePassesThrough) != 0);
+}
 
 }  // namespace Tv5725

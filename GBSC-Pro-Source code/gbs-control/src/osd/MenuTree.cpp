@@ -175,9 +175,15 @@ const char *aspectAppliedText(const MenuContext &context)
 // line and anything under HdBypass::MinLineRateHz, so every low-res mode is
 // scaled whatever this holds. Spelled as the Resolution page spells it, that
 // page reporting availability where this one states the wish.
+//
+// The ENGINE answers, because the wish is the source's own stored choice where
+// it has one and the unit's preference where it has not -- reading the
+// preference here would report the wrong one for every source that was given a
+// choice. docs/framing-presets.md
 const char *highResRouteText(const MenuContext &context)
 {
-    return context.options().preferScalingRgbhv ? "Scale" : "Pass Through";
+    return context.controls().engine().routeWanted().passesThrough()
+               ? "Pass Through" : "Scale";
 }
 
 const char *deinterlaceText(const MenuContext &context)

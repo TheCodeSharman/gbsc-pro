@@ -25,6 +25,7 @@
 
 #include "Aspect.h"
 #include "PanAndZoom.h"
+#include "Route.h"
 #include "SourceKey.h"
 
 namespace Tv5725 {
@@ -38,13 +39,14 @@ public:
     // a key no source runs, which is what a line written while the source was
     // settling holds.
     static bool read(const char *&at, SourceKey &key, PanAndZoom &framing,
-                     Aspect &shape);
+                     Aspect &shape, Route &route);
 
     // The characters written, or a negative number when it would not fit -- a
     // truncated record reads back as a skipped one, which is a lost tuning
     // reported as nothing at all.
     static int write(char *out, uint8_t size, const SourceKey &key,
-                     const PanAndZoom &framing, Aspect shape = Aspect());
+                     const PanAndZoom &framing, Aspect shape = Aspect(),
+                     Route route = Route());
 
     // The key alone, in the same grammar. The console names a source with it,
     // so a key read there is the key searched for in the file.
@@ -62,6 +64,10 @@ public:
     static bool rateFrom(const char *&at, float &into);
 
 private:
+    // Whether anything but the end of the record follows, which is what tells
+    // an absent optional field from a malformed one.
+    static bool moreOnLine(const char *at);
+
     static float proportionOf(long tenThousandths);
     static long tenThousandthsOf(float proportion);
 

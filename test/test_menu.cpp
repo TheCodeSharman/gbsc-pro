@@ -1103,13 +1103,18 @@ TEST_CASE("the high-res route is on the menu, which the chain left unreachable")
 {
     // Branch 96 drew it and its Ok was commented out, and nothing reached the
     // branch: the only route was /uc?x.
+    //
+    // The ENGINE answers, not the preference byte: the row states the wish for
+    // the source in force, which is that source's own stored choice where it
+    // has one. With no source identified there is none, so the unit's default
+    // is what shows.
     Unit unit;
 
-    unit.options.preferScalingRgbhv = 1;
+    unit.solved.engine.preferPassThrough(false);
     CHECK(std::string(item("High res").valueText(unit.context)) == "Scale");
     CHECK(item("High res").okCommand().letter() == 'x');
 
-    unit.options.preferScalingRgbhv = 0;
+    unit.solved.engine.preferPassThrough(true);
     CHECK(std::string(item("High res").valueText(unit.context)) == "Pass Through");
 }
 

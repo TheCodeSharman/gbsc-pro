@@ -8,6 +8,7 @@
 #include <stdint.h>
 
 #include "../tv5725/SyncMeasurement.h"
+#include "../tv5725/Route.h"
 #include "../tv5725/SourceMeasurement.h"
 #include "../tv5725/VideoPath.h"
 #include "SourceMaintenance.h"
@@ -463,7 +464,6 @@ private:
 
     bool (*mayRun_)();
     void (*passThroughSwitch_)();
-    bool passThroughAllowed_;
     const Tv5725::OutputMode *resolution_;
     uint32_t detectedMs_;
     bool detectedEver_;

@@ -25,6 +25,7 @@
 #include "ColourBalance.h"
 #include "OutputWindow.h"
 #include "FramingTable.h"
+#include "Route.h"
 #include "SourceKey.h"
 #include "EqualisationMeasurement.h"
 #include "SourceMeasurement.h"
@@ -476,6 +477,26 @@ public:
     // registers. docs/framing-presets.md
     bool applyFraming(const PanAndZoom &framing);
 
+    // Which way the user wants the arriving source sent: its own stored
+    // choice where it has one, and the unit's default where it has not.
+    // Whether the chip CAN honour it is a separate question, asked after this
+    // one. One owner, because the menu reports the answer and the engine acts
+    // on it.
+    Route routeWanted() const;
+
+    // Whether the arriving source chose its own route, rather than taking
+    // the unit's default. routeWanted() cannot say: the two answers are
+    // the same word where a source chose what the default already was.
+    bool storedRouteChosen() const;
+
+    // What a source with nothing stored against it takes.
+    void preferPassThrough(bool prefer);
+    bool prefersPassThrough() const;
+
+    // Stores a route against the source in force, alongside its framing and
+    // shape: they are one record, so a route is chosen by writing the record.
+    bool chooseRoute(Route route);
+
     // Re-solve every register from the framing held and the reading last handed
     // over. MEASURES NOTHING: a caller wanting the source as it reads now
     // re-reads it and hands the reading in first.
@@ -765,9 +786,15 @@ private:
     // rather than by evicting.
     void rememberFraming();
 
+    // The arriving key rather than the adopted one, because the route is
+    // decided before any solve runs -- an adopted key is the previous
+    // source's until then.
+    Route storedRoute() const;
+
     DisplayClock &displayClock_;
     InputFormatter &inputFormatter_;
     PanAndZoom framing_;
+    bool prefersPassThrough_;
     Aspect aspect_;
     bool applyAspect_;
     InputScale inputScale_;
