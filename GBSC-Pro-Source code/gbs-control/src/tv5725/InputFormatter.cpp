@@ -197,11 +197,10 @@ bool InputFormatter::applyScan(uint16_t divider, bool lineDoubled,
         return false;
     }
 
-    // THE MINIFIER'S WRITE ENABLE IS IF_HS_DEC_FACTOR AND THE FIFO IS ITS ONLY
-    // CONSUMER, so a ratio and the doubler both ask for the same four
-    // registers: a sparse write enable becomes a shorter line only through a
-    // buffer, and the line double is the one RAM in the horizontal path.
-    // Doubling is a second use of it rather than its purpose.
+    // A SPARSE WRITE ENABLE BECOMES A SHORTER LINE ONLY THROUGH A BUFFER, and
+    // the line double is the one RAM in the horizontal path, so a ratio and the
+    // doubler ask for the same FIFO. Doubling is a second use of it rather than
+    // its purpose.
     // ../../../docs/investigations/the-minifier-engages-on-the-coarse-factor.md
     const bool fifoInCircuit = lineDoubled || scale.minifies();
 
@@ -215,7 +214,15 @@ bool InputFormatter::applyScan(uint16_t divider, bool lineDoubled,
     IF_HBIN_ST::write(fifoInCircuit ? DoubledTailBlanking : 0);
 
     IF_HSYNC_RST::write(counter);
-    IF_HS_DEC_FACTOR::write(fifoInCircuit ? 1 : 0);
+
+    // IF_HS_DEC_FACTOR IS THE DECIMATION OCTAVE AND THE DOUBLER ALREADY SPENDS
+    // IT. The block's ratio is `2^-factor x 4095 / (4095 + increment)`, and a
+    // doubled line is two ADC samples per IF unit -- which is that factor at 1.
+    // Writing it for a minifying undoubled line as well costs a second half,
+    // so the engine sizes every window for the ratio asked for while the block
+    // delivers half of it. InputScale reaches 1/2 within one octave, so nothing
+    // here needs a second.
+    IF_HS_DEC_FACTOR::write(lineDoubled ? 1 : 0);
 
     // One increment on all eight segments is the LINEAR case. The block is
     // non-linear by design -- an eighth of the line each, for an anamorphic

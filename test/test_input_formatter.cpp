@@ -162,21 +162,24 @@ TEST_CASE("a scan asked for no scaling leaves the block idle")
     CHECK(Wire.field(1, 0x0E, 0, 11) == 1444);
 }
 
-// IF_HS_DEC_FACTOR IS THE MINIFIER'S WRITE ENABLE, and the line-double FIFO is
-// the only thing that consumes one: a sparse write enable becomes a shorter
-// line only through a buffer, and that FIFO is the one RAM in the horizontal
-// path. So a ratio asked for on an undoubled source needs both, and the same
-// increment that compresses the card to a third of its width with the factor at
-// 1 does nothing whatever with it at 0.
+// IF_HS_DEC_FACTOR IS THE BLOCK'S DECIMATION OCTAVE AND IT BELONGS TO THE SCAN.
+// The total ratio is `2^-factor x 4095 / (4095 + increment)`, and LINE DOUBLING
+// ALREADY SPENDS THE OCTAVE -- a doubled line is two ADC samples per IF unit,
+// which is exactly what the factor at 1 buys. Writing it for an undoubled
+// minifying line as well multiplies the ratio asked for by a second half, so
+// the engine sizes every window for 3/4 while the block delivers 3/8.
+// Measured on `vga` at 1280x720@60, divider pinned, window held: the model
+// predicts five of seven points to 0.002, and factor 1 at increment 4095
+// lands on the same picture as factor 2 at increment 0.
 // docs/investigations/the-minifier-engages-on-the-coarse-factor.md
-TEST_CASE("a minifying scale engages the block on an undoubled source")
+TEST_CASE("a minifying scale leaves the octave to the scan")
 {
     FreshChip fresh;
 
     REQUIRE(inputFormatter.applyScan(1444, false, false,
                                      Tv5725::InputScale::forRatio(1, 2)));
 
-    CHECK(Wire.field(1, 0x0B, 4, 2) == 1);   // IF_HS_DEC_FACTOR, the write enable
+    CHECK(Wire.field(1, 0x0B, 4, 2) == 0);   // IF_HS_DEC_FACTOR, undoubled
     CHECK(Wire.field(1, 0x0C, 0, 1) == 0);   // IF_LD_RAM_BYPS, the FIFO in circuit
 }
 
