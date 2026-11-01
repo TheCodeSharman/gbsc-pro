@@ -306,3 +306,76 @@ working doubled source too.
 **The control is clean at every step.** Unity either side of each run restores
 the frame exactly, `corr 1.000 scale 1.000`, with Nyquist detail 10.99 before
 and 10.86 after the whole sequence.
+
+## The counter stays raw, and the frame says so
+
+Measured on `vga` at 1280x720@60 into 1080p, scaling path, PM5544 with
+`ANIM OFF`, divider pinned at 1444 with `/sampleclock?hold=` so only the ratio
+moves, judged off the USB capture against a unity reference taken first.
+
+With the counter raw and the window solved in delivered units -- `PLLAD_MD`
+1444, `IF_HSYNC_RST` **1444**, `STATUS_SYNC_PROC_HTOTAL` 1444, delivered 1083,
+window 126..1063 -- the frame carries **one complete card, undistorted**:
+`match down corr 0.960 scale 1.000`. No duplication, no shear, nothing missing.
+
+**So the first of the two candidates holds.** The FIFO delivers the compressed
+line at the START of each counter-line and leaves the rest unwritten: the
+content sits at the left, the remainder of the frame is black, and nothing is
+stretched across the counter-line. The route is not dead.
+
+## The coarse factor IS the ratio, and the DDA increment does nothing
+
+The same run walked the increment with the divider pinned. **The engine holds
+`window x magnification` constant by construction** -- it sizes both from the
+ratio it believes in -- so the measured scale against the unity reference is the
+block's ACTUAL ratio, read directly:
+
+| increment | DDA says | window | `VDS_HSCALE` | window x mag | measured scale |
+|---|---|---|---|---|---|
+| 0 | 1.000 | 1250 | 916 | 1398 | **1.000** |
+| 455 | 0.900 | 1125 | 824 | 1398 | **0.500** |
+| 1365 | 0.750 | 937 | 686 | 1399 | **0.500** |
+| 2730 | 0.600 | 751 | 550 | 1399 | **0.500** |
+| 4095 | 0.500 | 626 | 458 | 1400 | **0.500** |
+
+One half at every increment from 0.9 to 0.5. And the discriminator, one
+register from the 1365 state: `IF_HS_DEC_FACTOR` forced to **0** with the FIFO
+still in circuit and the increment still 1365 reads `match across corr 0.917
+scale 1.000` -- a clean, uncompressed picture, cropped only by the window the
+solve sized for 0.75.
+
+**So the block has two states and the DDA selects neither of them.**
+`IF_HS_DEC_FACTOR` 0 is 1:1 and 1 is exactly 1:2, whatever
+`IF_HS_RATE_SEG0..7` and `IF_HS_RATE_LOW` hold. RD-5725-1.1's "4095 x (m - n) / n"
+describes nothing this part does as it is being driven.
+
+**This refutes the earlier reading on this page that the minifier compresses by
+the DDA's ratio.** That was taken at a ratio of 3/4, where the hardware's 1/2
+and the formula's 0.75 are close enough to confuse on a frame already wrong
+vertically; the control at ratio 1/2 agreed because the two coincide there.
+
+## What a fixed half octave is worth
+
+`delivered = ratio x counter` and the counter is the raw line, bounded at 2047,
+so a fixed 1:2 delivers at most **1023 units**. At 1280x720@60 into 1080p the
+raster shows 1443 and unity reaches it at divider 1444, so **the minifier is
+strictly worse than unity on that mode** -- half of the counter's wall is less
+than the raster already affords.
+
+It pays where twice the raster's delivered units still fits inside the counter,
+which is the small rasters rather than 1080p: a raster showing 770 units is
+served by divider 1540 at 1:2, against 770 at unity, for twice the ADC samples
+behind the same delivered count.
+
+**What 1080p wants is a wider raster, not a narrower capture** --
+`../known-issues.md`, the display clock entry.
+
+## Still open
+
+- **Whether the DDA can be made to act at all.** Both bands have now been seen
+  with the FIFO in circuit and the increment set, and neither scales by it.
+  `IF_HS_SEL_LPF` is written from the SCAN rather than the ratio, so a minifying
+  undoubled line runs the interpolator path rather than the low-pass one; that
+  is the untried bit.
+- **What `IF_HS_DEC_FACTOR` 2 does**, under the octave model rather than the
+  DDA one. Earlier readings of it were scored against the formula.

@@ -10531,6 +10531,34 @@ readable register would serve. What the block wants is a name for what it is
 doing -- prove the bus answers -- and it currently reads as a status check that
 forgot to check anything. `whole-byte-convenience-names.md`.
 
+### `InputScale` models a continuous ratio the part does not have
+
+`Tv5725::InputScale` carries RD-5725-1.1's `4095 x (m - n) / n` as the
+scaling-down ratio and the engine sizes the capture window, both scales, the
+stride and the fetch from it. **The part ignores it.** Measured on `vga` at
+1280x720@60 into 1080p with the divider pinned, the block compresses by exactly
+one half at every increment from 0.9 to 0.5, and by nothing at all with
+`IF_HS_DEC_FACTOR` forced to 0 while the increment is still set. The factor is
+the whole ratio -- 0 is 1:1 and 1 is 1:2 -- and `IF_HS_RATE_SEG0..7` with
+`IF_HS_RATE_LOW` contribute nothing.
+
+So `/inputscale?wanted=3&have=4` installs a halving while every window is sized
+for 0.75, and the picture lands in the left 44% of the output with the rest
+black. That is the state, not a fault to diagnose.
+
+**It is not a reason to reach for the minifier on 1080p either.** `delivered =
+ratio x counter`, the counter is the raw line bounded at 2047, so a fixed 1:2
+delivers at most 1023 units where the raster shows 1443 -- worse than unity. The
+half octave pays on the small rasters, where twice the delivered count still
+fits the counter.
+
+Two things to settle before the model is rewritten: whether the DDA can be made
+to act at all -- `IF_HS_SEL_LPF` is written from the SCAN rather than the ratio,
+so a minifying undoubled line runs the interpolator path rather than the
+low-pass one, which is the untried bit -- and what factor 2 does under the
+octave reading rather than the formula.
+`investigations/the-minifier-engages-on-the-coarse-factor.md`.
+
 ### The display clock could ask for 129.6 MHz rather than 108
 
 `OutputMode::EngineCeilingHz` is 108 MHz on a usability argument that no longer
