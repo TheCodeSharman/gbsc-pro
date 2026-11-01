@@ -7048,6 +7048,45 @@ right because the painted area starts after the line does and ends before it
 does; the right border falls off the end. Do not read it as the scaler placing
 the picture wrongly.
 
+**THE VERTICAL HAS NO LEVER AT ALL, AND THE HORIZONTAL ONE DOES NOT
+GENERALISE.** `HD_HB_SP` moves the encoder's content origin along the line --
+147 leaves 251 columns of black at the right and 238 leaves 56 -- and nothing
+does the same vertically. Measured on the Wii at 480p on `ypbpr` passed
+through, `PLLAD_MD` 2038, `STATUS_SYNC_PROC_VTOTAL` 524, off the USB capture:
+**51 rows of black at the bottom, 1 at the top, none at either side.**
+
+`HD_MATRIX_BYPS` 1 renders those 51 rows at R/G/B 98/0/102 where the channel's
+own blanking stays true black, so the black ARRIVES ON THE WIRE; removing the
+vertical window entirely, `HD_VB` 0..524, leaves all 51 of them.
+
+| walked | | bottom rows |
+|---|---|---|
+| `SP_SDCS_VSST` | 0, 2, 6, 10, 14, 20 | 51 at every value |
+| `HD_VS_ST`/`HD_VS_SP` | 2, 12, 24, each with a `PAD_SYNC_OUT_ENZ` re-lock | 51 at every value |
+| `HD_VB_SP` | 30, 60, 90 | 51, 65, 65, with the top at 1, 53, 120 |
+
+`SP_SDCS_VSST` is the one that reads as a candidate and reaches nothing here,
+being live on sync on green and worth one source line per count on the SCALING
+path. The channel's blanking only ever makes the picture smaller, which is what
+a register that paints black rather than placing a window does.
+
+**AND THE CHANNEL HAS NO VERTICAL TOTAL.** `HD_HSYNC_RST` sets the played-out
+line and RD-5725-1.1 gives it no vertical counterpart, so those four registers
+are the whole of what the channel owns on that axis and there is nothing left
+to reach for.
+
+**The matrix bypass does not separate the source's own black from its vertical
+blanking shown inside the emitted window**, both being black on the wire.
+`HD_VB_SP` as a ruler gives 2.23 emitted rows per counter line and puts the
+shown window at about counter 36..520 against the CEA raster's 30..510, which
+would make part of the bar blanking and lose a few source lines off the top.
+That is three assumptions deep and it changes no conclusion, there being no
+register that moves the window.
+
+**The horizontal reading is per CONTENT rather than per path.** This frame is
+flush at both sides where the one above reads ~50 columns at the right, so what
+the Wii is drawing decides it.
+
 ### 384x288@70 into 720p is shown small, black on all four sides
 
 One state, one run: the default framing of 384x288@70 into 720p puts the card
