@@ -7956,11 +7956,14 @@ entry recorded: a dithering count never held the acquired run, so
 **WHAT IS STILL OPEN.** The 576i and 480i legs have not been re-measured since
 the fraction moved -- 88 at divider 2200 is inside the band measured to read
 310 at every value, but the engine's divider for those modes has not been
-checked against it. And **auto gain cannot settle on this input
-independently**: green reads 1023 at every gain on `ypbpr` while red and blue
-fall, so the walk steps to the end of its range and reports `settled at 255`.
-0x3FF is the component stop value this input is documented to have and
-`AutoGain::Saturated` is 0x3F8, so green counts as saturated unconditionally.
+checked against it.
+
+**AUTO GAIN SETTLES ON THIS INPUT NOW, and the earlier reading is superseded.**
+It recorded green reading 1023 at every gain on `ypbpr` so that the walk ran to
+`settled at 255`. Measured 2026-11-01 from the component seed with
+`OverToStep` at 4: the Wii at 480p reaches **87 in under 40 s** and holds, with
+`/gainpeaks` reporting 0 to 1 over of 72 there against 6 to 9 at the seed.
+`investigations/the-auto-gain-walk-cannot-see-the-clipping-it-exists-for.md`.
 
 **THE BISECT TRAP THIS ENTRY CARRIED STANDS.** Which state the unit landed in
 depended on whether the probe won a settled window, so it correlated with
@@ -7987,9 +7990,15 @@ is the whole of the difference.
 51 is `ColourSpace::ComponentGain` 0x33, the value the component colour space
 prescribes at rest, as 123 is `ColourSpace::RgbGain` 0x7B on `vga`. **So the
 resting value is unusable on a real component source and only auto gain gets
-off it.** Whether the constant should move is open: it is one source's
-evidence, and `vga` at auto gain's 203 is slightly less vivid than at its own
-resting 123, so the two colour spaces do not obviously want the same answer.
+off it.**
+
+**THE CONSTANT SHOULD NOT MOVE, AND THAT IS NOW SETTLED.** The seeds are hot so
+that every source clips, because the walk only backs off -- a cooler seed
+strands a source hotter than it with no way back. What was wrong was the
+convergence: `OverToStep` sat inside the spread a clipping source counts, so
+stepping was a coin flip and both inputs held a railed white for tens of
+minutes. Fixed at the threshold, both reach a correct gain within a boot.
+`investigations/the-auto-gain-walk-cannot-see-the-clipping-it-exists-for.md`.
 
 **AUTO GAIN HAS TO BE REACHED TWICE OVER.** It is off unless `auto-gain` is 1
 in the stored preferences, and the sketch's gate also wants
