@@ -102,8 +102,9 @@ bool FramingFile::write()
 
     f.print(F("# framing, one source a line: "
               "<lines>@<fieldRateHz>/<syncWidth><hPol><vPol> = "
-              "originH extentH originV extentV shape\n"
-              "# in ten-thousandths of the capturable region; shape 0 fills\n"));
+              "originH extentH originV extentV [shape] [route]\n"
+              "# in ten-thousandths of the capturable region; shape 0 fills,\n"
+              "# route 1 passes through and 0 scales; absent chooses neither\n"));
 
     Tv5725::FramingText text(table_);
     char line[LineBytes];
