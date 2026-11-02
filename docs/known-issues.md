@@ -9673,21 +9673,22 @@ So a console costs 0.5..1.2 KB and the margin is a few hundred bytes. It
 oscillates across the floor rather than sitting below it -- six `/slot/set`
 calls four seconds apart gave 200, timeout, 200, timeout, 200, 200.
 
-**WHAT IT LOOKS LIKE IS ANYTHING BUT HEAP.** A full run,
-`pytest --host=... --modeserv=...`, gave **43 failed, 788 passed, 25 errors in
-49 minutes**, and the assertions name the shape and the slots:
+**WHAT IT COSTS IS THE SLOT TESTS, AND NOT THE 26 SHAPE FAILURES BESIDE THEM.**
+That attribution was made and is REFUTED -- the run was repeated with the panel
+closed and **zero `low heap` bodies in the whole log**, and the shape failures
+were unchanged at 19 and 6. The two clusters are separate faults that a starved
+unit presents together:
 
-| count | what failed |
-|---|---|
-| 19 | `the shape is still being applied` -- `want_shaping(host, False)` |
-| 7 | `the shape never reached 16:9` -- `choose_aspect()` |
-| 5 | `could not select slot A`, `assert 503 == 200` |
+| | first run, panel attached | panel closed |
+|---|---|---|
+| total | 43 failed, 788 passed, 25 errors | **46 failed, 785 passed, 23 errors** |
+| `low heap` bodies | 5 | **0** |
+| `could not select slot A` | 5 | 0 |
+| `the shape is still being applied` | 19 | **19** |
+| `the shape never reached 16:9` | 7 | **6** |
 
-Every one of those helpers works perfectly on an unstarved unit: measured
-immediately afterwards, `want_shaping` both ways and `choose_aspect` both ways
-returned True and `/geometry` followed each one. **They fail because the route
-they drive answered 503**, and only the slot helper asserts on the status, so
-the other 26 report a shape that would not move.
+So closing the panel fixes the slot tests and nothing else, and the run does
+not get shorter or greener -- it is 52 minutes either way.
 
 **The globals are not the cause and neither is any recent commit.** Built at
 `faba30420` and at `77cee8086` with `GBS_BUILD_REV` pinned, `Global variables
@@ -9698,19 +9699,45 @@ differs is what is ATTACHED.
 Three things follow:
 
 - **Run the hardware suite with nothing else attached.** A `regpanel.py` or a
-  web UI left open spends the whole margin. `CLAUDE.md` says a panel left
-  running has never broken anything, and that holds for a reading taken by
-  hand; it does not hold for a 49-minute run that drives the reply routes.
+  web UI left open spends the whole margin, and the slot tests are what notices.
+  `CLAUDE.md` says a panel left running has never broken anything; that holds
+  for a reading taken by hand and not for a run that drives the reply routes.
 - **A 503 is heap, not a busy queue.** `submitRegisterJob()` and the field
   route answer 503 for a full register queue too, so the body is what tells
   them apart: `low heap` against `register queue full, retry`.
 - **The helpers should say which it was.** `want_shaping()` and
-  `choose_aspect()` discard the status, so a starved unit reads as a control
-  that does not work -- which is 26 of the 43 above.
+  `choose_aspect()` discard the status, so a 503 and a control that genuinely
+  did not move are the same failure text -- which is how the two clusters above
+  got merged in the first place.
 
 Not established: whether the margin has drifted down over recent commits, or
 whether this bench has always sat here with a panel open. The entry above
 measured a `BOOTLOG_BYTES=0` build above the floor and did not say by how much.
+
+### `want_shaping()` does not converge straight after a source mode change
+
+The shape helper toggles `/uc?S` at most three times, two seconds apart, with
+an `acquired_and_settled()` between -- and that is not enough while the engine
+is re-solving a mode it has just been handed. **19 of the hardware suite's
+failures are this one helper**, because every framing test turns the shape off
+before reading an edge.
+
+Measured on `vga`, one build, three states:
+
+| state | `want_shaping(host, False)` |
+|---|---|
+| cold, source standing still | True |
+| straight after `/sc?B` | True |
+| 3 s after a `MODE X640 Y480 C256 F60` | **False**, shape still applied |
+
+**It is not a regression and the A/B says so.** The same three states measured
+on `faba30420` and on `77cee8086`, same bench and same source: cold True on
+both, after a mode change False on both.
+
+What it wants is the discipline the hardware fixtures already have elsewhere --
+wait for the source, then drive the control -- rather than a toggle budget. The
+failure text also says the shape would not move where the truth may be that
+`/geometry` answered nothing, so the helper wants to separate those.
 
 ### `BOOTLOG_BYTES=2048` takes the heap below the filesystem routes, and they fail silently
 
