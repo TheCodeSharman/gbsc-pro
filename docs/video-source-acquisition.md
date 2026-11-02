@@ -1448,8 +1448,8 @@ match in time is open.
 **AND PASS-THROUGH HAS ONE OWNER.** `VideoSourceAcquisition::passSourceThrough()`
 is the only caller that decides it, because it is the only one holding a
 measurement to decide it on. Three others used to: `doPostPresetLoadSteps()`
-armed a deferred switch whenever `uopt->preferScalingRgbhv` was clear,
-the watcher's new-mode branch chose on the same preference, and
+armed a deferred switch whenever the unit's old pass-through preference was
+clear, the watcher's new-mode branch chose on the same preference, and
 `applyPresets()` chose on the standard byte for results 5/6/7/13 and for
 `BypassRgbhv`. Each entered the channel before the new source had been
 measured, so the channel raster was sized from one divider against a count and
@@ -1528,19 +1528,17 @@ apply.
 
 **The user overrides it per mode, and the override is stored the way the framing
 is** -- same `SourceKey`, same record, same lifecycle, found at the moment the
-decision is needed. `preferScalingRgbhv` is the interim stand-in for it; it goes
-with the policy it encoded, because a global boolean cannot express a per-source
-choice and neither of its two answers is right for every source.
+decision is needed. There is no unit-wide preference beside it: a source with
+nothing stored against it is PASSED THROUGH, and a global boolean could not
+express the per-source choice anyway.
 
-**AND IT IS NOT RGBHV-SPECIFIC, WHICH THE NAME SAYS AND THE WIRING DENIES.**
-`inputAcquisition.allowPassThrough(!uopt->preferScalingRgbhv)` is one gate in
-front of `passThroughSuitsSource()`, ahead of both measurement gates, so it
-refuses pass-through for EVERY source. Measured on the Wii at 480p, which is
-component rather than RGBHV: 524 lines at 59.8 Hz clears `bypassSuitsCount()`
-(not line-doubled, 31335 Hz against `BypassMinLineRateHz` 26000) and clears
-`rateCanBypass()` at a held 31395 -- and it is scaled, because the boolean is
-stored as 1. `loadDefaultUserOptions()` writes 0, so a unit that has never been
-toggled behaves the other way; `scale-rgbhv` in `/preferences.txt` is which.
+**IT IS NOT RGBHV-SPECIFIC, WHICH THE OLD PREFERENCE'S NAME SAID AND THE WIRING
+DENIED.** The gate sat in front of `passThroughSuitsSource()`, ahead of both
+measurement gates, so it refused pass-through for EVERY source. Measured on the
+Wii at 480p, which is component rather than RGBHV: 524 lines at 59.8 Hz clears
+`bypassSuitsCount()` (not line-doubled, 31335 Hz against `BypassMinLineRateHz`
+26000) and clears `rateCanBypass()` at a held 31395 -- so that source is passed
+through by default now, and a user who wants it scaled stores that against it.
 
 **The reason is not preference, it is what the capture can carry.** The write
 limit bounds a window at about 1024 IF units however it is placed, so a source

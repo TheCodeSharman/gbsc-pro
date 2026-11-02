@@ -10531,6 +10531,33 @@ readable register would serve. What the block wants is a name for what it is
 doing -- prove the bus answers -- and it currently reads as a status check that
 forgot to check anything. `whole-byte-convenience-names.md`.
 
+### A route chosen for the source in force lands on its next move, not at once
+
+`/uc?x` stores a route against the source on screen and the engine reads it
+back as never made, because **the two routes measure a different sync duty for
+one source**. `SourceKey` carries the duty and `SourceKey::SyncWidthIdentity`
+is 0.002; measured on the host suite's pass-through source, the key is
+0.0893 while the source is handed over and 0.0633 once the scaling path's clock
+is installed. Thirteen tolerances apart, so the record is stored under one key
+and looked up under another, `VideoPath::routeWanted()` finds nothing and
+answers with the default.
+
+Nothing arms a re-answer either: the route is re-answered only on a pass that
+re-resolves the source, and `VideoPath::chooseRoute()` only writes the record.
+Arming `inputTimingsChanged()` from there does not help and makes it worse --
+it blanks the duty the key carries, which orphans the record immediately.
+
+So the choice takes effect when the source next moves, which is also when the
+key it was stored under stops being the one in force. **The escape that used to
+exist is gone with the unit-wide preference**: that one was not keyed on the
+source, so flipping it left pass-through at once.
+
+What settles it is which key a route should be stored under. The duty earns its
+place in the identity -- two published standards share a count and a rate -- but
+it is a property of the measurement path as much as of the source, and a route
+is the one field in the record that decides which path measures it. A route
+keyed on count, rate and polarity alone would not move with the path.
+
 ### The line-double FIFO caps delivered units at about 1120, and only the doubled path is held off it
 
 The band at the right of a minifying undoubled frame starts at a CONSTANT count

@@ -12,12 +12,13 @@ capture's write limit bounds a line at about 1024 IF units however it is placed,
 so the sampling divider has to fall as the line rate rises: a VESA-class source
 is softer scaled than handed over untouched. `capture-limits.md`.
 
-`preferScalingRgbhv` is the DEFAULT a source with nothing stored against it
-takes, and no longer the decision. The choice is per source, stored against the
-`SourceKey` the framing uses and carried in the same record -- `/uc?x` stores
-one, `/uc?P` moves the default. `Tv5725::Route` is the value and
-`VideoPath::routeWanted()` the one owner of "stored wins, else the default".
-`docs/framing-presets.md`.
+**PASS-THROUGH IS WHAT A SOURCE WITH NOTHING STORED TAKES**, and the only thing
+that overrides it is a choice stored against that source -- `/uc?x` stores one,
+against the `SourceKey` the framing uses and in the same record.
+`Tv5725::Route` is the value and `VideoPath::routeWanted()` the one owner of
+"stored wins, else pass-through". There is no unit-wide preference: the
+measurement already answers for every source that cannot be handed over, so a
+second global answer only ever contradicted it. `docs/framing-presets.md`.
 `tools/gbsc-pro-hwtest/test_rgbhv_bypass.py` covers both directions and needs
 `--modeserv` to drive the source across the range.
 
@@ -139,7 +140,7 @@ was entered on however far the source slows. Asked that way the answer never
 changes, the branch that would leave never fires, and the panel stays blank for
 ever.
 
-Reproduced in about thirty seconds, `preferScalingRgbhv` off:
+Reproduced in about thirty seconds, with pass-through permitted:
 
 | | |
 |---|---|
