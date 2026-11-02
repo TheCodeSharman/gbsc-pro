@@ -207,6 +207,24 @@ TEST_CASE("a minifying scale takes the FIFO's reset window with it")
     CHECK(Wire.field(1, 0x24, 0, 12) == InputFormatter::DoubledTailBlanking);
 }
 
+// THE LOW-PASS PATH IS THE ANTI-ALIAS FILTER A DECIMATION NEEDS, and selecting
+// the interpolator instead is what makes a ratio worse than sampling at the
+// lower rate. Measured on `vga` at 1280x720@60 into 1080p, the divider pinned
+// so all three states deliver 1050 units: through the interpolator a ratio of
+// 0.547 put a mean horizontal gradient of 10.59 over plain grey card carrying
+// no content, against 1.45 at unity, and 3.15 of chroma on a grey grating
+// against 0.76. Through the low-pass both come back to 1.71 and 1.63.
+// docs/investigations/the-minifier-engages-on-the-coarse-factor.md
+TEST_CASE("a minifying scale takes the low-pass path")
+{
+    FreshChip fresh;
+
+    REQUIRE(inputFormatter.applyScan(1444, false, false,
+                                     Tv5725::InputScale::forRatio(1, 2)));
+
+    CHECK(Wire.field(1, 0x02, 1, 1) == 1);   // IF_HS_SEL_LPF
+}
+
 // The selector and the coarse factor share s1_0b with the rate's low nibble, so
 // writing one must not take the others with it.
 TEST_CASE("the rate nibble leaves the selector and the coarse factor alone")
@@ -422,7 +440,13 @@ TEST_CASE("the line doubler's write enable follows the scan mode")
     CHECK(Wire.field(1, 0x02, 0, 1) == 0);
 }
 
-TEST_CASE("the horizontal low-pass follows the scan mode the other way")
+// The doubler decimates by the coarse octave, so it takes the filter for the
+// same reason a ratio does; an undoubled line at unity thins nothing and takes
+// the interpolator. Measured at 1280x720@60 with the divider pinned at 1050,
+// the filter costs that line its two finest gratings -- mean horizontal
+// gradient 16.84 and 25.35 through the interpolator against 1.65 and 8.37
+// through the low pass.
+TEST_CASE("a line left undecimated takes the interpolator")
 {
     FreshChip chip;
 

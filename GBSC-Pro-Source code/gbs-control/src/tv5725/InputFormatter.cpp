@@ -197,21 +197,32 @@ bool InputFormatter::applyScan(uint16_t divider, bool lineDoubled,
         return false;
     }
 
+    // The block thins the line two ways and both are a decimation: the doubler
+    // spends the coarse octave and a ratio spends the DDA. What follows from
+    // that is the buffer and the filter, so they are written from the
+    // decimation rather than from the scan.
+    //
     // A SPARSE WRITE ENABLE BECOMES A SHORTER LINE ONLY THROUGH A BUFFER, and
     // the line double is the one RAM in the horizontal path, so a ratio and the
     // doubler ask for the same FIFO. Doubling is a second use of it rather than
     // its purpose.
     // ../../../docs/investigations/the-minifier-engages-on-the-coarse-factor.md
-    const bool fifoInCircuit = lineDoubled || scale.minifies();
+    const bool decimates = lineDoubled || scale.minifies();
 
     IF_LD_SEL_PROV::write(lineDoubled ? 0 : 1);
     IF_PRGRSV_CNTRL::write(lineDoubled ? 0 : 1);
-    IF_LD_RAM_BYPS::write(fifoInCircuit ? 0 : 1);
+    IF_LD_RAM_BYPS::write(decimates ? 0 : 1);
     IF_SEL_WEN::write(lineDoubled ? 0 : 1);
-    IF_HS_SEL_LPF::write(lineDoubled ? 1 : 0);
+
+    // The low pass against the interpolator: RD-5725-1.1's two halves of the
+    // combined INT/LPF path. A decimation needs the filter in front of it and
+    // an undoubled line at unity thins nothing, so the interpolator is what
+    // that one takes -- the filter there costs detail and buys nothing.
+    IF_HS_SEL_LPF::write(decimates ? 1 : 0);
+
     IF_HS_Y_PDELAY::write(lineDoubled && component ? 2 : 3);
-    IF_HBIN_SP::write(fifoInCircuit ? LineDoubleReset : NoHeadBlanking);
-    IF_HBIN_ST::write(fifoInCircuit ? DoubledTailBlanking : 0);
+    IF_HBIN_SP::write(decimates ? LineDoubleReset : NoHeadBlanking);
+    IF_HBIN_ST::write(decimates ? DoubledTailBlanking : 0);
 
     IF_HSYNC_RST::write(counter);
 
