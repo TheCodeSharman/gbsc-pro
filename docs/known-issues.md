@@ -9657,6 +9657,61 @@ spread.
 the sync phase as part of that choice, or it ships this.
 `docs/investigations/the-adc-sampling-phase-is-a-lottery.md`.
 
+### The hardware suite runs under the heap floor, and 26 of its failures are that
+
+`RouteHeap::allowsAReply()` refuses below **10000** bytes of free heap, and the
+unit sits just under it in its ordinary attached state. Measured 2026-11-02 on
+the bench unit, nothing else running, one `regpanel.py` websocket attached:
+
+| clients attached | live free heap | `/slot/set` |
+|---|---|---|
+| 0 extra | **9768** | `{"error":"low heap","free":9768,"needs":10000}` |
+| 1 console | 9232 | 503 |
+| 2 consoles | 8016 | 503, and the third attach times out |
+
+So a console costs 0.5..1.2 KB and the margin is a few hundred bytes. It
+oscillates across the floor rather than sitting below it -- six `/slot/set`
+calls four seconds apart gave 200, timeout, 200, timeout, 200, 200.
+
+**WHAT IT LOOKS LIKE IS ANYTHING BUT HEAP.** A full run,
+`pytest --host=... --modeserv=...`, gave **43 failed, 788 passed, 25 errors in
+49 minutes**, and the assertions name the shape and the slots:
+
+| count | what failed |
+|---|---|
+| 19 | `the shape is still being applied` -- `want_shaping(host, False)` |
+| 7 | `the shape never reached 16:9` -- `choose_aspect()` |
+| 5 | `could not select slot A`, `assert 503 == 200` |
+
+Every one of those helpers works perfectly on an unstarved unit: measured
+immediately afterwards, `want_shaping` both ways and `choose_aspect` both ways
+returned True and `/geometry` followed each one. **They fail because the route
+they drive answered 503**, and only the slot helper asserts on the status, so
+the other 26 report a shape that would not move.
+
+**The globals are not the cause and neither is any recent commit.** Built at
+`faba30420` and at `77cee8086` with `GBS_BUILD_REV` pinned, `Global variables
+use` is **54484 on both** -- byte-identical RAM -- and the entry above measures
+`BOOTLOG_BYTES=0` at 54472 globals with the live heap *above* 10000. What
+differs is what is ATTACHED.
+
+Three things follow:
+
+- **Run the hardware suite with nothing else attached.** A `regpanel.py` or a
+  web UI left open spends the whole margin. `CLAUDE.md` says a panel left
+  running has never broken anything, and that holds for a reading taken by
+  hand; it does not hold for a 49-minute run that drives the reply routes.
+- **A 503 is heap, not a busy queue.** `submitRegisterJob()` and the field
+  route answer 503 for a full register queue too, so the body is what tells
+  them apart: `low heap` against `register queue full, retry`.
+- **The helpers should say which it was.** `want_shaping()` and
+  `choose_aspect()` discard the status, so a starved unit reads as a control
+  that does not work -- which is 26 of the 43 above.
+
+Not established: whether the margin has drifted down over recent commits, or
+whether this bench has always sat here with a panel open. The entry above
+measured a `BOOTLOG_BYTES=0` build above the floor and did not say by how much.
+
 ### `BOOTLOG_BYTES=2048` takes the heap below the filesystem routes, and they fail silently
 
 The boot log and the `/fs/*` routes cannot both be had. Measured on the bench
