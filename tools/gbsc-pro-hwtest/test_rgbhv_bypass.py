@@ -1,20 +1,28 @@
-"""Whether an RGBHV source is scaled or bypassed, and what decides it.
+"""Whether an RGBHV source is scaled or passed through, and what decides it.
 
 The line count used to decide: a source above 535 lines was pushed into bypass
-and had no branch to leave by, so it stayed there for the life of the boot. The
-preference decides now, and the count decides nothing.
+and had no branch to leave by, so it stayed there for the life of the boot. A
+route stored against the SOURCE decides now, the count decides nothing, and a
+source with nothing stored is passed through.
 
     pytest test_rgbhv_bypass.py --host=<ip> --modeserv=<ip> -v
 
-`--preset-save` opts into the half that toggles the preference, because the
-toggle writes flash. It puts it back.
+**THE DEFAULT IS PASS-THROUGH, SO THE ROUTE IS ASKED BEFORE IT IS MOVED.**
+Every test here used to toggle blind, which was right while a unit-wide
+preference decided the route and asserts the opposite of what it gets now:
+measured with the tall source already handed over, one /uc?x took it to the
+scaling path at divider 1342 and five of six tests failed on the direction
+alone. `gbs_unit.want_route()` reads the engine's answer first.
+
+`--preset-save` opts into the half that stores a route, because storing one
+writes flash. It puts it back.
 """
 
 import time
 
 import pytest
 
-from gbs_unit import get, mode_serv, read_fields
+from gbs_unit import mode_serv, read_fields, want_route
 
 # VTOTAL 627, comfortably above the count that used to force bypass, and a mode
 # the bench display accepts as a passthrough -- which is what made the trap
@@ -91,9 +99,20 @@ def tall_source(request, host):
 
 
 @pytest.mark.source_mode
-def test_a_source_too_tall_for_the_old_gate_is_scaled(tall_source):
-    assert scaling(tall_source), (
-        f"a {TALL_LINES}-line RGBHV source is not on the scaling path: {tall_source}")
+def test_a_source_too_tall_for_the_old_gate_can_be_scaled(host, preset_save,
+                                                          tall_source):
+    # The gate forced bypass above 535 lines and left no branch out, so what
+    # this asks is that the count no longer decides -- not that a tall source
+    # is scaled by default, which it is not.
+    try:
+        assert want_route(host, False), (
+            f"a {TALL_LINES}-line RGBHV source could not be put on the "
+            f"scaling path")
+        at = settled(host)
+        assert scaling(at), (
+            f"it reported the scaling path and did not take it: {at}")
+    finally:
+        want_route(host, True)
 
 
 @pytest.mark.source_mode
@@ -106,28 +125,39 @@ def test_a_tall_sources_divider_is_measured_and_latched(tall_source):
 
 
 @pytest.mark.source_mode
-def test_crossing_the_old_gate_in_both_directions_keeps_scaling(request, host):
-    # The trap was one-way, so a test that only ever goes up finds nothing.
+def test_crossing_the_old_gate_in_both_directions_keeps_the_route_stored(
+        request, host, preset_save):
+    """The trap was one-way, so a test that only ever goes up finds nothing.
+
+    The route is stored per source, so the two modes are two records and only
+    the tall one needs the scaling route stored -- the bench mode is under the
+    line rate pass-through needs and is scaled whatever is stored.
+    """
     where = request.config.getoption("--modeserv")
     try:
+        at_mode(host, where, TALL_MODE, TALL_LINES)
+        assert want_route(host, False), "the tall source would not take the scaler"
+
         for command, lines in ((BENCH_MODE, BENCH_LINES), (TALL_MODE, TALL_LINES),
                                (BENCH_MODE, BENCH_LINES), (TALL_MODE, TALL_LINES)):
             at = at_mode(host, where, command, lines)
             assert scaling(at), f"{lines} lines left the scaling path: {at}"
     finally:
+        want_route(host, True)
         mode_serv(where, BENCH_MODE)
         time.sleep(SETTLE_SECONDS)
 
 
 @pytest.mark.source_mode
-def test_the_preference_still_reaches_bypass_and_still_leaves_it(
+def test_a_stored_route_still_reaches_bypass_and_still_leaves_it(
         request, host, preset_save, tall_source):
     # Bypass is offered, not imposed -- and the leaving half is what no line
-    # count above the old gate could do at all.
-    get(host, "/uc?x")
+    # count above the old gate could do at all. Both halves are a stored route
+    # now, so both are asked for rather than toggled into.
+    assert want_route(host, True), "the stored route would not reach bypass"
     off = settled(host)
     try:
-        assert in_bypass(off), f"the preference did not reach bypass: {off}"
+        assert in_bypass(off), f"it reported bypass and did not take it: {off}"
 
         # LATCHED, not a particular number. The channel sizes its divider from
         # the measured line rate through the same chooser the scaling path
@@ -138,29 +168,33 @@ def test_the_preference_still_reaches_bypass_and_still_leaves_it(
             f"HTOTAL {off['STATUS_SYNC_PROC_HTOTAL']} against PLLAD_MD "
             f"{off['PLLAD_MD']}: the bypass divider never latched: {off}")
     finally:
-        get(host, "/uc?x")
-    back = settled(host)
-    assert scaling(back), (
-        f"a {TALL_LINES}-line source could not leave bypass: {back}")
+        want_route(host, False)
+    try:
+        back = settled(host)
+        assert scaling(back), (
+            f"a {TALL_LINES}-line source could not leave bypass: {back}")
+    finally:
+        want_route(host, True)
 
 
 @pytest.mark.source_mode
-def test_the_permission_survives_being_let_go_and_takes_the_source_back(
-        request, host, preset_save, tall_source):
-    """The ROUND TRIP, with the permission left on throughout.
+def test_the_route_survives_being_let_go_and_takes_the_source_back(
+        request, host, tall_source):
+    """The ROUND TRIP, with the tall source passed through throughout.
 
     Letting a slowed source go is half the behaviour; taking it back when it
     speeds up again is the other half, and nothing walked it. The two are not
     the same branch -- leaving is a measurement that stops qualifying, and
     returning is the channel being sized a second time from a rate that did
-    qualify. A permission spent on the way out would strand every later source
-    on the scaling path with the row still reading Pass Through.
+    qualify. A route spent on the way out would strand every later source on
+    the scaling path with the row still reading Pass Through.
+
+    Writes no flash: the tall source takes pass-through with nothing stored.
     """
     where = request.config.getoption("--modeserv")
-    get(host, "/uc?x")
     try:
         assert in_bypass(settled(host)), (
-            "the preference did not reach bypass, so the round trip is untested")
+            "the tall source is not passed through, so the round trip is untested")
 
         slowed = at_mode(host, where, BENCH_MODE, BENCH_LINES)
         assert scaling(slowed), (
@@ -174,14 +208,13 @@ def test_the_permission_survives_being_let_go_and_takes_the_source_back(
         assert abs(back["STATUS_SYNC_PROC_HTOTAL"] - back["PLLAD_MD"]) <= 2, (
             f"re-entered bypass on an unlatched divider: {back}")
     finally:
-        get(host, "/uc?x")
         mode_serv(where, BENCH_MODE)
         time.sleep(SETTLE_SECONDS)
 
 
 @pytest.mark.source_mode
 def test_a_bypassed_source_that_slows_leaves_bypass_on_its_own(
-        request, host, preset_save, tall_source):
+        request, host, tall_source):
     """A source that drops below the floor WHILE BYPASSED has to be let go.
 
     The rate is measured on the way into bypass and nothing measures again
@@ -191,16 +224,14 @@ def test_a_bypassed_source_that_slows_leaves_bypass_on_its_own(
     with every register self-consistent and the count plainly reading 311.
     """
     where = request.config.getoption("--modeserv")
-    get(host, "/uc?x")
     try:
         assert in_bypass(settled(host)), (
-            "the preference did not reach bypass, so the slowing half is untested")
+            "the tall source is not passed through, so the slowing half is untested")
 
         at = at_mode(host, where, BENCH_MODE, BENCH_LINES)
         assert scaling(at), (
             f"a bypassed source that slowed to {BENCH_LINES} lines stayed in "
             f"bypass, which the display shows as no signal: {at}")
     finally:
-        get(host, "/uc?x")
         mode_serv(where, BENCH_MODE)
         time.sleep(SETTLE_SECONDS)

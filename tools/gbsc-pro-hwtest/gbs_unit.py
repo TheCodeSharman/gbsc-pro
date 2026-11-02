@@ -894,6 +894,36 @@ def want_shaping(host, on, tries=3):
     return shaping(host) == on
 
 
+def passed_through(host):
+    """Whether the engine is handing this source over rather than scaling it.
+
+    The engine's answer for the source on screen, which is what /uc?x moves --
+    stored wins, else pass-through, and there is no unit-wide preference to
+    read. docs/rgbhv-bypass-trap.md
+    """
+    return get_json(host, "/geometry")[1].get("route") == "passThrough"
+
+
+def want_route(host, through, tries=3, settle=8.0):
+    """Hand this source over, or scale it. /uc?x toggles it.
+
+    **ASKED BEFORE IT IS MOVED**, because a source with nothing stored is
+    already passed through: a blind toggle then moves it the other way, and a
+    test written when the unit-wide preference decided it asserts the opposite
+    of what it gets.
+
+    The route is stored against the source in force, so this reaches no other
+    source -- and it writes flash, which is what --preset-save opts into.
+    """
+    for _ in range(tries):
+        if passed_through(host) == through:
+            return True
+        get(host, "/uc?x")
+        time.sleep(settle)
+        acquired_and_settled(host)
+    return passed_through(host) == through
+
+
 # --- the source ------------------------------------------------------------
 
 MODESERV_PORT = 6502
