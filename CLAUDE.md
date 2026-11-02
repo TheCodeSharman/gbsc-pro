@@ -1363,11 +1363,14 @@ twelve tables while they existed, which is what `BringUp` was built from.
   so it stayed there for the life of the boot. Removed once the bench measured
   what it was costing: 800x600 at VTOTAL 627 scales sharp and full screen, with
   `PLLAD_MD` 1124 latched against the bypass switch's hardcoded 1856.
-  **THE ROUTE IS STORED PER SOURCE NOW**, in the same record as the framing and
-  the shape, because whether pass-through works is decided by the source rather
-  than by the output. `/uc?x` stores a choice against the source in force and
-  `/uc?P` moves the default a source with nothing stored takes
-  (`preferScalingRgbhv`); `/geometry` reports both as `route` and `routeStored`.
+  **THE ROUTE IS STORED PER SOURCE, AND PASS-THROUGH IS WHAT A SOURCE WITH
+  NOTHING STORED TAKES**, in the same record as the framing and the shape,
+  because whether pass-through works is decided by the source rather than by
+  the output. `/uc?x` stores a choice against the source in force; there is no
+  unit-wide preference. `/geometry` reports both as `route` and `routeStored`.
+  **A CHOICE LANDS ON THE SOURCE'S NEXT MOVE RATHER THAN AT ONCE** -- the two
+  routes measure a different sync duty for one source, so the record is stored
+  under one key and looked up under another. `docs/known-issues.md`,
   `docs/rgbhv-bypass-trap.md`, `docs/framing-presets.md`.
 - **`produced` IS `capture x 1024 / scale`** — a simple multiply, both axes, no
   loss term at either end. It did not look like one because the deficit against
@@ -2013,9 +2016,9 @@ one the same way; the rules below are each a wasted session.
   measurement. It remains useful as a second path to compare against
   horizontally. An 800x600 source in bypass passes straight through filling the
   screen:
-  `printf 'MODE X800 Y600 C256 F60\n' | nc 192.168.88.10 6502`, then `/uc?x` to
-  turn `preferScalingRgbhv` off — **the line count no longer puts it there, so
-  the reference has to be asked for**. Take it at the same camera position as
+  `printf 'MODE X800 Y600 C256 F60\n' | nc 192.168.88.10 6502`, which that
+  source now takes by default — **nothing has to be asked for, and `/uc?x`
+  stores the scaling path against it if the comparison wants one**. Take it at the same camera position as
   the frame being judged, compare the two, and `/uc?x` back afterwards.
 - **PUT COLOUR AGAINST THE EDGE BEFORE MEASURING ONE.** At a default framing the
   last thing on screen is captured INPUT blanking, so "where the picture ends"
