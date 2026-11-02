@@ -174,16 +174,6 @@ bool resolutionMenuHandler(OLEDMenuManager *manager, OLEDMenuItem *item, OLEDMen
         // {
         //     rto->applyPresetDoneStage = 1;
         // }
-      // if(selected() == InfoVGA)
-      // {
-      //     uopt->preferScalingRgbhv = false;
-      // }
-      // else 
-      // {
-      //   uopt->preferScalingRgbhv = true;
-      //   setOutModeHdBypass(false);
-      //   uopt->presetPreference = OutputBypass;
-      // }
     }
     saveUserPrefs();
     manager->freeze();

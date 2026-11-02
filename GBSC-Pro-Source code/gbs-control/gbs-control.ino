@@ -2631,14 +2631,6 @@ static void applyReferenceClock(uint16_t divider, uint32_t lineRateHz)
 // them back by bringing the chip up again.
 //
 // docs/investigations/one-bypass-route-carries-rgbhv.md
-// The engine decides pass-through and this is the user's veto, so it has to
-// reach the engine every time it changes rather than being read from uopt where
-// the decision is taken. docs/video-source-acquisition.md
-static void applyPassThroughPreference()
-{
-    inputAcquisition.allowPassThrough(!uopt->preferScalingRgbhv);
-}
-
 // Whether a source is passed through is a property of the SOURCE -- the chip
 // decides only whether it is possible -- so a toggle stores against the source
 // in force. The unit's preference is what a source with nothing stored takes,
@@ -3377,14 +3369,13 @@ void calibrateAdcOffset()
     Tv5725::Adc::enableGainMeasurement(false);
 }
 
-// What a stored output mode and pass-through preference have to tell the
-// engine. Which modes exist is OutputMode's, so a name the file carried and no
-// mode answers to is repaired here rather than defended in the file.
+// What a stored output mode has to tell the engine. Which modes exist is
+// OutputMode's, so a name the file carried and no mode answers to is repaired
+// here rather than defended in the file.
 static void applyStoredSettings()
 {
     if (Tv5725::OutputMode::fromName(uopt->outputResolution) == NULL)
         chooseOutputMode(&Tv5725::Mode1080p);
-    applyPassThroughPreference();
     geometry.setApplyAspect(uopt->applyAspect != 0);
 }
 
@@ -3534,7 +3525,10 @@ void updateWebSocketData()
             if (uopt->enableCalibrationADC) {
                 toSend[5] |= (1 << 0);
             }
-            if (uopt->preferScalingRgbhv) {
+            // The ENGINE's answer for the source in force, not a preference:
+            // the route is the source's own stored choice where it has one and
+            // pass-through where it has not, so no byte carries it.
+            if (geometry.routeWanted().passesThrough()) {
                 toSend[5] |= (1 << 1);
             }
             if (uopt->disableExternalClockGenerator) {
@@ -3628,7 +3622,6 @@ void setup()
     // A slew is up to 750 I2C transactions, long enough that dropping the WiFi
     // stack turns a frequency change into a reboot.
     rtos.displayClock.pumpWith(pumpWiFi);
-    applyPassThroughPreference();
 
     // The freeze, on the tick rather than inside the engine.
     // docs/gbs-control-debug-interface.md
@@ -5543,14 +5536,6 @@ void handleType2Command(char argument)
             geometry.setApplyAspect(!geometry.appliesAspect());
             uopt->applyAspect = geometry.appliesAspect() ? 1 : 0;
             saveUserPrefs();
-            break;
-        case 'P':
-            // The default a source with nothing stored against it takes. The
-            // per-source choice is 'x', and it overrides this.
-            uopt->preferScalingRgbhv = !uopt->preferScalingRgbhv;
-            applyPassThroughPreference();
-            saveUserPrefs();
-            inputAcquisition.resolveFromSource(millisNow());
             break;
         case 'x':
             // Applied to the source in force rather than at the next one: a

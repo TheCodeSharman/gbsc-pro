@@ -502,7 +502,7 @@ TEST_CASE("a closed menu draws nothing and answers no key but Menu")
 // A row's value function reads live state, which is what Pass Through does.
 static const char *liveValue(const MenuContext &context)
 {
-    return context.options().preferScalingRgbhv ? "ON" : "OFF";
+    return context.options().wantTap6 ? "ON" : "OFF";
 }
 
 static const MenuItem Live[] = {
@@ -516,7 +516,7 @@ TEST_CASE("a value that moves without a press is drawn again")
     // true before it, and nothing drew again afterwards. Pass Through read OFF
     // with the source handed over, and ON once it had been given back.
     Unit unit;
-    unit.options.preferScalingRgbhv = 0;
+    unit.options.wantTap6 = 0;
 
     Menu menu(Live, 1, Recorder, unit.context);
     menu.open();
@@ -528,7 +528,7 @@ TEST_CASE("a value that moves without a press is drawn again")
     menu.drawIfNeeded();
     CHECK(Drawn.empty());
 
-    unit.options.preferScalingRgbhv = 1;
+    unit.options.wantTap6 = 1;
 
     menu.drawIfNeeded();
     REQUIRE(Drawn.size() == 1);
@@ -1104,18 +1104,14 @@ TEST_CASE("the high-res route is on the menu, which the chain left unreachable")
     // Branch 96 drew it and its Ok was commented out, and nothing reached the
     // branch: the only route was /uc?x.
     //
-    // The ENGINE answers, not the preference byte: the row states the wish for
-    // the source in force, which is that source's own stored choice where it
-    // has one. With no source identified there is none, so the unit's default
-    // is what shows.
+    // The ENGINE answers: the row states the wish for the source in force,
+    // which is that source's own stored choice where it has one and
+    // pass-through where it has not. With no source identified there is
+    // nothing stored, so the default is what shows.
     Unit unit;
 
-    unit.solved.engine.preferPassThrough(false);
-    CHECK(std::string(item("High res").valueText(unit.context)) == "Scale");
-    CHECK(item("High res").okCommand().letter() == 'x');
-
-    unit.solved.engine.preferPassThrough(true);
     CHECK(std::string(item("High res").valueText(unit.context)) == "Pass Through");
+    CHECK(item("High res").okCommand().letter() == 'x');
 }
 
 TEST_CASE("restarting is on the menu, which the chain also left unreachable")

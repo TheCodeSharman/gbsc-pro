@@ -39,7 +39,7 @@ static uint16_t countThroughThreshold(bool rejectsEqualisation);
 VideoPath::VideoPath(DisplayClock &displayClock, SourceMeasurement &sampling,
                      FramingTable &framings, InputFormatter &inputFormatter)
     : displayClock_(displayClock), inputFormatter_(inputFormatter),
-      applyAspect_(true), prefersPassThrough_(false),
+      applyAspect_(true),
       framedKeyRateConfirmed_(false),
       usableHorizontal_(0), usableVertical_(0),
       reachHorizontal_(0), reachVertical_(0),
@@ -1837,14 +1837,10 @@ Route VideoPath::storedRoute() const
 Route VideoPath::routeWanted() const
 {
     const Route stored = storedRoute();
-    return stored.stored() ? stored : Route::chosen(prefersPassThrough_);
+    return stored.stored() ? stored : Route::passedThrough();
 }
 
 bool VideoPath::storedRouteChosen() const { return storedRoute().stored(); }
-
-void VideoPath::preferPassThrough(bool prefer) { prefersPassThrough_ = prefer; }
-
-bool VideoPath::prefersPassThrough() const { return prefersPassThrough_; }
 
 bool VideoPath::chooseRoute(Route route)
 {

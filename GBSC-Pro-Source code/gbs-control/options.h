@@ -67,7 +67,6 @@ struct userOptions
     uint8_t wantScanlines;    //要扫描线
     uint8_t deintMode;        //非int模式
     uint8_t wantTap6;
-    uint8_t preferScalingRgbhv;
     // Whether the board narrows the room to the source's shape. A display set
     // to its own 4:3 mode shapes what it is sent, so the two compound.
     // docs/aspect-ratio.md

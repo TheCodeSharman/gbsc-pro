@@ -491,20 +491,17 @@ public:
     bool applyFraming(const PanAndZoom &framing);
 
     // Which way the user wants the arriving source sent: its own stored
-    // choice where it has one, and the unit's default where it has not.
-    // Whether the chip CAN honour it is a separate question, asked after this
-    // one. One owner, because the menu reports the answer and the engine acts
-    // on it.
+    // choice where it has one, and PASS-THROUGH where it has not. Whether the
+    // chip CAN honour it is a separate question, asked after this one, and it
+    // is what sends every source under HdBypass::MinLineRateHz down the
+    // scaling path whatever this says. One owner, because the menu reports the
+    // answer and the engine acts on it. ../../../../docs/rgbhv-bypass-trap.md
     Route routeWanted() const;
 
-    // Whether the arriving source chose its own route, rather than taking
-    // the unit's default. routeWanted() cannot say: the two answers are
-    // the same word where a source chose what the default already was.
+    // Whether the arriving source chose its own route, rather than taking the
+    // default. routeWanted() cannot say: the two answers are the same word
+    // where a source chose what the default already was.
     bool storedRouteChosen() const;
-
-    // What a source with nothing stored against it takes.
-    void preferPassThrough(bool prefer);
-    bool prefersPassThrough() const;
 
     // Stores a route against the source in force, alongside its framing and
     // shape: they are one record, so a route is chosen by writing the record.
@@ -807,7 +804,6 @@ private:
     DisplayClock &displayClock_;
     InputFormatter &inputFormatter_;
     PanAndZoom framing_;
-    bool prefersPassThrough_;
     Aspect aspect_;
     bool applyAspect_;
     InputScale inputScale_;

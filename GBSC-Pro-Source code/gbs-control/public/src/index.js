@@ -275,7 +275,7 @@ const createWebSocket = () => {
                         case "enableCalibrationADC":
                             toggleMethod(button, (optionByte2 & 0x01) == 0x01);
                             break;
-                        case "preferScalingRgbhv":
+                        case "passThroughSource":
                             toggleMethod(button, (optionByte2 & 0x02) == 0x02);
                             break;
                         case "disableExternalClockGenerator":

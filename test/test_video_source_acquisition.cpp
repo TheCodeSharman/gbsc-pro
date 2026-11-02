@@ -780,6 +780,27 @@ TEST_CASE("one source mode change is one solve, however the latch falls")
     CHECK(solves == 1);
 }
 
+// The key the pass-through source forms, taken from a run rather than built by
+// hand: what identifies a source is a measurement, and a key written out here
+// would pin the identity rules rather than the route.
+static SourceKey passThroughSourceKey()
+{
+    seedBenchSource();
+    seedPassThroughSource();
+
+    Acquiring unit;
+    unit.acquisition.usePassThroughSwitch(enterPassThrough);
+    unit.start();
+    REQUIRE(unit.pollUntilSolved(8));
+    return unit.path.framedKey();
+}
+
+// A ROUTE CHOSEN FOR THE SOURCE IN FORCE LANDS ON ITS NEXT MOVE, NOT AT ONCE,
+// and there is no case here asserting otherwise because the mechanism is not
+// there: the two routes measure a different sync duty for one source -- 0.0893
+// passed through against 0.0633 scaled, where SourceKey::SyncWidthIdentity is
+// 0.002 -- so the record is stored under one key and looked up under another.
+// ../docs/known-issues.md
 TEST_CASE("a source the panel takes straight is passed through, not scaled")
 {
     // Pass-through is decided from the MEASUREMENT rather than from a
@@ -793,7 +814,6 @@ TEST_CASE("a source the panel takes straight is passed through, not scaled")
 
     Acquiring unit;
     unit.acquisition.usePassThroughSwitch(enterPassThrough);
-    unit.acquisition.allowPassThrough(true);
     unit.start();
 
     REQUIRE(unit.pollUntilSolved(8));
@@ -813,7 +833,6 @@ TEST_CASE("a source passed through still reports the raster it measured")
 
     Acquiring unit;
     unit.acquisition.usePassThroughSwitch(enterPassThrough);
-    unit.acquisition.allowPassThrough(true);
     unit.start();
 
     REQUIRE(unit.pollUntilSolved(8));
@@ -876,7 +895,6 @@ TEST_CASE("a source passed through clamps like a scaled one")
 
     Acquiring unit;
     unit.acquisition.usePassThroughSwitch(enterPassThrough);
-    unit.acquisition.allowPassThrough(true);
     unit.start();
     REQUIRE(unit.pollUntilSolved(8));
     REQUIRE(unit.path.outputMode()->isBypass());
@@ -905,7 +923,6 @@ TEST_CASE("a clock the channel did not choose is replaced before the duty is rea
 
     Acquiring unit;
     unit.acquisition.usePassThroughSwitch(enterPassThrough);
-    unit.acquisition.allowPassThrough(true);
     unit.start();
     REQUIRE(unit.pollUntilSolved(8));
     REQUIRE(unit.path.outputMode()->isBypass());
@@ -1016,7 +1033,6 @@ TEST_CASE("a passed-through source names itself rather than the last scaled one"
     REQUIRE(unit.pollUntilSolved());
     REQUIRE(unit.path.reportedKey().lines() == 312);
 
-    unit.acquisition.allowPassThrough(true);
     seedPassThroughSource();
     REQUIRE(unit.pollUntilSolved(8));
     REQUIRE(unit.path.outputMode()->isBypass());
@@ -1031,7 +1047,6 @@ TEST_CASE("a route taken away underneath pass-through is claimed again")
 
     Acquiring unit;
     unit.acquisition.usePassThroughSwitch(enterPassThrough);
-    unit.acquisition.allowPassThrough(true);
     unit.start();
 
     REQUIRE(unit.pollUntilSolved(8));
@@ -1058,7 +1073,6 @@ TEST_CASE("a bypassed output with nothing solved still arms the first count")
 
     Acquiring unit;
     unit.acquisition.usePassThroughSwitch(enterPassThrough);
-    unit.acquisition.allowPassThrough(true);
     unit.start(&ModeBypass);
 
     REQUIRE(unit.path.outputMode());
@@ -1084,7 +1098,6 @@ TEST_CASE("pass-through is refused until the source has been measured")
 
     Acquiring unit;
     unit.acquisition.usePassThroughSwitch(enterPassThrough);
-    unit.acquisition.allowPassThrough(true);
     unit.start();
 
     for (uint16_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i)
@@ -1115,7 +1128,6 @@ TEST_CASE("a pass-through source is not dropped because a measurement failed")
 
     Acquiring unit;
     unit.acquisition.usePassThroughSwitch(enterPassThrough);
-    unit.acquisition.allowPassThrough(true);
     unit.start();
     REQUIRE(unit.pollUntilSolved(8));
     REQUIRE(unit.path.outputMode()->isBypass());
@@ -1149,7 +1161,6 @@ TEST_CASE("a field rate that moved in pass-through gives the route back")
 
     Acquiring unit;
     unit.acquisition.usePassThroughSwitch(enterPassThrough);
-    unit.acquisition.allowPassThrough(true);
     unit.start();
     REQUIRE(unit.pollUntilSolved(8));
     REQUIRE(unit.path.outputMode()->isBypass());
@@ -1176,69 +1187,7 @@ TEST_CASE("a field rate that moved in pass-through gives the route back")
     Wire.lockSyncProcessor();
 }
 
-TEST_CASE("withdrawing the permission leaves pass-through without the source moving")
-{
-    // THE PERMISSION MOVES WHILE THE SOURCE STANDS STILL, which is the whole of
-    // what the menu's Pass Through row and a resolution choice both do -- and
-    // the route is re-answered only on a pass that re-resolves the source. With
-    // nothing arming one, the picture stayed handed over until the source next
-    // moved: selecting a resolution appeared to do nothing, and the row went on
-    // reading ON however often it was pressed.
-    seedPassThroughSource();
-    g_passThroughSwitches = 0;
-
-    Acquiring unit;
-    unit.acquisition.usePassThroughSwitch(enterPassThrough);
-    unit.acquisition.allowPassThrough(true);
-    unit.start();
-    REQUIRE(unit.pollUntilSolved(8));
-    REQUIRE(unit.path.outputMode()->isBypass());
-
-    unit.acquisition.allowPassThrough(false);
-
-    REQUIRE(unit.pollUntilSolved(8));
-    CHECK_FALSE(unit.path.outputMode()->isBypass());
-}
-
-TEST_CASE("granting the permission hands a suitable source over without it moving")
-{
-    seedPassThroughSource();
-    g_passThroughSwitches = 0;
-
-    Acquiring unit;
-    unit.acquisition.usePassThroughSwitch(enterPassThrough);
-    unit.acquisition.allowPassThrough(false);
-    unit.start();
-    REQUIRE(unit.pollUntilSolved(8));
-    REQUIRE_FALSE(unit.path.outputMode()->isBypass());
-
-    unit.acquisition.allowPassThrough(true);
-
-    REQUIRE(unit.pollUntilSolved(8));
-    CHECK(unit.path.outputMode()->isBypass());
-    CHECK(g_passThroughSwitches == 1);
-}
-
-TEST_CASE("pass-through refused leaves the same source scaled")
-{
-    // The interim stand-in for a per-source override. It cannot express one, so
-    // it is off by default and is not the decision -- but where it is set, the
-    // measurement does not get to overrule it.
-    seedBenchSource();
-    seedPassThroughSource();
-    g_passThroughSwitches = 0;
-
-    Acquiring unit;
-    unit.acquisition.usePassThroughSwitch(enterPassThrough);
-    unit.acquisition.allowPassThrough(false);
-    unit.start();
-
-    REQUIRE(unit.pollUntilSolved(8));
-    CHECK_FALSE(unit.path.outputMode()->isBypass());
-    CHECK(g_passThroughSwitches == 0);
-}
-
-TEST_CASE("a source below the line doubler is scaled even where pass-through is allowed")
+TEST_CASE("a source below the line doubler is scaled although nothing stored says so")
 {
     // The bench source: 15 kHz and line-doubled, which no panel takes raw.
     seedBenchSource();
@@ -1246,7 +1195,6 @@ TEST_CASE("a source below the line doubler is scaled even where pass-through is 
 
     Acquiring unit;
     unit.acquisition.usePassThroughSwitch(enterPassThrough);
-    unit.acquisition.allowPassThrough(true);
     unit.start();
 
     REQUIRE(unit.pollUntilSolved());
@@ -1265,7 +1213,6 @@ TEST_CASE("the chosen output resolution survives a pass-through excursion")
 
     Acquiring unit;
     unit.acquisition.usePassThroughSwitch(enterPassThrough);
-    unit.acquisition.allowPassThrough(true);
     unit.start(&Mode1024p);
     REQUIRE(unit.pollUntilSolved(8));
     REQUIRE(unit.path.outputMode()->isBypass());
@@ -1290,7 +1237,6 @@ TEST_CASE("leaving pass-through puts the colour path back")
 
     Acquiring unit;
     unit.acquisition.usePassThroughSwitch(enterPassThrough);
-    unit.acquisition.allowPassThrough(true);
     unit.start();
     REQUIRE(unit.pollUntilSolved(8));
     REQUIRE(unit.path.outputMode()->isBypass());
@@ -1325,7 +1271,6 @@ TEST_CASE("leaving pass-through puts the sync reference back")
 
     Acquiring unit;
     unit.acquisition.usePassThroughSwitch(enterPassThrough);
-    unit.acquisition.allowPassThrough(true);
     unit.path.useSyncTypeProbe(probeOwnVsync);
 
     VideoSourceSelection::select(VideoSourceSelection::Ypbpr);
@@ -1335,9 +1280,10 @@ TEST_CASE("leaving pass-through puts the sync reference back")
     REQUIRE(unit.path.outputMode()->isBypass());
     REQUIRE(SyncProcessor::SP_CS_P_SWAP::read() == 0);
 
-    unit.acquisition.allowPassThrough(false);
-    resolveUntilSolved(unit.acquisition, unit.nowMs);
-    REQUIRE(unit.pollUntilSolved(8));
+    // Left by the SOURCE dropping below the rate pass-through needs, which is
+    // what leaves it on a unit nobody is touching.
+    seedBenchSource();
+    REQUIRE(unit.pollUntilSolved(16));
     REQUIRE_FALSE(unit.path.outputMode()->isBypass());
 
     const uint32_t swap = SyncProcessor::SP_CS_P_SWAP::read();
@@ -1358,7 +1304,6 @@ TEST_CASE("leaving pass-through releases the blocks pass-through held")
 
     Acquiring unit;
     unit.acquisition.usePassThroughSwitch(enterPassThrough);
-    unit.acquisition.allowPassThrough(true);
     unit.start();
     REQUIRE(unit.pollUntilSolved(8));
     REQUIRE(unit.path.outputMode()->isBypass());
@@ -1393,7 +1338,6 @@ TEST_CASE("a resolution chosen while the source is passed through is recorded")
 
     Acquiring unit;
     unit.acquisition.usePassThroughSwitch(enterPassThrough);
-    unit.acquisition.allowPassThrough(true);
     unit.start();
     REQUIRE(unit.pollUntilSolved(8));
     REQUIRE(unit.path.outputMode()->isBypass());
@@ -1413,7 +1357,6 @@ TEST_CASE("a resolution chosen while passed through puts the chip back")
 
     Acquiring unit;
     unit.acquisition.usePassThroughSwitch(enterPassThrough);
-    unit.acquisition.allowPassThrough(true);
     unit.start();
     REQUIRE(unit.pollUntilSolved(8));
     REQUIRE(unit.path.outputMode()->isBypass());
@@ -1475,7 +1418,6 @@ TEST_CASE("a measurement under a bypassed output leaves the channel's divider al
 
     Acquiring unit;
     unit.acquisition.usePassThroughSwitch(enterPassThrough);
-    unit.acquisition.allowPassThrough(true);
     unit.start();
     REQUIRE(unit.pollUntilSolved(8));
     REQUIRE(unit.path.outputMode()->isBypass());
@@ -1712,7 +1654,6 @@ TEST_CASE("a source passed through with a solve outstanding is present")
 
     Acquiring unit;
     unit.acquisition.usePassThroughSwitch(enterPassThrough);
-    unit.acquisition.allowPassThrough(true);
     unit.start();
     REQUIRE(unit.pollUntilSolved(8));
     REQUIRE(unit.path.outputMode()->isBypass());
@@ -3306,7 +3247,6 @@ TEST_CASE("a pass-through source that returns unchanged gets the sync pad back")
     seedPassThroughSource();
     Acquiring unit;
     unit.acquisition.usePassThroughSwitch(enterPassThrough);
-    unit.acquisition.allowPassThrough(true);
     unit.start();
     REQUIRE(unit.pollUntilSolved(8));
     unit.poll();
@@ -3639,49 +3579,6 @@ TEST_CASE("a mode change does not freeze the capture")
     CHECK(FrameBuffer::CAPTURE_ENABLE::read() == 1);
 }
 
-TEST_CASE("withdrawing the pass-through permission scales the same source")
-{
-    // The permission is the user's veto and it is changed while a source is
-    // settled, so it takes effect against the source in force rather than at
-    // the next one. Applied only on a measurement the source itself moved, the
-    // picture stays handed over until something else disturbs it.
-    seedBenchSource();
-    seedPassThroughSource();
-
-    Acquiring unit;
-    unit.acquisition.usePassThroughSwitch(enterPassThrough);
-    unit.acquisition.allowPassThrough(true);
-    unit.start();
-    REQUIRE(unit.pollUntilSolved(8));
-    REQUIRE(unit.path.outputMode()->isBypass());
-
-    unit.acquisition.allowPassThrough(false);
-    resolveUntilSolved(unit.acquisition, unit.nowMs);
-
-    REQUIRE(unit.pollUntilSolved(8));
-    CHECK_FALSE(unit.path.outputMode()->isBypass());
-}
-
-TEST_CASE("granting the pass-through permission hands the same source over")
-{
-    seedBenchSource();
-    seedPassThroughSource();
-    g_passThroughSwitches = 0;
-
-    Acquiring unit;
-    unit.acquisition.usePassThroughSwitch(enterPassThrough);
-    unit.acquisition.allowPassThrough(false);
-    unit.start();
-    REQUIRE(unit.pollUntilSolved(8));
-    REQUIRE_FALSE(unit.path.outputMode()->isBypass());
-
-    unit.acquisition.allowPassThrough(true);
-    resolveUntilSolved(unit.acquisition, unit.nowMs);
-
-    CHECK(unit.path.outputMode()->isBypass());
-    CHECK(g_passThroughSwitches == 1);
-}
-
 // A COLD ENGINE HAS TO ARM ITS OWN FIRST SOLVE. sourceMoved() is the only
 // armer, and it compared the count against solvedLines_ -- which only a solve
 // writes, and only an arm opens a solve. The one other armer is a preset load,
@@ -3733,7 +3630,6 @@ TEST_CASE("a pass-through mode change writes the origin its own duty derives")
 
     Acquiring unit;
     unit.acquisition.usePassThroughSwitch(enterPassThrough);
-    unit.acquisition.allowPassThrough(true);
     unit.start();
     REQUIRE(unit.pollUntilSolved(8));
     REQUIRE(unit.path.outputMode()->isBypass());
@@ -3770,7 +3666,6 @@ TEST_CASE("a source that changes rate while passed through is re-sized")
 
     Acquiring unit;
     unit.acquisition.usePassThroughSwitch(enterPassThrough);
-    unit.acquisition.allowPassThrough(true);
     unit.start();
 
     REQUIRE(unit.pollUntilSolved(8));
@@ -4122,7 +4017,6 @@ TEST_CASE("a composite source passed through keeps the threshold too")
 
     Acquiring unit;
     unit.acquisition.usePassThroughSwitch(enterPassThrough);
-    unit.acquisition.allowPassThrough(true);
     unit.acquisition.allowMaintenance(true);
     unit.path.useSyncTypeProbe(probeOwnVsync);
 
@@ -4346,20 +4240,25 @@ TEST_CASE("and it is searched once the transition is over")
     CHECK(Adc::phaseFound());
 }
 
-// The key the pass-through source forms, taken from a run rather than built by
-// hand: what identifies a source is a measurement, and a key written out here
-// would pin the identity rules rather than the route.
-static SourceKey passThroughSourceKey()
+// PASS-THROUGH IS THE DEFAULT, AND NOTHING GRANTS IT. The unit used to carry a
+// preference deciding which way an unstored source went, and the measured
+// answer is the same for every source it could have applied to: scaling is
+// what costs the picture, so a source the sink takes straight is handed over
+// and only a source that cannot be is scaled. The per-source choice is what
+// overrides it, which the two cases below pin.
+// ../docs/rgbhv-bypass-trap.md
+TEST_CASE("a source with nothing stored against it is passed through")
 {
     seedBenchSource();
     seedPassThroughSource();
+    g_passThroughSwitches = 0;
 
     Acquiring unit;
     unit.acquisition.usePassThroughSwitch(enterPassThrough);
-    unit.acquisition.allowPassThrough(true);
     unit.start();
+
     REQUIRE(unit.pollUntilSolved(8));
-    return unit.path.framedKey();
+    CHECK(unit.path.outputMode()->isBypass());
 }
 
 TEST_CASE("a source stored as scaled is scaled although the unit would pass it through")
@@ -4377,32 +4276,11 @@ TEST_CASE("a source stored as scaled is scaled although the unit would pass it t
     REQUIRE(unit.framings.remember(stored, PanAndZoom(), Aspect(),
                                    Route::scaled()));
     unit.acquisition.usePassThroughSwitch(enterPassThrough);
-    unit.acquisition.allowPassThrough(true);
     unit.start();
 
     REQUIRE(unit.pollUntilSolved(8));
     CHECK_FALSE(unit.path.outputMode()->isBypass());
     CHECK(g_passThroughSwitches == 0);
-}
-
-TEST_CASE("a source stored as passed through is passed through although the unit would scale")
-{
-    const SourceKey stored = passThroughSourceKey();
-
-    seedBenchSource();
-    seedPassThroughSource();
-    g_passThroughSwitches = 0;
-
-    Acquiring unit;
-    REQUIRE(unit.framings.remember(stored, PanAndZoom(), Aspect(),
-                                   Route::passedThrough()));
-    unit.acquisition.usePassThroughSwitch(enterPassThrough);
-    unit.acquisition.allowPassThrough(false);
-    unit.start();
-
-    REQUIRE(unit.pollUntilSolved(8));
-    CHECK(unit.path.outputMode()->isBypass());
-    CHECK(g_passThroughSwitches == 1);
 }
 
 TEST_CASE("a framing press does not forget the route stored for the source")

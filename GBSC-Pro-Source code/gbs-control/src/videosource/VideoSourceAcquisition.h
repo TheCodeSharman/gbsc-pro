@@ -192,11 +192,6 @@ public:
     // because neither is this layer's fact yet.
     void allowMaintenance(bool allowed);
 
-    // Whether pass-through is offerable at all. The interim stand-in for a
-    // per-source override -- a single boolean cannot express one.
-    // docs/video-source-acquisition.md
-    void allowPassThrough(bool allowed);
-
     // Re-derive every register from the framing held and the source as it reads
     // NOW: measure, hand the reading over, and have the engine solve from it.
     // Measures, so it must run from loop().

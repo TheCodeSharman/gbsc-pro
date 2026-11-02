@@ -615,7 +615,6 @@ TEST_CASE("a source passed through still names where its active video starts")
     g_passedThrough = false;
 
     settled.acquisition.usePassThroughSwitch(notePassThrough);
-    settled.acquisition.allowPassThrough(true);
     settled.engine.setOutputMode(&Mode1080p);
     settled.engine.inputTimingsChanged(4);
     pollUntilSolved(settled.acquisition);

@@ -157,7 +157,6 @@ void Settings::eachScalerSetting(SettingVisitor &visit)
     picture_.setOutputComponent(outputComponent);
 
     visit.number("six-tap", options_.wantTap6, 1, 1);
-    visit.number("scale-rgbhv", options_.preferScalingRgbhv, 1, 0);
     visit.number("apply-aspect", options_.applyAspect, 1, 1);
     visit.number("pal-force-60", options_.PalForce60, 1, 0);
     visit.number("calibrate-adc", options_.enableCalibrationADC, 1, 1);

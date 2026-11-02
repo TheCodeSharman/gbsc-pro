@@ -791,14 +791,13 @@
             <table class="gbs-preferences">
               <tr>
                 <td>
-                  Low Res: Use Upscaling
+                  This Source: Pass Through
                   <!-- prettier-ignore -->
                   <ul class="gbs-help">
-                    <li>Low Resolution VGA input: Pass-through or Upscale</li>
-                    <li>Low resolution sources can be either passed on directly or get upscaled.</li>
-                    <li>Upscaling may have some border / scaling issues, but is more compatible with displays.</li>
-                    <li>Also, refresh rates other than 60Hz are not well supported yet.</li>
-                    <li>"Low resolution" is currently set at below or equal to 640x480 (525 active lines).</li>
+                    <li>Whether the source on screen right now is handed to the display untouched or scaled.</li>
+                    <li>The choice is stored against that source and no other, so each one keeps its own.</li>
+                    <li>Pass-through is what a source with no choice stored takes, because scaling costs detail.</li>
+                    <li>A source the display cannot take straight is scaled whatever this says: below 26 kHz, or anything needing the line doubler.</li>
                   </ul>
                 </td>
                 <td
@@ -806,7 +805,7 @@
                   gbs-message-type="user"
                   gbs-click="normal"
                   class="gbs-icon"
-                  gbs-toggle-switch="preferScalingRgbhv"
+                  gbs-toggle-switch="passThroughSource"
                 >
                   toggle_off
                 </td>
