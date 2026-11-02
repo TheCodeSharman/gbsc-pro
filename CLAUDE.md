@@ -1368,10 +1368,18 @@ twelve tables while they existed, which is what `BringUp` was built from.
   because whether pass-through works is decided by the source rather than by
   the output. `/uc?x` stores a choice against the source in force; there is no
   unit-wide preference. `/geometry` reports both as `route` and `routeStored`.
-  **A CHOICE LANDS ON THE SOURCE'S NEXT MOVE RATHER THAN AT ONCE** -- the two
-  routes measure a different sync duty for one source, so the record is stored
-  under one key and looked up under another. `docs/known-issues.md`,
-  `docs/rgbhv-bypass-trap.md`, `docs/framing-presets.md`.
+  **A CHOICE LANDS WITHOUT THE SOURCE MOVING, AND STORING ONE IS THE SAME
+  OPERATION AS ANSWERING IT** -- `VideoSourceAcquisition::chooseRoute()` and
+  `resetFraming()`, because the route is re-answered only on a pass that
+  re-resolves the source, and the reset cleared the route with the framing and
+  armed nothing. **THE ROUTE IS ALSO KEYED ON LESS THAN THE FRAMING IS**: the
+  sync duty is read through the divider the path in force installed, which
+  spends 45% of `SyncWidthIdentity` on a route change alone, so the route is
+  keyed on the count, the rate and both polarities, held on every entry the
+  source has, and `FramingTable::findRoute()` is the one way to ask. **The host
+  suite's figure for that same gap is ten times larger and is a fake
+  artefact** -- a seeded pulse COUNT against a moving divider, so do not quote
+  it as hardware. `docs/rgbhv-bypass-trap.md`, `docs/framing-presets.md`.
 - **`produced` IS `capture x 1024 / scale`** — a simple multiply, both axes, no
   loss term at either end. It did not look like one because the deficit against
   it *changes sign* with magnification, so four models were proposed in one
