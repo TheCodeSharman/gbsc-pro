@@ -17,7 +17,7 @@ carries. docs/rgbhv-bypass-trap.md
 dongle is opened at whatever it reports being sent. Opening it at 1920x1080
 reshapes the frame from the wrong stride and the picture reads as corrupt.
 
-`--preset-save` is required because the route is `preferScalingRgbhv` and
+`--preset-save` is required because the route is stored against the source and
 `/uc?x` writes flash. The fixture puts it back.
 """
 

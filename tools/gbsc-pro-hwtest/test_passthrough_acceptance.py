@@ -261,7 +261,7 @@ def passing_through(host):
         path = read_fields(host, ["DAC_RGBS_BYPS2DAC", "OUT_SYNC_SEL"])
         assert path["DAC_RGBS_BYPS2DAC"] == 1 and path["OUT_SYNC_SEL"] == 1, (
             f"{where} is on the scaling path ({path}), so this says nothing "
-            f"about pass-through. Turn preferScalingRgbhv off with /uc?x.")
+            f"about pass-through. Store pass-through for it with /uc?x.")
     return check
 
 

@@ -133,8 +133,14 @@ def scaling(at):
 
 
 def want_passed_through(host, passed_through):
-    """`preferScalingRgbhv` is what decides the route, and /uc?x toggles it."""
-    if (setting(host, "scale-rgbhv") == "0") == passed_through:
+    """The route is stored against the source, and /uc?x toggles it.
+
+    There is no unit-wide preference any more: a source with nothing stored is
+    passed through, and what /geometry reports is the engine's answer for the
+    source on screen. docs/rgbhv-bypass-trap.md
+    """
+    at = get_json(host, "/geometry")[1] or {}
+    if (at.get("route") == "passThrough") == passed_through:
         return
     get(host, "/uc?x")
     time.sleep(2.0)
@@ -307,7 +313,7 @@ def bench(request, host):
         f"driving a usable raster. Re-issue the mode before judging anything.")
 
     original = {
-        "scale-rgbhv": setting(host, "scale-rgbhv"),
+        "route": (get_json(host, "/geometry")[1] or {}).get("route"),
         "shaping": shaping(host),
         # SEPARATELY FROM THE FLAG: turning the shape off is Aspect::Fill, and
         # turning it back on lands on whatever /uc?G cycles to rather than what
@@ -360,7 +366,7 @@ def bench(request, host):
                 restore_output_mode(host, original["output"])
             if original["input"]:
                 select_input(host, original["input"])
-            want_passed_through(host, original["scale-rgbhv"] == "0")
+            want_passed_through(host, original["route"] == "passThrough")
             want_shaping(host, original["shaping"])
             if original["aspect"]:
                 choose_aspect(host, original["aspect"])

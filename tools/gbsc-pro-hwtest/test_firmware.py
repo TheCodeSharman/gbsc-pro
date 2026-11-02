@@ -1994,7 +1994,10 @@ def test_a_settings_file_this_firmware_wrote_loads_on_the_next_boot(host, preset
     The loader refuses to save over a file it could not read, and that refusal
     covers "restore defaults" too -- so a save writing something the next boot
     rejects leaves the unit on defaults with no way back through the UI. The
-    value toggled is pass-through, because it is a save with a visible effect.
+    value toggled is the frame time lock, because it is a preference with a
+    visible effect that lives in the file. The route is NOT one: it is stored
+    per source rather than as a unit preference, so toggling it writes no key
+    here. docs/rgbhv-bypass-trap.md
 
     Restarts the unit and writes flash, so it needs both flags.
     """
@@ -2002,14 +2005,14 @@ def test_a_settings_file_this_firmware_wrote_loads_on_the_next_boot(host, preset
     assert original is not None, f"{SETTINGS_PATH} does not read whole to begin with"
 
     try:
-        status, _ = get(host, "/sc?K")
-        assert status == 200, f"/sc?K answered {status}"
+        status, _ = get(host, "/uc?5")
+        assert status == 200, f"/uc?5 answered {status}"
         assert wait_for(
-            lambda: (setting(host, "scale-rgbhv")
-                     != original.get("scale-rgbhv")) or None,
+            lambda: (setting(host, "frame-time-lock")
+                     != original.get("frame-time-lock")) or None,
             timeout=LOCK_TIMEOUT), (
-            "/sc?K did not persist the pass-through preference, so this test "
-            "never wrote the setting it is about")
+            "/uc?5 did not persist the frame time lock, so this test never "
+            "wrote the setting it is about")
 
         status, _ = get(host, "/uc?a")
         assert status == 200, f"the restart command was refused: {status}"
@@ -2045,11 +2048,11 @@ def test_a_settings_file_this_firmware_wrote_loads_on_the_next_boot(host, preset
             f"repairs that -- delete {SETTINGS_PATH} over /fs/rm and restart")
         get(host, "/uc?5")
     finally:
-        # /sc?K TOGGLES a persisted preference, so it has to be toggled back.
-        # Left at whatever the test flipped it to, the next run starts from a
-        # different route and the unit keeps a setting nobody chose.
-        if setting(host, "scale-rgbhv") != original.get("scale-rgbhv"):
-            get(host, "/sc?K")
+        # /uc?5 TOGGLES a persisted preference, so it has to be toggled back.
+        # Left at whatever the test flipped it to, the unit keeps a setting
+        # nobody chose.
+        if setting(host, "frame-time-lock") != original.get("frame-time-lock"):
+            get(host, "/uc?5")
         get(host, "/sc?~")
         if original.get("output"):
             restore_output_mode(host, original["output"])
