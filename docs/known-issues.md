@@ -10539,32 +10539,50 @@ readable register would serve. What the block wants is a name for what it is
 doing -- prove the bus answers -- and it currently reads as a status check that
 forgot to check anything. `whole-byte-convenience-names.md`.
 
-### A route chosen for the source in force lands on its next move, not at once
+### FIXED: the framing reset cleared the route and nothing re-answered it
 
-`/uc?x` stores a route against the source on screen and the engine reads it
-back as never made, because **the two routes measure a different sync duty for
-one source**. `SourceKey` carries the duty and `SourceKey::SyncWidthIdentity`
-is 0.002; measured on the host suite's pass-through source, the key is
-0.0893 while the source is handed over and 0.0633 once the scaling path's clock
-is installed. Thirteen tolerances apart, so the record is stored under one key
-and looked up under another, `VideoPath::routeWanted()` finds nothing and
-answers with the default.
+**The route is re-answered only on a pass that re-resolves the source**, and
+`/sc?B` clears the route with the framing. So the engine reported the default
+while the chip stayed on the route the cleared choice had put it on, for the
+life of the acquisition. Measured on `vga` at 1280x720@60: `/geometry` read
+`route: passThrough` with `routeStored` false within three seconds, while
+`DAC_RGBS_BYPS2DAC` and `OUT_SYNC_SEL` both stayed 0 and the divider stayed at
+the scaling path's 1444 -- unchanged at 40 s.
 
-Nothing arms a re-answer either: the route is re-answered only on a pass that
-re-resolves the source, and `VideoPath::chooseRoute()` only writes the record.
-Arming `inputTimingsChanged()` from there does not help and makes it worse --
-it blanks the duty the key carries, which orphans the record immediately.
+`VideoSourceAcquisition::resetFraming()` resets the framing and re-answers the
+route, and `chooseRoute()` stores and answers, so storing a route and answering
+it are one operation on the layer that owns the question rather than two steps
+each caller has to remember. Measured after the fix, same source, no source
+move: `/sc?B` takes it to bypass at divider 2038, `/uc?x` to scaling at 1444,
+`/uc?x` back to bypass, `/sc?B` leaves it on the default.
+`test_rgbhv_bypass.py` is the hardware acceptance and the host cases are in
+`test_video_source_acquisition.cpp`.
 
-So the choice takes effect when the source next moves, which is also when the
-key it was stored under stops being the one in force. **The escape that used to
-exist is gone with the unit-wide preference**: that one was not keyed on the
-source, so flipping it left pass-through at once.
+**THE DUTY PREMISE THE PREVIOUS READING RESTED ON IS AN ARTEFACT OF THE HOST
+FAKE, AND THE FIGURE MUST NOT BE CARRIED.** `SourceKey` carried the hsync duty,
+and the host suite's pass-through source makes that duty move thirteen
+tolerances across a route change -- which is `seedPassThroughSource()` seeding
+the pulse as a constant COUNT while the divider moves, not something the part
+does. The real counter counts ADC samples, so the count follows the divider:
+measured off the engine's own `duty:` line, 47 of 2038 handed over against 32
+of 1444 scaled, 0.0231 against 0.0222, and the adopted key held across the
+change at `750@60.02/256++`.
 
-What settles it is which key a route should be stored under. The duty earns its
-place in the identity -- two published standards share a count and a rate -- but
-it is a property of the measurement path as much as of the source, and a route
-is the one field in the record that decides which path measures it. A route
-keyed on count, rate and polarity alone would not move with the path.
+**It is still 45% of `SyncWidthIdentity` spent on nothing but the route**,
+before any of the reading's own dither, so the route is keyed on what the
+measurement path cannot move: the line count, the field rate and both
+polarities. `SourceKey::sameApartFromSyncWidth()` is the comparison,
+`FramingTable::findRoute()` is the one way to ask for a route, and `find()` no
+longer hands one out. A chosen route goes onto every entry the source has,
+because held on the entry formed on one path the two disagree and the route
+oscillates; forgetting a source clears it wherever it is held. What that costs
+is two sources sharing a count, a rate and both polarities sharing a route --
+the 525-line 60 Hz pair the duty exists to separate, which answers the
+pass-through question the same way either side.
+
+Arming `inputTimingsChanged()` from `chooseRoute()` was tried while the key
+still carried the duty and made it worse: it blanks the held duty, which
+orphaned the record on the spot.
 
 ### CLOSED: the minifier is not worth installing, so its FIFO bound is not worth stating
 

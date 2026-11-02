@@ -250,6 +250,47 @@ from a standard is a guess that happens to be well-informed. Choosing the right
 row is a separate question, and the polarity the key now carries is evidence for
 it that the table does not yet read.
 
+## The route is keyed on less than the framing is
+
+The sync width is a property of the source, and it is also a property of the
+READING: it is `STATUS_SYNC_PROC_HLOW_LEN` against the divider, and the divider
+is whatever the path in force installed. **The route is the one field in the
+stored record that decides which path does the measuring**, so a route keyed on
+the duty is written under one key and read back under another.
+
+**What that costs is measured, and it is a margin rather than a failure.** On
+`vga` at 1280x720@60, read off the engine's own `duty:` line either side of a
+`/uc?x`:
+
+| route | pulse | divider | duty |
+|---|---|---|---|
+| passed through | 47 | 2038 | 0.0231 |
+| scaled | 32 | 1444 | 0.0222 |
+
+0.0009 apart, which spends 45% of `SyncWidthIdentity` on nothing but the route;
+the adopted key held across that change, `source key: 750@60.02/256++` before
+and after. So the hazard is a tolerance nearly half spent before any of the
+reading's own dither is counted -- and the Wii's duty excursion above is four
+times the whole tolerance.
+
+**THE HOST SUITE OVERSTATES IT BY AN ORDER OF MAGNITUDE AND THAT FIGURE IS NOT
+A HARDWARE READING.** `seedPassThroughSource()` seeds the pulse as a constant
+COUNT, so the duty it yields moves inversely with the divider -- 0.0893 against
+0.0633, thirteen tolerances apart. The real counter counts ADC samples, so the
+count follows the divider and the fraction very nearly holds. The fake is still
+the right fixture for the rule, because it is the condition the rule exists for.
+
+So the route is keyed on the terms the path cannot move -- the line count, the
+field rate and both polarities -- and `FramingTable::findRoute()` is the only
+way to ask for one. The framing stays keyed on all five: it is read back on the
+path it was tuned on, and a framing tuned for the scaling path describes
+nothing in pass-through anyway.
+
+What the narrower key costs is two sources sharing all four terms sharing a
+route, which is the 525-line 60 Hz pair the sync width exists to separate. The
+route asks whether the panel takes this raster straight, and the pair answer
+that the same way. `framing-presets.md`.
+
 ## Equality is not transitive, so a lookup has to choose
 
 A reading can sit inside tolerance of two stored keys that are outside tolerance

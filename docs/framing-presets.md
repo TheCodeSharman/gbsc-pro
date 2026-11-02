@@ -150,20 +150,69 @@ pass-through works at all is decided by the raster and the line rate arriving.
 is the sixth field.
 
 `Tv5725::Route` is the value, and it has three states rather than two: a source
-nobody has chosen for takes the unit's `scale-rgbhv` preference, and one that
-was chosen for overrides it. A pair of bools expresses the same thing and lets
-"not stored but passing through" be written down.
+nobody has chosen for is passed through, and one that was chosen for overrides
+that. A pair of bools expresses the same thing and lets "not stored but passing
+through" be written down.
 
 `VideoPath::routeWanted()` is the one owner of that rule -- the OSD row reports
 its answer and `VideoSourceAcquisition::passThroughSuitsSource()` acts on it, so
 the menu and the engine cannot disagree. `/uc?x` stores a choice against the
-source in force, `/uc?P` moves the default, and choosing an output resolution
-stores the scaled route against that source alone.
+source in force, and choosing an output resolution stores the scaled route
+against that source alone. There is no unit-wide preference.
 
 **The route shares the record, so a framing press has to carry it.**
 `rememberFraming()` reads the stored route back before writing, because the
 record is replaced whole and a press that defaulted the field would forget the
 choice on the first pad press after it.
+
+### But it is NOT KEYED like the framing
+
+**The sync duty is read through the divider the path in force installed, so one
+source reads two duties** -- measured on `vga` at 1280x720@60, 47 of 2038
+handed over against 32 of 1444 scaled, which is 0.0231 against 0.0222 and
+spends 45% of `SourceKey::SyncWidthIdentity` on nothing but the route. The duty
+earns its place in the identity, two published standards sharing a count and a
+rate, but the route is the one field in the record that decides which path
+measures the source. Keyed on it, a choice is written under one key and read
+back under another.
+
+So the route is keyed on what the measurement path cannot move: the line count,
+the field rate and both polarities. `SourceKey::sameApartFromSyncWidth()` is
+that comparison and `FramingTable::findRoute()` is the one way to ask -- which
+is why `find()` does not hand out a route at all.
+`source-identity-and-framing-lookup.md` has the measurement, and why the host
+suite's figure for the same gap is ten times larger and not a hardware reading.
+
+Three rules follow, and each is a case in `test_framing_table.cpp`:
+
+- **A chosen route goes onto every entry the source has**, not just the one
+  formed on the path in force. Left on one, the two entries disagree and the
+  route oscillates: each path finds the choice made on it and moves to the
+  other. `FramingTable::routeAcross()`.
+- **Forgetting a source clears the route wherever it is held**, or a reset taken
+  on one path leaves the choice standing on the other and the default never
+  returns. The sibling ENTRY stands, because it may be the other standard's
+  framing.
+- **Two sources sharing a count, a rate and both polarities share a route.**
+  That is the trade the first rule buys, and it costs nothing measurable: the
+  route asks whether the panel takes this raster straight, which has the same
+  answer for both.
+
+### Storing a route and answering it are one operation
+
+**The route is re-answered only on a pass that re-resolves the source**, so a
+caller that stores one and leaves the arm to somebody else does nothing until
+the source moves. `VideoSourceAcquisition::chooseRoute()` does both, and
+`resetFraming()` is there for the same reason: the reset clears the route with
+the framing, and the engine then reported the default while the chip stayed on
+the route the cleared choice had put it on. Measured on `vga` at 1280x720@60
+before it did -- `/geometry` read `passThrough` with `routeStored` false while
+`DAC_RGBS_BYPS2DAC` and `OUT_SYNC_SEL` stayed 0 and the divider stayed at the
+scaling path's 1444, for forty seconds.
+
+The one caller that stores without arming is `scaleSourceForResolution()`,
+because the output resolution change on the line after it arms a mode change of
+its own.
 
 ## Slots
 

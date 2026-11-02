@@ -14,7 +14,9 @@ is softer scaled than handed over untouched. `capture-limits.md`.
 
 **PASS-THROUGH IS WHAT A SOURCE WITH NOTHING STORED TAKES**, and the only thing
 that overrides it is a choice stored against that source -- `/uc?x` stores one,
-against the `SourceKey` the framing uses and in the same record.
+in the same record as the framing but **keyed on less than the framing is**,
+because the sync duty the key carries is read through the divider the path in
+force installed. `framing-presets.md` has what that costs.
 `Tv5725::Route` is the value and `VideoPath::routeWanted()` the one owner of
 "stored wins, else pass-through". There is no unit-wide preference: the
 measurement already answers for every source that cannot be handed over, so a
