@@ -416,10 +416,17 @@ and the fix is one expression.
 | `STATUS_SYNC_PROC_HTOTAL` | 1444 | 1924 |
 | delivered units | 1445 | 1443 |
 | `VDS_HSCALE` | 916 | 914 |
-| near-Nyquist detail | 6.75 | **8.30** |
 
-33% more ADC samples behind the same delivered count, and the detail reaches
-the panel. The counter follows raw and the PLL latches at the new divider.
+33% more ADC samples behind the same delivered count. The counter follows raw
+and the PLL latches at the new divider.
+
+**THE DETAIL FIGURE THIS TABLE CARRIED IS RETRACTED.** It read 6.75 against
+8.30 at the test card's finest grating, and `wedge.locate()` had put its box at
+photo columns 551..656 where the gratings start at about 710 -- on the circle's
+edge, so the reading is of the wrong pixels. Measured again against the lit
+picture's own fractions, a ratio buys a few percent on every band and twice the
+chroma artefact. `the-minifier-buys-filtering-not-resolution.md` has the six
+bands, and two more ways a wedge reading goes wrong.
 
 ## Still open
 
