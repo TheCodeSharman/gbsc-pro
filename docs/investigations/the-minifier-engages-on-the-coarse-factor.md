@@ -1,5 +1,12 @@
 # The minifier's write enable is `IF_HS_DEC_FACTOR`, and the FIFO consumes it
 
+**THE ROUTE IS CLOSED AND THIS PAGE IS HOW THE BLOCK WORKS, NOT A CASE FOR
+USING IT.** At equal delivered count a ratio measures within a few percent of
+unity, so nothing chooses one --
+[`the-minifier-buys-filtering-not-resolution.md`](the-minifier-buys-filtering-not-resolution.md)
+has the bands, the filter-path fault that made the block destructive until it
+was fixed, and the instrument traps.
+
 The input formatter's scaling-down DDA shortens the line. **Two things have to
 be true at once, and an undoubled source gets neither:**
 

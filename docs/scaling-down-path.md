@@ -9,14 +9,21 @@ from the ratio rather than the scan, the line counter stays RAW while
 and the divider rises to spend the room the raster has gained. `/inputscale`
 asks for one.
 
-**Nothing chooses a ratio.** The solve still runs at unity, which is what the
-bring-up wrote and what the block has always held. What a ratio would be chosen
-FOR is sampling density, and how much the block's own filtering costs against
-what the extra samples buy is unmeasured -- so the mechanism works and the
-policy is absent.
+**Nothing chooses a ratio, and nothing should.** The solve runs at unity, which
+is what the bring-up wrote and what the block has always held. What a ratio
+would be chosen FOR is sampling density, and that question is now answered:
+`delivered = ratio x counter`, so a ratio can never raise the delivered count,
+and what it does buy -- the same count filtered down from more ADC samples
+rather than aliased at it -- measures as a few percent on the card's own
+gratings at equal delivered count, for twice the chroma artefact.
+[`investigations/the-minifier-buys-filtering-not-resolution.md`](investigations/the-minifier-buys-filtering-not-resolution.md).
 
-This page is what it is, what it would buy, and what has to be measured before
-any of that is believed. The vertical half is untouched.
+**So a high-rate source is served by pass-through and the scaling path serves
+everything below it**, which is what the route default now says.
+
+This page is what the block is and what it would buy, kept because the
+mechanism is live and `/inputscale` asks for a ratio. The vertical half is
+untouched.
 
 ## Why it matters that it exists
 
@@ -319,9 +326,10 @@ the output can afford to line-double.
   eight and a wrong boundary shows as a discontinuity partway across.
 - **Whether the vertical scaler is reachable on an undoubled path at all.** It
   lives in the deinterlacer, which an undoubled source otherwise skips.
-- **What it costs in sharpness.** Unmeasurable until a frame survives a ratio.
-  Near-Nyquist detail does not fall when the rate registers are written alone,
-  so the filtering a ratio was thought to cost is not established either.
+- ~~**What it costs in sharpness.**~~ **Measured, and it is what closed the
+  route**: at equal delivered count a ratio reads within a few percent of
+  unity on every band of the card's gratings.
+  [`investigations/the-minifier-buys-filtering-not-resolution.md`](investigations/the-minifier-buys-filtering-not-resolution.md).
 
 `investigations/the-scaling-path-samples-below-one-to-one.md` is what the
 missing downscale costs, measured against pass-through.

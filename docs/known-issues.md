@@ -8813,7 +8813,15 @@ What settles it: whether the phase sweep can find a window at a high divider
 once it stops scoring on equality, and then a density-against-oversampling
 judgement made on the picture at each row rather than in the arithmetic.
 
-### Try the horizontal decimator, so the divider can rise without the capture overrunning
+### ANSWERED: try the horizontal decimator, so the divider can rise without the capture overrunning
+
+**The decimator was tried and it buys nothing a viewer sees.** What follows is
+the case for it, which stands as far as the arithmetic goes and stops at the
+picture: the divider does rise, the extra samples are filtered down rather than
+aliased, and at equal delivered count the card's finest gratings read within a
+few percent of unity.
+`investigations/the-minifier-buys-filtering-not-resolution.md`.
+
 
 **The grating beats because the divider is too low to resolve it**, and the
 divider is bounded by what the raster can SHOW rather than by the part: the
@@ -10558,7 +10566,7 @@ it is a property of the measurement path as much as of the source, and a route
 is the one field in the record that decides which path measures it. A route
 keyed on count, rate and polarity alone would not move with the path.
 
-### The line-double FIFO caps delivered units at about 1120, and only the doubled path is held off it
+### CLOSED: the minifier is not worth installing, so its FIFO bound is not worth stating
 
 The band at the right of a minifying undoubled frame starts at a CONSTANT count
 of delivered IF units, whatever the divider and whatever the ratio. Measured on
@@ -10570,20 +10578,31 @@ start green at 1161, ~1181, 1134 and 1125 IF units.
 `SamplingClock::DoubledLineSampleLimit` expresses as a divider.**
 `investigations/the-tail-green-is-the-vds-line-filter.md` measures its onset at
 1118..1128 IF units on a doubled line, and the cap's 2200 ADC samples is 1100
-units, just under it. So a doubled line never reaches the bound and a minifying
-undoubled one has no equivalent, which is the whole of the fault.
+units, just under it -- so a doubled line never reaches the bound and a
+minifying undoubled one has no equivalent.
 
-Two consequences. **The bound belongs in IF units, applied whenever the FIFO is
-in circuit** -- through the ceilings `VideoPath` already states in delivered
-units, which subsumes a divider constant covering only half of it. And **the
-minifier cannot serve a raster needing more than ~1120 delivered units**, so
-1080p, which needs 1443, is out of its reach for this reason as well as for
-`delivered = ratio x counter`.
+**The bound was going to be stated in IF units and is not, because the thing it
+bounds has been measured and is a wash.** `delivered = ratio x counter`, so a
+ratio can never raise the delivered count; what it buys is the same count
+filtered down from more ADC samples rather than aliased at it, and measured at
+equal delivered count on the card's own gratings that is a few percent, for
+twice the chroma artefact.
+`investigations/the-minifier-buys-filtering-not-resolution.md` has the six
+bands and the two instrument traps that produced a wrong reading first. The
+part has no depth or allocation register for the FIFO either, so the cap could
+not have been lifted.
+
+**The solve runs at unity and nothing asks for a ratio**, so the band is not
+reachable from the engine; a hand-set ratio through `/inputscale` above ~1120
+delivered units still shows it. **The route for a high-rate source is
+pass-through**, which is now what a source with nothing stored against it
+takes.
 
 A minifying undoubled line is also panned some 70 columns left of where unity
-puts it, and `IF_HBIN_SP` is measured not to be the cause -- 96, 48, 16 and 2
-give the same frame, which retires the standing guess about
-`InputFormatter::LineDoubleReset`.
+puts it at ratio 3/4 and not at 0.547, and `IF_HBIN_SP` is measured not to be
+the cause -- 96, 48, 16 and 2 give the same frame, which retires the standing
+guess about `InputFormatter::LineDoubleReset`. Unexplained, and now only
+reachable by hand.
 
 ### The scaling-down ratio was halved by the coarse factor -- FIXED
 
