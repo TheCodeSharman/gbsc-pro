@@ -103,6 +103,14 @@ public:
     // other than the order it meets them in.
     float distanceTo(const SourceKey &other) const;
 
+    // The same source on every term the MEASUREMENT PATH cannot move. The sync
+    // width is read through the divider the path in force installed, so it is
+    // the one term that differs between two readings of one source taken
+    // scaled and passed through -- which is what the ROUTE is keyed on, the
+    // route being the field that chooses the path.
+    // ../../../docs/source-identity-and-framing-lookup.md
+    bool sameApartFromSyncWidth(const SourceKey &other) const;
+
     bool operator==(const SourceKey &other) const;
     bool operator!=(const SourceKey &other) const;
 

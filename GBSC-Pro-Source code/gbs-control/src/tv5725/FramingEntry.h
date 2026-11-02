@@ -38,6 +38,9 @@ public:
     // chose, and the reading that found the entry is not what identifies it.
     void reframe(const PanAndZoom &framing, Aspect shape, Route route);
 
+    // The route alone, for an entry whose framing is not being touched.
+    void reroute(Route route);
+
     // The grammar's unit, and the store's. Clamped rather than wrapped: a
     // proportion outside the region it is a proportion of describes no window,
     // and a wrap would describe a plausible wrong one.
@@ -62,7 +65,6 @@ private:
     static uint8_t polarityAt(SourceKey::Polarity polarity, uint8_t shift);
     SourceKey::Polarity polarityAt(uint8_t shift) const;
     void frame(const PanAndZoom &framing);
-    void take(Route route);
 
     uint16_t lines_;
     uint16_t rateCentihertz_;

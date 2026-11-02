@@ -31,10 +31,18 @@ public:
 
     FramingTable();
 
-    // What is stored against this source, if anything is. Any pointer may be
-    // null when only the others, or only the presence, matters.
+    // What is stored against this source, if anything is. Either pointer may be
+    // null when only the other, or only the presence, matters. The route is not
+    // here: it is keyed differently, and findRoute() is the one way to ask.
     bool find(const SourceKey &key, PanAndZoom *into,
-              Aspect *shape = NULL, Route *route = NULL) const;
+              Aspect *shape = NULL) const;
+
+    // THE ROUTE IS NOT KEYED ON THE SYNC DUTY, because the duty is read through
+    // the divider the path in force installed and the route is the field that
+    // decides which path measures the source. Keyed on it, a route is written
+    // under one key and read back under another, and the choice reads as never
+    // made. docs/source-identity-and-framing-lookup.md
+    bool findRoute(const SourceKey &key, Route *route) const;
 
     // Replaces an entry for the same source rather than adding one, so
     // re-tuning does not fill the table with its own history. False when the
@@ -48,6 +56,11 @@ public:
     // entry would not fit; what fitted is kept.
     bool adopt(const FramingTable &other);
 
+    // Everything stored against this source: the entry, and the route wherever
+    // it is held. The route lives on every entry the source has, so a reset
+    // taken on one path would otherwise leave the choice standing on the
+    // other and the default would never return. Entries for another source
+    // that shares the count and the rate keep their framings.
     bool forget(const SourceKey &key);
 
     uint16_t count() const;
@@ -68,6 +81,17 @@ public:
     void clear();
 
 private:
+    // The nearest entry this key identifies apart from the duty that holds a
+    // route somebody chose.
+    int16_t routeIndexOf(const SourceKey &key) const;
+
+    // Puts one route on every entry this reading identifies apart from the
+    // duty, so the choice answers from whichever path measures the source
+    // next. Held on the entry formed on one path the two disagree, and the
+    // route then oscillates: each path finds the choice made on it and moves
+    // to the other. Whether it changed anything.
+    bool routeAcross(const SourceKey &key, Route route);
+
     // The NEAREST entry this key identifies, not the first one met. Identity is
     // not transitive, so several entries can match one reading, and a scan
     // returning the first lets the order of the file decide which framing a

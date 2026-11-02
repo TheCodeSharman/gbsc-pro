@@ -1817,7 +1817,7 @@ void VideoPath::rememberFraming()
     // that wrote it back without one would forget the choice on the first pad
     // press after it.
     Route route;
-    framings_.find(framedKey_, NULL, NULL, &route);
+    framings_.findRoute(framedKey_, &route);
     if (framings_.remember(framedKey_, framing_, aspect_, route))
         return;
 
@@ -1830,7 +1830,7 @@ void VideoPath::rememberFraming()
 Route VideoPath::storedRoute() const
 {
     Route route;
-    framings_.find(arrivingKey(), NULL, NULL, &route);
+    framings_.findRoute(arrivingKey(), &route);
     return route;
 }
 

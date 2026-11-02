@@ -197,6 +197,17 @@ public:
     // Measures, so it must run from loop().
     bool resolveFromSource(uint32_t nowMs);
 
+    // Whether this source is scaled or handed over, stored against it and
+    // ANSWERED. The two are one operation here because the route is only
+    // re-answered on a pass that re-resolves the source, and a caller left to
+    // arm that itself can forget: the framing reset did, leaving the engine
+    // reporting the default while the chip stayed on the route the choice it
+    // had just cleared put it on. ../../../docs/framing-presets.md
+    bool chooseRoute(Tv5725::Route route, uint32_t nowMs);
+
+    // Back to the default framing, the default shape and the default route.
+    bool resetFraming(uint32_t nowMs);
+
     // The output resolution the user asked for. Held HERE, because what the
     // output should do is decided here: pass-through suspends the resolution
     // rather than replacing it, so the way back is to this rather than to one

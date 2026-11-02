@@ -309,7 +309,7 @@ TEST_CASE("a stored route survives being written out and read back")
     FramingText(read).readLine(line);
 
     Route back;
-    REQUIRE(read.find(Bench, 0, 0, &back));
+    REQUIRE(read.findRoute(Bench, &back));
     CHECK(back == Route::passedThrough());
 }
 
@@ -320,9 +320,8 @@ TEST_CASE("a record written before routes existed reads back as choosing none")
     FramingTable read;
     FramingText(read).readLine("311@50.08/1213-- = 364 8525 740 8553 13333");
 
-    Route route = Route::passedThrough();
-    REQUIRE(read.find(Bench, 0, 0, &route));
-    CHECK_FALSE(route.stored());
+    Route route;
+    CHECK_FALSE(read.findRoute(Bench, &route));
 }
 
 TEST_CASE("a record choosing to scale is told apart from one choosing nothing")
@@ -331,7 +330,7 @@ TEST_CASE("a record choosing to scale is told apart from one choosing nothing")
     FramingText(read).readLine("311@50.08/1213-- = 364 8525 740 8553 13333 0");
 
     Route route;
-    REQUIRE(read.find(Bench, 0, 0, &route));
+    REQUIRE(read.findRoute(Bench, &route));
     CHECK(route.stored());
     CHECK_FALSE(route.passesThrough());
 }

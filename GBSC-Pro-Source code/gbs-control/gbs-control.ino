@@ -2639,16 +2639,16 @@ static void togglePassThroughForSource()
 {
     const Tv5725::Route wanted =
         Tv5725::Route::chosen(!geometry.routeWanted().passesThrough());
-    if (!geometry.chooseRoute(wanted)) {
+    if (!inputAcquisition.chooseRoute(wanted, millisNow()))
         debugPrintf("route: not stored, no source identified\n");
-        return;
-    }
-    inputAcquisition.resolveFromSource(millisNow());
 }
 
 // A resolution is a command to scale THIS source: pass-through holds a source
-// off the resolution just chosen. The unit's preference is left alone, so no
-// other source changes route because one was given a resolution.
+// off the resolution just chosen. No other source changes route because one was
+// given a resolution.
+//
+// The store alone, where the toggle goes through the acquisition: the
+// resolution change on the next line arms the pass that re-answers the route.
 static void scaleSourceForResolution()
 {
     geometry.chooseRoute(Tv5725::Route::scaled());
@@ -4427,9 +4427,11 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     break;
                 // Back to the default framing. The framing is the engine's own
                 // state and no register holds it, so without this a picture
-                // zoomed into a corner needs a mode change or a reboot.
+                // zoomed into a corner needs a mode change or a reboot. The
+                // route goes with it, so the pass that re-answers the route
+                // belongs to the same command.
                 case 'B':
-                    geometry.reset();
+                    inputAcquisition.resetFraming(millisNow());
                     break;
                 case 'q':
                     Tv5725::Chip::resetVideoBlocks();

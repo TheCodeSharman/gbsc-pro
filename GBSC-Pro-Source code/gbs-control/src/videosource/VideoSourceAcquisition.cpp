@@ -216,6 +216,25 @@ bool VideoSourceAcquisition::setOutputResolution(const Tv5725::OutputMode *mode)
     return videoPath_.setOutputMode(carriedResolution());
 }
 
+bool VideoSourceAcquisition::chooseRoute(Tv5725::Route route, uint32_t nowMs)
+{
+    if (!videoPath_.chooseRoute(route))
+        return false;
+
+    resolveFromSource(nowMs);
+    return true;
+}
+
+bool VideoSourceAcquisition::resetFraming(uint32_t nowMs)
+{
+    const bool solved = videoPath_.reset();
+
+    // The route goes with the framing, so clearing it leaves the engine
+    // answering with the default and the chip on the route that was cleared.
+    // Nothing else re-answers while the source stands still.
+    return resolveFromSource(nowMs) || solved;
+}
+
 const Tv5725::OutputMode *VideoSourceAcquisition::carriedResolution() const
 {
     return Tv5725::OutputMode::transmittableFor(resolution_,

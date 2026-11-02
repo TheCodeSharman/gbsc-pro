@@ -42,7 +42,7 @@ SourceKey::Polarity FramingEntry::polarityAt(uint8_t shift) const
     return (SourceKey::Polarity)((flags_ >> shift) & PolarityBits);
 }
 
-void FramingEntry::take(Route route)
+void FramingEntry::reroute(Route route)
 {
     flags_ &= (uint8_t)~(RouteStored | RoutePassesThrough);
     if (!route.stored())
@@ -76,14 +76,14 @@ FramingEntry::FramingEntry(const SourceKey &key, const PanAndZoom &framing,
                        | polarityAt(key.vsyncPolarity(), VsyncPolarityShift)))
 {
     frame(framing);
-    take(route);
+    reroute(route);
 }
 
 void FramingEntry::reframe(const PanAndZoom &framing, Aspect shape, Route route)
 {
     frame(framing);
     shape_ = shape.tenThousandths();
-    take(route);
+    reroute(route);
 }
 
 SourceKey FramingEntry::key() const

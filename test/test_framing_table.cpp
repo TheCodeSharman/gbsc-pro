@@ -378,9 +378,8 @@ TEST_CASE("a source nobody has chosen a route for stores none")
     FramingTable table;
     REQUIRE(table.remember(Bench, Framed));
 
-    Route route = Route::passedThrough();
-    REQUIRE(table.find(Bench, 0, 0, &route));
-    CHECK_FALSE(route.stored());
+    Route route;
+    CHECK_FALSE(table.findRoute(Bench, &route));
 }
 
 TEST_CASE("the route remembered for a source comes back")
@@ -389,7 +388,7 @@ TEST_CASE("the route remembered for a source comes back")
     REQUIRE(table.remember(Bench, Framed, Aspect(), Route::passedThrough()));
 
     Route route;
-    REQUIRE(table.find(Bench, 0, 0, &route));
+    REQUIRE(table.findRoute(Bench, &route));
     CHECK(route == Route::passedThrough());
 }
 
@@ -399,7 +398,113 @@ TEST_CASE("a source stored as scaled is told apart from one stored as nothing")
     REQUIRE(table.remember(Bench, Framed, Aspect(), Route::scaled()));
 
     Route route;
-    REQUIRE(table.find(Bench, 0, 0, &route));
+    REQUIRE(table.findRoute(Bench, &route));
     CHECK(route.stored());
     CHECK_FALSE(route.passesThrough());
+}
+
+// --- the route is not keyed on the sync duty ---------------------------------
+//
+// The duty is read through the divider the path in force installed, so the two
+// routes measure a different one for the same source -- and the route is the
+// field that decides which path does the measuring. Measured on `vga` at
+// 1280x720@60 off the engine's own duty line: 47 of 2038 handed over against
+// 32 of 1444 scaled, 0.0231 against 0.0222, which spends 45% of the 0.002
+// SyncWidthIdentity on nothing but the route. The key held across that one, so
+// what this removes is the dependency rather than an observed revert.
+//
+// **THE HOST FAKE OVERSTATES IT and the figure must not be carried as
+// hardware.** seedPassThroughSource() seeds the pulse as a constant COUNT, so
+// the duty it yields moves inversely with the divider -- 0.0893 against
+// 0.0633, thirteen tolerances apart. The real counter counts ADC samples, so
+// the count follows the divider and the fraction very nearly holds.
+// ../docs/source-identity-and-framing-lookup.md
+
+static SourceKey duty(float syncWidth)
+{
+    return SourceKey(311, 50.08f, syncWidth, SourceKey::Negative,
+                     SourceKey::Negative);
+}
+
+TEST_CASE("a route stored on one measurement path is found from the other")
+{
+    FramingTable table;
+    REQUIRE(table.remember(duty(0.0893f), Framed, Aspect(), Route::scaled()));
+
+    Route route;
+    REQUIRE(table.findRoute(duty(0.0633f), &route));
+    CHECK(route == Route::scaled());
+}
+
+TEST_CASE("a route stored for one source is not found for another")
+{
+    // The duty is the only term the measurement path moves, so dropping it
+    // from the route's lookup may not cost the rest of the identity.
+    FramingTable table;
+    REQUIRE(table.remember(duty(0.0893f), Framed, Aspect(), Route::scaled()));
+
+    Route route;
+    CHECK_FALSE(table.findRoute(SourceKey(525, 60.0f, 0.0633f,
+                                          SourceKey::Negative,
+                                          SourceKey::Negative), &route));
+}
+
+TEST_CASE("a route chosen on the second path answers from the first as well")
+{
+    // Both entries hold the choice, so the answer does not depend on which
+    // path happens to be in force when the source is next measured. Left to
+    // one entry each the two disagree, and the route oscillates: whichever
+    // path is in force finds the choice made on it and moves to the other.
+    FramingTable table;
+    REQUIRE(table.remember(duty(0.0893f), Framed, Aspect(),
+                           Route::passedThrough()));
+    REQUIRE(table.remember(duty(0.0633f), Framed, Aspect(), Route::scaled()));
+
+    Route route;
+    REQUIRE(table.findRoute(duty(0.0893f), &route));
+    CHECK(route == Route::scaled());
+}
+
+TEST_CASE("forgetting a source forgets the route held for it on the other path")
+{
+    // Back to default has to mean the table stops answering for this source,
+    // and the route is held wherever the source has an entry -- so a reset
+    // taken on one path leaves the choice standing on the other.
+    FramingTable table;
+    REQUIRE(table.remember(duty(0.0893f), Framed, Aspect(), Route::scaled()));
+    REQUIRE(table.remember(duty(0.0633f), Framed));
+
+    REQUIRE(table.forget(duty(0.0633f)));
+
+    Route route;
+    CHECK_FALSE(table.findRoute(duty(0.0633f), &route));
+}
+
+TEST_CASE("forgetting a source keeps the framing stored for another")
+{
+    // The duty is in the identity because two published standards share a
+    // count and a rate, so clearing the shared route may not take the entry
+    // that holds the other one's framing.
+    FramingTable table;
+    REQUIRE(table.remember(duty(0.0893f), Framed, Aspect(), Route::scaled()));
+    REQUIRE(table.remember(duty(0.0633f), Framed));
+
+    REQUIRE(table.forget(duty(0.0633f)));
+
+    PanAndZoom found;
+    CHECK(table.find(duty(0.0893f), &found));
+}
+
+TEST_CASE("the framing is still kept per duty")
+{
+    // The duty earns its place in the identity -- two published standards
+    // share a count and a rate -- so only the route comes out of it.
+    FramingTable table;
+    const PanAndZoom other(0.2f, 0.5f, 0.1f, 0.7f);
+    REQUIRE(table.remember(duty(0.0893f), Framed));
+    REQUIRE(table.remember(duty(0.0633f), other));
+
+    PanAndZoom found;
+    REQUIRE(table.find(duty(0.0893f), &found));
+    CHECK(found == Framed);
 }

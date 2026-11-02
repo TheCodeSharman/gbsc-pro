@@ -78,13 +78,18 @@ float SourceKey::distanceTo(const SourceKey &other) const
                                SyncWidthIdentity);
 }
 
-bool SourceKey::operator==(const SourceKey &other) const
+bool SourceKey::sameApartFromSyncWidth(const SourceKey &other) const
 {
     return valid() && other.valid()
         && lines_ == other.lines_ && ratesWithinTolerance(rateHz_, other.rateHz_)
-        && fabsf(syncWidth_ - other.syncWidth_) <= SyncWidthIdentity
         && hsyncPolarity_ == other.hsyncPolarity_
         && vsyncPolarity_ == other.vsyncPolarity_;
+}
+
+bool SourceKey::operator==(const SourceKey &other) const
+{
+    return sameApartFromSyncWidth(other)
+        && fabsf(syncWidth_ - other.syncWidth_) <= SyncWidthIdentity;
 }
 
 bool SourceKey::operator!=(const SourceKey &other) const

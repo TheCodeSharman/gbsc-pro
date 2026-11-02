@@ -795,12 +795,6 @@ static SourceKey passThroughSourceKey()
     return unit.path.framedKey();
 }
 
-// A ROUTE CHOSEN FOR THE SOURCE IN FORCE LANDS ON ITS NEXT MOVE, NOT AT ONCE,
-// and there is no case here asserting otherwise because the mechanism is not
-// there: the two routes measure a different sync duty for one source -- 0.0893
-// passed through against 0.0633 scaled, where SourceKey::SyncWidthIdentity is
-// 0.002 -- so the record is stored under one key and looked up under another.
-// ../docs/known-issues.md
 TEST_CASE("a source the panel takes straight is passed through, not scaled")
 {
     // Pass-through is decided from the MEASUREMENT rather than from a
@@ -4283,6 +4277,88 @@ TEST_CASE("a source stored as scaled is scaled although the unit would pass it t
     CHECK(g_passThroughSwitches == 0);
 }
 
+// A ROUTE CHOSEN FOR THE SOURCE IN FORCE LANDS WITHOUT THE SOURCE MOVING.
+//
+// The route is keyed without the sync duty, because the duty is read through
+// the divider the path in force installed -- and this fixture is where that
+// bites hardest, seedPassThroughSource() seeding the pulse as a constant count
+// so the duty moves inversely with the divider: 0.0893 passed through against
+// 0.0633 scaled, where SourceKey::SyncWidthIdentity is 0.002. The real counter
+// counts ADC samples and spends 45% of the tolerance on the same change, so
+// the fixture exaggerates the hazard rather than inventing it.
+// ../docs/source-identity-and-framing-lookup.md
+//
+// Storing the choice and re-answering it are ONE operation, on the layer that
+// owns the question -- the two-step left the second half to each caller, and
+// the framing reset below is the caller that did not make it.
+TEST_CASE("choosing the scaler for a passed-through source leaves pass-through")
+{
+    seedBenchSource();
+    seedPassThroughSource();
+    g_passThroughSwitches = 0;
+
+    Acquiring unit;
+    unit.acquisition.usePassThroughSwitch(enterPassThrough);
+    unit.start();
+    REQUIRE(unit.pollUntilSolved(8));
+    REQUIRE(unit.path.outputMode()->isBypass());
+
+    REQUIRE(unit.acquisition.chooseRoute(Route::scaled(), unit.nowMs));
+    unit.pollFor(2);
+
+    CHECK_FALSE(unit.path.outputMode()->isBypass());
+}
+
+TEST_CASE("choosing pass-through for a scaled source hands it over")
+{
+    const SourceKey stored = passThroughSourceKey();
+
+    seedBenchSource();
+    seedPassThroughSource();
+    g_passThroughSwitches = 0;
+
+    Acquiring unit;
+    REQUIRE(unit.framings.remember(stored, PanAndZoom(), Aspect(),
+                                   Route::scaled()));
+    unit.acquisition.usePassThroughSwitch(enterPassThrough);
+    unit.start();
+    REQUIRE(unit.pollUntilSolved(8));
+    REQUIRE_FALSE(unit.path.outputMode()->isBypass());
+
+    REQUIRE(unit.acquisition.chooseRoute(Route::passedThrough(), unit.nowMs));
+    unit.pollFor(2);
+
+    CHECK(unit.path.outputMode()->isBypass());
+}
+
+TEST_CASE("resetting the framing puts the default route back")
+{
+    // Back to default clears the route with the framing, so the engine answers
+    // with the default and the chip has to follow it. Measured on `vga` at
+    // 1280x720@60 before the reset re-answered: /geometry read passThrough
+    // with routeStored false while DAC_RGBS_BYPS2DAC and OUT_SYNC_SEL both
+    // stayed 0 and the divider stayed at the scaling path's 1444, for forty
+    // seconds. ../docs/known-issues.md
+    const SourceKey stored = passThroughSourceKey();
+
+    seedBenchSource();
+    seedPassThroughSource();
+    g_passThroughSwitches = 0;
+
+    Acquiring unit;
+    REQUIRE(unit.framings.remember(stored, PanAndZoom(), Aspect(),
+                                   Route::scaled()));
+    unit.acquisition.usePassThroughSwitch(enterPassThrough);
+    unit.start();
+    REQUIRE(unit.pollUntilSolved(8));
+    REQUIRE_FALSE(unit.path.outputMode()->isBypass());
+
+    unit.acquisition.resetFraming(unit.nowMs);
+    unit.pollFor(2);
+
+    CHECK(unit.path.outputMode()->isBypass());
+}
+
 TEST_CASE("a framing press does not forget the route stored for the source")
 {
     // The framing and the route live in one record, so a press that writes the
@@ -4308,6 +4384,6 @@ TEST_CASE("a framing press does not forget the route stored for the source")
     REQUIRE(unit.path.pan(8, 0));
 
     Route route;
-    REQUIRE(unit.framings.find(bench, 0, 0, &route));
+    REQUIRE(unit.framings.findRoute(bench, &route));
     CHECK(route == Route::scaled());
 }
