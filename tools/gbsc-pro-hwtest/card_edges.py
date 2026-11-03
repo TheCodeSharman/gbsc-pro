@@ -481,8 +481,9 @@ def sweep_mode(host, dev, source, mode, allowance, keep_framing):
     # AFTER the reset, which puts the declared shape back to the raster's
     # default -- 4:3 on the bench modes, whose bars are our own blanking and
     # read as 258 columns at the near edge where 16:9 reads 26.
-    if not gbs_unit.choose_aspect(host, gbs_unit.SIXTEEN_NINE):
-        return None, "the shape never reached 16:9"
+    shaped = gbs_unit.choose_aspect(host, gbs_unit.SIXTEEN_NINE)
+    if not shaped:
+        return None, f"the shape never reached 16:9: {shaped}"
     time.sleep(2.0)
 
     # A clip rather than a frame: the card flashes twice a second, so a single

@@ -208,9 +208,10 @@ def judged_at(request, host):
     assert gbs_unit.choose_output(host, OUTPUT), (
         f"the output never reached {OUTPUT}, so the modes would be judged "
         f"against different rasters")
-    assert gbs_unit.want_shaping(host, True), (
-        "the shape is not being applied, so a case would be judged in a shape "
-        "the bench does not run in")
+    shaped = gbs_unit.want_shaping(host, True)
+    assert shaped, (
+        f"the shape is not being applied ({shaped}), so a case would be judged "
+        f"in a shape the bench does not run in")
     assert gbs_unit.autosave(host, False), (
         "the framing table would not stop autosaving")
 
@@ -302,9 +303,10 @@ def test_the_default_framing_puts_the_card_flush_to_the_emitted_edges(
     # AFTER the reset, which puts the declared shape back to the raster's
     # default along with the framing -- 4:3 on every mode here, whose bars are
     # our own blanking and read as 258 columns at the near edge.
-    assert gbs_unit.choose_aspect(host, gbs_unit.SIXTEEN_NINE), (
-        "the shape never reached 16:9, so the edges read would be the bars a "
-        "4:3 declaration pillarboxes with")
+    wide = gbs_unit.choose_aspect(host, gbs_unit.SIXTEEN_NINE)
+    assert wide, (
+        f"the shape never reached 16:9 ({wide}), so the edges read would be "
+        f"the bars a 4:3 declaration pillarboxes with")
 
     # AT THE FRAME THE ENGINE ACTUALLY EMITS, which is not always the one the
     # module asked for: the encoder cannot carry 1080p above about 66 Hz, so a

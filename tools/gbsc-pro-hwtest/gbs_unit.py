@@ -34,6 +34,26 @@ def get_json(host, path, timeout=5):
         return status, None
 
 
+class Outcome:
+    """An answer and why. Falsy on failure, so `if not helper(...)` reads as
+    before, and the reason reaches the caller's message rather than being
+    rediscovered at the bench.
+
+    A control that would not move and a unit that refused the request want
+    opposite responses, and a helper answering a bare False merges them.
+    """
+
+    def __init__(self, ok, why=""):
+        self.ok = ok
+        self.why = why
+
+    def __bool__(self):
+        return self.ok
+
+    def __str__(self):
+        return self.why or ("as asked" if self.ok else "no reason recorded")
+
+
 class Console:
     """The unit's status WebSocket, created once per session because each client
     costs heap. The server accepts five (WEBSOCKETS_SERVER_CLIENT_MAX).
@@ -290,18 +310,14 @@ def cycle_to_oversample(host, wanted, presses=OVERSAMPLE_PRESSES):
     return oversample_in_force(host)
 
 
-def stale_solve(fields, frame_lines):
-    """Why `fields` is not a measurement of a source of `frame_lines` lines,
-    None where it is.
+def unmeasured(fields):
+    """Why `fields` is not a measurement of ANY source, None where it is.
 
-    The three things a stale solve fails: the count is the previous mode's, the
-    sync measurement is absent, or the divider the register reports was never
-    latched into the PLL.
+    The part of a stale solve that needs no mode to judge it: a count, a sync
+    measurement, and a divider the PLL actually loaded.
     """
-    counted = fields["STATUS_SYNC_PROC_VTOTAL"] + 1
-    if not -COUNT_SHORT <= counted - frame_lines <= COUNT_OVER:
-        return (f"the sync processor counts {counted} lines where the mode "
-                f"states {frame_lines}")
+    if not fields["STATUS_SYNC_PROC_VTOTAL"]:
+        return "the sync processor is not counting the source"
     if not fields["STATUS_SYNC_PROC_HLOW_LEN"]:
         return "there is no sync measurement to solve from"
     divider, htotal = fields["PLLAD_MD"], fields["STATUS_SYNC_PROC_HTOTAL"]
@@ -309,6 +325,20 @@ def stale_solve(fields, frame_lines):
         return (f"the counted line is {htotal} against a divider of {divider}, "
                 f"so the divider was never latched")
     return None
+
+
+def stale_solve(fields, frame_lines):
+    """Why `fields` is not a measurement of a source of `frame_lines` lines,
+    None where it is.
+
+    Either the count is the previous mode's, or the reading is no measurement
+    of a source at all.
+    """
+    counted = fields["STATUS_SYNC_PROC_VTOTAL"] + 1
+    if not -COUNT_SHORT <= counted - frame_lines <= COUNT_OVER:
+        return (f"the sync processor counts {counted} lines where the mode "
+                f"states {frame_lines}")
+    return unmeasured(fields)
 
 
 def solving_mode(host, frame_lines):
@@ -484,7 +514,95 @@ FOUR_THREE = 13333
 SIXTEEN_NINE = 17778
 
 
-def choose_aspect(host, wanted, tries=4):
+def geometry_report(host):
+    """/geometry's report, or None where the unit did not give one.
+
+    A refusal is JSON too -- `{"error":"low heap"}` parses, and asking it for a
+    field answers None, which compares unequal to everything and so reads as a
+    control that would not move.
+    """
+    status, body = get_json(host, "/geometry")
+    if status != 200 or not isinstance(body, dict) or "error" in body:
+        return None
+    return body
+
+
+def aspect_in_force(host):
+    """The shape declared for the source in force, None where the unit did not
+    report. 0 is filling, which is a shape rather than an absent reading."""
+    body = geometry_report(host)
+    return None if body is None else body.get("aspect")
+
+
+def full_framing_forced(host):
+    """Whether /framing/full is holding the framing open.
+
+    setAspect() refuses outright while it is, so a shape cycle pressed under it
+    sits on the shape it started from however long it is pressed.
+    """
+    status, body = get_json(host, "/framing/full")
+    return status == 200 and isinstance(body, dict) and bool(body.get("full"))
+
+
+def pressable(host):
+    """Why the engine cannot act on a control press, None where it can.
+
+    setApplyAspect() and setAspect() both re-solve and REVERT themselves where
+    the solve fails, so a press into a source the engine cannot solve is
+    accepted, logged and moves nothing -- and so is the next one. Pressing
+    three times two seconds apart after a source mode change is three absorbed
+    presses rather than three tries.
+    """
+    fields = read_fields(host, list(SOLVE_FIELDS))
+    if not fields:
+        return "the unit did not answer a register read"
+    return unmeasured(fields)
+
+
+def wait_pressable(host, timeout=20.0, interval=1.0):
+    """None once the engine can act on a press, else why it still cannot. One
+    check where `timeout` is 0."""
+    why = pressable(host)
+    deadline = time.monotonic() + timeout
+    while why is not None and time.monotonic() < deadline:
+        time.sleep(interval)
+        why = pressable(host)
+    return why
+
+
+def press_until(host, path, reading, wanted, tries, label, settle=20.0):
+    """Press `path` until `reading(host)` is `wanted`, reporting why not.
+
+    Nothing is pressed until the engine can act on a press, because an absorbed
+    press spends a try and moves nothing. The reading, the request and the
+    engine's readiness each fail for their own reason, so each is named.
+    """
+    why = ""
+    for _ in range(tries):
+        got = reading(host)
+        if got == wanted:
+            return Outcome(True)
+        if got is None:
+            why = f"the unit did not report {label}"
+            time.sleep(2.0)
+            continue
+        blocked = wait_pressable(host, timeout=settle)
+        if blocked:
+            why = f"{label} cannot be pressed: {blocked}"
+            continue
+        status, _ = get(host, path)
+        if status != 200:
+            why = f"{path} answered {status}"
+            continue
+        time.sleep(2.0)
+        acquired_and_settled(host)
+    got = reading(host)
+    if got == wanted:
+        return Outcome(True)
+    return Outcome(False, why or f"{tries} presses of {path} left {label} {got}")
+
+
+def choose_aspect(host, wanted, tries=4, settle=20.0):
     """Cycle the declared shape to `wanted`. /uc?G is the only route to it.
 
     **AFTER a framing reset, never before one.** reset_framing() puts the shape
@@ -492,12 +610,12 @@ def choose_aspect(host, wanted, tries=4):
     does not survive it -- and two readings either side of one are then taken on
     different pictures.
     """
-    for _ in range(tries):
-        if get_json(host, "/geometry")[1].get("aspect") == wanted:
-            return True
-        get(host, "/uc?G")
-        time.sleep(2.0)
-    return get_json(host, "/geometry")[1].get("aspect") == wanted
+    got = press_until(host, "/uc?G", aspect_in_force, wanted, tries,
+                      "the declared shape", settle)
+    if got or not full_framing_forced(host):
+        return got
+    return Outcome(False, "the framing is forced full, so setAspect() refuses "
+                          "every shape -- clear it with /framing/full?on=0")
 
 
 def reset_framing(host, expect=None, timeout=20.0):
@@ -865,17 +983,19 @@ def acquired_and_settled(host, limit_s=60.0, holds=3):
 
 
 def shaping(host):
-    """Whether the solve is narrowing the room to the declared shape.
+    """Whether the solve is narrowing the room to the declared shape, None
+    where the unit did not report.
 
     **ASKED OF THE ENGINE, NOT OF THE PREFERENCE.** `apply-aspect` lags a toggle
     behind: measured with the engine shaping it reads 0, after one /uc?S the
     engine stops and it still reads 0, and after a second it reads 1 with the
     engine shaping again. docs/known-issues.md
     """
-    return get_json(host, "/geometry")[1].get("shaping") is True
+    body = geometry_report(host)
+    return None if body is None else body.get("shaping") is True
 
 
-def want_shaping(host, on, tries=3):
+def want_shaping(host, on, tries=3, settle=20.0):
     """Narrow the room to the declared shape, or do not. /uc?S toggles it.
 
     **A MEASUREMENT AT AN EDGE NEEDS IT OFF.** A declared shape narrows the
@@ -885,13 +1005,8 @@ def want_shaping(host, on, tries=3):
     absence of a shape, so the picture takes the whole raster whatever the user
     has stored, which cycling /uc?G to 16:9 cannot promise.
     """
-    for _ in range(tries):
-        if shaping(host) == on:
-            return True
-        get(host, "/uc?S")
-        time.sleep(2.0)
-        acquired_and_settled(host)
-    return shaping(host) == on
+    return press_until(host, "/uc?S", shaping, on, tries,
+                       "the shape being applied", settle)
 
 
 def passed_through(host):

@@ -156,8 +156,9 @@ def leg(host, where, device, mode, csync):
     # AFTER the reset, which puts the declared shape back to the raster's own
     # default -- 4:3, whose bars are our blanking and read as hundreds of
     # columns at the near edge.
-    if not gbs_unit.choose_aspect(host, gbs_unit.SIXTEEN_NINE):
-        return {"why": "the shape never reached 16:9"}
+    shaped = gbs_unit.choose_aspect(host, gbs_unit.SIXTEEN_NINE)
+    if not shaped:
+        return {"why": f"the shape never reached 16:9: {shaped}"}
 
     registers = gbs_unit.read_fields(host, FIELDS)
     _, geometry = gbs_unit.get_json(host, "/geometry")
@@ -280,8 +281,9 @@ def main():
            "sync": gbs_unit.mode_serv(where, "SYNC")}
     if not gbs_unit.choose_output(host, args.output):
         sys.exit(f"the output never reached {args.output}")
-    if not gbs_unit.want_shaping(host, True):
-        sys.exit("the shape is not being applied")
+    applied = gbs_unit.want_shaping(host, True)
+    if not applied:
+        sys.exit(f"the shape is not being applied: {applied}")
     if not gbs_unit.autosave(host, False):
         sys.exit("the framing table would not stop autosaving")
     try:
@@ -298,9 +300,9 @@ def main():
         # Said rather than assumed: the shape is restored while the engine is
         # still re-solving the mode put back above, and /uc?G cycles rather than
         # setting, so a run that leaves the bench on another shape has to say so.
-        if was["aspect"] and not gbs_unit.choose_aspect(host, was["aspect"]):
-            print(f"\nthe shape did not go back to {was['aspect']}: it is "
-                  f"{gbs_unit.get_json(host, '/geometry')[1].get('aspect')}")
+        back = gbs_unit.choose_aspect(host, was["aspect"]) if was["aspect"] else True
+        if not back:
+            print(f"\nthe shape did not go back to {was['aspect']}: {back}")
         gbs_unit.autosave(host, True)
 
 

@@ -380,8 +380,9 @@ def measure_state(ctx, mode, output):
     # AFTER the reset, which puts the declared shape back to the raster's own
     # default -- 4:3 on the bench modes, whose pillarbox is OUR blanking and
     # reads 96 columns at both edges, swamping every margin this measures.
-    if not gbs_unit.choose_aspect(host, gbs_unit.SIXTEEN_NINE):
-        return refused("the shape never reached 16:9")
+    shaped = gbs_unit.choose_aspect(host, gbs_unit.SIXTEEN_NINE)
+    if not shaped:
+        return refused(f"the shape never reached 16:9: {shaped}")
     if not gbs_unit.freeze(host, True):
         return refused("automation would not freeze")
     try:

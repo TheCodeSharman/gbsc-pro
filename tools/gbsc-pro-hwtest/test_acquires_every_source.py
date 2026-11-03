@@ -327,9 +327,10 @@ def bench(request, host):
     assert choose_output(host, OUTPUT), (
         f"the output never reached {OUTPUT}, so the legs would be judged "
         f"against different rasters")
-    assert want_shaping(host, False), (
-        "the shape is still being applied, so every edge read would measure "
-        "the bars it pillarboxes with")
+    unshaped = want_shaping(host, False)
+    assert unshaped, (
+        f"the shape is still being applied ({unshaped}), so every edge read "
+        f"would measure the bars it pillarboxes with")
 
     # NO STORED FRAMING MAY ANSWER FOR THE COMPUTED DEFAULT. A stored entry is
     # recalled on acquisition -- the console says `framing recalled` -- so what

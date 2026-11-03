@@ -238,3 +238,94 @@ def test_a_ratio_the_post_divider_cannot_carry_is_reported_rather_than_pressed_a
 def test_the_ratio_in_force_is_read_from_the_decimators(monkeypatch):
     monkeypatch.setattr(gbs_unit, "read_fields", lambda host, names: DEC[4])
     assert gbs_unit.oversample_in_force("h") == 4
+
+
+# --- the shape controls ----------------------------------------------------
+
+
+def shape_unit(monkeypatch, reports, answers=(200,), fields=None, full=False):
+    """A unit answering /geometry with `reports` in turn and /uc? with
+    `answers`, the last of each repeating. Returns what was pressed."""
+    sent = []
+
+    def taking(values):
+        held = list(values)
+        return lambda: held.pop(0) if len(held) > 1 else held[0]
+
+    report, answer = taking(reports), taking(answers)
+
+    def fake_get_json(host, path, timeout=5):
+        if path.startswith("/geometry"):
+            return report()
+        if path.startswith("/framing/full"):
+            return 200, {"full": full, "queued": False}
+        raise AssertionError(f"nothing stubs {path}")
+
+    def fake_get(host, path, timeout=5):
+        sent.append(path)
+        return answer(), ""
+
+    monkeypatch.setattr(gbs_unit, "get_json", fake_get_json)
+    monkeypatch.setattr(gbs_unit, "get", fake_get)
+    monkeypatch.setattr(gbs_unit, "read_fields", lambda host, names: fields)
+    monkeypatch.setattr(gbs_unit, "acquired_and_settled",
+                        lambda host, **kw: True)
+    monkeypatch.setattr(gbs_unit.time, "sleep", lambda s: None)
+    return sent
+
+
+REFUSED = (503, {"error": "low heap", "free": 9768, "needs": 10000})
+
+
+def test_a_refusal_is_not_a_reading_of_the_shape(monkeypatch):
+    """The refusal is JSON, so it parses and .get('shaping') answers None --
+    which compares unequal to both True and False and reads as a shape that
+    would not move."""
+    shape_unit(monkeypatch, [REFUSED])
+    assert gbs_unit.shaping("h") is None
+
+
+def test_a_shape_the_unit_never_reported_is_named_as_that(monkeypatch):
+    """Not as a control that would not move: the two want opposite answers,
+    and one run merged them into a single cluster of 26 failures."""
+    sent = shape_unit(monkeypatch, [REFUSED])
+    got = gbs_unit.want_shaping("h", False, settle=0)
+    assert not got and "did not report" in str(got)
+    assert sent == []
+
+
+def test_no_press_is_made_into_a_source_the_engine_cannot_solve(monkeypatch):
+    """setApplyAspect() re-solves and REVERTS itself where the solve fails, so
+    a press into an unmeasured source is accepted, logged and moves nothing --
+    and so is the next. Three presses after a mode change are three absorbed
+    presses, not three tries."""
+    sent = shape_unit(monkeypatch, [(200, {"shaping": True})], fields=STALE)
+    got = gbs_unit.want_shaping("h", False, settle=0)
+    assert not got and "sync measurement" in str(got)
+    assert sent == []
+
+
+def test_a_press_the_unit_refused_is_named_rather_than_counted(monkeypatch):
+    """A low-heap refusal is transient, so the press is tried again -- but a
+    run of them is not a control that would not move."""
+    shape_unit(monkeypatch, [(200, {"shaping": True})],
+               answers=[503], fields=SOLVED)
+    got = gbs_unit.want_shaping("h", False, settle=0)
+    assert not got and "503" in str(got)
+
+
+def test_a_measured_source_takes_one_press(monkeypatch):
+    sent = shape_unit(monkeypatch,
+                      [(200, {"shaping": True}), (200, {"shaping": False})],
+                      fields=SOLVED)
+    assert gbs_unit.want_shaping("h", False, settle=0)
+    assert sent == ["/uc?S"]
+
+
+def test_forced_full_framing_is_named_rather_than_left_as_a_shape_that_would_not_move(monkeypatch):
+    """setAspect() refuses outright while the framing is forced full, so the
+    cycle sits on the shape it started from however long it is pressed."""
+    shape_unit(monkeypatch, [(200, {"aspect": gbs_unit.FOUR_THREE})],
+               fields=SOLVED, full=True)
+    got = gbs_unit.choose_aspect("h", gbs_unit.SIXTEEN_NINE, settle=0)
+    assert not got and "forced full" in str(got)

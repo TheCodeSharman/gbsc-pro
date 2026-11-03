@@ -156,9 +156,10 @@ def passed_through(request, host):
     if not request.config.getoption("--preset-save"):
         pytest.skip("--preset-save is needed: /uc?x writes flash")
     where = request.config.getoption("--modeserv")
-    assert gbs_unit.want_shaping(host, False), (
-        "the shape is still being applied, so every edge read would measure "
-        "the bars it pillarboxes with")
+    unshaped = gbs_unit.want_shaping(host, False)
+    assert unshaped, (
+        f"the shape is still being applied ({unshaped}), so every edge read "
+        f"would measure the bars it pillarboxes with")
 
     # A SHOWABLE MODE BEFORE THE TOGGLE, and acquired before the route is
     # judged: bypass hands the source's raster to the encoder, so entering it
