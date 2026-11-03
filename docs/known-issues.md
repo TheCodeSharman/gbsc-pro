@@ -9615,6 +9615,42 @@ no new instrument.
 
 ## Costs time rather than correctness
 
+### The unit's WiFi link degrades to most of a third of its packets, and every route reads as a firmware fault
+
+Measured 2026-11-03 with nothing attached: **68%, 70% and 33% packet loss over
+three runs minutes apart, average RTT 77 to 119 ms against a floor of 2.5 ms**,
+while the RISC PC on the same LAN and the same host answered 0% loss at 5 ms.
+So the host's path is good and the association is not.
+
+**WHAT IT LOOKS LIKE IS A UNIT THAT HAS GONE, AND THEN A UNIT THAT ANSWERS.**
+`/version` comes back, `/geometry` answers, and a websocket attaches and
+delivers nothing -- which is the signature the console section gives for a
+stalled `loop()`, so the honest test stops being honest. A boot log read, an
+HTTP read and a register read each succeed often enough to look healthy and
+fail often enough to invalidate anything taken across two of them.
+
+**IT BLOCKS OTA OUTRIGHT AND THE RETRY RULE DOES NOT RESCUE IT.** Fifteen
+consecutive uploads failed, thirteen of them at 0 to 5% and one at 66%, across
+four `/restart`s and with `ota_probe.py` answering `REPLY b'OK'` and
+`CONNECTED from 192.168.88.108` either side -- so the handshake is viable and
+the transfer is not. That pair of readings is the discriminator: an armed unit
+that connects back and then drops the image is the link, not the heap and not
+the firewall.
+
+**A SUITE RUN TAKEN OVER IT IS EVIDENCE ABOUT NOTHING.** `pytest --host=` is
+hundreds of HTTP reads over 52 minutes; at a third of them lost, a helper that
+turns a missing reply into a value reports a unit that would not move. That is
+how 26 shape failures were filed as one cluster, and the cause only separated
+once the helpers said which.
+
+**The recovery is a mains power cycle of the unit, and USB is the flash route
+while it lasts.** Neither is reachable from a session: there is no
+`/dev/ttyUSB*` unless the cable is attached, and `ssh router` refuses the
+agent's key, so the association cannot be inspected from this end either.
+**Measure the loss before diagnosing anything else** -- `ping -c 25 -i 0.3`
+against the unit and against the RISC PC is the whole check, and it costs eight
+seconds.
+
 ### `/sampleclock` leaves `PA_SP_S` on the previous divider's search, and the picture jitters
 
 The route writes the whole ADC PLL group and re-derives `SP_RT_HS_SP`, and it
