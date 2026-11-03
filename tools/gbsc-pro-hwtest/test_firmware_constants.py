@@ -69,3 +69,54 @@ def test_the_clock_seeds_come_back_in_rate_order_with_a_rate_for_each():
     assert len(seeds) == 7
     assert list(seeds) == sorted(seeds)
     assert seeds[0] == 40_500_000 and seeds[-1] == 162_000_000
+
+
+# --- the divider the engine would solve ------------------------------------
+#
+# The bench RiscPC at 320x256@50: 311 lines from the register, line doubled,
+# 4x oversampling. Measured on the unit, solved and latched -- PLLAD_MD 2200
+# against STATUS_SYNC_PROC_HTOTAL 2200.
+BENCH_LINES, BENCH_RATE, BENCH_OVERSAMPLE = 311, 50.0, 4
+
+
+def test_a_doubled_bench_line_lands_on_the_capture_path_cap():
+    """2200 rather than the 2551 the crossover row affords. The capture path
+    stops writing video past sample 2236..2256 of a doubled line, measured with
+    the VDS line delay bypassed -- so it is the capture path and not the
+    filter. docs/known-issues.md"""
+    assert fc.expected_divider(
+        BENCH_LINES, BENCH_OVERSAMPLE, BENCH_RATE, doubled=True) == 2200
+
+
+def test_the_eleven_bit_counter_is_what_holds_an_undoubled_line():
+    """Which is why the doubled cap is measured on a doubled line only: at the
+    bench rate an undoubled line is held at 2046 by the counter, below the cap,
+    so the divider cannot reach it to show the band. The counter takes the RAW
+    line, so only the decimation separates it from the divider."""
+    counter = fc.integer(fc.INPUT_FORMATTER_H, "LineCounterMax")
+    undoubled = fc.expected_divider(BENCH_LINES, BENCH_OVERSAMPLE, BENCH_RATE,
+                                    doubled=False)
+
+    assert undoubled <= counter
+    assert undoubled < fc.integer(fc.SAMPLING_CLOCK_H, "DoubledLineSampleLimit")
+
+
+def test_a_doubled_line_may_ask_for_twice_what_the_counter_holds():
+    """The counter is fed the DECIMATED line, so doubling buys the divider an
+    octave the counter never sees -- which is how it reaches the cap at all."""
+    assert fc.expected_divider(BENCH_LINES, BENCH_OVERSAMPLE, BENCH_RATE,
+                               doubled=True) > fc.integer(
+        fc.INPUT_FORMATTER_H, "LineCounterMax") // 2
+
+
+def test_a_line_rate_that_was_never_measured_is_not_a_divider():
+    """recommendedDivider() returns 0 rather than a default: a divider written
+    from a measurement that did not happen takes the sync processor with it."""
+    assert fc.expected_divider(0, 4, 50.0, doubled=True) == 0
+
+
+def test_an_unsigned_constant_is_read_rather_than_refused():
+    """`static const uint32_t MaxSampleRateHz = 162000000u;` -- the suffix is
+    part of the spelling, and a reader insisting on bare digits refuses the
+    name as though the firmware did not state it."""
+    assert fc.integer(fc.ADC_H, "MaxSampleRateHz") == 162000000

@@ -38,6 +38,7 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bench_probe
+import firmware_constants
 from gbs_unit import (GEOMETRY_GATED, RESET_COMMAND, field_from, field_from_named,
                       field_spec, framing_matches, framing_of, fs_read, get,
                       get_json, locked_steadily, proportions_match,
@@ -1830,30 +1831,9 @@ def test_a_preset_load_does_not_redecide_the_sync_type(host, source):
         f"trusting the verdict: {wrong} (got, want-csync)")
 
 
-# Tv5725::SourceMeasurement's own constants, so the expected divider is computed the way
-# the firmware computes it rather than pinned to this bench's source.
-SAMPLING_MAX_RATE_HZ = 162000000
-SAMPLING_RECOMMENDED_PERCENT = 98
-SAMPLING_DIVIDER_MAX = 4095
 SAMPLING_PAL_VTOTAL_MIN = 290  # Capture::PalVtotalMin
 SAMPLING_DEC1_BYPS = field_spec("DEC1_BYPS")
 SAMPLING_DEC2_BYPS = field_spec("DEC2_BYPS")
-
-
-def _expected_divider(lines, oversample, field_rate):
-    """The crossover row's ceiling at this oversampling, backed off.
-
-    An approximation of SamplingClock::recommendedDivider() rather than a
-    second copy of it: it takes the oversampling the decimators report instead
-    of searching the ratios, and it reads the row ceiling off the rating
-    directly. The caller's tolerance is four percent and the two agree inside
-    one, while the fault this catches is out by twenty-seven.
-    """
-    line_rate = int(field_rate * lines)
-    largest = min(SAMPLING_MAX_RATE_HZ // (line_rate * oversample),
-                  SAMPLING_DIVIDER_MAX)
-    backed = (largest * SAMPLING_RECOMMENDED_PERCENT) // 100
-    return backed & ~1
 
 
 def test_the_sampling_divider_is_solved_from_the_source_not_inherited(host, source):
@@ -1908,14 +1888,25 @@ def test_the_sampling_divider_is_solved_from_the_source_not_inherited(host, sour
     oversample = 1 if (dec1 and dec2) else (2 if dec1 else 4)
 
     nominal = 50.0 if lines > SAMPLING_PAL_VTOTAL_MIN else 60.0
-    expected = _expected_divider(lines, oversample, nominal)
+
+    # THE BOUNDS BIND BEFORE THE ROW DOES ON BOTH BENCH SCAN MODES, so the
+    # expectation cannot be the rating alone: the doubled bench line lands on
+    # SamplingClock::DoubledLineSampleLimit, 2200, where the crossover row
+    # affords 2551 -- 14% apart, three times this tolerance. Read off the
+    # firmware's own constants rather than copied, so a cap that moves moves
+    # here with it.
+    doubled = read_named(host, "IF_PRGRSV_CNTRL") == 0
+    expected = firmware_constants.expected_divider(lines, oversample, nominal,
+                                                   doubled)
+    assert expected, "the line rate implies no divider at all"
 
     # 4%: the divider moves inversely with the field rate, so a source running
     # 50.08 against a nominal 50 shifts it 0.16%, and a mode a couple of percent
     # off nominal shifts it that much. An INHERITED divider is not close.
     assert abs(divider - expected) <= expected * 4 // 100, (
         f"PLLAD_MD is {divider}, but {lines} lines at {nominal} Hz with "
-        f"{oversample}x oversampling wants about {expected}. The divider is not "
+        f"{oversample}x oversampling, {'doubled' if doubled else 'undoubled'}, "
+        f"wants about {expected}. The divider is not "
         f"a measurement of this source -- solveSampling() adopted whatever was "
         f"on the chip and nothing retried. 1856 is the literal "
         f"bypassModeSwitch_RGBHV() writes.")

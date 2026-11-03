@@ -24,8 +24,15 @@ OUTPUT_WINDOW_CPP = os.path.join(SRC, "OutputWindow.cpp")
 AXIS_CPP = os.path.join(SRC, "Axis.cpp")
 SCALE_H = os.path.join(SRC, "Scale.h")
 DISPLAY_CLOCK_CPP = os.path.join(SRC, "DisplayClock.cpp")
+ADC_H = os.path.join(SRC, "Adc.h")
+SAMPLING_CLOCK_H = os.path.join(SRC, "SamplingClock.h")
+INPUT_FORMATTER_H = os.path.join(SRC, "InputFormatter.h")
 
-INTEGER = re.compile(r"static\s+const\s+\w+\s+(\w+)\s*=\s*(0x[0-9a-fA-F]+|\d+)\s*;")
+# The integer suffixes are part of the value's spelling, not of the value: an
+# unsigned constant is written `162000000u` and a reader that insists on bare
+# digits refuses it as though the name were absent.
+INTEGER = re.compile(r"static\s+const\s+\w+\s+(\w+)\s*=\s*"
+                     r"(0x[0-9a-fA-F]+|\d+)[uUlL]*\s*;")
 MODE_ROW = re.compile(r"const OutputMode Mode(\w+)\(\s*\"[^\"]*\"\s*,([\d,\s]+)\)")
 WRITE_START = re.compile(r"static const WriteStart (\w+)\s*=\s*\{\s*([\d.]+)f?\s*,"
                          r"\s*([\d.]+)f?\s*,\s*(\d+)\s*\}")
@@ -47,6 +54,41 @@ def integer(path, name):
         if found == name:
             return int(value, 0)
     raise KeyError(f"{name} is not a static const integer in {path}")
+
+
+def expected_divider(lines, oversample, field_rate, doubled):
+    """The divider SamplingClock::recommendedDivider() would solve, 0 for a
+    line rate it would refuse.
+
+    An approximation of it rather than a second copy: the oversampling is taken
+    as given instead of searching the ratios, and the row ceiling is read off
+    the ADC's rating directly. Close enough to score a divider against, the two
+    agreeing inside a percent on the bench source.
+
+    **THE BOUNDS ARE NOT APPROXIMATE AND HAVE TO BE APPLIED.** Each is a
+    hardware fact rather than a backoff, and on the bench source the cap is
+    what BINDS -- 2200 against the 2551 the crossover row affords, which is 14%
+    and well past any tolerance a caller would set. A doubled line is held under
+    DoubledLineSampleLimit because the capture path stops writing video past
+    sample 2236..2256 of one, measured with the VDS line delay bypassed so it is
+    the capture path and not the filter, and the eleven-bit line counter takes
+    the RAW line so only the decimation separates it from the divider.
+    ../../docs/known-issues.md
+    """
+    line_rate = int(field_rate * lines)
+    if line_rate == 0 or oversample < 1:
+        return 0
+
+    rating = integer(ADC_H, "MaxSampleRateHz") // (line_rate * oversample)
+    ceiling = min(rating, integer(ADC_H, "DividerMax"))
+    ceiling = (ceiling * integer(SAMPLING_CLOCK_H, "RecommendedPercent")) // 100
+    ceiling = min(ceiling, integer(INPUT_FORMATTER_H, "LineCounterMax")
+                  * (2 if doubled else 1))
+    if doubled:
+        ceiling = min(ceiling, integer(SAMPLING_CLOCK_H, "DoubledLineSampleLimit"))
+
+    # Even, so the input formatter's line counter divides the divider exactly.
+    return ceiling & ~1
 
 
 def output_modes():
