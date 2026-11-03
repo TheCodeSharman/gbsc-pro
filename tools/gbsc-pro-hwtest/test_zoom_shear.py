@@ -46,16 +46,15 @@ STEPS = 12
 # the worst rather than the mean for that reason.
 CLIP_FRAMES = 6
 
-# What a clean engine-solved step scores, with headroom over the clean states
-# these came from. A step over either is the picture carrying samples it should
-# not. PLACEHOLDERS until the calibration below has been run.
+# What a clean engine-solved step scores. Both measures are SHARES and a clean
+# state scores zero on each, so these are sized to the smallest reading either
+# can take rather than to a measured spread: at CLIP_FRAMES 6 the smallest
+# non-zero `displaced` is one frame in six, 0.167, and at picture_shear's eight
+# bands the smallest `rough` is one differing pair in seven, 0.143. A threshold
+# under both therefore means "not one displaced frame, not one differing pair",
+# and a step over either is the picture carrying samples it should not.
 CLEAN_DISPLACED = 0.02
 CLEAN_ROUGH = 0.12
-
-# How far the hand-set even width has to move a score before the instrument is
-# credited with being able to see the fault. Relative to the clean step it was
-# taken from, so it is not a second absolute threshold to keep in step.
-FAULT_FACTOR = 2.0
 
 WINDOW = ["VDS_HB_SP", "VDS_HB_ST", "VDS_HSCALE"]
 
@@ -165,8 +164,11 @@ def test_an_even_memory_window_is_what_the_score_can_see(
     assert even % 2 == 0, f"the hand-set width is {even}, not even"
     faulted = score(capture_device)
 
-    assert (faulted["displaced"] >= clean["displaced"] * FAULT_FACTOR
-            or faulted["rough"] >= clean["rough"] * FAULT_FACTOR), (
+    # Against the SAME thresholds the sweep is scored on, not a factor over the
+    # clean reading: a clean state scores zero on both, so a multiple of it is
+    # a bar anything clears and the guard's own proof would be vacuous.
+    assert (faulted["displaced"] > CLEAN_DISPLACED
+            or faulted["rough"] > CLEAN_ROUGH), (
         f"an even memory window scored displaced {faulted['displaced']:.4f} "
         f"rough {faulted['rough']:.4f} against a clean "
         f"{clean['displaced']:.4f}/{clean['rough']:.4f} -- the score cannot see "

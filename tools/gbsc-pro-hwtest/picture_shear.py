@@ -33,22 +33,88 @@ import numpy as np
 WIDTH, HEIGHT = 1920, 1080
 
 
+# Enough variation across a band's profile for a correlation peak to mean
+# anything. Below it the peak is noise, and a frame of flat colour would score
+# as perfectly still -- the same error as reading a row-profile lag of 0 off a
+# band of unwritten memory.
+CONTRAST_FLOOR = 2.0
+
+# What the clip is scored at: eight bands down the frame, each profile 480
+# columns wide, so one unit is four emitted pixels at 1920.
+BANDS = 8
+PROFILE_WIDTH = 480
+
+
+def band_profiles(frames, bands, width):
+    """Each frame as `bands` column profiles `width` wide.
+
+    Takes what hdmi_capture.frames() answers -- (count, height, width, 3) RGB
+    -- or greyscale of the same shape without the last axis.
+    """
+    frames = np.asarray(frames)
+    if frames.ndim == 4:
+        frames = frames.astype(np.float32) @ np.array([0.299, 0.587, 0.114],
+                                                      np.float32)
+    out = []
+    for frame in frames.astype(np.float32):
+        h, w = frame.shape
+        binned = frame.reshape(h, width, w // width).mean(axis=2)
+        edges = [round(i * h / bands) for i in range(bands + 1)]
+        out.append(np.array([binned[edges[i]:edges[i + 1]].mean(axis=0)
+                             for i in range(bands)]))
+    return np.array(out)
+
+
+def measure_clip(clip, bands=BANDS, width=PROFILE_WIDTH):
+    """How far the picture in `clip` SHEARS, as three numbers.
+
+    `pairs` is how many ADJACENT bands both carry enough contrast to
+    correlate. 0 means the clip says nothing, and the reading has to be
+    discarded rather than read as a still picture.
+
+    `displaced` is the share of frames carrying any band away from the clip's
+    own median frame. A whole picture moved together displaces every band
+    alike, which is a pan and not a shear, so this alone is not the verdict.
+
+    `rough` is the WORST frame's share of adjacent pairs whose displacements
+    DIFFER, which is the shear itself. The worst frame rather than the mean,
+    because the artefact is not on every frame.
+    """
+    profiled = band_profiles(clip, bands, width)
+    if len(profiled) < 3:
+        return {"pairs": 0, "displaced": 0.0, "rough": 0.0}
+
+    middle = np.median(profiled, axis=0)
+    live = [b for b in range(bands) if middle[b].std() >= CONTRAST_FLOOR]
+    adjacent = [i for i in range(len(live) - 1) if live[i + 1] == live[i] + 1]
+    if not adjacent:
+        return {"pairs": 0, "displaced": 0.0, "rough": 0.0}
+
+    reference = [np.fft.rfft(middle[b] - middle[b].mean()) for b in live]
+    moved = np.array([[displacement(frame[b], reference[i], width)
+                       for i, b in enumerate(live)]
+                      for frame in profiled])
+
+    steps = np.array([[row[i + 1] != row[i] for i in adjacent] for row in moved])
+    return {"pairs": len(adjacent),
+            "displaced": float(np.mean((moved != 0).any(axis=1))),
+            "rough": float(steps.sum(axis=1).max()) / len(adjacent)}
+
+
 def profiles(clip, w, h, bands):
-    """Each frame as `bands` column profiles, mean-removed."""
+    """Each frame of the clip FILE as `bands` column profiles, mean-removed."""
     raw = subprocess.Popen(
         ["ffmpeg", "-hide_banner", "-v", "error", "-i", clip,
          "-vf", f"scale={w}:{h}", "-pix_fmt", "gray", "-f", "rawvideo", "-"],
         stdout=subprocess.PIPE)
-    edges = [round(i * h / bands) for i in range(bands + 1)]
     size = w * h
     out = []
     while True:
         buf = raw.stdout.read(size)
         if len(buf) < size:
             break
-        f = np.frombuffer(buf, np.uint8).reshape(h, w).astype(np.float32)
-        out.append(np.array([f[edges[i]:edges[i + 1]].mean(axis=0)
-                             for i in range(bands)]))
+        out.append(band_profiles(
+            [np.frombuffer(buf, np.uint8).reshape(h, w)], bands, w)[0])
     raw.stdout.close()
     raw.wait()
     return np.array(out)
