@@ -36,7 +36,7 @@ import numpy as np
 import pytest
 
 import wedge
-from gbs_unit import read_fields, wait_for
+from gbs_unit import read_fields, wait_for, want_route
 from hdmi_capture import device, frames, luma
 
 pytestmark = pytest.mark.source_mode
@@ -250,18 +250,27 @@ def _green_frame_at_edges(rgb):
 
 
 @pytest.fixture
-def passing_through(host):
-    """The path under test, asserted rather than assumed.
+def passing_through(host, preset_save):
+    """The path under test, PUT there rather than assumed, then asserted.
+
+    A source with nothing stored is passed through, but a choice is stored
+    against the SOURCE -- so every mode here needs its own, and a previous
+    run that stored the scaling path for one of them outlives a restart.
+    want_route() reads the engine's answer before toggling, because a blind
+    /uc?x moves an already-passed-through source the other way.
+    docs/rgbhv-bypass-trap.md
 
     Bypass and the scaling path are told apart by DAC_RGBS_BYPS2DAC and
     OUT_SYNC_SEL, both 1 in bypass. The scale registers are not the tell:
     bypass leaves them on the last scaled load's values.
     """
     def check(where):
+        chose = want_route(host, True)
+        assert chose, f"{where}: the route would not reach pass-through: {chose}"
         path = read_fields(host, ["DAC_RGBS_BYPS2DAC", "OUT_SYNC_SEL"])
-        assert path["DAC_RGBS_BYPS2DAC"] == 1 and path["OUT_SYNC_SEL"] == 1, (
-            f"{where} is on the scaling path ({path}), so this says nothing "
-            f"about pass-through. Store pass-through for it with /uc?x.")
+        assert path and path["DAC_RGBS_BYPS2DAC"] == 1 and path["OUT_SYNC_SEL"] == 1, (
+            f"{where} is on the scaling path ({path}) while the route asks for "
+            f"pass-through, so this says nothing about pass-through")
     return check
 
 

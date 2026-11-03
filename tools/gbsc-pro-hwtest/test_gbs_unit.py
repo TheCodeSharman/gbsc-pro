@@ -381,3 +381,19 @@ def test_a_row_that_is_not_on_this_level_is_named():
     menu = FakeMenu(SV_AV)
     got = gbs_unit.menu_seek(menu, "Aspect")
     assert not got and "Aspect" in str(got) and "Compatibility" in str(got)
+
+
+def test_a_source_already_passed_through_is_not_toggled(monkeypatch):
+    """A source with nothing stored is already passed through, so a blind
+    /uc?x stores the scaling path for it instead."""
+    sent = shape_unit(monkeypatch, [(200, {"route": "passThrough"})],
+                      fields=SOLVED)
+    assert gbs_unit.want_route("h", True, settle=0)
+    assert sent == []
+
+
+def test_a_route_the_unit_never_reported_is_not_a_route_that_would_not_move(monkeypatch):
+    sent = shape_unit(monkeypatch, [REFUSED], fields=SOLVED)
+    got = gbs_unit.want_route("h", True, settle=0)
+    assert not got and "did not report" in str(got)
+    assert sent == []
