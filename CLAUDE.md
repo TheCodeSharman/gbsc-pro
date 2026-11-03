@@ -1523,21 +1523,32 @@ twelve tables while they existed, which is what `BringUp` was built from.
   `VDS_HB_SP` at 9, fifty units before the pulse. Position or width, one at a
   time, is the experiment. Treat 8 as measured at one hsync setting only.
   `snapshots/hsync-tuned-no-left-corruption-2026-08-06.json`.
-- **THERE IS NO CAPTURE BOUND, AND THE TAIL BAND IS NO LONGER REACHABLE.** The
-  band at the end of the line is the VDS's one-line delay, `VDS_D_RAM_BYPS` —
-  the OLED's Menu->Color->Line filter, `uopt->wantVdsLineFilter`, `/uc?m` —
-  which sits DOWNSTREAM of the capture and destroys the tail of every line past
-  `VideoProcessor::LineBufferSamples` captured samples. **The solve refuses that
-  state both ways**: `dividerCeilingForLineFilter()` holds the divider down
-  until the captured line fits the delay, and where the source has more pixels
-  than the delay holds `applyLineFilter()` leaves the delay out and keeps the
-  samples. So the band is a property of the buffer rather than an artefact a
-  session will see, and the constants that bounded the divider against it are
-  deleted. **The buffer's length looks like a hardware limit and a real fix is
-  pending**, so what is left is the trade: the delay costs sampling density, or
-  it is out of circuit. A framing widened past the buffer by hand still pays the
-  ceiling without the delay — `docs/known-issues.md`.
-  `docs/investigations/the-tail-green-is-the-vds-line-filter.md`.
+- **THE TAIL BAND HAS TWO CAUSES AND BOTH BOUNDS ARE LIVE. A DOUBLED LINE IS
+  CAPPED AT 2200 ADC SAMPLES, ON A MEASUREMENT.** The first cause is the VDS's
+  one-line delay, `VDS_D_RAM_BYPS` — the OLED's Menu->Color->Line filter,
+  `uopt->wantVdsLineFilter`, `/uc?m` — which sits DOWNSTREAM of the capture and
+  destroys the tail of every line past `VideoProcessor::LineBufferSamples`
+  captured samples. **The solve refuses that state both ways**:
+  `dividerCeilingForLineFilter()` holds the divider down until the captured line
+  fits the delay, and where the source has more pixels than the delay holds
+  `applyLineFilter()` leaves the delay out and keeps the samples. So that one is
+  a property of the buffer rather than an artefact a session will see, and the
+  trade is what is left: the delay costs sampling density, or it is out of
+  circuit. A framing widened past the buffer by hand still pays the ceiling
+  without the delay.
+  **The second cause is the CAPTURE PATH, and the delay was the confounder in
+  every measurement of it**: bypassed, the band is still there. The onset is
+  sample 2236..2256 of a doubled line, so `SamplingClock::DoubledLineSampleLimit`
+  holds a doubled line at 2200 and the whole line arrives — measured on the
+  picture, the bench 320x256@50 going 2506 -> 2200 with the band's 156 green
+  photo columns going to none. **So "there is no capture bound" is REFUTED and
+  the constant must not be deleted**; what it costs is density, 2.15 kept samples
+  per source pixel against 2.45. **Judge a divider against the bound that binds,
+  which on the bench is this one doubled and the eleven-bit line counter
+  undoubled** — `firmware_constants.expected_divider()` applies both, and the
+  rating alone reads 14% high. `docs/known-issues.md`,
+  `docs/investigations/the-tail-green-is-the-vds-line-filter.md`,
+  `docs/investigations/tail-green.md`.
 - **THE LINE COUNTER IS ELEVEN BITS AND THE REGISTER IS TWELVE**, so 2047 kept
   samples per line is the wall on every source and both scan modes — and a
   read-back cannot test it, because `s1_0F` bit 3 stores a 1 and returns it
