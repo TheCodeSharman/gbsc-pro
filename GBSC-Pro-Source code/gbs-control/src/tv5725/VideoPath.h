@@ -167,6 +167,11 @@ public:
     bool appliesAspect() const;
     bool setApplyAspect(bool apply);
 
+    // Whether the solve is NARROWING the room, which the switch alone cannot
+    // say: pass-through has no capture window and no raster, so a stored
+    // shape reaches nothing there. docs/aspect-ratio.md
+    bool shaping() const;
+
     // Whether the last solve could show the shape it was given. False means an
     // axis filled instead, which no register distinguishes from having been
     // given no shape at all.

@@ -1894,6 +1894,8 @@ Aspect VideoPath::appliedAspect() const { return applyAspect_ ? aspect_ : Aspect
 
 bool VideoPath::appliesAspect() const { return applyAspect_; }
 
+bool VideoPath::shaping() const { return applyAspect_ && !passedThrough(); }
+
 // Not through step(), for the reason setAspect() is not: what it moves is the
 // scale and the two output blanking pairs, and the press comparison watches
 // the input formatter's windows.

@@ -341,7 +341,7 @@ const MenuItem SvAv[] = {
 const MenuItem System[] = {
     MenuItem::submenu("Sv-Av InPutSet", SvAv, sizeof(SvAv) / sizeof(SvAv[0])),
     MenuItem::choice("High res", 'x', highResRouteText),
-    MenuItem::choice("Aspect ratio", 'S', aspectAppliedText),
+    MenuItem::choice("Aspect ratio", 'S', aspectAppliedText).onlyWhen(scalerInPath),
     MenuItem::adjust("Deinterlace", MenuCommand(), MenuCommand::user('q'),
                      MenuCommand::user('r'), deinterlaceText),
     MenuItem::choice("Frame Time Lock", '5', frameTimeLockText),

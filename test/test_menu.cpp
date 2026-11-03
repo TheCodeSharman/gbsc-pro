@@ -1245,6 +1245,21 @@ TEST_CASE("the three picture transforms are unavailable while the scaler is out"
     CHECK(screen.children()[3].isAvailable(passed.context));
 }
 
+// THE SWITCH IS THE SAME CASE AS THE SHAPE ITSELF, and was the one row left
+// live. setApplyAspect() reverts itself where the solve is refused, so on a
+// passed-through source the row offered Apply and Ignore and moved neither:
+// measured, three presses of /uc?S answering 200 with the report unchanged.
+TEST_CASE("the shaping switch is unavailable while the scaler is out")
+{
+    {
+        Unit scaling;
+        CHECK(item("Aspect ratio").isAvailable(scaling.context));
+    }
+
+    PassedThrough passed;
+    CHECK_FALSE(item("Aspect ratio").isAvailable(passed.context));
+}
+
 TEST_CASE("a page says which of its rows the engine cannot serve")
 {
     PassedThrough passed;

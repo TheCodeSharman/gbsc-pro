@@ -1335,3 +1335,23 @@ TEST_CASE("the line filter goes back in circuit after being turned off")
     CHECK(Wire.field(3, 0x26, 6, 1) == 0);
 }
 
+
+
+// THE SWITCH IS NOT THE APPLICATION. Pass-through has no capture window and no
+// raster, so there is no room to narrow and the stored switch reaches nothing.
+// A report that answers the switch there names a shape the board is not
+// applying: measured on a passed-through 640x480@60 source, three presses of
+// /uc?S answered 200 with `shaping` reporting true throughout and the console
+// saying `solve refused: capture window (capture 0x0, raster 0x0, lines 525)`
+// twice per press -- the flip, then the revert.
+TEST_CASE("pass-through narrows no room, whatever the switch holds")
+{
+    SolvedEngine solved(311, 50.08f, 181, &Tv5725::Mode1080p);
+    REQUIRE(solved.engine.appliesAspect());
+    REQUIRE(solved.engine.shaping());
+
+    solved.engine.setOutputMode(&Tv5725::ModeBypass);
+
+    CHECK(solved.engine.appliesAspect());
+    CHECK_FALSE(solved.engine.shaping());
+}

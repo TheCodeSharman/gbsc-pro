@@ -6842,10 +6842,12 @@ void startWebserver()
             // The shape the picture is shown in, in the same ten-thousandths
             // the framing file carries. 0 is filling.
             (unsigned)geometry.aspect().tenThousandths(),
-            // Whether the board applies that shape at all. `shaped` cannot say
-            // so: an axis told to fill is indistinguishable from one that
-            // honoured what it was given.
-            geometry.appliesAspect() ? "true" : "false",
+            // Whether the solve is narrowing the room to that shape. The
+            // stored switch cannot say so on its own -- pass-through has no
+            // capture window and no raster, so a shape reaches nothing there.
+            // `shaped` cannot either: an axis told to fill is
+            // indistinguishable from one that honoured what it was given.
+            geometry.shaping() ? "true" : "false",
             // False where an axis had to fill because the part cannot minify
             // into the shape. No register distinguishes that from no shape.
             geometry.shapeHonoured() ? "true" : "false",
