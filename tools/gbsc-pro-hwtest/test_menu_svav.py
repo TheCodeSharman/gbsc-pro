@@ -18,7 +18,8 @@ import sys
 import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from gbs_unit import get, get_json, setting, wait_for
+from gbs_unit import (get, get_json, menu_seek, menu_selected, setting,
+                      wait_for)
 
 SYSTEM_SETTINGS = "System Settings"
 SV_AV = "Sv-Av InPutSet"
@@ -32,15 +33,15 @@ def page(host, key=None):
 
 
 def selected(body):
-    return next(row["label"] for row in body["rows"] if row["selected"])
+    return menu_selected(body)
 
 
 def seek(host, label):
-    for _ in range(12):
-        if selected(page(host)) == label:
-            return
-        page(host, "down")
-    raise AssertionError(f"the cursor never reached {label}")
+    """The cursor on `label`, whichever way round the level it lies. The walk
+    is gbs_unit's, which goes to the top of the level first because the cursor
+    does not wrap -- this file's own teardown presses Default, row 7 of 8."""
+    got = menu_seek(lambda key=None: page(host, key), label)
+    assert got, str(got)
 
 
 def open_level(host):

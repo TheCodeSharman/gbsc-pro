@@ -329,3 +329,55 @@ def test_forced_full_framing_is_named_rather_than_left_as_a_shape_that_would_not
                fields=SOLVED, full=True)
     got = gbs_unit.choose_aspect("h", gbs_unit.SIXTEEN_NINE, settle=0)
     assert not got and "forced full" in str(got)
+
+
+# --- the menu cursor -------------------------------------------------------
+
+
+class FakeMenu:
+    """One level of the described menu, with a cursor that does not wrap --
+    which is what the unit does: down stops on the last row, up on the first."""
+
+    def __init__(self, labels, at=0):
+        self.labels, self.at, self.pressed = labels, at, []
+
+    def __call__(self, key=None):
+        self.pressed.append(key)
+        if key == "down":
+            self.at = min(self.at + 1, len(self.labels) - 1)
+        elif key == "up":
+            self.at = max(self.at - 1, 0)
+        return {"rows": [{"label": name, "selected": i == self.at}
+                         for i, name in enumerate(self.labels)]}
+
+
+SV_AV = ["Format", "DoubleLine", "Smooth", "Bright", "Contrast",
+         "Saturation", "Default", "Compatibility"]
+
+
+def test_a_row_below_the_cursor_is_reached():
+    menu = FakeMenu(SV_AV)
+    assert gbs_unit.menu_seek(menu, "Smooth")
+    assert menu.pressed.count("down") == 2
+
+
+def test_a_row_ABOVE_the_cursor_is_reached():
+    """The failure: a down-only walk cannot go back up, so the level fixture's
+    own way back is unreachable the moment a test has walked to the bottom --
+    nine downs through Sv-Av InPutSet leave the cursor on Compatibility, one
+    row past Default."""
+    menu = FakeMenu(SV_AV, at=len(SV_AV) - 1)
+    assert gbs_unit.menu_seek(menu, "Default")
+    assert gbs_unit.menu_selected(menu()) == "Default"
+
+
+def test_the_cursor_already_on_the_row_is_not_pressed():
+    menu = FakeMenu(SV_AV, at=6)
+    assert gbs_unit.menu_seek(menu, "Default")
+    assert "down" not in menu.pressed and "up" not in menu.pressed
+
+
+def test_a_row_that_is_not_on_this_level_is_named():
+    menu = FakeMenu(SV_AV)
+    got = gbs_unit.menu_seek(menu, "Aspect")
+    assert not got and "Aspect" in str(got) and "Compatibility" in str(got)

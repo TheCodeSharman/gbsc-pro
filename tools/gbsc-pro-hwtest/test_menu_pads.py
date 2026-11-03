@@ -16,7 +16,7 @@ import sys
 import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from gbs_unit import get_json, wait_for
+from gbs_unit import get_json, menu_seek, menu_selected, wait_for
 
 SCREEN_SETTINGS = "Screen Settings"
 
@@ -34,7 +34,7 @@ def labels(body):
 
 
 def selected(body):
-    return next(row["label"] for row in body["rows"] if row["selected"])
+    return menu_selected(body)
 
 
 def open_pad(host, which):
@@ -132,12 +132,11 @@ def rests(host):
 
 
 def walk_to(host, label):
-    """The cursor on `label` of the level it is in, whichever page holds it."""
-    for _ in range(12):
-        if selected(page(host)) == label:
-            return
-        page(host, "down")
-    raise AssertionError(f"{label} is not on this level")
+    """The cursor on `label` of the level it is in, whichever page holds it and
+    whichever way round the level it lies -- gbs_unit's walk goes to the top
+    first, the cursor not wrapping."""
+    got = menu_seek(lambda key=None: page(host, key), label)
+    assert got, str(got)
 
 
 @pytest.mark.pan

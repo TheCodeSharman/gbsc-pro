@@ -1039,6 +1039,51 @@ def want_route(host, through, tries=3, settle=8.0):
     return passed_through(host) == through
 
 
+# --- the described menu ----------------------------------------------------
+
+# The longest level the tree has, plus room for the walk to the top of it. One
+# number because a walk crosses no level: ok descends and exit leaves.
+MENU_ROWS = 12
+
+
+def menu_selected(body):
+    """The label the cursor is on, or None where the page drew no cursor."""
+    rows = (body or {}).get("rows") or []
+    return next((row["label"] for row in rows if row.get("selected")), None)
+
+
+def menu_seek(page, label, rows=MENU_ROWS):
+    """Put the cursor on `label` of the level `page` is in, reporting why not.
+
+    **THE CURSOR DOES NOT WRAP.** Measured: down stops on the last row of the
+    level and up on the first, so a walk in one direction reaches only what
+    lies that way -- and a test that has walked a level to its end can no
+    longer reach a row above it. Sv-Av InPutSet is the case that bites: nine
+    downs leave the cursor on Compatibility, one past the Default row the
+    level's own teardown presses.
+
+    `page(key=None)` is the caller's reader, so a module keeps its own skip for
+    a build without the route, and the key presses answer with the page they
+    would draw -- one request each rather than a press and a read.
+    """
+    at = menu_selected(page())
+    if at == label:
+        return Outcome(True)
+
+    for _ in range(rows):
+        above = menu_selected(page("up"))
+        if above == at:
+            break
+        at = above
+
+    for _ in range(rows):
+        if at == label:
+            return Outcome(True)
+        at = menu_selected(page("down"))
+
+    return Outcome(False, f"{label} is not on this level, which ends at {at}")
+
+
 # --- the source ------------------------------------------------------------
 
 MODESERV_PORT = 6502
