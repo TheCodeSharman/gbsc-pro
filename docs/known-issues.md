@@ -9652,12 +9652,33 @@ unit holds the address and answers nothing on it. Measured on one association:
 **connected 640 s having sent 62 packets**, inactive time running 18 to 40 s,
 and its uplink pinned at the **6.0 MBit/s** 802.11g floor.
 
-**THE BAND IS FINE AND THE CHANNEL IS QUIET**, which is what the station dump
-settles and no reading taken from this host can: the survey gives **noise
--95 dBm and 12% channel busy**, and the other stations on the same radio are
-active and fast -- 310 and 410 ms inactive at 26 and 52 MBit/s. So channel
-congestion and interference are both retired, and moving the channel is not the
-fix.
+**THE CONTROL THAT SETTLES IT IS A SECOND STATION ON THE SAME AP INTERFACE,
+AT THE BENCH, ON THE SAME BAND.** A laptop moved to `26Myrica` -- 2.4 GHz,
+`phy1-ap0`, 192.168.88.x, sitting beside the scaler -- reads **0% loss to the
+router** where the unit reads 50..100%, and the AP's own view of the two
+stations on that one interface is the whole finding:
+
+| station | signal | inactive | tx rate | rx rate | tx pkts |
+|---|---|---|---|---|---|
+| the unit | **-47** | 11690 ms | 48.0 | **6.0** | 30 |
+| the laptop | -51 | **10 ms** | 65.0 | **65.0** | 2356 |
+
+**A 4 dB WEAKER CLIENT AT THE SAME SPOT IS PERFECTLY HEALTHY**, so the band,
+the channel, the location, the AP interface, the VLAN and the router are all
+retired at once. The router's survey agrees from its end -- noise -95 dBm,
+12% channel busy -- and the bridge forwards for the unit
+(`fc:f5:c4:b1:f2:38 dev phy1-ap0 master br-lan`) with `isolate='0'`.
+
+**THE OTHER 2.4 GHz STATIONS ARE NOT A CONTROL AND WERE READ AS ONE.** They sit
+on `phy1-ap1`, SSID `26Myrica IoT`, subnet 192.168.20.x -- a different AP
+interface and a different network. **The unit is the ONLY station on
+`phy1-ap0`.** Same radio and channel, so the RF reading carried; nothing
+interface- or VLAN-specific did.
+
+**AND THE 6 MBit/s UPLINK WITH AN 11 s IDLE IS A CONSEQUENCE, NOT THE FAULT.**
+Both recovered to **48.0 MBit/s and 60 ms** the moment traffic flowed: rate
+control decays with nothing to send, so the AP-side figures are downstream of
+the unit not replying and must not be read as a sick radio.
 
 **THE SIGNAL IS NOT IT EITHER.** `printInfo()`'s `W:` field is the unit's own
 RSSI and reads **-58 dBm**, against -48 at the router.
@@ -9671,10 +9692,32 @@ both produce. Reading it as "the loop is healthy, so the firmware is not
 starving lwIP" is a mistake this page made once -- measuring loop() needs a
 build that counts iterations, which USB flashing now makes cheap.
 
-So what is left is the unit's own network stack, and the heap is the first
-candidate to measure: this build reports `Global variables use 54500 bytes`
-against the 50868 recorded elsewhere, and free heap boots at 10744..11376
-against `RouteHeap`'s 10000 floor.
+**THE HEAP IS NOT IT EITHER, AND NEITHER IS THE ADDRESS.** `printInfo` carries
+both over the cable now. Free heap measures **12328..13736 steady** -- above
+`RouteHeap`'s 10000 floor -- while HTTP returns nothing, so trimming static RAM
+buys OTA reliability and console headroom and will NOT fix this. And the unit
+reads `st:3` (`WL_CONNECTED`) with `ip:192.168.88.108` on every sample, so the
+netif holds the address: the router's DHCP lease is the ROUTER's own record and
+was never evidence about the unit, but the unit's own view agrees with it.
+
+**So every external cause is retired and the fault is inside the unit's WiFi
+path, with the loop healthy at a 20 ms worst case and 13 K of heap spare.**
+What is NOT yet separated:
+
+- **The ESP8266's radio against a laptop's.** It is 1x1 with a chip antenna and
+  no diversity, so a channel a laptop rides at 0% loss is not a channel the
+  part can be assumed to manage. Channel 6 carries four of this site's SSIDs.
+  Measuring this needs channel busy time AT THE BENCH, which wants `iw` on the
+  host -- it is in neither the system path nor the dev shell.
+- **The sleep mode being flipped under the radio.** `debugPinSpanEdges()` sets
+  `WIFI_LIGHT_SLEEP` for the span of a vsync measurement and restores
+  `WIFI_NONE_SLEEP` after, so a source being measured repeatedly toggles the
+  station's power-save state, which would leave the AP buffering for a station
+  it thinks sleeps -- and the RTT spread of 39..730 ms is what buffered
+  delivery looks like. **UNCONFIRMED, and the cheap test is a counter rather
+  than a change**: in pass-through the frame time lock reports `the video
+  bypasses the scaler` and no `measured:` line appears for tens of seconds, so
+  the path may not be firing at all in the state measured.
 
 **AND A MAINS POWER CYCLE DOES NOT CLEAR IT.** Measured bad from the FIRST
 packet after one, which also retires "the radio is in a state a restart would
