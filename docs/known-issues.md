@@ -9746,6 +9746,48 @@ except the pytest suite**, which needs HTTP.
 **Measure the loss before diagnosing anything else**, and read `W:` beside it:
 loss with a healthy RSSI is this entry and not a fault to chase.
 
+**IT CLEARS ON ITS OWN, AND A GOOD WINDOW IS WHAT THE SUITE RUNS IN.** Measured
+2026-11-05 with nothing changed at either end -- no reboot, no reassociation,
+no move: **0% loss over 100 packets at 0.2 s spacing**, host on the same
+2.4 GHz channel 6 at -51 dBm, 58.5 MBit/s rx and 72.2 MBit/s tx, with the RISC
+PC also at 0%. Occasional single-packet dips in ten followed, and nothing near
+the third-to-all-of-them above. So **a run refused on the strength of an
+earlier reading is a run refused against stale evidence** -- measure the loss
+at the start of a session, and if it is clean, spend the window on the suite.
+
+### `/geometry`'s capture fields are the last SCALING solve's while the route is pass-through
+
+Reported as a stale capturable region across a mode change. It is not that:
+it is the **route**, and it has nothing to do with a mode change at all.
+
+`ch`, `cv`, `fh`, `fv`, `sh`, `sv` and the `oh`/`eh`/`ov`/`ev` derived from
+them all come from `VideoPath`'s held `usableHorizontal_`/`usableVertical_`,
+`firstHorizontal_`/`firstVertical_` and `syncHorizontal_`/`syncVertical_`.
+`VideoPath::calculateInputFormatterRegisters()` is their only writer, reached
+only through `solveWindows()` and so only through `resolve()` -- and
+`VideoSourceAcquisition::resolveFromSource()` returns on
+`if (passSourceThrough()) return true;` well before the `resolve()` at its
+foot. The pass-through route runs `installPassThroughClock()` and
+`resizePassThrough()` instead, neither of which touches any of them.
+
+So on that route every one of those fields holds whatever the last scaling
+solve left, and `/geometry` reports them with no qualification. Measured on
+`vga` at 320x256@50, `route: passThrough`, `state: acquired`: **`ch` 1101 and
+`cv` 624 on a 311-line source**, static across a source mode re-issue and
+identical to the pair recorded earlier against a 640x480@60 source -- which is
+the tell, since one pair cannot be right for both.
+
+**It reads as a slot fault**, which is where the time goes: `test_slot_framing`
+compares a stored framing against these fields and reports the disagreement
+against the slot.
+
+In one sense the values are honestly absent rather than wrong -- in
+pass-through the input formatter is out of circuit and there is no capture
+window in force. What is wrong is reporting them as though there were.
+**So establish `route` before reading any capture field out of `/geometry`**,
+and treat a capture figure taken on pass-through as belonging to whatever
+scaling state preceded it.
+
 ### `/sampleclock` leaves `PA_SP_S` on the previous divider's search, and the picture jitters
 
 The route writes the whole ADC PLL group and re-derives `SP_RT_HS_SP`, and it
