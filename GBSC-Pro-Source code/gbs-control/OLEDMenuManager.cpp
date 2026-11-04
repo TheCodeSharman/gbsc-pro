@@ -219,6 +219,31 @@ void OLEDMenuManager::drawSubItems(OLEDMenuItem *parent)
     display->display();
 }
 // 返回
+uint16_t OLEDMenuManager::itemsUsed() const
+{
+    uint16_t used = 0;
+    for (uint16_t i = 0; i < OLED_MENU_MAX_ITEMS_NUM; ++i)
+        if (this->allItems[i].used)
+            ++used;
+    return used;
+}
+
+uint16_t OLEDMenuManager::itemsAvailable() const { return OLED_MENU_MAX_ITEMS_NUM; }
+
+uint8_t OLEDMenuManager::depth() const { return this->itemSP; }
+
+bool OLEDMenuManager::cursorOnStatusBar() const { return this->itemUnderCursor == NULL; }
+
+uint16_t OLEDMenuManager::cursorTag() const
+{
+    return this->itemUnderCursor ? this->itemUnderCursor->tag : 0;
+}
+
+const char *OLEDMenuManager::cursorText() const
+{
+    return this->itemUnderCursor ? this->itemUnderCursor->str : NULL;
+}
+
 void OLEDMenuManager::goBack(bool preserveCursor)
 {
     // go back one page

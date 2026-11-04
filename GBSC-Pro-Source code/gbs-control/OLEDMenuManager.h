@@ -6,6 +6,7 @@
 #define OLED_MENU_MANAGER_H_
 #include "OLEDMenuItem.h"
 #include "OLEDMenuConfig.h"
+#include "OLEDMenuNav.h"
 #define IMAGE_ITEM(name) name##_WIDTH, name##_HEIGHT, name
 
 #define CENTER_IMAGE(name) (OLED_MENU_WIDTH - name##_WIDTH) / 2, (OLED_MENU_HEIGHT - name##_HEIGHT) / 2, name##_WIDTH, name##_HEIGHT, name
@@ -19,13 +20,6 @@ enum class OLEDMenuState
     ITEM_HANDLING,
     FREEZING,
     GOING_BACK,
-};
-enum class OLEDMenuNav
-{
-    IDLE = 0,
-    UP,
-    DOWN,
-    ENTER,
 };
 
 class OLEDMenuManager
@@ -107,6 +101,26 @@ public:
     OLEDMenuItem *registerItem(OLEDMenuItem *parent, uint16_t tag, uint16_t imageWidth, uint16_t imageHeight, const uint8_t *xbmImage, MenuItemHandler handler = nullptr, OLEDDISPLAY_TEXT_ALIGNMENT alignment = TEXT_ALIGN_CENTER);
     OLEDMenuItem *registerItem(OLEDMenuItem *parent, uint16_t tag, const char *string, MenuItemHandler handler = nullptr, const uint8_t *font = nullptr, OLEDDISPLAY_TEXT_ALIGNMENT alignment = TEXT_ALIGN_CENTER);
     void tick(OLEDMenuNav btn);
+
+    // What the tree is showing, for the HTTP route that drives it. The panel
+    // is the only other witness and no test can read it.
+    //
+    // `itemsUsed()` is a RUNTIME figure and not a count of registerItem()
+    // calls: the preset and WiFi pages register their children on entry and
+    // return them on leaving, so the pool's peak is only reached by walking
+    // the tree -- and exhausting it calls panicAndDisable(), which turns the
+    // menu off rather than failing anywhere a test would see.
+    uint16_t itemsUsed() const;
+    uint16_t itemsAvailable() const;
+    uint8_t depth() const;
+
+    // The cursor sits on the status bar past the first item, where ENTER
+    // leaves the level, so "no item" is a position rather than an error.
+    bool cursorOnStatusBar() const;
+    uint16_t cursorTag() const;
+
+    // NULL for an icon, which carries a bitmap and no text.
+    const char *cursorText() const;
     void goBack(bool preserveCursor = true);
     void goMain(bool preserveCursor = true);
     OLEDMenuItem *const rootItem;

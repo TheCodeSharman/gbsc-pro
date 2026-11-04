@@ -1013,5 +1013,6 @@ oled-menu:
 	@mkdir -p "$(OUT)"
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_oled_menu" \
-	  "$(HERE)/test_oled_menu.cpp" OLEDMenuItem.cpp OLEDMenuChildBlocks.cpp
+	  "$(HERE)/test_oled_menu.cpp" OLEDMenuItem.cpp OLEDMenuChildBlocks.cpp \
+	  OLEDMenuNav.cpp
 	@"$(OUT)/test_oled_menu"

@@ -11,6 +11,7 @@
 #include <string.h>
 
 #include "../GBSC-Pro-Source code/gbs-control/OLEDMenuItem.h"
+#include "../GBSC-Pro-Source code/gbs-control/OLEDMenuNav.h"
 
 namespace
 {
@@ -119,4 +120,48 @@ TEST_CASE("a child past the block's width is refused rather than written")
 
     CHECK_FALSE(items[0].addSubItem(&items[OLED_MENU_MAX_SUBITEMS_NUM + 1], blocks));
     CHECK(items[0].numSubItem == OLED_MENU_MAX_SUBITEMS_NUM);
+}
+
+
+// --- driving the tree without the knob
+//
+// The icon tree answers to the encoder alone -- /menu?key= is the DESCRIBED
+// menu and reaches a different tree -- so nothing a session can run walks the
+// pages that register their children on entry. Those are the pages the item
+// pool is sized for, and exhausting it calls panicAndDisable(), which turns
+// the menu off rather than failing where a test would see it.
+
+TEST_CASE("every gesture the knob has is named")
+{
+    OLEDMenuNav nav = OLEDMenuNav::IDLE;
+
+    REQUIRE(oledNavFor("up", &nav));
+    CHECK(nav == OLEDMenuNav::UP);
+    REQUIRE(oledNavFor("down", &nav));
+    CHECK(nav == OLEDMenuNav::DOWN);
+    REQUIRE(oledNavFor("enter", &nav));
+    CHECK(nav == OLEDMenuNav::ENTER);
+}
+
+TEST_CASE("there is no fourth gesture to name")
+{
+    // Scrolling past the first item selects the status bar, where ENTER leaves
+    // the level, so these three reach every page. A route offering `back`
+    // would be inventing a gesture the hardware does not have.
+    OLEDMenuNav nav = OLEDMenuNav::ENTER;
+
+    CHECK_FALSE(oledNavFor("back", &nav));
+    CHECK_FALSE(oledNavFor("exit", &nav));
+    CHECK_FALSE(oledNavFor("", &nav));
+    CHECK_FALSE(oledNavFor(NULL, &nav));
+}
+
+TEST_CASE("a key the knob has no gesture for leaves the nav alone")
+{
+    // Not written back as IDLE: the caller queues what it is handed, and a
+    // silent IDLE is a press the unit answers 200 to and never makes.
+    OLEDMenuNav nav = OLEDMenuNav::DOWN;
+
+    CHECK_FALSE(oledNavFor("sideways", &nav));
+    CHECK(nav == OLEDMenuNav::DOWN);
 }
