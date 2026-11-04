@@ -2261,6 +2261,14 @@ namespace EdgeTrace
 // swamp that. The delay(7) after the first edge stays exactly where it is: it
 // yields in the ~20 ms of slack between edges, well away from the one that is
 // about to be measured.
+// How many times the vsync measurement below has put the radio into light
+// sleep. The AP learns a station's power-save state from the frames it sends,
+// so the local mode being restored does not prove the AP's view of it was --
+// and a station the AP believes sleeps gets its traffic buffered rather than
+// delivered, which reads as a dead unit with a healthy association.
+// docs/known-issues.md
+static uint32_t radioSleptForMeasurement = 0;
+
 bool debugPinSpanEdges(uint32_t periods, uint32_t *start, uint32_t *stop)
 {
     yield();
@@ -2282,6 +2290,7 @@ bool debugPinSpanEdges(uint32_t periods, uint32_t *start, uint32_t *stop)
         {
             MeasurePeriod::armed = 0;
             delay(7);
+            ++radioSleptForMeasurement;
             WiFi.setSleepMode(WIFI_LIGHT_SLEEP);
         }
         if (++spins % FS_SAMPLE_CHECK_EVERY == 0)
@@ -2734,7 +2743,7 @@ void disableMotionAdaptDeinterlace() //
 
 void printInfo()
 {
-    static char print[168];
+    static char print[200];
     static uint8_t clearIrqCounter = 0;
     static uint8_t lockCounterPrevious = 0;
     uint8_t lockCounter = 0;
@@ -2784,7 +2793,7 @@ void printInfo()
     if ((millis() - lastInfoPrint) >= 250) {
         lastInfoPrint = millis();
         snprintf(print, sizeof(print),
-            "h:%4u v:%4s PLL:%01u A:%02x%02x%02x S:%02x.%02x.%02x %c%c%c%c I:%02x D:%04x ht:%4d vt:%4d hpw:%4d u:%3x s:%2x S:%2d W:%2d H:%5u st:%d ip:%s\n",
+            "h:%4u v:%4s PLL:%01u A:%02x%02x%02x S:%02x.%02x.%02x %c%c%c%c I:%02x D:%04x ht:%4d vt:%4d hpw:%4d u:%3x s:%2x S:%2d W:%2d H:%5u st:%d sl:%d fs:%lu ip:%s\n",
             hperiod, vperiodText, lockCounterPrevious,
             GBS::ADC_RGCTRL::read(), GBS::ADC_GGCTRL::read(), GBS::ADC_BGCTRL::read(),
             GBS::STATUS_00::read(), GBS::STATUS_05::read(), GBS::SP_CS_0x3E::read(),
@@ -2802,7 +2811,22 @@ void printInfo()
             // only what it handed out, so a netif that lost its address reads
             // as a healthy lease from that end while answering no ARP. `st` is
             // WiFi.status(), 3 being WL_CONNECTED. docs/known-issues.md
-            (int)WiFi.status(), WiFi.localIP().toString().c_str());
+            (int)WiFi.status(),
+            // `sl:` is the sleep mode in force and `fs:` a count of the times
+            // the vsync measurement has put it into light sleep.
+            //
+            // **`sl:` IS BLIND TO THE SLEEP IT EXISTS TO CATCH**, and reads 0
+            // whatever happens: printInfo() and debugPinSpanEdges() both run
+            // from loop(), so this line cannot be reached while that function
+            // is spinning with light sleep set. What it does answer is whether
+            // the mode is left flipped AFTER the spin, which it is not.
+            //
+            // `fs:` is the half that measures something. It is what made the
+            // A/B possible that refuted the sleep mode as the cause of the
+            // packet loss: the count climbed either way and the loss was
+            // identical to the packet. docs/known-issues.md
+            (int)WiFi.getSleepMode(), (unsigned long)radioSleptForMeasurement,
+            WiFi.localIP().toString().c_str());
         SerialM.print(print);
     }
     if (stat0FIrq != 0x00) {
