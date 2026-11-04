@@ -9643,13 +9643,42 @@ turns a missing reply into a value reports a unit that would not move. That is
 how 26 shape failures were filed as one cluster, and the cause only separated
 once the helpers said which.
 
-**The recovery is a mains power cycle of the unit, and USB is the flash route
-while it lasts.** Neither is reachable from a session: there is no
-`/dev/ttyUSB*` unless the cable is attached, and `ssh router` refuses the
-agent's key, so the association cannot be inspected from this end either.
-**Measure the loss before diagnosing anything else** -- `ping -c 25 -i 0.3`
-against the unit and against the RISC PC is the whole check, and it costs eight
-seconds.
+**IT IS NOT THE SIGNAL AND IT IS NOT THE FIRMWARE. BOTH ARE MEASURED.**
+`printInfo()`'s `W:` field is the RSSI, and it reads **-58 dBm** -- a healthy
+signal -- while ICMP gets nothing through. And the loop is not stalled: over one
+24 s window, **0 of 24 pings replied while 93 printInfo lines arrived on serial
+with no inter-line gap over 326 ms**, against the 250 ms the print is rate
+limited to. So the loop ran smoothly straight through a total blackout, which
+retires both the obvious candidates -- a weak link, and the firmware starving
+lwIP. It is the signature `docs/gbs-control-debug-interface.md` names: an
+association up with no working IP path.
+
+**AND A MAINS POWER CYCLE DOES NOT CLEAR IT.** Measured bad from the FIRST
+packet after one, which also retires "the radio is in a state a restart would
+reset" -- `/restart` was tried five times before that and never helped either.
+
+**THE BAND IS THE THING NOBODY HAD A CONTROL ON.** The ESP8266 is 2.4 GHz only,
+and the two comparisons that looked like controls are on other media: this host
+associates at **5 GHz** and the bench RISC PC is **wired** -- an Acorn NIC,
+`00:00:a4:…`. So "the RISC PC answers at 0% loss on the same LAN" rules out the
+host's own leg and the router, and says NOTHING about the band the unit is on.
+Scanned from the host, the unit's channel 6 carries four of this site's own
+SSIDs with neighbours on 10 and 11.
+
+**So what is left is 2.4 GHz conditions at the bench, or the AP's handling of
+this one station**, and splitting those needs something the agent cannot reach:
+`ssh router` refuses its key, so neither the station table nor the channel can
+be inspected or changed from a session. A scan taken on the host measures the
+host's position rather than the bench's.
+
+**USB IS THE FLASH ROUTE AND IT IS UNAFFECTED** -- `make -C build flash
+PORT=/dev/ttyUSB0` carried an image first time with the link at 100% loss, and
+`printInfo` over serial at 115200 is a full instrument that costs no heap and no
+websocket. **A session with the cable attached is not blocked by any of this
+except the pytest suite**, which needs HTTP.
+
+**Measure the loss before diagnosing anything else**, and read `W:` beside it:
+loss with a healthy RSSI is this entry and not a fault to chase.
 
 ### `/sampleclock` leaves `PA_SP_S` on the previous divider's search, and the picture jitters
 
