@@ -9643,15 +9643,38 @@ turns a missing reply into a value reports a unit that would not move. That is
 how 26 shape failures were filed as one cluster, and the cause only separated
 once the helpers said which.
 
-**IT IS NOT THE SIGNAL AND IT IS NOT THE FIRMWARE. BOTH ARE MEASURED.**
-`printInfo()`'s `W:` field is the RSSI, and it reads **-58 dBm** -- a healthy
-signal -- while ICMP gets nothing through. And the loop is not stalled: over one
-24 s window, **0 of 24 pings replied while 93 printInfo lines arrived on serial
-with no inter-line gap over 326 ms**, against the 250 ms the print is rate
-limited to. So the loop ran smoothly straight through a total blackout, which
-retires both the obvious candidates -- a weak link, and the firmware starving
-lwIP. It is the signature `docs/gbs-control-debug-interface.md` names: an
-association up with no working IP path.
+**IT IS LAYER 3, AND LAYER 2 IS HEALTHY. THE ROUTER IS WHAT SAYS SO.**
+`ssh router` is the instrument, and `iw dev phy1-ap0 station dump` for the
+unit's MAC reads **authorized, authenticated and associated at -48 dBm** with a
+valid DHCP lease -- `fc:f5:c4:b1:f2:38 192.168.88.108 gbscontrol` -- while
+**both the router's ARP entry and this host's go INCOMPLETE and FAILED**. The
+unit holds the address and answers nothing on it. Measured on one association:
+**connected 640 s having sent 62 packets**, inactive time running 18 to 40 s,
+and its uplink pinned at the **6.0 MBit/s** 802.11g floor.
+
+**THE BAND IS FINE AND THE CHANNEL IS QUIET**, which is what the station dump
+settles and no reading taken from this host can: the survey gives **noise
+-95 dBm and 12% channel busy**, and the other stations on the same radio are
+active and fast -- 310 and 410 ms inactive at 26 and 52 MBit/s. So channel
+congestion and interference are both retired, and moving the channel is not the
+fix.
+
+**THE SIGNAL IS NOT IT EITHER.** `printInfo()`'s `W:` field is the unit's own
+RSSI and reads **-58 dBm**, against -48 at the router.
+
+**WHAT THE SERIAL CADENCE DOES AND DOES NOT PROVE.** Over one 24 s window, 0 of
+24 pings replied while 93 printInfo lines arrived with no inter-line gap over
+326 ms. **That rules out a multi-second stall and NOTHING FINER**: loop() calls
+printInfo() every iteration with no gate of its own and only the OUTPUT is
+throttled to 250 ms, so the same cadence is what a 1 ms loop and a 250 ms loop
+both produce. Reading it as "the loop is healthy, so the firmware is not
+starving lwIP" is a mistake this page made once -- measuring loop() needs a
+build that counts iterations, which USB flashing now makes cheap.
+
+So what is left is the unit's own network stack, and the heap is the first
+candidate to measure: this build reports `Global variables use 54500 bytes`
+against the 50868 recorded elsewhere, and free heap boots at 10744..11376
+against `RouteHeap`'s 10000 floor.
 
 **AND A MAINS POWER CYCLE DOES NOT CLEAR IT.** Measured bad from the FIRST
 packet after one, which also retires "the radio is in a state a restart would
