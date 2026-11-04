@@ -66,9 +66,18 @@
               # answers in milliseconds; ruff.toml scopes it to that class of
               # fault rather than to style.
               pkgs.ruff
+
+              # Channel busy time at the bench, which is what separates a
+              # congested channel from a fault inside the unit's radio. The
+              # unit shares channel 6 with four of this site's SSIDs, and
+              # every cause outside the unit is already retired, so this is
+              # the one remaining measurement for the link. `survey dump`
+              # wants CAP_NET_ADMIN, so run it under sudo.
+              # docs/known-issues.md
+              pkgs.iw
             ];
             shellHook = ''
-              echo "gbsc-pro dev shell — python3 (pyserial, ymodem, websocket-client, pytest, numpy), esptool, arduino-cli + make, node/tsc (web UI), ruff"
+              echo "gbsc-pro dev shell — python3 (pyserial, ymodem, websocket-client, pytest, numpy), esptool, arduino-cli + make, node/tsc (web UI), ruff, iw"
               echo "  firmware: make -C build setup   (once)   then   make -C build"
               echo "  web UI:   cd 'GBSC-Pro-Source code/gbs-control/public' && npm run build"
               echo "  hardware: pytest --host=gbscontrol.local   (needs a running unit)"
