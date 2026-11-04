@@ -9733,6 +9733,30 @@ What is NOT yet separated:
   samples across both builds. It answers only whether the mode is left flipped
   after the spin, which it is not.
 
+**AN ASSOCIATED STATION ENTRY IS NOT EVIDENCE OF A LIVE STATION, AND
+`inactive time` IS WHAT SAYS SO.** Measured 2026-11-05, with the unit's own
+stack reporting `st:6` -- WL_DISCONNECTED -- and `ip:(IP unset)` in 229
+consecutive samples over 60 s: the AP STILL listed
+`fc:f5:c4:b1:f2:38` on `phy1-ap0` as associated **at -48 dBm, with
+`inactive time: 116220 ms`**, and this host's ARP entry read FAILED. The two
+ends disagree, and the AP's is the stale one -- it holds the entry until it
+ages out, and the signal figure beside it was measured whenever the station
+last transmitted rather than now.
+
+**So read `inactive time` before quoting a station dump as proof that layer 2
+is healthy.** A dump showing the unit associated at a strong signal says only
+that it was, once. Near zero on a station that is really there -- the host
+laptop reads 0 ms on the same interface in the same dump -- and tens of
+seconds on one that has gone quiet.
+
+**AND THE FAULT HAS A WORSE MODE THAN THE LOSS.** The entry above is the unit
+associated with the right IP and most of its packets missing. It also reaches
+a state where the station does not associate at all: `st:6` with no address,
+held across an esptool hard reset and three USB flashes, with the video side
+perfectly healthy throughout -- `s:ff`, `ht:2038` against `vt:524`, auto gain
+walking, 14096 free heap. **The video path is no evidence about the radio**,
+and a unit that is scaling correctly can be entirely off the network.
+
 **AND A MAINS POWER CYCLE DOES NOT CLEAR IT.** Measured bad from the FIRST
 packet after one, which also retires "the radio is in a state a restart would
 reset" -- `/restart` was tried five times before that and never helped either.
