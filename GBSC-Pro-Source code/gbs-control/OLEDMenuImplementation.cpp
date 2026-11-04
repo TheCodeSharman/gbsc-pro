@@ -222,7 +222,7 @@ bool presetsCreationMenuHandler(OLEDMenuManager *manager, OLEDMenuItem *item, OL
     {
         slotsBinaryFileRead.read((byte *)&slotsObject, sizeof(slotsObject));
         slotsBinaryFileRead.close();
-        for (int i; i < SLOTS_TOTAL; ++i)
+        for (int i = 0; i < SLOTS_TOTAL; ++i)
         {
             const SlotMeta &slot = slotsObject.slot[i];
             if (strcmp(EMPTY_SLOT_NAME, slot.name) == 0 || !strlen(slot.name))
