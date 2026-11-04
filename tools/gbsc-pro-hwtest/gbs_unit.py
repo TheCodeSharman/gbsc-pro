@@ -1081,6 +1081,75 @@ def menu_seek(page, label, rows=MENU_ROWS):
     return Outcome(False, f"{label} is not on this level, which ends at {at}")
 
 
+# --- the icon tree ---------------------------------------------------------
+
+# The encoder's whole gesture set. Scrolling up past the first item selects the
+# status bar, where `enter` leaves the level, so these three reach every page.
+OLED_GESTURES = ("up", "down", "enter")
+
+
+def oled_page(host, key=None):
+    """What the icon tree is showing, or None where the unit did not report.
+
+    **A GESTURE IS QUEUED AND THIS ANSWERS THE STATE BEFORE IT.** tick() draws
+    over I2C and delays, so it runs from loop() rather than from the request --
+    unlike /menu, which presses synchronously. `queued` says one is
+    outstanding. docs/osd-menu.md
+    """
+    status, body = get_json(host, "/oled" + (f"?key={key}" if key else ""))
+    if status != 200 or not isinstance(body, dict) or "error" in body:
+        return None
+    return body
+
+
+def oled_at(page):
+    """Where the cursor is, as a comparable position: the status bar, or the
+    item's text where it has some and its tag where it is an icon."""
+    if not page:
+        return None
+    if page.get("statusBar"):
+        return ("statusBar",)
+    return (page.get("text"), page.get("tag"), page.get("depth"))
+
+
+def oled_press(host, key, settle=6.0):
+    """One gesture, waited out. Reports the page it landed on, or why not.
+
+    The queue is what is waited on rather than the cursor: a gesture that moves
+    nothing -- `enter` on a leaf that only sets a value -- still drains, and
+    waiting for the position to change would time out on every one of those.
+    """
+    if key not in OLED_GESTURES:
+        return Outcome(False, f"{key} is not one of {', '.join(OLED_GESTURES)}")
+
+    page = oled_page(host, key)
+    if page is None:
+        return Outcome(False, "the unit did not report the icon tree")
+    if not page.get("ticking"):
+        return Outcome(False, "a described page holds the panel, so the icon "
+                              "tree is not ticking -- /menu?key=exit first")
+
+    landed = wait_for(lambda: (lambda at: at if at and not at.get("queued") else None)(
+        oled_page(host)), timeout=settle)
+    return Outcome(True) if landed else Outcome(
+        False, f"the {key} gesture was still queued after {settle}s")
+
+
+def oled_to_status_bar(host, limit=None):
+    """The cursor on the level's status bar, which is the top of it and the way
+    back out. Reports the page, or why it could not get there."""
+    for _ in range(limit or MENU_ROWS):
+        page = oled_page(host)
+        if page is None:
+            return Outcome(False, "the unit did not report the icon tree")
+        if page.get("statusBar"):
+            return Outcome(True)
+        pressed = oled_press(host, "up")
+        if not pressed:
+            return pressed
+    return Outcome(False, "the cursor never reached the status bar")
+
+
 # --- the source ------------------------------------------------------------
 
 MODESERV_PORT = 6502
