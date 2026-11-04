@@ -9708,16 +9708,30 @@ What is NOT yet separated:
   no diversity, so a channel a laptop rides at 0% loss is not a channel the
   part can be assumed to manage. Channel 6 carries four of this site's SSIDs.
   Measuring this needs channel busy time AT THE BENCH, which wants `iw` on the
-  host -- it is in neither the system path nor the dev shell.
-- **The sleep mode being flipped under the radio.** `debugPinSpanEdges()` sets
-  `WIFI_LIGHT_SLEEP` for the span of a vsync measurement and restores
-  `WIFI_NONE_SLEEP` after, so a source being measured repeatedly toggles the
-  station's power-save state, which would leave the AP buffering for a station
-  it thinks sleeps -- and the RTT spread of 39..730 ms is what buffered
-  delivery looks like. **UNCONFIRMED, and the cheap test is a counter rather
-  than a change**: in pass-through the frame time lock reports `the video
-  bypasses the scaler` and no `measured:` line appears for tens of seconds, so
-  the path may not be firing at all in the state measured.
+  host. **It is in the dev shell now**, so `iw dev <iface> link` gives signal
+  and bitrate unprivileged; `survey dump`, which is the busy-time figure,
+  wants CAP_NET_ADMIN and has to be run under sudo. **This is the only
+  candidate left.**
+- **REFUTED: the sleep mode being flipped under the radio.**
+  `debugPinSpanEdges()` sets `WIFI_LIGHT_SLEEP` for the span of a vsync
+  measurement and restores `WIFI_NONE_SLEEP` after, which would leave the AP
+  buffering for a station it thinks sleeps. **Measured 2026-11-05 by building
+  and flashing both ways over matched 125 s windows, 240 pings at 0.5 s: 16 of
+  240 delivered EITHER WAY, 93.333% loss to the packet**, RTT 19.7..2259 ms
+  with the flip and 17.5..2606 ms without. `printInfo`'s `fs:` counter climbed
+  in both builds, so the path ran either way and the only difference was the
+  sleep itself. **Do not reach for it again.**
+
+  Three readings corrected on the way. The flip DOES fire in pass-through,
+  about once every 15 s, where this entry guessed it might not fire at all.
+  Each window is at most `FS_SAMPLE_TIMEOUT_MS` 250 ms and `FrameSync` takes
+  two per correction, so the radio sleeps about 0.5 s in 30 s -- 1.7%, which
+  could never have produced 93% loss by duration, and only a latched view at
+  the AP could have. And **`printInfo`'s `sl:` field cannot see this sleep at
+  all**: printInfo() and debugPinSpanEdges() both run from loop(), so the line
+  is unreachable while that function spins, and `sl:` read 0 in all 975
+  samples across both builds. It answers only whether the mode is left flipped
+  after the spin, which it is not.
 
 **AND A MAINS POWER CYCLE DOES NOT CLEAR IT.** Measured bad from the FIRST
 packet after one, which also retires "the radio is in a state a restart would
