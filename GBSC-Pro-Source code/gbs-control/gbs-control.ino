@@ -2734,7 +2734,7 @@ void disableMotionAdaptDeinterlace() //
 
 void printInfo()
 {
-    static char print[121];
+    static char print[168];
     static uint8_t clearIrqCounter = 0;
     static uint8_t lockCounterPrevious = 0;
     uint8_t lockCounter = 0;
@@ -2784,14 +2784,25 @@ void printInfo()
     if ((millis() - lastInfoPrint) >= 250) {
         lastInfoPrint = millis();
         snprintf(print, sizeof(print),
-            "h:%4u v:%4s PLL:%01u A:%02x%02x%02x S:%02x.%02x.%02x %c%c%c%c I:%02x D:%04x ht:%4d vt:%4d hpw:%4d u:%3x s:%2x S:%2d W:%2d\n",
+            "h:%4u v:%4s PLL:%01u A:%02x%02x%02x S:%02x.%02x.%02x %c%c%c%c I:%02x D:%04x ht:%4d vt:%4d hpw:%4d u:%3x s:%2x S:%2d W:%2d H:%5u st:%d ip:%s\n",
             hperiod, vperiodText, lockCounterPrevious,
             GBS::ADC_RGCTRL::read(), GBS::ADC_GGCTRL::read(), GBS::ADC_BGCTRL::read(),
             GBS::STATUS_00::read(), GBS::STATUS_05::read(), GBS::SP_CS_0x3E::read(),
             h, HSp, v, VSp, stat0FIrq, Tv5725::TestBus::read(),
             GBS::STATUS_SYNC_PROC_HTOTAL::read(), GBS::STATUS_SYNC_PROC_VTOTAL::read() /*+ 1*/,
             GBS::STATUS_SYNC_PROC_HLOW_LEN::read(), inputAcquisition.unmeasuredPasses(), inputAcquisition.acquiredPasses(),
-            Tv5725::SyncOnGreen::level(), wifi);
+            Tv5725::SyncOnGreen::level(), wifi,
+            // `H:` is the LIVE free heap, which no HTTP route can report on a
+            // unit whose stack has stopped answering -- and the route floor
+            // refuses a reply below 10000, so the one reading that matters is
+            // the one that cannot be fetched. Over the cable it always arrives.
+            (unsigned)ESP.getFreeHeap(),
+            // **THE UNIT'S OWN VIEW OF ITS IP PATH**, which nothing else can
+            // report: the router's DHCP lease is the ROUTER's record and says
+            // only what it handed out, so a netif that lost its address reads
+            // as a healthy lease from that end while answering no ARP. `st` is
+            // WiFi.status(), 3 being WL_CONNECTED. docs/known-issues.md
+            (int)WiFi.status(), WiFi.localIP().toString().c_str());
         SerialM.print(print);
     }
     if (stat0FIrq != 0x00) {
@@ -6699,6 +6710,61 @@ void startWebserver()
             }
         }
         request->send(400, "application/json", "{\"error\":\"unknown key\"}");
+    });
+
+    // THE ICON TREE, which answers to the encoder and to nothing else -- /menu
+    // below is the DESCRIBED menu and reaches a different tree. So nothing a
+    // session could run walked the pages that register their children on
+    // entry, which are the pages the item pool is sized for.
+    //
+    // **THE PRESS IS QUEUED AND THIS ANSWERS THE STATE BEFORE IT.** tick()
+    // draws to the panel over I2C and delays, so it must run from loop() and
+    // not from a network callback; `queued` says one is outstanding, and a
+    // caller polls until `items` or the cursor moves. That is the difference
+    // from /menu, which presses synchronously and answers the page it would
+    // draw.
+    //
+    // The three gestures are the encoder's whole set: scrolling up past the
+    // first item selects the status bar, where ENTER leaves the level.
+    server.on("/oled", HTTP_GET, [](AsyncWebServerRequest *request) {
+        if (request->hasParam("key")) {
+            OLEDMenuNav which = OLEDMenuNav::IDLE;
+            if (!oledNavFor(request->getParam("key")->value().c_str(), &which)) {
+                request->send(400, "application/json",
+                              "{\"error\":\"key is up down enter\"}");
+                return;
+            }
+            oledNav = which;
+        }
+
+        String body = "{\"ticking\":";
+        // False while a described page holds the panel, and then the queued
+        // gesture waits rather than being dropped -- /menu?key=exit gives the
+        // panel back.
+        body += NEW_OLED_MENU ? "true" : "false";
+        body += ",\"queued\":";
+        body += oledNav != OLEDMenuNav::IDLE ? "true" : "false";
+        body += ",\"items\":";
+        body += oledMenu.itemsUsed();
+        body += ",\"pool\":";
+        body += oledMenu.itemsAvailable();
+        body += ",\"depth\":";
+        body += oledMenu.depth();
+        body += ",\"statusBar\":";
+        body += oledMenu.cursorOnStatusBar() ? "true" : "false";
+        body += ",\"tag\":";
+        body += oledMenu.cursorTag();
+        body += ",\"text\":";
+        const char *text = oledMenu.cursorText();
+        if (text != NULL) {
+            body += "\"";
+            body += text;
+            body += "\"";
+        } else {
+            body += "null";
+        }
+        body += "}";
+        request->send(200, "application/json", body);
     });
 
     server.on("/menu", HTTP_GET, [](AsyncWebServerRequest *request) {
