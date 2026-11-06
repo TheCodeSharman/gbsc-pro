@@ -18,7 +18,7 @@ import sys
 import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from gbs_unit import (MENU_ROWS, get, get_json, menu_seek, menu_selected, setting,
+from gbs_unit import (get, get_json, menu_seek, menu_selected, setting,
                       wait_for)
 
 SYSTEM_SETTINGS = "System Settings"
@@ -57,39 +57,38 @@ def open_level(host):
 
 
 def shown(host, label):
-    """A row's value, from wherever the cursor is in this level.
+    """A row's value, with the cursor left ON that row.
 
-    **THE CURSOR DOES NOT WRAP, SO THE WALK GOES UP FIRST.** The page draws
-    three rows about the cursor, so a row is only readable once the cursor is
-    near it -- and walking down alone cannot reach one ABOVE. Default is row 7
-    of this level's 8 and the teardown and Default cases both leave the cursor
-    there, so Bright on row 4 was unreachable and read as absent from the level.
+    **READING A ROW MOVES THE CURSOR, AND A PRESS AFTER ONE USED TO LAND
+    ELSEWHERE.** The page draws three rows about the cursor, so a row is only
+    readable once the cursor is near it -- and the walk that got it there
+    stopped wherever the label came into view rather than on it. Every `ok`
+    after a read then hit a neighbour: DoubleLine is row 2 of 8 and is visible
+    from the top of the level, so its toggle pressed Format, and Compatibility
+    is row 8 and is visible with the cursor on Default, so 30 presses of it
+    pressed Default 30 times. Both read as a row that would not move.
+
+    Seeking first answers the value AND leaves the cursor where a press
+    belongs, so every caller gets both from one walk.
     """
-    for _ in range(MENU_ROWS):
-        at = menu_selected(page(host))
-        if menu_selected(page(host, "up")) == at:
-            break
-
-    for _ in range(MENU_ROWS):
-        for row in page(host)["rows"]:
-            if row["label"] == label:
-                return row["value"]
-        page(host, "down")
-    raise AssertionError(f"{label} is not a row of this level")
+    seek(host, label)
+    row = next((at for at in page(host)["rows"] if at["label"] == label), None)
+    assert row is not None, f"{label} is not a row of this level"
+    return row["value"]
 
 
 def press_until(host, label, want, key, timeout=30.0, interval=0.1):
-    """Press until the row reads `want`.
+    """Press `label`'s own row until it reads `want`.
+
+    The press lands on the row because shown() leaves the cursor there.
 
     **ONE PRESS IS QUEUED AT A TIME**, so presses sent faster than loop()
     consumes them coalesce -- and a press whose ACT takes seconds needs an
     interval to match. A row that merely steps a value is consumed within a
     loop pass; Compatibility re-applies the preset, and hammering a TOGGLE
-    every 100 ms across one flips it an unknown number of times and lands
-    wherever the last consumed press left it.
+    across one flips it an unknown number of times and lands wherever the last
+    consumed press left it.
     """
-    seek(host, label)
-
     def arrived():
         if shown(host, label) == want:
             return True
