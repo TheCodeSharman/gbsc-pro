@@ -86,8 +86,20 @@ def step_to(host, label, want):
 
 @pytest.fixture
 def neutral(host):
-    """Default colour at both ends, which is the chain's own way back."""
+    """Default colour at both ends, which is the chain's own way back.
+
+    **WAITED FOR, BECAUSE /uc? HOLDS ONE QUEUED LETTER.** A 200 only means the
+    letter reached a global loop() has yet to read, and the next letter a test
+    sends replaces it -- so a test whose Ok arrives before this has been
+    consumed saves nothing, and `Ok did not keep the balance` is what that
+    looks like. Both the file and the registers are asked, because the act
+    writes flash as well as the chip.
+    """
     get(host, "/uc?U", timeout=8)
+    assert wait_for(
+        lambda: (stored(host) == (NEUTRAL,) * len(BALANCE_KEYS)
+                 and offsets(host) == (0, 0, 0)) or None,
+        timeout=20.0), "the colour never went back to neutral before the test"
     yield
     get(host, "/uc?U", timeout=8)
     page(host, "exit")
