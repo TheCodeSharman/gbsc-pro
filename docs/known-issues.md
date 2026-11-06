@@ -1510,25 +1510,33 @@ MEASURED ON IS THE EXCEPTION.** `test_card_framing.py` asks the first
 criterion on five modes against both sync types, at 1080p with the shape off,
 and `test_acquires_every_source.py` asks all four on 800x600@60.
 
-Measured over two full runs of the matrix, no case is flush on both axes and
-**the two sync types agree on 800x600@60 and 1600x600@60 and nowhere else**:
+**FIVE OF THE TEN CASES ARE NOW FLUSH, measured 2026-11-06**, and the whole
+earlier table was taken with the matrix judging the WRONG ROUTE: it reset the
+framing before each case, which forgets the record that holds the route, so
+every VESA mode dropped onto the pass-through default where there is no capture
+window, no framing and no shape a solve can apply. The ten cases errored as one
+on that account rather than being judged at all.
 
 | mode | separate | composite |
 |---|---|---|
-| 240x352@70 | one horizontal edge off, 2 rows at the top | one edge off on both axes |
-| 320x256@50 | 2 at the near edge on both axes | one horizontal edge off, vertically flush |
-| 640x480@60 | one horizontal edge off, vertically flush | **neither edge on either axis** |
-| 640x512@50 | one horizontal edge off, vertically flush | 2 at the near edge, and **29 rows at the top** |
-| 800x600@60 | 2 at the near edge, vertically flush | 2 at the near edge, vertically flush |
-| 1600x600@60 | one horizontal edge off, vertically flush | one horizontal edge off, vertically flush |
+| 240x352@70 | near edge off, 8 at the far | near edge off by 5.3, 6 rows at the near, far edge off |
+| 320x256@50 | **flush** | **flush** |
+| 640x480@60 | **flush** | **flush** |
+| 640x512@50 | near edge off by 7 | **the picture moved in 35 of 40 frames, worst -260 rows**, plus both edges |
+| 800x600@60 | **flush** | far edge off by 2.4 |
 
-800x600@60 is the mode every other measurement here has been taken on, which is
-what the matrix exists to catch. The table is the suite's standing record, so a
-case passing is the gap having closed and a case not in it failing is a
-regression.
+The table is the suite's standing record, so a case passing is the gap having
+closed and a case not in it failing is a regression. **`test_card_framing`
+grants no pass for a case named here** -- it asserts the goal and refuses a
+known-deficits list, one of those being what let a case keep its xfail while an
+edge of it got worse -- so the five that remain are a red acceptance test by
+design, and the sizes above are what a later run is compared against.
 
-**It is the state BEFORE the polarity correction followed the sync path**, and
-1600x600@60 has since left the default set: its solve is 800x600@60's, one
+What is left splits in two. Four cases are a PLACEMENT of a few columns, which
+is the near-edge offset the investigation below carries. The fifth is not a
+framing at all: 640x512@50 on composite sync does not hold still.
+
+1600x600@60 has left the default set: its solve is 800x600@60's, one
 `SourceKey` serving both, so its reading measures the clash rather than the
 framing.
 
