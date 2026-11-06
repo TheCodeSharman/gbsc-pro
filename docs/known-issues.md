@@ -10,6 +10,42 @@ regardless of which step is in flight.
 
 ## Reaches the picture
 
+### The hardware acceptance suite's remaining failures, measured 2026-11-06
+
+What is left after a pass that chased every failure to its cause over a
+verified-clean link. **Most of the suite's failures were the TESTS** -- a
+firmware behaviour changed, the host tests were updated and the hardware ones
+were not, because the bench link had been down and the suite could not run.
+Those are fixed. These are not, and each is a real reading.
+
+| case | what it reads | why it is not fixed here |
+|---|---|---|
+| `test_card_framing` x5 | the matrix table above | the near-edge placement, and 640x512@50 composite not holding still |
+| `test_published_framing` x2 | capture at 12.25% of the line against DMT's 18.00%, and line 26 against 35, on 640x480@60 SCALED | the same placement; 73 units of a 1273-unit line |
+| `test_zoom_shear` x1 | the known-bad even memory window scores 0.0000/0.0000, identical to clean | the instrument, not the video -- see below |
+| `test_the_picture_fills_the_frame[sync-on-green-scaled]` | 51 rows at the bottom on the Wii | the filed entry walked every channel register against those rows in pass-through and reached none; the scaling leg shows the same size |
+| `test_a_slot_route_says_what_it_did` | the console carries nothing across `/uc?4` | the unit RESETS the client -- see below |
+| `test_one_slot_holds_a_framing_for_each_source` | the capturable region does not move to the arriving source | a 640x480@60 leg, which takes pass-through by default and has no capture window |
+
+**THE ZOOM-SHEAR GUARD IS BLIND TO THE FAULT IT GUARDS.** The case sets the
+known-bad even memory window and asserts the score can SEE it; the score
+returns 0.0000 displaced and 0.0000 rough, identical to a clean reading. Either
+the instrument is insensitive or an even window no longer shears, and both want
+a frame looked at -- which is the hazard CLAUDE.md already names for
+`picture_stability.judge` finding lag 0 on whatever still correlates. **A green
+zoom sweep is not evidence until this case passes.**
+
+**A ROUTE THAT WRITES FLASH RESETS THE CONSOLE CLIENT.** `/uc?4` prints
+`slot save: framing stored` -- proven by hand, heap 10408 with a console
+attached -- and the write blocks `loop()` long enough to drop the websocket:
+`ConnectionResetError(104)` on every run, with an HTTP read timing out across
+the same window. So the console cannot witness a route that writes flash, which
+is the one place a save that lands on the framing already stored can be
+reported. `Console.collect()` raises on that now rather than reporting silence,
+so the failure names the reset instead of blaming the firmware for a line it
+did print.
+
+
 ### FIXED: the phase sweep refused half its own answers and fell back onto a seed inside the band
 
 `PA_SP_S` 8 after an input change was never a phase the search chose. The sweep
