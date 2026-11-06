@@ -497,11 +497,24 @@ def framing_matches(at, wanted):
                for name in wanted)
 
 
+def is_framing(at):
+    """Whether `at` is a framing at all, rather than the absence of one.
+
+    **A ZERO EXTENT IS NOT A FRAMING ON EITHER AXIS.** It is what /geometry
+    reports between VideoPath::reset() clearing the proportions and the solve
+    adopting the mode's default, and it is also what pass-through reports for
+    ever, there being no capture window to describe. Both read as a settled
+    framing of zeros to two agreeing reads, and a test then compares a later
+    picture against the absence of one.
+    """
+    return bool(at) and at.get("eh") and at.get("ev")
+
+
 def framing_settled(host, interval=0.5):
     """The framing, once two reads a solve apart agree, or None. A press and a
     re-solve both move it, so one read is a value it may be on the way through."""
     first = framing_of(get_json(host, "/geometry")[1])
-    if not first:
+    if not is_framing(first):
         return None
     time.sleep(interval)
     return first if framing_matches(framing_of(get_json(host, "/geometry")[1]),

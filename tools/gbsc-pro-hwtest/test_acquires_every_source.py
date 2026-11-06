@@ -72,6 +72,7 @@ from gbs_unit import (
     shaping,
     show_card,
     wait_for_acquisition,
+    want_route,
     want_shaping,
     write_named,
 )
@@ -138,12 +139,19 @@ def want_passed_through(host, passed_through):
     There is no unit-wide preference any more: a source with nothing stored is
     passed through, and what /geometry reports is the engine's answer for the
     source on screen. docs/rgbhv-bypass-trap.md
+
+    **ASKED AFTER THE INPUT IS SELECTED, AND VERIFIED.** The choice is stored
+    against the source in force, so one taken before the selection is stored
+    against the source that is leaving and the arriving one takes the default --
+    pass-through. And /uc?x is queued for loop() and re-runs detection
+    underneath itself, so a single press and a pause is not a choice: the leg
+    then judges the route the default gave it, which is how three scaled legs
+    read `DAC_RGBS_BYPS2DAC` 1 against a correct count.
     """
-    at = get_json(host, "/geometry")[1] or {}
-    if (at.get("route") == "passThrough") == passed_through:
-        return
-    get(host, "/uc?x")
-    time.sleep(2.0)
+    outcome = want_route(host, passed_through, tries=4, settle=ROUTE_SECONDS)
+    assert outcome, (
+        "the route would not go to "
+        f"{'pass-through' if passed_through else 'scaled'}: {outcome}")
 
 
 def show_the_default_framing(host, where, scaled):
@@ -398,13 +406,17 @@ def test_the_source_acquires(bench, host, preset_save, source, csync,
     if csync is not None:
         set_sync_type(where, csync)
 
-    want_passed_through(host, passed_through)
     select_input(host, source)
 
     # The arrangement is re-probed rather than trusted: a sync type changed on
     # one cable is not followed, and the route switch re-runs detection.
     get(host, "/sc?~")
     time.sleep(SETTLE_SECONDS)
+
+    assert wait_for_acquisition(host, source, limit_s=ROUTE_SECONDS + 40.0), (
+        f"{source} on {what} never acquired, so the route cannot be chosen "
+        f"for it: {read_fields(host, PATH)}")
+    want_passed_through(host, passed_through)
 
     took = wait_for_acquisition(host, source, limit_s=ROUTE_SECONDS + 40.0)
     at = read_fields(host, PATH)
@@ -431,10 +443,14 @@ def test_the_picture_fills_the_frame(bench, host, capture_device, preset_save,
     if csync is not None:
         set_sync_type(where, csync)
 
-    want_passed_through(host, passed_through)
     select_input(host, source)
     get(host, "/sc?~")
     time.sleep(SETTLE_SECONDS)
+
+    assert wait_for_acquisition(host, source, limit_s=ROUTE_SECONDS + 40.0), (
+        f"{source} on {what} never acquired, so the route cannot be chosen "
+        f"for it")
+    want_passed_through(host, passed_through)
 
     took = wait_for_acquisition(host, source, limit_s=ROUTE_SECONDS + 40.0)
     assert took is not None, (

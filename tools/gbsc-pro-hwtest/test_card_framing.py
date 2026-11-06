@@ -300,6 +300,14 @@ def test_the_default_framing_puts_the_card_flush_to_the_emitted_edges(
     # with the animation off so one clip is evidence.
     assert gbs_unit.show_card(where), "the source would not draw the card"
     assert gbs_unit.reset_framing(host) is not None, "the framing never reset"
+    # AFTER the reset, WHICH TAKES THE STORED ROUTE WITH THE FRAMING. One
+    # record per source holds both, so forgetting the framing drops the source
+    # onto the default route -- pass-through -- where there is no capture
+    # window, no framing to judge and no shape the solve can apply, so every
+    # aspect press below is refused. The framing stays at the solve's own
+    # default across this: measured 229/1018 before and after on 640x480@60.
+    scaled = gbs_unit.want_route(host, False)
+    assert scaled, f"the source would not scale, so it has no framing: {scaled}"
     # AFTER the reset, which puts the declared shape back to the raster's
     # default along with the framing -- 4:3 on every mode here, whose bars are
     # our own blanking and read as 258 columns at the near edge.

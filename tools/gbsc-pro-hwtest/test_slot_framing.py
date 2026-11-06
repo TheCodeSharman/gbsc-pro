@@ -159,20 +159,30 @@ def test_a_slot_records_the_framing_and_not_the_registers(host, source,
     # The record for the source in force, not whichever the slot holds last:
     # a slot holds one per source. The key names the FRAME, which the sync
     # processor's count is one short of.
+    #
+    # **ONE LINE COUNT IS NOT ONE SOURCE KEY.** The key carries the sync width
+    # and both polarities too, so the bench 312-line source has several
+    # entries -- `312@50.08/695??` and `312@50.08/709++` were both held -- and
+    # taking the first that counts 312 reads a record this solve did not write.
+    # Nothing reports the key, so the proportions are what identify it.
     frame_lines = measured["STATUS_SYNC_PROC_VTOTAL"] + 1
-    for source_key, numbers in stored.items():
-        if source_key.startswith(f"{frame_lines}@"):
-            break
-    else:
-        pytest.fail(f"slot {SLOT_CHARACTER} has no record for the "
-                    f"{frame_lines}-line source the chip is counting: "
-                    f"{sorted(stored)}")
+    wanted = [at["poh"], at["peh"], at["pov"], at["pev"]]
+    counted = {key: numbers for key, numbers in stored.items()
+               if key.startswith(f"{frame_lines}@")}
+    assert counted, (
+        f"slot {SLOT_CHARACTER} has no record for the {frame_lines}-line "
+        f"source the chip is counting: {sorted(stored)}")
 
-    assert float(source_key.partition("@")[2].partition("/")[0]) > 0, (
-        f"the record names no field rate: {source_key}")
-    assert numbers[:4] == [at["poh"], at["peh"], at["pov"], at["pev"]], (
-        f"the record holds {numbers[:4]} against the proportions the engine "
-        f"reports, {[at['poh'], at['peh'], at['pov'], at['pev']]}")
+    held = {key: numbers for key, numbers in counted.items()
+            if numbers[:4] == wanted}
+    assert held, (
+        f"no record of the {frame_lines}-line source holds the proportions the "
+        f"engine reports, {wanted}: "
+        f"{ {k: v[:4] for k, v in counted.items()} }")
+
+    for source_key in held:
+        assert float(source_key.partition("@")[2].partition("/")[0]) > 0, (
+            f"the record names no field rate: {source_key}")
 
 
 def test_a_slot_holding_nothing_for_this_source_leaves_the_picture_alone(
