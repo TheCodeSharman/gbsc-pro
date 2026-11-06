@@ -552,7 +552,18 @@ def pressable(host):
     accepted, logged and moves nothing -- and so is the next one. Pressing
     three times two seconds apart after a source mode change is three absorbed
     presses rather than three tries.
+
+    **THE ENGINE IS ASKED FIRST, BECAUSE NO REGISTER CAN ANSWER THIS.** The
+    chip counts the arriving source correctly while the engine is still working
+    the mode change through, so the register reading below is clean on exactly
+    the state a press is absorbed in. `changing` is the engine's own answer.
     """
+    body = geometry_report(host)
+    if body is None:
+        return "the unit did not report its geometry"
+    if body.get("changing") is True:
+        return "a mode change is still working through"
+
     fields = read_fields(host, list(SOLVE_FIELDS))
     if not fields:
         return "the unit did not answer a register read"
