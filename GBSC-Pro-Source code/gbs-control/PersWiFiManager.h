@@ -14,6 +14,8 @@
 #include <ESPAsyncWebServer.h>
 #include <DNSServer.h>
 
+#include "src/net/StationRetry.h"
+
 #define WIFI_CONNECT_TIMEOUT 45
 
 class PersWiFiManager
@@ -54,6 +56,10 @@ private:
 
     WiFiChangeHandlerFunction _connectHandler;
     WiFiChangeHandlerFunction _apHandler;
+
+    // Armed when the access point goes up, so the station is attempted again
+    // rather than abandoned for the life of the boot.
+    Net::StationRetry _stationRetry;
 
 }; // class
 

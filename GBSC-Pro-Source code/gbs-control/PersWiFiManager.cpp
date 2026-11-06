@@ -54,16 +54,38 @@ bool PersWiFiManager::attemptConnection(const String &ssid, const String &pass)
 
 void PersWiFiManager::handleWiFi()
 {
-    if (!_connectStartTime)
-        return;
-
     if (WiFi.status() == WL_CONNECTED)
     {
-        _connectStartTime = 0;
-        if (_connectHandler)
-            _connectHandler();
+        if (_stationRetry.armed())
+        {
+            _stationRetry.disarm();
+            WiFi.mode(WIFI_STA);
+        }
+        if (_connectStartTime)
+        {
+            _connectStartTime = 0;
+            if (_connectHandler)
+                _connectHandler();
+        }
         return;
     }
+
+    // **ASKED BEFORE THE GATE BELOW, WHICH IS THE WHOLE POINT.** startApMode()
+    // clears _connectStartTime, so everything gated on it stops running once
+    // the access point is up -- and nothing set it again, which took the unit
+    // off the network until it was power-cycled.
+    if (_stationRetry.due(millis()))
+    {
+        _stationRetry.attempted(millis());
+        // AP_STA and not STA, so the access point stays reachable while the
+        // attempt runs rather than blinking out once a minute.
+        WiFi.mode(WIFI_AP_STA);
+        WiFi.begin();
+        return;
+    }
+
+    if (!_connectStartTime)
+        return;
 
     // if failed or not connected and time is up
     if ((WiFi.status() == WL_CONNECT_FAILED) || ((WiFi.status() != WL_CONNECTED) && ((millis() - _connectStartTime) > (1000 * WIFI_CONNECT_TIMEOUT))))
@@ -78,6 +100,10 @@ void PersWiFiManager::startApMode()
 {
     // start AP mode
     IPAddress apIP(192, 168, 4, 1);
+    // The station is attempted again from here on. Raising the access point is
+    // not a verdict that the network has gone, only that it is not reachable
+    // yet, so this is the one place the retry is armed.
+    _stationRetry.arm(millis());
     WiFi.mode(WIFI_AP);
     WiFi.softAPConfig(apIP, apIP, IPAddress(255, 255, 255, 0));
     _apPass.length() ? WiFi.softAP(getApSsid().c_str(), _apPass.c_str(), 11) : WiFi.softAP(getApSsid().c_str());
