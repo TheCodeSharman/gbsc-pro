@@ -167,6 +167,12 @@ def show_the_default_framing(host, where, scaled):
     assert show_card(where), "the source would not draw the card"
     if not scaled:
         return
+    # **THE ROUTE IS KEYED ON BOTH POLARITIES TOO**, so one sync type's stored
+    # choice does not answer for the other: a sync-type change arrives at a key
+    # with nothing stored and takes the pass-through default, where there is no
+    # framing and the reset below answers None. Chosen here rather than once per
+    # test because this helper is what every sync-type change goes through.
+    want_passed_through(host, False)
     assert reset_framing(host) is not None, "the framing never reset"
     assert acquired_and_settled(host), "the engine never stopped re-solving"
 
