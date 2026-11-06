@@ -77,7 +77,7 @@ def watch(console, seconds):
     deadline = time.time() + seconds
     while time.time() < deadline:
         for line in console.collect(0.5):
-            if line.startswith("sampling: ") and " lines x " in line:
+            if line.startswith(("measured: ", "sampling: ")) and " lines x " in line:
                 counts.append(int(line.split()[1]))
             elif line.startswith("scan: "):
                 scans.append(line)

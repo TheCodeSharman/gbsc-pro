@@ -67,8 +67,12 @@ LADDER = [
 CYCLE_LENGTH = 451
 FIRST_ESCALATION_PASS = 2
 
+# SourceMeasurement.cpp prints this, and it was called `sampling:` until the
+# clock the reading was taken through joined it. Both spellings are read so a
+# reference build is parsed by the same tool.
 SAMPLING = re.compile(
-    r"sampling:\s*(\d+)\s*lines\s*x\s*([\d.]+)\s*Hz\s*->\s*line rate\s*(\d+)")
+    r"(?:measured|sampling):\s*(\d+)\s*lines\s*x\s*([\d.]+)\s*Hz"
+    r"\s*->\s*line rate\s*(\d+)")
 
 
 def ladder_step(passes):

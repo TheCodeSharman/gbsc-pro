@@ -330,8 +330,16 @@ WATCH = {"z": ("IF_HB_ST2", 1, 0x18, 0, 11),
 
 # The smallest capture move the hardware acts on, per axis. Horizontally the low
 # bit of IF_HB_SP2 does nothing, so a one-unit move leaves the picture where it
-# was; Axis::stepUnits() never returns less than one of these.
+# was. Axis::stepUnits() rounds a request to the nearest whole granule
+# INCLUDING NONE, so this is the finest move a press can reach and not the floor
+# a press is held at.
 GRANULE = {"horizontal": 2, "vertical": 1}
+
+# The largest magnitude worth asking for before a still picture means the control
+# has stopped rather than the request being too fine. A granule is
+# `granularity x magnification` output pixels, six at the most the engine
+# magnifies by.
+MOST_PIXELS_PER_GRANULE = 16
 
 
 def press(host, probe, command, pixels=None, timeout=6.0):
@@ -354,6 +362,33 @@ def press(host, probe, command, pixels=None, timeout=6.0):
     landed = wait_for(lambda: probe.read_field(spec) != before, timeout=timeout)
     assert landed, (f"{path} did not move {spec[0]} from {before} "
                     f"within {timeout}s -- was the press absorbed?")
+
+
+def finest_press(host, probe, command):
+    """The smallest move `command` can reach, as (units moved, pixels asked).
+
+    A press is answered in OUTPUT PIXELS, so the magnitude that reaches one
+    capture granule depends on the magnification the live solve landed on --
+    4.86 pixels a granule across at the bench framing. Doubling the request from
+    one pixel finds the first that moves anything, and that first move is one
+    granule: a request below half a granule rounds to nothing, and the one above
+    it is under a granule and a half.
+
+    Reports (None, pixels) where even the largest request moved nothing, which
+    is the control against its stop.
+    """
+    spec = WATCH[command]
+    before = probe.read_field(spec)
+    asked = 1
+    while True:
+        status, _ = get(host, f"/sc?{command}={asked}")
+        assert status == 200, f"/sc?{command}={asked} returned {status}"
+        landed = wait_for(lambda: probe.read_field(spec) != before, timeout=4.0)
+        if landed:
+            return abs(probe.read_field(spec) - before), asked
+        if asked >= MOST_PIXELS_PER_GRANULE:
+            return None, asked
+        asked = min(MOST_PIXELS_PER_GRANULE, asked * 2)
 
 
 # How many presses it can take to walk a control from wherever a test found it
@@ -493,26 +528,29 @@ def test_the_reset_control_returns_the_framing_to_default(host, probe, scaling):
 
 @pytest.mark.pan
 def test_a_press_moves_by_the_pixels_it_is_given(host, probe, framed):
-    """A press carries its own magnitude, and one output pixel is the finest move.
+    """A press carries its own magnitude, and through it one capture granule is
+    reachable.
 
-    Without it the smallest step reachable from outside is the pad's own, which
-    is magnification-scaled -- so an instrument creeping a boundary one unit at a
-    time cannot do it through the controls, and reaches for a setter the user
-    does not have.
+    Without a magnitude the smallest step reachable from outside is the pad's
+    own, which is magnification-scaled -- so an instrument creeping a boundary
+    one unit at a time cannot do it through the controls, and reaches for a
+    setter the user does not have.
 
-    Axis::stepUnits() floors at one capture granule, so a press of one pixel is
-    the smallest move the hardware acts on whatever the scale happens to be.
+    `Axis::stepUnits()` answers in output pixels and rounds to the nearest whole
+    granule including NONE, so which request reaches a granule follows the live
+    magnification and the test grows it rather than naming one.
     """
-    before = framing(host)["oh"]
-    press(host, probe, "+", pixels=1)
-    fine = framing(host)["oh"] - before
+    fine, asked = finest_press(host, probe, "+")
+    assert fine is not None, (
+        f"no pan press up to {asked} output pixels moved the capture, so the "
+        "magnitude did not reach the control")
     assert fine == GRANULE["horizontal"], (
-        f"a one-pixel pan moved {fine} units, not one granule "
-        f"({GRANULE['horizontal']}): the magnitude did not reach the control")
+        f"the finest pan press moved {fine} units at {asked} output pixels, not "
+        f"one granule ({GRANULE['horizontal']})")
 
     at = framing(host)["oh"]
     press(host, probe, "+")
-    default = framing(host)["oh"] - at
+    default = abs(framing(host)["oh"] - at)
     assert default > fine, (
         f"the pad's own step moved {default} units against the fine press's "
         f"{fine}, so a press with no magnitude is no longer the coarse one")
@@ -530,16 +568,17 @@ def test_a_vertical_zoom_press_moves_by_the_pixels_it_is_given(host, probe, fram
     The OSD already taps at ControlSteps::Fine, so the remote can reach every
     unit. This is the same reach from outside.
     """
-    before = framing(host)["ev"]
-    press(host, probe, "5", pixels=1)
-    fine = before - framing(host)["ev"]
+    fine, asked = finest_press(host, probe, "5")
+    assert fine is not None, (
+        f"no vertical zoom press up to {asked} output pixels moved the capture, "
+        "so the magnitude did not reach the control")
     assert fine == GRANULE["vertical"], (
-        f"a one-pixel vertical zoom moved {fine} units, not one granule "
-        f"({GRANULE['vertical']}): the magnitude did not reach the control")
+        f"the finest vertical zoom press moved {fine} units at {asked} output "
+        f"pixels, not one granule ({GRANULE['vertical']})")
 
     at = framing(host)["ev"]
     press(host, probe, "5")
-    default = at - framing(host)["ev"]
+    default = abs(at - framing(host)["ev"])
     assert default > fine, (
         f"the pad's own step moved {default} units against the fine press's "
         f"{fine}, so a press with no magnitude is no longer the coarse one")
@@ -1283,8 +1322,13 @@ def test_a_tuning_reaches_flash_only_after_it_settles(host, probe,
             "tuning is lost at the next power cut")
 
         stored = fs_read(host, FRAMING_FILE)
-        assert f"{read_named(host, 'STATUS_SYNC_PROC_VTOTAL')}@" in stored, (
-            f"the source counted is not the one the record is keyed on:\n{stored}")
+        # The key names the FRAME, which the sync processor's count is one short
+        # of: SyncProcessor::frameLines() undoes the zero base at the boundary
+        # and nothing downstream corrects again.
+        frame_lines = read_named(host, "STATUS_SYNC_PROC_VTOTAL") + 1
+        assert f"{frame_lines}@" in stored, (
+            f"the {frame_lines}-line source counted is not the one the record "
+            f"is keyed on:\n{stored}")
         assert tuned == framing(host), (
             "the framing moved while it was being written")
     finally:

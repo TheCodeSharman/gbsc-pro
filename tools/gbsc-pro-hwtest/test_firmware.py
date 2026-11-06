@@ -20,6 +20,7 @@ import pytest
 from gbs_unit import (
     field_from_named,
     field_spec,
+    geometry_report,
     get,
     get_json,
     mode_serv,
@@ -608,10 +609,24 @@ CLKOUT_TOLERANCE = 1.005
 # 1445 x 1126 @ 50 Hz -- 81.35 MHz, 75.3% -- which is what this catches.
 CLKOUT_MIN_SPEND = 0.90
 
-# Source VTOTAL above this is a 50 Hz standard. The firmware's own mode detect
-# splits the same way: PAL-like sources run 312 lines (the bench RiscPC 311),
-# NTSC-like 262.
-SOURCE_VTOTAL_50HZ_MIN = 290
+def source_field_rate(host, source_vtotal):
+    """The source's field rate, measured, or None where nothing is measured.
+
+    **NOT CLASSIFIED FROM THE LINE COUNT.** A threshold on the count only
+    separates the SD standards -- 312 lines PAL-like against 262 NTSC-like --
+    and reads every VGA mode above it as 50 Hz: 800x600@60 counts 627 and ran as
+    50 Hz against a raster the engine had correctly solved for 60.32, which
+    reported a right answer as 17% out.
+
+    The engine's held line rate over the source's own frame is the measurement,
+    and it is the figure the raster was solved from.
+    """
+    body = geometry_report(host)
+    if body is None:
+        return None
+    line_rate = body.get("lineRateHz") or 0
+    frame_lines = source_vtotal + 1
+    return line_rate / float(frame_lines) if line_rate and frame_lines else None
 
 SYNC_PROC_VTOTAL = field_spec("STATUS_SYNC_PROC_VTOTAL")  # STATUS_SYNC_PROC_VTOTAL
 VDS_HSYNC_RST = field_spec("VDS_HSYNC_RST")
@@ -641,7 +656,8 @@ def test_the_output_raster_is_the_one_the_engine_computed(host, source):
     """
     source_vtotal = read_named(host, "STATUS_SYNC_PROC_VTOTAL")
     assert source_vtotal, "no source VTOTAL: nothing is locked"
-    field_rate = 50 if source_vtotal > SOURCE_VTOTAL_50HZ_MIN else 60
+    field_rate = source_field_rate(host, source_vtotal)
+    assert field_rate, "the engine holds no line rate, so no raster follows from it"
 
     htotal_reg = read_named(host, "VDS_HSYNC_RST")
     vtotal_reg = read_named(host, "VDS_VSYNC_RST")
@@ -685,7 +701,8 @@ def test_the_output_raster_spends_its_pixel_clock_budget(host, source):
     source_vtotal = read_named(host, "STATUS_SYNC_PROC_VTOTAL")
     assert source_vtotal, "no source VTOTAL: nothing is locked, so there is no field rate"
 
-    field_rate = 50 if source_vtotal > SOURCE_VTOTAL_50HZ_MIN else 60
+    field_rate = source_field_rate(host, source_vtotal)
+    assert field_rate, "the engine holds no line rate, so no raster follows from it"
 
     htotal_reg = read_named(host, "VDS_HSYNC_RST")
     vtotal_reg = read_named(host, "VDS_VSYNC_RST")
@@ -715,8 +732,8 @@ def test_the_output_raster_spends_its_pixel_clock_budget(host, source):
         f"the output raster is leaving pixel clock unused: {context}. At this field rate "
         f"the ceiling affords {int(CLKOUT_CEILING_HZ / field_rate / (vtotal_reg + 1))} "
         f"pixels per line against the {htotal_reg + 1} programmed. That is horizontal "
-        "resolution the board could produce and is not -- check s0_41 and s3_01/s3_02 in "
-        "the preset table for this field rate."
+        "resolution the board could produce and is not -- OutputRaster::htotalFor "
+        "and the clock seed it divides are what choose it."
     )
 
 
@@ -2081,7 +2098,8 @@ DOUBLING_LEG_DESTINATION = "MODE X320 Y256 C256 F50"
 # What the console prints when the engine arms a re-measure, and when one has
 # produced a line rate worth holding.
 SOURCE_MOVED = re.compile(r"source moved: [\w ]+ \((\d+) lines, solved (\d+)\)")
-SOLVED = re.compile(r"sampling: (\d+) lines x [\d.]+ Hz -> line rate [1-9]")
+SOLVED = re.compile(
+    r"(?:measured|sampling): (\d+) lines x [\d.]+ Hz -> line rate [1-9]")
 
 
 @pytest.mark.source_mode

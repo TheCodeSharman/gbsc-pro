@@ -21,11 +21,15 @@ from gbs_unit import (framing_matches, framing_of, framing_settled, fs_dir,
                       read_fields, read_settings,
                       reset_framing, wait_for)
 
-SLOT_FILE = "/slots.txt"
+# A slot is a named copy of the framing table, so what it holds is a file of its
+# own rather than a record inside a shared one. docs/framing-presets.md
+def slot_file(slot):
+    return f"/slot-{slot}.txt"
 
-# The slot this test uses, as the character /slot/set takes and the index the
-# file records. A is the first of them, so a bench unit that has never had a
-# slot chosen is already on it.
+
+# The slot this test uses, as the character /slot/set takes and the index naming
+# its file. A is the first of them, so a bench unit that has never had a slot
+# chosen is already on it.
 SLOT_CHARACTER = "A"
 SLOT_INDEX = 0
 
@@ -60,38 +64,31 @@ def tune_the_framing(host):
     return tuned
 
 
-def records(host):
-    """The slot file's records, as {(slot, source): [numbers]}, ignoring its
-    comments.
+def records_in(host, slot):
+    """One slot's records, as {source: [numbers]}, ignoring the file's comments.
 
-    Keyed by BOTH, because a slot holds one record per source and keying by the
-    slot alone silently keeps whichever came last -- which is the case this file
-    exists to test.
+    The framing file's own format -- `<lines>@<rate>/<width><hPol><vPol> =
+    originH extentH originV extentV [shape] [route]` -- because a slot is a copy
+    of it. The source key names the FRAME, so a 311-line count reads 312 here;
+    the sync processor counts from zero and nothing downstream corrects twice.
     """
-    text = fs_read(host, SLOT_FILE) or ""
+    text = fs_read(host, slot_file(slot)) or ""
     found = {}
     for line in text.splitlines():
         line = line.strip()
         if not line or line.startswith("#"):
             continue
-        head, _, tail = line.partition("=")
-        slot, _, key = head.strip().partition(" ")
-        found[(int(slot), key.strip())] = [int(n) for n in tail.split()]
+        key, _, tail = line.partition("=")
+        found[key.strip()] = [int(n) for n in tail.split()]
     return found
 
 
-def records_in(host, slot):
-    """Just one slot's records, as {source: [numbers]}."""
-    return {key: numbers for (at, key), numbers in records(host).items()
-            if at == slot}
-
-
 def spare_slot(host):
-    """A slot the file records nothing in, so an empty-slot test is testing that
+    """A slot holding no framing file, so an empty-slot test is testing that
     rather than whatever an earlier run left."""
-    taken = {slot for slot, _ in records(host)}
+    held = set(fs_dir(host) or [])
     for index, character in enumerate(SLOT_CHARACTERS):
-        if index not in taken:
+        if slot_file(index).lstrip("/") not in {f.lstrip("/") for f in held}:
             return character
     pytest.skip("every slot holds a framing, so none is empty to test with")
 
@@ -156,22 +153,26 @@ def test_a_slot_records_the_framing_and_not_the_registers(host, source,
 
     stored = records_in(host, SLOT_INDEX)
     assert stored, (
-        f"{SLOT_FILE} has no record for slot {SLOT_CHARACTER}: {records(host)}")
+        f"{slot_file(SLOT_INDEX)} holds no framing for slot {SLOT_CHARACTER}, "
+        f"so the save stored nothing: {fs_dir(host)}")
 
     # The record for the source in force, not whichever the slot holds last:
-    # a slot holds one per source.
-    lines = measured["STATUS_SYNC_PROC_VTOTAL"]
+    # a slot holds one per source. The key names the FRAME, which the sync
+    # processor's count is one short of.
+    frame_lines = measured["STATUS_SYNC_PROC_VTOTAL"] + 1
     for source_key, numbers in stored.items():
-        if source_key.startswith(f"{lines}@"):
+        if source_key.startswith(f"{frame_lines}@"):
             break
     else:
-        pytest.fail(f"slot {SLOT_CHARACTER} has no record for the {lines}-line "
-                    f"source the chip is counting: {sorted(stored)}")
+        pytest.fail(f"slot {SLOT_CHARACTER} has no record for the "
+                    f"{frame_lines}-line source the chip is counting: "
+                    f"{sorted(stored)}")
 
-    assert int(source_key.partition("@")[2]) > 0, (
+    assert float(source_key.partition("@")[2].partition("/")[0]) > 0, (
         f"the record names no field rate: {source_key}")
-    assert numbers == [at["poh"], at["peh"], at["pov"], at["pev"]], (
-        "the record does not hold the proportions the engine reports")
+    assert numbers[:4] == [at["poh"], at["peh"], at["pov"], at["pev"]], (
+        f"the record holds {numbers[:4]} against the proportions the engine "
+        f"reports, {[at['poh'], at['peh'], at['pov'], at['pev']]}")
 
 
 def test_a_slot_holding_nothing_for_this_source_leaves_the_picture_alone(

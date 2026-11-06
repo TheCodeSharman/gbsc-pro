@@ -26,13 +26,20 @@ def test_the_ladder_cycles_so_a_long_wait_repeats_the_list():
     assert b.ladder_step(2 + b.CYCLE_LENGTH) == "LiftSogFloor"
 
 
-def test_a_sampling_line_yields_the_line_count_and_rate():
+def test_a_measurement_line_yields_the_line_count_and_rate():
+    got = b.parse_sampling(
+        "  8.38  measured: 312 lines x 50.08 Hz -> line rate 15625, "
+        "clock 2200@31500 htotal 2200")
+    assert got == (312, 50.08, 15625)
+
+
+def test_the_line_is_still_read_under_the_name_a_reference_build_prints():
     got = b.parse_sampling("  8.38  sampling: 311 lines x 50.08 Hz -> line rate 15625")
     assert got == (311, 50.08, 15625)
 
 
 def test_a_line_rate_of_zero_is_a_rejected_reading_not_a_measurement():
-    assert b.parse_sampling("sampling: 311 lines x 50.08 Hz -> line rate 0") is None
+    assert b.parse_sampling("measured: 312 lines x 50.08 Hz -> line rate 0") is None
 
 
 def test_a_line_that_is_not_a_sampling_report_parses_to_nothing():
