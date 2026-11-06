@@ -64,7 +64,7 @@ from gbs_unit import (
     mode_serv,
     read_fields,
     freeze,
-    reset_framing,
+    reset_to_scaled_default,
     restore_output_mode,
     select_input,
     set_sync_type,
@@ -173,7 +173,7 @@ def show_the_default_framing(host, where, scaled):
     # framing and the reset below answers None. Chosen here rather than once per
     # test because this helper is what every sync-type change goes through.
     want_passed_through(host, False)
-    assert reset_framing(host) is not None, "the framing never reset"
+    assert reset_to_scaled_default(host) is not None, "the framing never reset"
     assert acquired_and_settled(host), "the engine never stopped re-solving"
 
 

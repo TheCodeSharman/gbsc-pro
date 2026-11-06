@@ -151,7 +151,7 @@ def leg(host, where, device, mode, csync):
         return {"why": "never acquired, or never stopped re-solving"}
     if not gbs_unit.show_card(where):
         return {"why": "the source would not draw the card"}
-    if gbs_unit.reset_framing(host) is None:
+    if gbs_unit.reset_to_scaled_default(host) is None:
         return {"why": "the framing never reset"}
     # AFTER the reset, which puts the declared shape back to the raster's own
     # default -- 4:3, whose bars are our blanking and read as hundreds of

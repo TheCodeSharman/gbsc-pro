@@ -762,6 +762,39 @@ def reset_framing(host, expect=None, timeout=20.0):
                     timeout=timeout)
 
 
+def reset_to_scaled_default(host, tries=3):
+    """The framing back to the engine's own default ON THE SCALING ROUTE, or
+    None. For a caller that is about to READ or TUNE a framing.
+
+    **"THE RESET RAN" AND "THERE IS A FRAMING" ARE DIFFERENT QUESTIONS, and
+    reset_framing() answers the first.** The reset forgets the record that holds
+    the route as well as the framing, so a source pass-through can carry is
+    handed over by it and has no capture window afterwards -- which is where
+    that reset LANDED, and is useless to a caller that wanted something to
+    measure.
+
+    **THE ROUTE IS CHOSEN AFTER THE RESET AND THE RESET IS NOT TAKEN AGAIN**,
+    because a second one forgets the route the first one's recovery just stored.
+    Reset, put the source back on the scaler, then read: the record is already
+    clear, so what the solve adopts is its own computed default -- measured
+    229/1018 either side on 640x480@60. Resetting in the loop instead spends
+    every try and answers None on a unit that is working.
+
+    Retried as a whole, because the route is re-answered on a later pass: the
+    engine has drifted to pass-through seconds after a reset that had already
+    reported a framing.
+    """
+    for _ in range(tries):
+        if reset_framing(host) is None:
+            continue
+        if not want_route(host, False, tries=4, settle=25.0):
+            continue
+        landed = wait_for(lambda: framing_settled(host), timeout=20.0)
+        if is_framing(landed):
+            return landed
+    return None
+
+
 def restore_bench(host, unfreeze, reset, attempts=3):
     """Put the bench back after a run, reporting what it could not fix.
 

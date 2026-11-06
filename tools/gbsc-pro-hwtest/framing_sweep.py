@@ -375,7 +375,7 @@ def measure_state(ctx, mode, output):
     if why:
         return refused(f"not solving the mode: {why}")
     gbs_unit.show_card(where)
-    if gbs_unit.reset_framing(host) is None:
+    if gbs_unit.reset_to_scaled_default(host) is None:
         return refused("the framing never reset")
     # AFTER the reset, which puts the declared shape back to the raster's own
     # default -- 4:3 on the bench modes, whose pillarbox is OUR blanking and

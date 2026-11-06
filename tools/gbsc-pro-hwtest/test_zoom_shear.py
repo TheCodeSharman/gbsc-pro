@@ -36,7 +36,8 @@ import gbs_unit
 import hdmi_capture
 import picture_shear
 import setfield
-from gbs_unit import get, read_fields, reset_framing
+from gbs_unit import (get, read_fields, reset_framing,
+                      reset_to_scaled_default)
 
 # Enough consecutive granules to cross several parity flips. The artefact
 # alternates on about one, so this is tens of chances to see it.
@@ -78,7 +79,7 @@ def capture_device():
 @pytest.fixture
 def framed(host, source):
     """A reset framing to walk away from, and a reset one left behind."""
-    assert reset_framing(host) is not None, "the framing never reset"
+    assert reset_to_scaled_default(host) is not None, "the framing never reset"
     yield
     get(host, "/freeze?on=0")
     reset_framing(host)

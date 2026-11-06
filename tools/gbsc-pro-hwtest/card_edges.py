@@ -476,7 +476,7 @@ def sweep_mode(host, dev, source, mode, allowance, keep_framing):
         return None, "never acquired, or never stopped re-solving"
     # AFTER the mode change, which repaints the source's default pattern.
     gbs_unit.mode_serv(source, "PATTERN CARD")
-    if not keep_framing and gbs_unit.reset_framing(host) is None:
+    if not keep_framing and gbs_unit.reset_to_scaled_default(host) is None:
         return None, "the framing never reset"
     # AFTER the reset, which puts the declared shape back to the raster's
     # default -- 4:3 on the bench modes, whose bars are our own blanking and

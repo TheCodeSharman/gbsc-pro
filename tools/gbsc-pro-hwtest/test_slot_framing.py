@@ -20,7 +20,7 @@ from gbs_unit import (acquired_and_settled, framing_matches, framing_of,
                       framing_settled, fs_dir,
                       fs_read, get, get_json, mode_serv, press,
                       read_fields, read_settings,
-                      reset_framing, wait_for, want_route)
+                      reset_to_scaled_default, wait_for, want_route)
 
 # A slot is a named copy of the framing table, so what it holds is a file of its
 # own rather than a record inside a shared one. docs/framing-presets.md
@@ -72,26 +72,12 @@ def select_slot(host, character):
 def reset_to_default(host):
     """The framing back to the engine's own default, on the SCALING route.
 
-    **A RESET TAKES THE STORED ROUTE WITH IT.** One /framing.txt record per
-    source holds the framing, the shape and the route, so forgetting the record
-    drops the source onto the default -- pass-through -- where there is no
-    capture window and /geometry reports a framing of zeros. Everything in this
-    file is about a framing, so the route is put back before one is read.
+    Everything in this file is about a framing, so a reset that hands the
+    source over is one to put the route back under and take again --
+    gbs_unit.reset_to_scaled_default() is that, and a bare reset_framing()
+    here answers the wrong question.
     """
-    # **THE ROUTE IS RE-ANSWERED ON A LATER PASS, so reading it straight after
-    # the reset is a race.** Asking the FRAMING instead settles it: a reset that
-    # lands on a framing is a reset on the scaling route, because pass-through
-    # reports a zero extent and `framing_settled()` refuses one. A reset that
-    # answers None is one to put the route back under and take again -- the
-    # engine drifted to pass-through seconds after a reset that had already
-    # reported 237/688, which read as an empty slot load moving the picture.
-    for _ in range(3):
-        landed = reset_framing(host)
-        if landed is not None:
-            return landed
-        scaled = want_route(host, False, tries=4, settle=25.0)
-        assert scaled, f"the source would not scale, so it has no framing: {scaled}"
-    return None
+    return reset_to_scaled_default(host)
 
 
 def tune_the_framing(host):
@@ -329,6 +315,17 @@ def change_source(where, host, command, lines, was=None):
             "STATUS_SYNC_PROC_VTOTAL") == lines or None,
         timeout=60.0, interval=2.0)
     assert counted, f"the source never settled on {lines} lines"
+
+    # **A SOURCE WITH NOTHING STORED IS PASSED THROUGH, AND PASS-THROUGH HAS NO
+    # CAPTURABLE REGION.** The arriving mode has no record yet, so a mode change
+    # into one pass-through can carry hands the source over -- where the input
+    # formatter is out of the circuit and its registers still hold the previous
+    # source's window. The region then never moves off `was` and the wait below
+    # reports the engine as not having solved, which is the opposite of what
+    # happened. Measured on the 640x480@60 leg: still 1101x624, the bench
+    # source's, after the count had reached 524. docs/rgbhv-bypass-trap.md
+    scaled = want_route(host, False, tries=4, settle=25.0)
+    assert scaled, f"the arriving source would not scale: {scaled}"
 
     if was is None:
         time.sleep(SETTLE_SECONDS)
