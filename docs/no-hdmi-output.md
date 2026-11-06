@@ -40,6 +40,42 @@ distinguish these:
    A power cycle — mains *and* USB, since USB backfeeds the rails — remains the
    fallback for a state the toggle does not clear.
 3. **The TV timed out** and dropped the input.
+4. **The link is not connected.** Which sounds beneath mentioning and has cost a
+   whole session, because the guidance below says the connector is the LAST
+   resort and that is right only while a cable is known to be IN.
+
+## TWO READINGS SAY "PHYSICAL LINK" AND NO CONFIGURATION FAULT CAN FAKE EITHER
+
+Reach for these before any raster or clock arithmetic, because they are cheap
+and they are decisive.
+
+**EVERY OUTPUT MODE BLACK IS NOT A CONFIGURATION FAULT.** `/output?res=` the
+whole list. A mode selection, a clock ceiling or a raster that cannot carry its
+own active width reaches SOME modes and not others -- that is what makes it a
+configuration fault. `720x480` costs 31.6 MHz against a 108 MHz ceiling and
+`1280x720` 86.8 MHz, so if those are dark alongside `1920x1080` there is
+nothing left to misconfigure.
+
+**AND THE OSD IS THE SECOND INSTRUMENT, BECAUSE IT IS NOT OUR PICTURE.**
+`Osd::OSD` is the STV9426's own overlay, generated on the board and keyed into
+the video at U13, DOWNSTREAM of the VDS -- so it rides to the sink whatever the
+capture window, the scale or the geometry are doing. `/menu?key=menu` opens it
+and answers the page it drew. **An open menu that does not reach the sink is
+not a picture fault**, and that is true whether the frame under it is black,
+green or correct.
+
+Measured 2026-11-07: a 449-line 70.157 Hz source, `state: acquired`, the
+console's `frame time lock` holding `in 70155 mHz, out 70156 mHz` so the VDS
+was feeding the encoder, `sync pad: away` then `driven` across the change,
+`s0_46` 0x7f, `DAC_RGBS_PWDNZ` 1, `STATUS_SYNC_PROC_HTOTAL` equal to
+`PLLAD_MD` -- six output modes dark, the OSD open and absent, and the HDMI
+cable out. **Four hypotheses were built and refuted on the bench before the
+connector was asked**, which is the cost of taking "seated stays seated" as
+covering a cable that was never in.
+
+**A `/getregs` THAT READS PERFECT IS WHAT THIS LOOKS LIKE**, so the register
+dump is not the instrument. The engine reports health because the engine IS
+healthy; everything it can see is downstream of nothing.
 
 **"IT IS THE ENCODER" IS THE STANDING WRONG ANSWER ON THE SCALING PATH.** Two
 occasions where it genuinely was the encoder bound how far that reaches, and
