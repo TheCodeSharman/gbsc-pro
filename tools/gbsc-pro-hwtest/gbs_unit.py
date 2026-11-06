@@ -63,6 +63,7 @@ class Console:
     """
 
     def __init__(self, host, timeout=5):
+        self._host = host
         self.lines = []
         self.status = []
         self.failure = None
@@ -111,10 +112,78 @@ class Console:
             self.lines.clear()
 
     def collect(self, seconds=2.5):
-        """Wait, then return the lines received since the last drain()."""
+        """Wait, then return the lines received since the last drain().
+
+        **SILENCE FROM A DEAD SOCKET IS NOT SILENCE FROM THE FIRMWARE**, and
+        the two are indistinguishable in the returned list -- so an empty
+        window with the pump stopped raises rather than reading as a route that
+        printed nothing. The `alive` property existed for callers to check and
+        no caller did.
+        """
         time.sleep(seconds)
         with self._lock:
-            return list(self.lines)
+            got = list(self.lines)
+        if got or self.alive:
+            return got
+        raise AssertionError(
+            "the console socket is closed, so this window is not evidence "
+            f"about what the firmware printed: {self.failure!r}")
+
+    def reopen(self, timeout=5):
+        """A fresh socket, forgetting what the old one held.
+
+        **THE UNIT RESETS A CLIENT, AND A FLASH WRITE IS WHEN.** Measured:
+        `/slot/set` blocks loop() long enough for an HTTP read to time out and
+        leaves the console with ConnectionResetError(104), so a window opened
+        before one is not evidence about what followed it. Call this after any
+        route that writes flash and before draining.
+        """
+        self.close()
+        self._stop = False
+        self.failure = None
+        self._buf = ""
+        with self._lock:
+            self.lines.clear()
+            self.status.clear()
+        self.ws = websocket.create_connection(
+            f"ws://{self._host}:81/", subprotocols=["arduino"], timeout=timeout
+        )
+        self._thread = threading.Thread(target=self._pump, daemon=True)
+        self._thread.start()
+
+    def expect(self, text, timeout=15.0, interval=0.25):
+        """The lines received since the last drain(), once one carries `text`.
+
+        **POLLED, NOT SLEPT.** The console is served from loop(), so when a
+        line arrives depends on what the loop is doing -- a route that reads
+        flash answers within a second on an idle unit and several on a busy
+        one. A fixed window reports a line that was printed as a line that was
+        not, which is the opposite of what a test about reporting wants to say.
+        """
+        deadline = time.monotonic() + timeout
+        reset = None
+        while True:
+            with self._lock:
+                got = list(self.lines)
+            if any(text in line for line in got):
+                return got
+            if not self.alive:
+                # The route under test reset the client, and whatever it printed
+                # went with the connection. Reported rather than retried: a
+                # fresh socket cannot carry a line already broadcast, so a
+                # caller must not read this as a route that said nothing.
+                reset = self.failure
+                break
+            if time.monotonic() >= deadline:
+                break
+            time.sleep(interval)
+        if reset is not None and not got:
+            raise AssertionError(
+                f"the unit reset the console before {text!r} could be read, so "
+                f"this window is not evidence about what it printed: {reset!r}. "
+                "A route that writes flash blocks loop() long enough to drop "
+                "the client. docs/known-issues.md")
+        return got
 
     def close(self):
         self._stop = True

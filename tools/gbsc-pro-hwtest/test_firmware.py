@@ -22,6 +22,7 @@ from gbs_unit import (
     field_spec,
     geometry_report,
     get,
+    locked_steadily,
     get_json,
     mode_serv,
     parse_timings,
@@ -1527,6 +1528,17 @@ def test_frozen_firmware_does_not_re_solve_for_a_source_mode_change(host, reques
     """
     assert _freeze_state(host) is not None, "unit has no /freeze support"
     where = request.config.getoption("--modeserv")
+
+    # THE DEPARTURE MODE IS SET, NOT INHERITED. A preceding case can leave the
+    # source already in WITNESS_MODE, and the change below then moves nothing --
+    # which the count check catches as "the source did not change", reporting a
+    # test that proved nothing as a failure.
+    reply = mode_serv(where, BENCH_MODE_COMMAND)
+    if not reply.startswith("OK"):
+        pytest.skip(f"the source refused {BENCH_MODE_COMMAND}: {reply}")
+    assert wait_for(lambda: locked_steadily(host), timeout=60.0), (
+        f"the source never settled on {BENCH_MODE_COMMAND}, so there is no "
+        "state to freeze")
 
     before = read_fields(host, ENGINE_WITNESSES + ("STATUS_SYNC_PROC_VTOTAL",))
     assert before and all(before.values()), (

@@ -105,19 +105,19 @@ OUTPUT = "1080p"
 # horizontal edges but inset, and cuts the source's first and last rows.
 # docs/investigations/full-screen-framing-on-the-vesa-modes.md
 DEFICITS = {
-    # ACCEPTED rather than chased: it is one column at one edge, and it varies
-    # between acquisitions of the same source -- 2 columns of margin with both
-    # green edges on screen in one, the left column lost in another.
-    "separate sync, scaled":
-        "a column or two at the left, varying between acquisitions",
     # The capture window is right now -- 1019 samples against a 1017-sample
-    # picture, the same as the separate leg takes. What is left is one edge off
-    # the picture, as on the separate leg, and a shake in the top rows that the
-    # separate leg does not have.
+    # picture. What is left is one edge off the picture and a shake in the top
+    # rows, which the separate leg -- now flush -- does not have.
     # docs/investigations/the-risc-pc-composite-sync-is-not-serrated.md
     "composite sync, scaled":
         "one edge shifted off the picture, and the top rows move by sd 1.1 to "
         "1.6 px",
+    # The Wii's own 51 black rows, which the filed entry walked every channel
+    # register against in pass-through without reaching them, and which the
+    # scaling leg shows at the same size: 51 at the bottom, 1 at the top, none
+    # at either side. docs/known-issues.md, "51 rows of black at the bottom".
+    "sync on green, scaled":
+        "51 rows at the bottom, 1 at the top, both sides flush",
     # The open entry in docs/known-issues.md: it acquires, holds, and the card
     # is nowhere on the emitted frame.
     "composite sync, passed through":

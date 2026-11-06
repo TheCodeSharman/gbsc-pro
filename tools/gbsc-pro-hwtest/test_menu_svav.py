@@ -18,7 +18,7 @@ import sys
 import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from gbs_unit import (get, get_json, menu_seek, menu_selected, setting,
+from gbs_unit import (MENU_ROWS, get, get_json, menu_seek, menu_selected, setting,
                       wait_for)
 
 SYSTEM_SETTINGS = "System Settings"
@@ -57,8 +57,20 @@ def open_level(host):
 
 
 def shown(host, label):
-    """A row's value, from wherever the cursor is in this level."""
-    for _ in range(12):
+    """A row's value, from wherever the cursor is in this level.
+
+    **THE CURSOR DOES NOT WRAP, SO THE WALK GOES UP FIRST.** The page draws
+    three rows about the cursor, so a row is only readable once the cursor is
+    near it -- and walking down alone cannot reach one ABOVE. Default is row 7
+    of this level's 8 and the teardown and Default cases both leave the cursor
+    there, so Bright on row 4 was unreachable and read as absent from the level.
+    """
+    for _ in range(MENU_ROWS):
+        at = menu_selected(page(host))
+        if menu_selected(page(host, "up")) == at:
+            break
+
+    for _ in range(MENU_ROWS):
         for row in page(host)["rows"]:
             if row["label"] == label:
                 return row["value"]
