@@ -26,6 +26,7 @@ Those are fixed. These are not, and each is a real reading.
 | `test_the_picture_fills_the_frame[sync-on-green-scaled]` | 51 rows at the bottom on the Wii | the filed entry walked every channel register against those rows in pass-through and reached none; the scaling leg shows the same size |
 | `test_a_slot_route_says_what_it_did` | the console carries nothing across `/uc?4` | the unit RESETS the client -- see below |
 | `test_one_slot_holds_a_framing_for_each_source` | the capturable region does not move to the arriving source | a 640x480@60 leg, which takes pass-through by default and has no capture window |
+| `test_one_source_is_framed_the_same_on_every_acquisition` | the engine solved IDENTICALLY three times and the emitted frames differ by 7.1% of pixels against a 4.6% floor | the open transmitted-window question, put downstream of the board by the overlay measurement |
 
 **THE ZOOM-SHEAR GUARD IS BLIND TO THE FAULT IT GUARDS.** The case sets the
 known-bad even memory window and asserts the score can SEE it; the score
