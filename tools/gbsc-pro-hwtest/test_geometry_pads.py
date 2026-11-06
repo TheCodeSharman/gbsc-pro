@@ -103,12 +103,32 @@ def units_for(pixels, scale_reg, granularity=HORIZONTAL_GRANULE):
 # stale.
 SCALE_UNITY = 1024
 
-# Tv5725::SyncProcessor::RetimeOriginSamples: how far behind the retime window's
-# stop the retimed pulse sits, in ADC samples. Measured, not derived.
-RETIME_ORIGIN_SAMPLES = 63
+# **THE RETIME ORIGIN IS NOT PINNED TO A VALUE HERE, AND IT USED TO BE.** It
+# was one constant plus a tolerance of 4, and SyncProcessor::retimeStopFor()
+# has since grown two terms the constant could not see -- the source's video
+# lag, which is a count of ADC samples growing with sampling density, and what
+# the origin gains at oversampling ratio one. The test then reported 18 samples
+# of error on a correct unit.
+#
+# A derivation nothing has settled must not be copied into a test: the exact
+# origin is the open question in docs/known-issues.md, "The retime origin is
+# calibrated for one sampling density, and no derivation is established", and
+# one document can be corrected where n copies cannot. What is asserted below
+# is the settled part -- that the stop is the pulse's own position plus a small
+# ORIGIN, rather than a fraction of the line or a railed value.
+RETIME_ORIGIN_FLOOR = firmware_constants.integer(
+    firmware_constants.SYNC_PROCESSOR_H, "RetimeOriginSamples")
 
-# The duty is read a pass after the stop is written and STATUS_SYNC_PROC_HLOW_LEN
-# wobbles by about a sample either way, so the two cannot be equal.
+# The headroom above that floor for the two terms this does not compute. The
+# undecimated term is exact; the lag is about 14 samples at the bench's 4.30
+# samples per source pixel and grows with density, so this is sized to carry it
+# on the modes the suite runs rather than derived.
+RETIME_ORIGIN_HEADROOM = firmware_constants.integer(
+    firmware_constants.SYNC_PROCESSOR_H, "UndecimatedOriginSamples") + 40
+
+# The duty is read a pass after the stop is written and
+# STATUS_SYNC_PROC_HLOW_LEN wobbles by about a sample either way, so the floor
+# cannot be an exact lower bound.
 RETIME_TOLERANCE_SAMPLES = 4
 
 OutputAxis = collections.namedtuple(
@@ -1775,11 +1795,16 @@ def test_the_sampling_divider_is_one_quantity_in_three_registers(
     # by about the same again.
     low = read_named(host, "STATUS_SYNC_PROC_HLOW_LEN")
     assert low, "STATUS_SYNC_PROC_HLOW_LEN came back 0, so there is no pulse"
-    want = divider - low + RETIME_ORIGIN_SAMPLES
-    assert abs(retime - want) <= RETIME_TOLERANCE_SAMPLES, (
-        f"SP_RT_HS_SP is {retime}, want {want} for PLLAD_MD {divider} and a "
-        f"sync width of {low}. The capture counter's origin is not where the "
-        f"source's sync pulse is.")
+    origin = retime - divider + low
+    assert RETIME_ORIGIN_FLOOR - RETIME_TOLERANCE_SAMPLES <= origin \
+            <= RETIME_ORIGIN_FLOOR + RETIME_ORIGIN_HEADROOM, (
+        f"SP_RT_HS_SP {retime} puts the capture counter's origin {origin} "
+        f"samples after the source's pulse, for PLLAD_MD {divider} and a sync "
+        f"width of {low}. The stop lays the retimed pulse on the incoming one, "
+        f"so the origin is a small count of samples whatever the duty -- "
+        f"93% of the divider is only right where the pulse takes 7% of the "
+        f"line, and a shipped table's 68 against a 2180 divider is what this "
+        f"catches.")
 
     # A stop past the end of the line is inert -- the picture does not move at
     # any value and every reading around it freezes, which reads as a control

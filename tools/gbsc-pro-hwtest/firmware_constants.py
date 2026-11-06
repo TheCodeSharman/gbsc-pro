@@ -28,6 +28,7 @@ ADC_H = os.path.join(SRC, "Adc.h")
 SAMPLING_CLOCK_H = os.path.join(SRC, "SamplingClock.h")
 INPUT_FORMATTER_H = os.path.join(SRC, "InputFormatter.h")
 VIDEO_SOURCE_LINE_H = os.path.join(SRC, "VideoSourceLine.h")
+SYNC_PROCESSOR_H = os.path.join(SRC, "SyncProcessor.h")
 
 # The integer suffixes are part of the value's spelling, not of the value: an
 # unsigned constant is written `162000000u` and a reader that insists on bare
