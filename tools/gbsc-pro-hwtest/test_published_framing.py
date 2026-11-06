@@ -16,6 +16,8 @@ import time
 
 import pytest
 
+import firmware_constants
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from gbs_unit import (handed_over, mode_serv, read_fields, reset_framing,
                       wait_for, want_route)
@@ -33,7 +35,26 @@ VESA_ACTIVE_LINES = 480
 # The horizontal window is a fraction of a line measured in ADC samples, so it
 # rounds; the vertical is whole lines of the standard's own frame and does not.
 HORIZONTAL_TOLERANCE_UNITS = 3
+# One, for the line the vertical extent deliberately carries past the last
+# active line: a count of lines reaching the END of the last one is a line
+# longer, which SourceTiming::lineStep() adds.
 VERTICAL_TOLERANCE_LINES = 1
+
+# **THE VERTICAL REGISTERS ARE IN THE COUNTER'S FRAME, NOT THE RASTER'S**, and
+# two figures separate them. The frame counter zeroes a fixed number of units
+# after the vsync pulse's leading edge, where the raster counts from the edge
+# itself; and the window opens a margin before the picture and closes one after
+# it, so the aperture can show the whole of the partly-filled first and last
+# lines. Both are taken from the firmware rather than restated, being
+# calibration figures rather than the placement under test.
+#
+# Measured on this mode: IF_VB_SP 26 and IF_VB_ST 511, which is the raster's
+# own 35 and 516 through those two -- and /geometry holds 35 exactly. A test
+# reading the register as the raster's line reports nine lines of error on a
+# mode the card matrix measures FLUSH.
+VERTICAL_LEAD_UNITS = firmware_constants.integer(
+    firmware_constants.VIDEO_SOURCE_LINE_H, "FrameOriginUnits")
+VERTICAL_MARGIN_UNITS = firmware_constants.axis("Vertical")[1]
 
 # Where a source runs no raster the standards state, the window is placed across
 # the envelope of what real sources put on a line. AKF50's 320x256 is such a
@@ -104,13 +125,16 @@ def test_the_vertical_window_is_the_rasters_own_active_lines(host, vesa_source):
     at = read_fields(host, FIELDS)
     assert at, "no register read came back"
 
-    first = at["IF_VB_SP"]
-    lines = at["IF_VB_ST"] - at["IF_VB_SP"]
+    first = at["IF_VB_SP"] + VERTICAL_LEAD_UNITS + VERTICAL_MARGIN_UNITS
+    last = at["IF_VB_ST"] + VERTICAL_LEAD_UNITS - VERTICAL_MARGIN_UNITS
 
     assert abs(first - VESA_FIRST_LINE) <= VERTICAL_TOLERANCE_LINES, (
-        f"capture starts on line {first}, not the raster's {VESA_FIRST_LINE}")
-    assert abs(lines - VESA_ACTIVE_LINES) <= VERTICAL_TOLERANCE_LINES, (
-        f"capture runs {lines} lines, not the raster's {VESA_ACTIVE_LINES}")
+        f"picture starts on line {first}, not the raster's {VESA_FIRST_LINE} "
+        f"(IF_VB_SP {at['IF_VB_SP']} through a lead of {VERTICAL_LEAD_UNITS} "
+        f"and a margin of {VERTICAL_MARGIN_UNITS})")
+    assert abs((last - first) - VESA_ACTIVE_LINES) <= VERTICAL_TOLERANCE_LINES, (
+        f"picture runs {last - first} lines, not the raster's "
+        f"{VESA_ACTIVE_LINES} (IF_VB_ST {at['IF_VB_ST']})")
 
 
 @pytest.mark.source_mode
