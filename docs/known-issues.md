@@ -20,13 +20,25 @@ Those are fixed. These are not, and each is a real reading.
 
 | case | what it reads | why it is not fixed here |
 |---|---|---|
-| `test_card_framing` x5 | the matrix table above | the near-edge placement, and 640x512@50 composite not holding still |
-| `test_published_framing` x2 | capture at 12.25% of the line against DMT's 18.00%, and line 26 against 35, on 640x480@60 SCALED | the same placement; 73 units of a 1273-unit line |
+| `test_card_framing` x7 | the matrix table below | the near-edge placement, 640x512@50 composite not holding still, and two cases that reach no framing verdict |
 | `test_zoom_shear` x1 | the known-bad even memory window scores 0.0000/0.0000, identical to clean | the instrument, not the video -- see below |
 | `test_the_picture_fills_the_frame[sync-on-green-scaled]` | 51 rows at the bottom on the Wii | the filed entry walked every channel register against those rows in pass-through and reached none; the scaling leg shows the same size |
 | `test_a_slot_route_says_what_it_did` | the console carries nothing across `/uc?4` | the unit RESETS the client -- see below |
 | `test_one_slot_holds_a_framing_for_each_source` | the capturable region does not move to the arriving source | a 640x480@60 leg, which takes pass-through by default and has no capture window |
 | `test_one_source_is_framed_the_same_on_every_acquisition` | the engine solved IDENTICALLY three times and the emitted frames differ by 7.1% of pixels against a 4.6% floor | the open transmitted-window question, put downstream of the board by the overlay measurement |
+
+**THE NEAR-EDGE PLACEMENT GAP WAS TWO ARTEFACTS, AND `test_published_framing`
+IS GREEN.** Its sharpest statement -- capture at 12.25% of the line against
+DMT's 18.00%, and line 26 against 35 -- was one reading of each kind and
+neither was a placement. The horizontal figure was read in PASS-THROUGH, where
+the input formatter is out of the circuit and holds the previous source's
+window; on the scaling route the same source is captured at 17.91% against
+18.00% and 80.13% against 80.00%. The vertical figure was read in the wrong
+frame: `IF_VB_SP` counts from the frame counter's origin, `FrameOriginUnits`
+after the vsync pulse's leading edge, and the window opens `captureMargin`
+before the picture -- 26 through a lead of 7 and a margin of 2 is the raster's
+own 35, which is what `/geometry` holds. `/geometry` reports which authority
+matched now, so neither reading can be taken blind again.
 
 **THE ZOOM-SHEAR GUARD IS BLIND TO THE FAULT IT GUARDS.** The case sets the
 known-bad even memory window and asserts the score can SEE it; the score
@@ -1556,11 +1568,38 @@ on that account rather than being judged at all.
 
 | mode | separate | composite |
 |---|---|---|
-| 240x352@70 | near edge off, 8 at the far | near edge off by 5.3, 6 rows at the near, far edge off |
+| 240x352@70 | near edge off, 10 at the far | near edge off by 5.3, 6 rows at the near, far edge off |
 | 320x256@50 | **flush** | **flush** |
-| 640x480@60 | **flush** | **flush** |
-| 640x512@50 | near edge off by 7 | **the picture moved in 35 of 40 frames, worst -260 rows**, plus both edges |
-| 800x600@60 | **flush** | far edge off by 2.4 |
+| 640x480@60 | **flush** | the route cannot be pressed -- see below |
+| 640x512@50 | near edge off, 9 at the far | **the picture moved in 25 of 40 frames, worst -252 rows**, plus both edges |
+| 800x600@60 | near edge off by 2.4 | never acquired -- see below |
+
+**RE-MEASURED 2026-11-06 AFTER THE RESET WAS FIXED, AND THREE OF THE TEN ARE
+FLUSH.** The run above it was the hand-measured set; this is the matrix judging
+every case itself, 7 failed and 3 passed in 11:05. The four stable readings are
+the two 320x256@50 cases, 640x480@60 separate and 240x352@70 composite, whose
+figures are identical to the hand-measured ones.
+
+**Two of the seven are not framing verdicts at all**, and a case failing there
+must not be read as an edge:
+
+- **640x480@60 composite never settles.** `changing()` is true for about half
+  of a four-second cycle, so the route press is refused with `a mode change is
+  still working through` after three tries of 20 s and no frame is captured.
+  The mechanism is measured --
+  `investigations/the-composite-sync-count-re-arms-its-own-solve.md`, "The
+  residue reaches a second mode" -- and the same mode on separate sync is
+  flush, so the sync arrangement is the variable and not the mode.
+- **800x600@60 composite reports `never acquired`.** It runs last, straight
+  after the 640x512@50 composite case that does not hold still, which is the
+  shape of the stuck-case poisoning recorded below rather than a mode that
+  cannot be acquired. It is not established as its own reading.
+
+The two remaining movements are inside the run-to-run variation this table
+already records: 8 at the far edge against 10 on 240x352@70 separate, and
+800x600@60 separate reading 2.4 at the near edge where the hand measurement
+read flush -- a margin of 2 fails `card_edges.FLUSH` by one pixel, which is the
+first bullet below.
 
 The table is the suite's standing record, so a case passing is the gap having
 closed and a case not in it failing is a regression. **`test_card_framing`

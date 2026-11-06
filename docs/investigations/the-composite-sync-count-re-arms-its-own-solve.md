@@ -170,6 +170,60 @@ It costs the working sources nothing: the Wii at 480p on `ypbpr` reads present
 44 of 45 polls at mean luma 201.22 with green on three edges, and the RiscPC on
 separate sync 33 of 35 at 82.03 with green on all four.
 
+## The residue reaches a second mode, and the held clock oscillates with it
+
+Measured 2026-11-06 on `vga` at **640x480@60** with `SYNC 1`, after a mode
+change from the bench 320x256@50 and a `/sc?~`. The same mode on `SYNC 0`
+holds and passes the card acceptance flush, so the mode is not the variable.
+
+`/geometry` alternates on a period of about four seconds and never holds, for
+the whole of an 81 s watch:
+
+```
++12.2s changing=False state=acquired  raster=dmt   routeStored=True
++14.2s changing=True  state=absent    raster=none  routeStored=False
++16.2s changing=False state=acquired  raster=dmt   routeStored=True
+```
+
+The console names the arm each time, and the counts are the residue class
+rather than the doubled one -- 922, 2048 and 573 against a solved 525, which is
+1.756, 3.90 and 1.09 times it and inside no multiple's tolerance:
+
+```
+52.50  measure: start, TIMINGS change (contradicted count), 922 lines, solved 525
+53.19  measured: 922 lines x 30.76 Hz -> line rate 28362, clock 2038@31512 htotal 2038
+54.01  vertical interval: 922 lines, the formatter followed it in 0 of 8 reading 524, post coast 6
+54.52  measured: 525 lines x 60.00 Hz -> line rate 31500, clock 2040@15625 htotal 1197 UNLATCHED
+54.75  installing: divider from line rate 31526, doubled 0 -> 1442
+56.57  measure: start, TIMINGS change (contradicted count), 2048 lines, solved 525
+57.59  measured: 573 lines x 30.76 Hz -> line rate 17626, clock 2038@31526 htotal 2038
+```
+
+**The formatter reads the frame correctly throughout** -- 524 in 8 of 8
+readings on every pass, which is the source's own 525-line frame zero based --
+so the engine holds a correct count beside the one it acts on.
+
+**AND THE HELD CLOCK ALTERNATES BETWEEN TWO LINE-RATE BELIEFS**, one of them
+the PREVIOUS mode's: `clock 2038@31512` on the contradicted pass and
+`clock 2040@15625` on the pass after it, 15625 being the bench 320x256@50 line
+rate the source left. The engine prints `UNLATCHED` on the second itself, and
+the registers agree -- `PLLAD_MD` 2040 against `STATUS_SYNC_PROC_HTOTAL` 1197,
+with `SP_SOG_MODE` 1 and coast 7/6. A divider sized at 15625 for a source
+running 31500 is one the processor cannot count the source through, which is
+the state every contradicted reading above is taken in.
+
+So the arm and the clock are a loop rather than two faults: the measure runs
+through a divider belonging to the mode that left, the count it gets is refused
+by the formatter, the re-measure installs the right divider, and the next pass
+is back on the old one. Which of the two writes 2040@15625 is not established.
+
+**IT REACHES THE ACCEPTANCE SUITE AS A REFUSED PRESS, NOT AS A FRAMING.**
+`changing()` is true for about half of every cycle, so
+`test_card_framing[X640Y480C256F60-composite]` fails at
+`the route cannot be pressed: a mode change is still working through` after
+three tries of 20 s, before it captures a frame. A case failing there is this
+and not a near edge.
+
 ## Refuted: the field-rate measurement reads a line-derived signal
 
 `known-issues.md` recorded the field rate reading 3937.58 Hz against a line rate
