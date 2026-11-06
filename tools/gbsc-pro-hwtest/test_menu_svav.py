@@ -78,10 +78,16 @@ def shown(host, label):
     raise AssertionError(f"{label} is not a row of this level")
 
 
-def press_until(host, label, want, key, timeout=30.0):
-    """Press until the row reads `want`. One press is queued at a time, so
-    presses sent faster than loop() consumes them coalesce -- and a press made
-    while a preset is loading waits behind it."""
+def press_until(host, label, want, key, timeout=30.0, interval=0.1):
+    """Press until the row reads `want`.
+
+    **ONE PRESS IS QUEUED AT A TIME**, so presses sent faster than loop()
+    consumes them coalesce -- and a press whose ACT takes seconds needs an
+    interval to match. A row that merely steps a value is consumed within a
+    loop pass; Compatibility re-applies the preset, and hammering a TOGGLE
+    every 100 ms across one flips it an unknown number of times and lands
+    wherever the last consumed press left it.
+    """
     seek(host, label)
 
     def arrived():
@@ -90,7 +96,7 @@ def press_until(host, label, want, key, timeout=30.0):
         page(host, key)
         return None
 
-    return wait_for(arrived, timeout=timeout, interval=0.1)
+    return wait_for(arrived, timeout=timeout, interval=interval)
 
 
 def brightness_on_flash(host):
@@ -148,7 +154,12 @@ def test_default_returns_the_three_picture_controls_and_keeps_them(
 def test_smoothing_needs_the_doubler_it_smooths(host, preset_save, level):
     # Smoothing is a property of the doubled line, so the row does nothing while
     # the doubler is out -- which is the chain's gate too.
-    assert shown(host, "DoubleLine") == "1X", "the doubler was left on"
+    #
+    # SET rather than asserted: the row is a toggle and the level's own teardown
+    # does not reach it, so a case that ended with the doubler in left this
+    # failing on a precondition it never established.
+    assert press_until(host, "DoubleLine", "1X", "ok"), \
+        "the doubler would not come out, so Smooth has no gate to test"
 
     seek(host, "Smooth")
     before = shown(host, "Smooth")
@@ -204,11 +215,16 @@ def test_compatibility_toggles_and_reloads(host, source, preset_save, preset_loa
 
     pressed = page(host, "ok")
     assert pressed["queue"] == "uc"
-    assert press_until(host, "Compatibility", after, "ok")
+    # A PRESS A PRESET LOAD APART. The act takes seconds, so a toggle pressed
+    # every 100 ms flips an unknown number of times and lands wherever the last
+    # consumed press left it.
+    assert press_until(host, "Compatibility", after, "ok",
+                       timeout=90.0, interval=3.0)
     assert wait_for(lambda: acquired(host) or None, timeout=60.0), \
         "the source never came back"
 
-    assert press_until(host, "Compatibility", before, "ok")
+    assert press_until(host, "Compatibility", before, "ok",
+                       timeout=90.0, interval=3.0)
     assert wait_for(lambda: acquired(host) or None, timeout=60.0)
 
 

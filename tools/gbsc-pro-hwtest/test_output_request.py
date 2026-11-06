@@ -11,7 +11,12 @@ import time
 import pytest
 
 from gbs_unit import (OUTPUT_COMMANDS, OUTPUT_FRAME_LINES, acquired_and_settled,
-                      choose_output, get, read_named, wait_for)
+                      choose_output, get, read_named, wait_for, want_route)
+
+# A mode change takes seconds to reach the engine, and `state` is stale across
+# one -- so a settle check taken straight after the command answers about the
+# source that just left.
+SOURCE_SETTLE_SECONDS = 12.0
 
 BENCH_MODE = "X320 Y256 C256 F50"
 OTHER_MODE = "X640 Y480 C256 F60"
@@ -36,7 +41,19 @@ def raster_carries(host, output, timeout=30.0):
 @pytest.mark.source_mode
 def test_one_output_request_lands_after_a_source_mode_change(host, source, preset_save, modeserv):
     modeserv(f"MODE {OTHER_MODE}")
-    assert acquired_and_settled(host), f"{OTHER_MODE} never acquired"
+    time.sleep(SOURCE_SETTLE_SECONDS)
+    assert wait_for(lambda: acquired_and_settled(host), timeout=60.0), \
+        f"{OTHER_MODE} never acquired"
+
+    # **ON THE SCALING ROUTE, where a raster exists to carry the request.**
+    # 525 lines at 60 Hz suits pass-through and a source with nothing stored
+    # takes it, and `VideoSourceAcquisition::setOutputResolution()` returns
+    # early there by design -- the resolution is where the output returns when
+    # the source stops qualifying, so the VDS raster is not rewritten and the
+    # request reads as refused. docs/rgbhv-bypass-trap.md
+    scaled = want_route(host, False, tries=4, settle=SOURCE_SETTLE_SECONDS)
+    assert scaled, f"{OTHER_MODE} would not scale, so no raster carries a request: {scaled}"
+
     before = read_named(host, "VDS_VSYNC_RST")
     other = "720p" if before != OUTPUT_FRAME_LINES["720p"] - 1 else "1080p"
     try:
