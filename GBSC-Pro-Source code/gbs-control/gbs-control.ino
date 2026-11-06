@@ -6910,6 +6910,7 @@ void startWebserver()
                  "\"lineRateHz\":%lu,\"lowLineRate\":%s,"
                  "\"aspect\":%u,\"shaping\":%s,\"shaped\":%s,"
                  "\"route\":\"%s\",\"routeStored\":%s,"
+                 "\"raster\":\"%s\","
                  "\"changing\":%s,"
                  "\"present\":%s,\"state\":\"%s\"}"),
             geometry.originUnitsOn(Tv5725::AxisHorizontal),
@@ -6955,6 +6956,13 @@ void startWebserver()
             // default, so `route` alone cannot say whether a choice was made.
             geometry.routeWanted().passesThrough() ? "passThrough" : "scale",
             geometry.storedRouteChosen() ? "true" : "false",
+            // Which authority states the raster the capture window was placed
+            // from, or "none" where the source matched no row and was placed
+            // across the envelope instead. The proportions alone cannot say:
+            // two authorities state one resolution and spend its blanking
+            // differently, so a window landing off every standard's numbers is
+            // otherwise indistinguishable from a match nobody expected.
+            geometry.sourceTiming().authority(),
             // Whether a mode change is still working through. setApplyAspect()
             // and setAspect() re-solve and REVERT themselves where the solve
             // refuses, so a press taken here is accepted and moves nothing --

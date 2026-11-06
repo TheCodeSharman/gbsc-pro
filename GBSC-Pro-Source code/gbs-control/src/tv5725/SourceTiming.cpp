@@ -189,6 +189,19 @@ SourceTiming SourceTiming::matching(const SourceKey &measured)
     return timing;
 }
 
+const char *SourceTiming::authority() const
+{
+    // The row's address says which table answered, the arrays being the whole
+    // of how the authorities are kept apart.
+    if (raster_ >= Cea && raster_ < Cea + CeaCount)
+        return "cea";
+    if (raster_ >= Dmt && raster_ < Dmt + DmtCount)
+        return "dmt";
+    if (raster_ >= Acorn && raster_ < Acorn + AcornCount)
+        return "acorn";
+    return "none";
+}
+
 const SourceTiming::Raster *SourceTiming::lookUp(const SourceKey &measured)
 {
     if (!measured.valid() || measured.syncWidth() <= 0.0f)

@@ -34,6 +34,13 @@ public:
     float fieldRateHz() const;
     bool published() const;
 
+    // Which authority states the raster that matched -- "cea", "dmt", "acorn",
+    // or "none". Two authorities can state one resolution and spend its
+    // blanking differently, and a source matching neither is placed across the
+    // envelope instead, so nothing else distinguishes a capture window placed
+    // off every standard's numbers from one placed on a row nobody expected.
+    const char *authority() const;
+
     // Where the picture starts and how far it runs, as a fraction of the whole
     // line on the horizontal axis and of the whole frame on the vertical, both
     // counted from the sync pulse's leading edge. Where the COUNTER's origin

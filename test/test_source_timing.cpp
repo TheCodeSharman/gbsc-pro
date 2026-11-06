@@ -6,6 +6,8 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest/doctest.h>
 
+#include <cstring>
+
 #include "CheckNear.h"
 #include "fake/Wire.h"
 
@@ -199,6 +201,32 @@ TEST_CASE("a standard's raster wins over a mode file describing the same one")
 
     REQUIRE(akf.published());
     CHECK_NEAR(akf.activeStart(AxisHorizontal), 144.0f / 800.0f, 0.0005f);
+}
+
+TEST_CASE("the raster that matched names the authority that states it")
+{
+    // Which table answered is not derivable from the proportions it gave. Two
+    // authorities state 640x480@60 six pixels apart on the picture start, and a
+    // source matching neither is placed across the envelope instead -- so a
+    // capture window landing off every standard's numbers is indistinguishable
+    // from a match on a row nobody expected until the match itself is reported.
+    SourceTiming cea = SourceTiming::matching(
+        SourceKey(525, 59.94f, 62.0f / 858.0f, SourceKey::Negative, SourceKey::Negative));
+    SourceTiming dmt = SourceTiming::matching(
+        SourceKey(525, 59.94f, 96.0f / 800.0f, SourceKey::Negative, SourceKey::Negative));
+    SourceTiming acorn = SourceTiming::matching(
+        SourceKey(312, 50.08f, 36.0f / 512.0f, SourceKey::Positive, SourceKey::Positive));
+
+    CHECK(std::strcmp(cea.authority(), "cea") == 0);
+    CHECK(std::strcmp(dmt.authority(), "dmt") == 0);
+    CHECK(std::strcmp(acorn.authority(), "acorn") == 0);
+}
+
+TEST_CASE("a source matching no raster names no authority")
+{
+    SourceTiming measured(50.08f);
+
+    CHECK(std::strcmp(measured.authority(), "none") == 0);
 }
 
 // VESA DMT 640x350@85 and 640x400@85 share one horizontal raster, one frame of
