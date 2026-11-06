@@ -17,7 +17,8 @@ import time
 import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from gbs_unit import mode_serv, read_fields, wait_for, want_route
+from gbs_unit import (handed_over, mode_serv, read_fields, reset_framing,
+                      wait_for, want_route)
 
 # VESA DMT 640x480@60, as the standard states it: 800 pixels a line, active
 # video from 144 to 784; 525 lines a frame, active from 35 to 515.
@@ -110,6 +111,27 @@ def test_the_vertical_window_is_the_rasters_own_active_lines(host, vesa_source):
         f"capture starts on line {first}, not the raster's {VESA_FIRST_LINE}")
     assert abs(lines - VESA_ACTIVE_LINES) <= VERTICAL_TOLERANCE_LINES, (
         f"capture runs {lines} lines, not the raster's {VESA_ACTIVE_LINES}")
+
+
+@pytest.mark.source_mode
+def test_a_reset_lands_on_a_source_it_hands_over(host, vesa_source):
+    """The reset forgets the route with the framing, so a source pass-through
+    can carry has no framing afterwards -- and that IS where the reset landed.
+
+    One /framing.txt record per source holds both, and a source with nothing
+    stored is passed through. Waiting for a framing to settle therefore asks the
+    reset to leave behind the record it exists to forget: measured on this mode,
+    /geometry reports zeros at every read from 1 s to 12 s afterwards, and
+    reset_framing() answered None for the whole 20 s window. That blocked eight
+    of the ten acceptance cases in test_card_framing before they measured
+    anything.
+    """
+    landed = reset_framing(host)
+
+    assert landed is not None, (
+        "the reset reported no landing on a source it hands over")
+    assert handed_over(host), (
+        "the source was not handed over, so this is not the case under test")
 
 
 # **THE ENVELOPE CASE HAS LEFT THIS FILE**, because no bench source can reach

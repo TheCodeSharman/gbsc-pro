@@ -711,6 +711,27 @@ def choose_aspect(host, wanted, tries=4, settle=20.0):
                           "every shape -- clear it with /framing/full?on=0")
 
 
+def forgotten_framing(host):
+    """Where a reset lands on a source it hands over: nowhere, which is the
+    landing. None while the scaler still has the source.
+
+    One /framing.txt record per source holds the framing AND the route, so the
+    reset forgets both -- and a source whose line rate pass-through can carry
+    then has no capture window to describe. /geometry reports a framing of zeros
+    for ever: measured on 640x480@60 at every read from 1 s to 12 s after the
+    reset, with both ROUTE_IN_FORCE fields 1.
+
+    The route IN FORCE is what tells that from the transient zeros a scaling
+    source shows while the solve adopts its default. The reset asks for
+    pass-through on a 15 kHz source too and the engine refuses it, so the wanted
+    route reads passThrough there for ever while the framing settles on the
+    solve's own default -- measured 2153/6249 by 1.5 s with both fields 0.
+    """
+    if not handed_over(host):
+        return None
+    return framing_of(get_json(host, "/geometry")[1])
+
+
 def reset_framing(host, expect=None, timeout=20.0):
     """Put the engine's framing back to default. Reports where it landed, None
     if it did not land at all.
@@ -723,6 +744,10 @@ def reset_framing(host, expect=None, timeout=20.0):
     against and this waits for the framing to hold still. Pass `expect` -- what
     an earlier reset landed on -- and it waits for exactly that instead, which
     is what catches a reset that answers 200 and does nothing.
+
+    A source the reset hands over has no framing to hold still, and
+    forgotten_framing() is that landing: waiting for one asks the reset to leave
+    behind the record it exists to forget.
     """
     status, _ = get(host, f"/sc?{RESET_COMMAND}")
     if status != 200:
@@ -733,7 +758,8 @@ def reset_framing(host, expect=None, timeout=20.0):
                                     expect) or None,
             timeout=timeout)
         return expect if landed else None
-    return wait_for(lambda: framing_settled(host), timeout=timeout)
+    return wait_for(lambda: framing_settled(host) or forgotten_framing(host),
+                    timeout=timeout)
 
 
 def restore_bench(host, unfreeze, reset, attempts=3):
@@ -1112,6 +1138,26 @@ def passed_through(host):
     """
     body = geometry_report(host)
     return None if body is None else body.get("route") == "passThrough"
+
+
+# The two fields that say which way video is actually going: both 1 in
+# pass-through, both 0 on the scaling path. docs/rgbhv-bypass-trap.md
+ROUTE_IN_FORCE = ("DAC_RGBS_BYPS2DAC", "OUT_SYNC_SEL")
+
+
+def handed_over(host):
+    """Whether video is going round the scaler, read off the path rather than
+    off the route /geometry reports wanting. None where the unit did not answer.
+
+    **THE WANTED ROUTE IS NOT THE ONE IN FORCE.** A source with nothing stored
+    is WANTED passed through, and a 15 kHz source cannot be displayed that way,
+    so passed_through() reads passThrough for the whole time the bench source is
+    being scaled. A measurement asks these two.
+    """
+    at = read_fields(host, ROUTE_IN_FORCE)
+    if not at:
+        return None
+    return at["DAC_RGBS_BYPS2DAC"] == 1 and at["OUT_SYNC_SEL"] == 1
 
 
 def want_route(host, through, tries=3, settle=20.0):
