@@ -5570,7 +5570,15 @@ void handleType2Command(char argument)
         case 'S':
             // The engine owns it and the byte is how it survives a power
             // cycle, so the engine is asked first and mirrored afterwards.
-            geometry.setApplyAspect(!geometry.appliesAspect());
+            //
+            // setApplyAspect() re-solves and reverts itself where the solve
+            // refuses, so a press taken while a mode change is working through
+            // moves nothing -- and a silent no-op leaves someone pressing and
+            // believing it worked. /geometry's `changing` is what says so
+            // before the press. docs/known-issues.md
+            SerialM.println(geometry.setApplyAspect(!geometry.appliesAspect())
+                ? F("shape: switched")
+                : F("shape: refused, the engine is still solving"));
             uopt->applyAspect = geometry.appliesAspect() ? 1 : 0;
             saveUserPrefs();
             break;
@@ -6893,7 +6901,7 @@ void startWebserver()
     });
 
     server.on("/geometry", HTTP_GET, [](AsyncWebServerRequest *request) {
-        char body[400];
+        char body[448];
         snprintf_P(body, sizeof(body),
             PSTR("{\"oh\":%u,\"eh\":%u,\"ov\":%u,\"ev\":%u,"
                  "\"ch\":%u,\"cv\":%u,\"fh\":%u,\"fv\":%u,"
@@ -6902,6 +6910,7 @@ void startWebserver()
                  "\"lineRateHz\":%lu,\"lowLineRate\":%s,"
                  "\"aspect\":%u,\"shaping\":%s,\"shaped\":%s,"
                  "\"route\":\"%s\",\"routeStored\":%s,"
+                 "\"changing\":%s,"
                  "\"present\":%s,\"state\":\"%s\"}"),
             geometry.originUnitsOn(Tv5725::AxisHorizontal),
             geometry.extentUnitsOn(Tv5725::AxisHorizontal),
@@ -6946,6 +6955,12 @@ void startWebserver()
             // default, so `route` alone cannot say whether a choice was made.
             geometry.routeWanted().passesThrough() ? "passThrough" : "scale",
             geometry.storedRouteChosen() ? "true" : "false",
+            // Whether a mode change is still working through. setApplyAspect()
+            // and setAspect() re-solve and REVERT themselves where the solve
+            // refuses, so a press taken here is accepted and moves nothing --
+            // and no register says so, the chip counting the source correctly
+            // throughout. docs/known-issues.md
+            geometry.changing() ? "true" : "false",
             // The engine's own answer to "is a source there": a steadiness run
             // over the line count paired with one reading of what the sync
             // processor counts against the divider, not a live reading of
