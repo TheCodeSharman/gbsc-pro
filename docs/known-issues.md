@@ -293,6 +293,56 @@ off the USB capture as a saturated blue block in the top-left: the fraction of
 pixels with `B - R > 40` and `B - G > 40` over rows 10..170, columns 220..1230,
 which reads 0.47..0.65 present and 0.000 absent.
 
+### 640x480@60 on composite sync never settles, and the held clock alternates between two line rates
+
+Measured 2026-11-06 on `vga` with `SYNC 1`, after a mode change from the bench
+320x256@50 and a `/sc?~`. **The same mode on `SYNC 0` is flush on the card
+acceptance**, so the sync arrangement is the variable rather than the mode.
+
+`/geometry` alternates absent/acquired on a four-second cycle for the whole of
+an 81 s watch and never holds: `state` and `raster` move together, `raster:
+none` with `routeStored: false` on the absent half and `raster: dmt` with
+`routeStored: true` on the other.
+
+The arms are the residue class
+`investigations/the-composite-sync-count-re-arms-its-own-solve.md` already
+carries -- 922, 2048 and 573 lines against a solved 525, which is 1.756, 3.90
+and 1.09 times it and inside no multiple's tolerance, so `countIsMultipleOf()`
+cannot refuse them. **The formatter reads the frame correctly throughout**, 524
+in 8 of 8 readings on every pass.
+
+**WHAT IS NEW IS THE CLOCK, AND IT IS THE THREAD TO PULL.** The held clock
+alternates between two line-rate beliefs on consecutive passes, one of them the
+line rate of the mode that LEFT:
+
+```
+53.19  measured: 922 lines x 30.76 Hz -> line rate 28362, clock 2038@31512 htotal 2038
+54.52  measured: 525 lines x 60.00 Hz -> line rate 31500, clock 2040@15625 htotal 1197 UNLATCHED
+54.75  installing: divider from line rate 31526, doubled 0 -> 1442
+56.57  measure: start, TIMINGS change (contradicted count), 2048 lines, solved 525
+```
+
+15625 is the bench 320x256@50 line rate. The registers agree with the engine's
+own `UNLATCHED` -- `PLLAD_MD` 2040 against `STATUS_SYNC_PROC_HTOTAL` 1197,
+`SP_SOG_MODE` 1, coast 7/6. **A divider sized at 15625 for a source running
+31500 is one the sync processor cannot count the source through, so every
+contradicted reading is taken in that state** and the arm, the re-measure and
+the stale clock are one loop rather than three faults. Which of the two writes
+`2040@15625` is not established.
+
+Same family as "the same measured line rate installs two dividers 30 ms apart"
+below, and the suspect there -- a ceiling returning 0 where the arriving key
+matches no published raster -- is worth asking here, since `raster` reads
+`none` on exactly the passes that arm.
+
+**IT REACHES THE SUITE AS A REFUSED PRESS, NOT AS A FRAMING.** `changing()` is
+true for about half of every cycle, so
+`test_card_framing[X640Y480C256F60-composite]` fails at `the route cannot be
+pressed: a mode change is still working through` after three tries of 20 s and
+captures no frame. `test_sync_type_round_trip` and
+`test_acquires_every_source[composite-sync-passed-through]` are the same
+mechanism seen from two other angles.
+
 ### 800x600@60 on composite sync rolls in 95% of frames, and the probe that takes its coast away cannot see it
 
 `vga`, `MODE X800 Y600 C256 F60` with `SYNC 1`, scaling into 1080p, `PLLAD_MD`
