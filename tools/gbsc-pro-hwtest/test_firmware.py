@@ -23,6 +23,7 @@ from gbs_unit import (
     geometry_report,
     get,
     locked_steadily,
+    want_route,
     get_json,
     mode_serv,
     parse_timings,
@@ -433,6 +434,13 @@ def test_an_overridden_pulse_width_difference_survives_a_re_solve(host, source):
     read-back at both ends was taken, so what this pins is the read-back at the
     far end of a re-solve.
     """
+    # **ON THE SCALING ROUTE.** The separator's threshold is written by the
+    # path that measures the source, and in pass-through the sync processor's
+    # registers are nobody's -- the case timed out at 15 s on a source a
+    # preceding test left handed over, and passes in 22 s on the scaling route.
+    scaled = want_route(host, False, tries=4, settle=25.0)
+    assert scaled, f"the source would not scale, so the separator is idle: {scaled}"
+
     assert get_json(host, "/sepwidth?dlt=48"), "no /sepwidth route: a build without GBS_DEBUG"
     try:
         assert wait_for(lambda: read_named(host, "SP_DLT_REG") == 48, timeout=15), (
