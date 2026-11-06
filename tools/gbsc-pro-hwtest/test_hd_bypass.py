@@ -20,7 +20,16 @@ import time
 
 import pytest
 
-from gbs_unit import get, read_fields, restore_output_mode, setting
+from gbs_unit import (acquired_and_settled, get, mode_serv, modeserv_ok,
+                      read_fields, restore_output_mode, setting, wait_for)
+
+# A mode the DISPLAY can show handed over, because /sc?K refuses outright
+# otherwise: `bypassCanBeDisplayed()` gates it and the console says "pass
+# refused: source line rate too low to bypass". The bench 320x256@50 is
+# 15.6 kHz and no set here takes it, so this test cannot run on it.
+SHOWABLE_MODE = "MODE X800 Y600 C256 F60"
+BENCH_MODE = "MODE X320 Y256 C256 F50"
+SOURCE_SETTLE_SECONDS = 14.0
 
 # How long to wait for the switch to write the route at all. The switch resets
 # blocks and reloads the chip, so it is not instant.
@@ -51,8 +60,17 @@ def wait_for_claim(host):
     )
 
 
-def test_hd_bypass_keeps_the_route_it_claimed(host, preset_save):
+@pytest.mark.source_mode
+def test_hd_bypass_keeps_the_route_it_claimed(request, host, source, preset_save):
     original = setting(host, "output")
+    where = request.config.getoption("--modeserv")
+
+    assert modeserv_ok(mode_serv(where, SHOWABLE_MODE)), (
+        f"the source would not take {SHOWABLE_MODE}, and /sc?K is refused on a "
+        "line rate the display cannot show")
+    time.sleep(SOURCE_SETTLE_SECONDS)
+    assert wait_for(lambda: acquired_and_settled(host), timeout=60.0), (
+        "the source never settled, so the switch has nothing to hand over")
 
     try:
         status, body = get(host, "/sc?K")
@@ -79,3 +97,4 @@ def test_hd_bypass_keeps_the_route_it_claimed(host, preset_save):
         get(host, "/sc?~")
         if original:
             restore_output_mode(host, original)
+        mode_serv(where, BENCH_MODE)

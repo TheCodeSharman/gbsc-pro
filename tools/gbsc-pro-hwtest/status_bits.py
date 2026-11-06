@@ -234,7 +234,10 @@ def main():
 
         gbs_unit.get(host, "/freeze?on=0")
         time.sleep(2)
-        gbs_unit.get(host, "/sc?%29")           # the real fault, not a hand-set divider
+        # Detection, bring-up and the solve all run again. `/sc?)` used to be
+        # the preset load and is not a command any more, so it answered 200 and
+        # did nothing. tools/gbsc-pro-hwtest/test_geometry_pads.py
+        gbs_unit.get(host, "/sc?~")             # the real fault, not a hand-set divider
         time.sleep(25)
         record("trapped-by-preset-load")
     finally:

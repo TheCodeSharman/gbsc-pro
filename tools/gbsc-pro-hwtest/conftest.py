@@ -188,6 +188,39 @@ def pytest_collection_modifyitems(config, items):
                 item.add_marker(skip)
 
 
+# The mode every test that does not name one is written against, and what the
+# bench is left in. docs/bench-sources.md
+BENCH_MODE = "MODE X320 Y256 C256 F50"
+
+
+@pytest.fixture(autouse=True)
+def leave_the_source_on_the_bench_mode(request):
+    """Put the SOURCE mode back after any test marked `source_mode`.
+
+    **A LEAKED SOURCE MODE IS AN ORDER DEPENDENCE AND IT READS AS A FIRMWARE
+    FAULT.** A test that moves the source and ends leaves the next one judging
+    a mode it was not written for, and the failure lands somewhere unrelated:
+    the output-raster cases read 1592 x 1125 against the 1920 a 50 Hz source
+    solves and reported a correct engine 17% out, because 800x600@60 was still
+    up; the separator-width case timed out on a source left in pass-through,
+    and passes in 22 s on the bench mode. Most such tests restore the mode in
+    their own fixture and the gap is the ones that do not -- so the marker
+    carries the post-condition rather than each author remembering it.
+
+    Only for the marker: a test that never moves the source needs no ModeServ
+    round trip, and this runs around every test in the suite.
+    """
+    yield
+    where = request.config.getoption("--modeserv")
+    if not where or "source_mode" not in request.keywords:
+        return
+    try:
+        mode_serv(where, BENCH_MODE)
+    except OSError as unreachable:  # noqa: BLE001 - teardown must not raise
+        print(f"\nSOURCE NOT RESTORED: ModeServ at {where}: {unreachable}",
+              file=sys.stderr)
+
+
 @pytest.fixture(scope="session", autouse=True)
 def leave_the_bench_usable(request):
     """Put the framing back when the run ends, however it ends.

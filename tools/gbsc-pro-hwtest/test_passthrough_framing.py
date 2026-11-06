@@ -170,12 +170,16 @@ def passed_through(request, host):
     assert acquired_or_recovered(host, where, MODES[0]), \
         "the source never acquired, so the route could not be moved or read"
 
-    gbs_unit.get(host, "/uc?x")
-    entered = on_route(host, bypass=True)
+    # VERIFIED, and re-asked per case below. /uc?x is queued for loop() and
+    # re-runs detection underneath itself, so a blind press and a pause is not
+    # a choice -- and the choice is stored against the SOURCE in force, so the
+    # next case's mode change arrives at a source with nothing stored and takes
+    # the default.
+    entered = bool(gbs_unit.want_route(host, True, tries=4, settle=SETTLE_SECONDS))
 
     yield entered
 
-    gbs_unit.get(host, "/uc?x")
+    gbs_unit.want_route(host, False, tries=4, settle=SETTLE_SECONDS)
     on_route(host, bypass=False)
     if where:
         gbs_unit.mode_serv(where, "SYNC 0")
@@ -210,6 +214,9 @@ def test_the_passed_through_card_reaches_every_emitted_edge(
         assert unacquired, "never acquired, or never stopped re-solving"
         pytest.xfail(f"{unacquired}: the source never acquired, so the framing "
                      f"is not what this measured")
+    # This case's own source, which is not the one the module fixture chose for.
+    handed = gbs_unit.want_route(host, True, tries=4, settle=SETTLE_SECONDS)
+    assert handed, f"{mode} would not be handed over: {handed}"
     assert on_route(host, bypass=True), (
         "the re-detect did not come back to pass-through, so this would "
         f"measure the scaling path: {gbs_unit.read_fields(host, PATH)}")

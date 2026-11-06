@@ -239,12 +239,12 @@ def test_a_torn_down_chip_is_built_back_up_by_the_next_pass(host, source,
                      for w, s in undone.items())))
 
 
-@pytest.mark.xfail(strict=True,
-                   reason="ypbpr holds STATUS_SYNC_PROC_VTOTAL at 97 for ~15s "
-                          "after the ADC PLL locks: the sync-on-green path does "
-                          "not follow the source until the recovery ladder's "
-                          "SOG rungs run, and none may run inside "
-                          "FirstAcquisitionGraceMs. docs/known-issues.md")
+# The xfail here named `FirstAcquisitionGraceMs` holding the ladder's SOG rungs
+# off a first acquisition, so ypbpr sat at STATUS_SYNC_PROC_VTOTAL 97 for ~15 s
+# after the ADC PLL locked. That constant is gone: `235705a6b` replaced twelve
+# rungs on a pass count with three acts on a wall clock -- reconfigure at 10 s,
+# reset the blocks at 20 s, move the mux at 30 s -- so nothing is held off an
+# acquisition any more and there is no grace to wait out. It passed strict.
 def test_either_input_is_acquired_without_the_recovery_ladder(
         host, source, modeserv, bench_source_restored):
     if geometry_gated(host):

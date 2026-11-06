@@ -175,6 +175,28 @@ def settled_geometry(host, timeout=8.0):
     return previous
 
 
+# What writes the WHOLE configuration again, which is what these tests mean by
+# a preset load. `/sc?)` was `loadComputedPreset(Output1080P)` plus
+# `doPostPresetLoadSteps()` and went with the output being chosen by NAME in
+# 63bbda809 -- the character is not a `case` any more, so the request answers
+# 200 and nothing runs at all. Four of the five tests that fired it passed
+# vacuously on that account, comparing a settled state against itself.
+#
+# **AN OUTPUT REQUEST FOR THE MODE ALREADY IN FORCE IS NOT A SUBSTITUTE.**
+# `VideoPath::setOutputMode()` installs the sampling only where the mode or the
+# line doubling moved, so the divider is not rewritten and a poison survives.
+# A re-detection writes all of it: measured on `vga` at 320x256@50, a poisoned
+# IF_HSYNC_RST of 1000 came back to 1100 four seconds after /sc?~, with
+# PLLAD_MD 2200 and SP_RT_HS_SP 2126.
+RELOAD_COMMAND = "~"
+
+
+def load_the_whole_configuration(host):
+    """Detection, bring-up and the engine's solve, all run again."""
+    status, _ = get(host, f"/sc?{RELOAD_COMMAND}")
+    assert status == 200, f"/sc?{RELOAD_COMMAND} answered {status}"
+
+
 def restore_the_preset_the_suite_expects(host):
     """Wait out the preset load a teardown just fired.
 
@@ -1504,7 +1526,7 @@ def _compare_engine_outputs_across_a_preset_load(host):
     reset_the_framing(host)
     time.sleep(4)
 
-    get(host, "/sc?%29")  # a real preset load: table, sketch, bring-up, engine
+    load_the_whole_configuration(host)
     assert wait_for(lambda: (read_named(host, "VDS_HSYNC_RST") or 0) > 1000, timeout=20.0), (
         "no raster after the preset load, so there is nothing to compare")
     time.sleep(8)  # detection settles; CLAUDE.md says discard ~6 s
@@ -1578,7 +1600,7 @@ def _settled_sampling(host, timeout=30.0):
     """The three sampling registers once they have stopped moving.
 
     **A PRESET LOAD IS NOT THE LAST THING THAT TOUCHES THESE.** Measured
-    2026-08-15: five seconds after /sc?%29 the divider read 2553 with
+    2026-08-15: five seconds after a whole reload the divider read 2553 with
     IF_HSYNC_RST already 1279 -- a mixture of two tables, and it looks exactly
     like the invariant being broken. Thirty seconds later it was a consistent
     2558 / 1279 / 2378. Nothing was wrong; the read was taken mid-transition
@@ -1719,7 +1741,7 @@ def test_the_sampling_divider_is_one_quantity_in_three_registers(
     """
     poison_if = poisoned_if_hsync_rst
 
-    get(host, "/sc?%29")  # a real preset load: table, sketch, bring-up, engine
+    load_the_whole_configuration(host)
 
     assert wait_for(
         lambda: read_named(host, "IF_HSYNC_RST") != poison_if,
@@ -1846,7 +1868,7 @@ def test_a_preset_load_does_not_redecide_the_sync_type(host, source):
     before = {spec: read_field(host, *spec) for spec in SYNC_CSYNC}
     assert None not in before.values(), "could not read the sync processor"
 
-    get(host, "/sc?%29")  # a real preset load: table, sketch, bring-up, engine
+    load_the_whole_configuration(host)
     restore_the_preset_the_suite_expects(host)
 
     after = {spec: read_field(host, *spec) for spec in SYNC_CSYNC}
@@ -1981,7 +2003,7 @@ def test_a_mode_change_leaves_the_sync_output_driven(host, source, preset_load):
     display re-locking without anyone toggling the register by hand.
     """
     try:
-        get(host, "/sc?%29")  # a real preset load: table, sketch, bring-up, engine
+        load_the_whole_configuration(host)
         assert wait_for(lambda: (read_named(host, "VDS_HSYNC_RST") or 0) > 1000,
                         timeout=20.0), (
             "no raster after the preset load, so the mode change never landed "
@@ -2054,7 +2076,7 @@ def test_a_preset_load_leaves_the_scan_mode_the_source_calls_for(host, source):
         f"{raw_before}, wanting {wanted}")
 
     try:
-        get(host, "/sc?%29")  # loadComputedPreset(Mode1080p, 0x15)
+        load_the_whole_configuration(host)
         assert wait_for(lambda: (read_named(host, "VDS_HSYNC_RST") or 0) > 1000,
                         timeout=20.0), "no raster after the preset load"
         time.sleep(8)  # detection settles; CLAUDE.md says discard ~6 s

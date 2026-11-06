@@ -17,7 +17,7 @@ import time
 import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from gbs_unit import mode_serv, read_fields, reset_framing, wait_for
+from gbs_unit import mode_serv, read_fields, wait_for, want_route
 
 # VESA DMT 640x480@60, as the standard states it: 800 pixels a line, active
 # video from 144 to 784; 525 lines a frame, active from 35 to 515.
@@ -66,6 +66,15 @@ def vesa_source(request, host):
         # The sync processor counts from zero, so the 525-line frame reads 524.
         if counted != VESA_LINES - 1:
             pytest.skip(f"the source is counting {counted} lines, not {VESA_LINES - 1}")
+        # **THE CAPTURE WINDOW IS THE SCALING ROUTE'S.** 525 lines at 60 Hz
+        # suits pass-through and a source with nothing stored takes it, where
+        # the input formatter is out of the circuit and its registers hold the
+        # previous source's -- measured IF_HB_SP2 236 and IF_HB_ST2 926 on this
+        # mode, which are the bench 320x256@50 window exactly.
+        # docs/rgbhv-bypass-trap.md
+        scaled = want_route(host, False, tries=4, settle=25.0)
+        assert scaled, f"the source would not scale, so it has no capture window: {scaled}"
+        time.sleep(SETTLE_SECONDS)
         yield
     finally:
         mode_serv(where, BENCH_MODE)
@@ -103,38 +112,13 @@ def test_the_vertical_window_is_the_rasters_own_active_lines(host, vesa_source):
         f"capture runs {lines} lines, not the raster's {VESA_ACTIVE_LINES}")
 
 
-@pytest.fixture
-def bench_source(request, host):
-    """The bench mode, with the framing back at what the solve places."""
-    where = request.config.getoption("--modeserv")
-    reply = mode_serv(where, BENCH_MODE)
-    if not reply.startswith("OK"):
-        pytest.skip(f"the source refused {BENCH_MODE}: {reply}")
-    time.sleep(SETTLE_SECONDS)
-    reset_framing(host)
-    yield
-
-
-@pytest.mark.source_mode
-def test_a_source_running_no_published_raster_takes_the_envelope(host, bench_source):
-    at = read_fields(host, FIELDS)
-    assert at, "no register read came back"
-
-    line = at["IF_HSYNC_RST"] + 1
-    start = at["IF_HB_SP2"] / line
-    extent = (at["IF_HB_ST2"] - at["IF_HB_SP2"]) / line
-
-    assert abs(start - ENVELOPE_START) <= ENVELOPE_TOLERANCE, (
-        f"capture starts at {100 * start:.2f}% of the line, "
-        f"not the envelope's {100 * ENVELOPE_START:.1f}%")
-    assert abs(extent - ENVELOPE_EXTENT) <= ENVELOPE_TOLERANCE, (
-        f"capture runs {100 * extent:.2f}% of the line, "
-        f"not the envelope's {100 * ENVELOPE_EXTENT:.1f}%")
-
-    # Later than centring would put it, because sync and back porch sit at the
-    # head of the line and run far longer than the front porch. Centring is what
-    # cropped the far edge of every source measured.
-    assert start > (1.0 - extent) / 2.0, (
-        f"capture starts at {100 * start:.2f}% where centring a "
-        f"{100 * extent:.1f}% window would put it at "
-        f"{100 * (1.0 - extent) / 2.0:.2f}%")
+# **THE ENVELOPE CASE HAS LEFT THIS FILE**, because no bench source can reach
+# it. `SourceTiming`'s table publishes `320x256@50 15.6 kHz` -- 512 total, 36
+# sync, 110 back porch, 320 active -- so the bench source is placed from its
+# raster like any other: measured 0.2153/0.6249 against the envelope's
+# 0.117/0.864, with the shape off and after a reset, and 320/512 is 0.625.
+# A test asserting the envelope there asserts the wrong behaviour.
+#
+# The envelope itself is pinned where it can be exercised:
+# test/test_capture_window.cpp, "a source matching no published raster is
+# captured across the envelope".
