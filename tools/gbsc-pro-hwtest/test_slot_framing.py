@@ -18,7 +18,7 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from gbs_unit import (acquired_and_settled, framing_matches, framing_of,
                       framing_settled, fs_dir,
-                      fs_read, get, get_json, mode_serv, passed_through, press,
+                      fs_read, get, get_json, mode_serv, press,
                       read_fields, read_settings,
                       reset_framing, wait_for, want_route)
 
@@ -78,12 +78,20 @@ def reset_to_default(host):
     capture window and /geometry reports a framing of zeros. Everything in this
     file is about a framing, so the route is put back before one is read.
     """
-    landed = reset_framing(host)
-    if landed is not None and not passed_through(host):
-        return landed
-    scaled = want_route(host, False, tries=4, settle=25.0)
-    assert scaled, f"the source would not scale, so it has no framing: {scaled}"
-    return reset_framing(host)
+    # **THE ROUTE IS RE-ANSWERED ON A LATER PASS, so reading it straight after
+    # the reset is a race.** Asking the FRAMING instead settles it: a reset that
+    # lands on a framing is a reset on the scaling route, because pass-through
+    # reports a zero extent and `framing_settled()` refuses one. A reset that
+    # answers None is one to put the route back under and take again -- the
+    # engine drifted to pass-through seconds after a reset that had already
+    # reported 237/688, which read as an empty slot load moving the picture.
+    for _ in range(3):
+        landed = reset_framing(host)
+        if landed is not None:
+            return landed
+        scaled = want_route(host, False, tries=4, settle=25.0)
+        assert scaled, f"the source would not scale, so it has no framing: {scaled}"
+    return None
 
 
 def tune_the_framing(host):

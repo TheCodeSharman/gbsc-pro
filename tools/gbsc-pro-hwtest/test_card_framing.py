@@ -208,6 +208,16 @@ def judged_at(request, host):
     assert gbs_unit.choose_output(host, OUTPUT), (
         f"the output never reached {OUTPUT}, so the modes would be judged "
         f"against different rasters")
+    # **BEFORE THE SHAPE, BECAUSE SHAPING IS FALSE IN PASS-THROUGH BY
+    # DEFINITION.** `VideoPath::shaping()` is `applyAspect_ && !passedThrough()`,
+    # so the assertion below can never hold on a handed-over source however many
+    # times the switch is pressed -- and a preceding file leaving the unit there
+    # errored all ten cases at setup, which reads as the shape control being
+    # broken.
+    scaled = gbs_unit.want_route(host, False, tries=4, settle=25.0)
+    assert scaled, (
+        f"the source would not scale, so there is no framing to judge and no "
+        f"shape to apply: {scaled}")
     shaped = gbs_unit.want_shaping(host, True)
     assert shaped, (
         f"the shape is not being applied ({shaped}), so a case would be judged "
