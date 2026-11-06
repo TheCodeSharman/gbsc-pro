@@ -9710,8 +9710,48 @@ What is NOT yet separated:
   Measuring this needs channel busy time AT THE BENCH, which wants `iw` on the
   host. **It is in the dev shell now**, so `iw dev <iface> link` gives signal
   and bitrate unprivileged; `survey dump`, which is the busy-time figure,
-  wants CAP_NET_ADMIN and has to be run under sudo. **This is the only
-  candidate left.**
+  wants CAP_NET_ADMIN and has to be run under sudo.
+
+  **REFUTED, AND THE MEASUREMENT IS TAKEN.** It can be read from the ROUTER,
+  which needs no host privilege: `ssh router 'iw dev phy1-ap0 survey dump'`.
+  Measured 2026-11-06 -- **channel busy 12.2% over the 7.5 days since the
+  router booted (79.4 of 649.8 Ms), and 12.5% busy with 9.4% receive over a
+  live 30 s window.** A congested 2.4 GHz channel runs 50..80%. Channel 6 is
+  not busy, live or on average, so airtime is not what the unit is losing
+  packets to.
+
+  Two readings that go with it. **The radio operates at 20 MHz** --
+  `iw dev phy1-ap0 info` says `width: 20 MHz` -- although
+  `wireless.radio1.htmode` is `'HT40'` in the config, so the driver fell back
+  and the config value misleads. And **PMF and WPA3 are not in play**:
+  `26Myrica` is `psk2+ccmp` with no `ieee80211w` anywhere in `uci show
+  wireless`, so the 802.11w incompatibility that breaks ESP8266s is absent.
+  (`26Myrica Guest B` on the same radio IS `sae-mixed`, which is worth knowing
+  but is a different BSS.)
+
+- **REFUTED: the antenna, and the case having been opened.** The module is
+  shielded with a meander trace antenna, so there is nothing to reseat. The
+  discriminator is the unit's OWN access point: with the station failing, it
+  serves `gbscontrol11661880` from BSSID `FE:F5:C4:B1:F2:38` -- the station MAC
+  `fc:f5:c4:b1:f2:38` with the locally-administered bit set -- **at signal 100
+  on channel 11**. A damaged or detuned trace antenna cannot radiate at near
+  maximum. The radio transmits; it fails at station association specifically.
+
+**THE ONE CAUSE FOUND AND FIXED IS WHY IT NEEDED A POWER CYCLE, AND IT IS NOT
+THE LOSS.** `PersWiFiManager`'s access-point fallback was terminal: see
+`Net::StationRetry` and the commit that added it. A boot whose association did
+not complete inside `WIFI_CONNECT_TIMEOUT` -- 45 s, which a lossy link will
+miss -- raised the access point and never attempted the station again for the
+life of the boot. So the loss and the strand are TWO faults, and they compound:
+the loss costs the association, the boot timeout fires, and the strand makes it
+permanent. **The strand is fixed and the loss is not.**
+
+**STILL OPEN, AND A DIFFERENT PATH FROM THE ONE FIXED.** An association lost
+AFTER a successful connect leaves `_connectStartTime` at 0 with the retry
+unarmed, so `handleWiFi()` does nothing and recovery is whatever the SDK's
+auto-reconnect manages -- nothing in this fork calls
+`WiFi.setAutoReconnect()` either way. Whether that path can also strand the
+unit is untested; the terminal state measured here came from the boot timeout.
 - **REFUTED: the sleep mode being flipped under the radio.**
   `debugPinSpanEdges()` sets `WIFI_LIGHT_SLEEP` for the span of a vsync
   measurement and restores `WIFI_NONE_SLEEP` after, which would leave the AP
