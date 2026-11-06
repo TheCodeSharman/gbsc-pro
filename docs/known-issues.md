@@ -9637,6 +9637,17 @@ the transfer is not. That pair of readings is the discriminator: an armed unit
 that connects back and then drops the image is the link, not the heap and not
 the firewall.
 
+**AND IT MANUFACTURES FAILURES THAT READ AS FIRMWARE FAULTS. RE-RUN BEFORE
+BELIEVING ONE.** Measured 2026-11-06: six failures taken while the link was at
+90..100% loss, re-run over a clean one, and **three of the six passed** --
+every `test_source_line_rate` case among them, including
+`test_a_separate_sync_source_keeps_its_horizontal_count`, which two handovers
+carried as the first thing to read on the strength of
+`STATUS_SYNC_PROC_HTOTAL` 2200 against a divider of 2296. **That reading was
+the link and there is no divider fault behind it.** The three that survived are
+real and are `test_slot_framing`. So the discipline is: measure the loss, and
+re-run any failure taken over a bad window before diagnosing it.
+
 **A SUITE RUN TAKEN OVER IT IS EVIDENCE ABOUT NOTHING.** `pytest --host=` is
 hundreds of HTTP reads over 52 minutes; at a third of them lost, a helper that
 turns a missing reply into a value reports a unit that would not move. That is
@@ -9857,7 +9868,13 @@ the tell, since one pair cannot be right for both.
 
 **It reads as a slot fault**, which is where the time goes: `test_slot_framing`
 compares a stored framing against these fields and reports the disagreement
-against the slot.
+against the slot. **Confirmed 2026-11-06 over a clean link**:
+`test_one_slot_holds_a_framing_for_each_source` fails with *"the capturable
+region is still {'ch': 1101, 'cv': 624} after the source moved to 524 lines"* --
+the same pair, and the test reaches the same conclusion the call graph does.
+The other two failures in that file are a separate defect: `/slots.txt` records
+nothing for slot A and `/uc?4` reports nothing, so a save cannot be told from a
+no-op.
 
 In one sense the values are honestly absent rather than wrong -- in
 pass-through the input formatter is out of circuit and there is no capture
