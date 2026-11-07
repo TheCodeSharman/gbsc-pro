@@ -48,16 +48,38 @@ they appear to be testing.
 ## A transfer that keeps dying with the path good
 
 `CONNECTED` and an upload that still stops at a few per cent is the third case,
-and **retrying is not always what clears it**: measured 2026-10-14, seven
-consecutive attempts died at 0, 1, 4 and 0 per cent on a unit that had been up
-about fifteen minutes with a `regpanel.py` polling it, and a `/restart`
-immediately before the eighth carried the whole image first time.
+and **IT IS THE LINK. ASK THE PACKET LOSS BEFORE RETRYING ANYTHING.** An armed
+unit that replies `OK`, connects back, and then drops the image is the
+discriminator for a degraded association -- not the heap and not the firewall.
+`known-issues.md` carries fifteen consecutive failures under it, thirteen at
+0 to 5% and one at 66%, **across four `/restart`s**, with the link at 68 to
+100% loss throughout.
 
-The unit's free heap is the candidate and the boot figure does not show it --
-`/bootlog` read 9840 bytes at both boots, while a live read in the comparable
-state before the restart gave 8776 and refused `/fs/download`, which needs
-10000. So **restart the unit before an upload that has failed twice**, rather
-than retrying a third time; it costs twelve seconds against a minute an attempt.
+```sh
+ping -c 20 <ip>                 # the first thing to run, not the last
+ssh router "iw dev phy1-ap0 station dump"      # signal, bitrate, tx retries
+```
+
+Measured 2026-11-07: five attempts failed at 0% and 9% and three times with
+`Error Uploading`, `ota_probe.py` answering `OK` then `CONNECTED` either side,
+while the same window gave **100% ICMP loss once and HTTP dead for 32 s once**,
+both recovering unaided, with the station dump reading **signal -49 dBm over a
+range of [-83, -49] and 19 tx retries in 101 packets**. Layer 2 associates and
+holds; the transfer does not survive the fades.
+
+**THE HEAP IS NOT THE CANDIDATE, AND THE EXPERIMENT THAT NAMED IT CANNOT
+ATTRIBUTE ONE.** Measured 2026-10-14, seven attempts died at 0 to 4% and a
+`/restart` before the eighth carried the whole image; `/bootlog` read 9840
+bytes at both boots against a live 8776 before the restart. **A restart
+re-associates the WiFi as well as clearing the heap**, so a recovery after one
+is explained equally by a fresh association on a flaky link -- and the four
+restarts above did not rescue it, which is the direction that settles it. The
+8776 reading is real and costs `/fs/download`, which needs 10000; it is not
+evidence about the transfer.
+
+So **measure the loss first**. Over a clean link, retrying two or three times
+is the move; over a bad one, no number of retries or restarts will carry the
+image and USB is the route.
 
 ## Arming
 
