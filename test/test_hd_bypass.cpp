@@ -933,7 +933,31 @@ TEST_CASE("a source at 640x480 or above is passed through, and anything below is
         seedSourceLines(524);
         g_fieldRate = 60.0f;
         CHECK(rateMeasured(measurePastGate(measurement)));
-        CHECK(HdBypass::suitsSource(524, measurement.fieldRateHz()));
+        CHECK(HdBypass::suitsSource(525, measurement.fieldRateHz()));
+    }
+
+    SUBCASE("a 400-line source on a VGA line rate is scaled") {
+        // THE WHOLE POINT OF A LETTERBOX MODE IS LOW RESOLUTION ON A VGA LINE
+        // RATE, so no line-rate floor can see one. 449 lines at 70.157 Hz is
+        // the IBM VGA 400-line raster, which `RetroScaler-Acorn.mdf` offers for
+        // a 320x256 mode: a 31500 Hz line that clears the floor while the frame
+        // is short of 640x480. Measured on the bench 2026-11-07 -- handed over,
+        // the sink shows No Signal.
+        seedSourceLines(448);
+        g_fieldRate = 70.157f;
+        CHECK(rateMeasured(measurePastGate(measurement)));
+        CHECK_FALSE(HdBypass::suitsSource(449, measurement.fieldRateHz()));
+    }
+
+    SUBCASE("and the line-rate floor cannot express that, 640x480 sharing it") {
+        // 525 x 59.94 is 31468 Hz against the 400-line raster's 31500: THIRTY
+        // TWO HERTZ APART. So any floor that rejects the one above rejects
+        // 640x480 with it, and this is the case that must keep passing through
+        // for the rejection to be about the frame rather than the rate.
+        seedSourceLines(524);
+        g_fieldRate = 59.94f;
+        CHECK(rateMeasured(measurePastGate(measurement)));
+        CHECK(HdBypass::suitsSource(525, measurement.fieldRateHz()));
     }
 
     SUBCASE("a source the line doubler is needed for is scaled") {

@@ -26,7 +26,7 @@ bool HdBypass::suitsLineRate(uint32_t lineRateHz)
 
 bool HdBypass::suitsSource(uint16_t sourceLines, float fieldRateHz)
 {
-    if (sourceLines == 0)
+    if (sourceLines < MinSourceLines)
         return false;
     if (InputFormatter::shouldDoubleLine(sourceLines))
         return false;

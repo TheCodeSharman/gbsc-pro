@@ -183,6 +183,11 @@ public:
     // panel. ../../../docs/rgbhv-bypass-trap.md
     static const uint32_t MinLineRateHz = 26000;
 
+    // 640x480's frame, the smallest a sink taking HDMI implements. A letterbox
+    // mode puts low resolution on a VGA line rate, so suitsLineRate() cannot
+    // reject one: it shares its rate with the modes the floor exists to admit.
+    static const uint16_t MinSourceLines = 525;
+
 
     // Whether bypass would reach the panel at all. It hands the source's own
     // timing to the encoder, so an unmeasured or slow source has to stay on
