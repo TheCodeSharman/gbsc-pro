@@ -10,6 +10,30 @@ regardless of which step is in flight.
 
 ## Reaches the picture
 
+### `/geometry`'s `route` reports the PREFERENCE, not the path in force
+
+`geometry.routeWanted()` answers the stored route where there is one and
+`Route::passedThrough()` where there is not, and the route field is printed
+straight from it -- so **a source with nothing stored always reads
+`passThrough`, however it is actually being driven**. Suitability is decided
+afterwards by `VideoSourceAcquisition::passThroughSuitsSource()`, which the
+field never consults.
+
+Measured 2026-11-07 on `vga`, a 449-line 70.157 Hz source with its stored entry
+forgotten: `/geometry` said `route: "passThrough"`, `routeStored: false`, while
+`/output` said `passThrough: false` and `DAC_RGBS_BYPS2DAC` and `OUT_SYNC_SEL`
+both read 0 -- the scaling path, with `VDS_HSCALE` 998 and `VDS_VSCALE` 252
+doing real work and a correct picture on the panel.
+
+**IT READS AS A FIX THAT DID NOT TAKE.** The field was the only thing consulted
+when checking that `HdBypass::MinSourceLines` had landed, and it reported the
+old behaviour on a unit that had the new one. **Ask `/output`'s `passThrough`,
+or the register pair, which `rgbhv-bypass-trap.md` names as the discriminator.**
+
+Fixing the field means printing the route the engine is on rather than the one
+it would prefer; the preference is still worth reporting, so the two want
+separate names rather than one field doing both.
+
 ### The hardware acceptance suite's remaining failures, measured 2026-11-06
 
 What is left after a pass that chased every failure to its cause over a
