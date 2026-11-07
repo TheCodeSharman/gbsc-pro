@@ -1,11 +1,21 @@
 # RGBHV, scaled or bypassed
 
-**THE MEASUREMENT DECIDES.** `SourceMeasurement::bypassSuitsCount()` passes a
-source through when the line doubler is not needed for it and its line rate
-reaches the sink — 640x480 and up, which is everything a sink taking HDMI is
-required to accept — and scales everything below. The sync watcher's steering
-reads it in both directions, so a source that changes mode across the boundary
-crosses on its own.
+**THE MEASUREMENT DECIDES.** `HdBypass::suitsSource()` passes a source through
+when its FRAME reaches 640x480 — `MinSourceLines`, 525 lines, everything a sink
+taking HDMI is required to accept — and its line rate clears `MinLineRateHz`,
+and scales everything below. The sync watcher's steering reads it in both
+directions, so a source that changes mode across the boundary crosses on its
+own.
+
+**THE FRAME IS WHAT DECIDES, AND THE LINE RATE CANNOT STAND IN FOR IT.** A
+letterbox mode exists to put low resolution on a VGA line rate, so it shares
+its rate with the modes the floor admits and no floor can separate them:
+640x480@60 is 525 x 59.94 = 31468 Hz against the Acorn set's 449-line 70 Hz
+modes at 31500, **thirty-two hertz apart**. Gating on the rate alone handed a
+449-line source to the encoder and the sink showed No Signal, measured
+2026-11-07 on `vga` and reproduced by selecting pass-through from the remote.
+Both criteria are live: the frame rejects a letterbox mode, the rate rejects a
+15 kHz source that is tall enough.
 
 **Scaling is what costs the picture, which is why the boundary sits there.** The
 capture's write limit bounds a line at about 1024 IF units however it is placed,
@@ -131,7 +141,7 @@ anyway**, so a number it has already judged impossible is displayed as fact.
 ## A source that slows while bypassed
 
 Bypass hands the source's own timing to the encoder, so it works only where the
-display can show that timing. `SourceMeasurement::BypassMinLineRateHz` is the
+display can show that timing. `HdBypass::MinLineRateHz` is the
 floor, bracketed by measurement on the bench panel rather than taken from the
 VGA standard — 26650 Hz locks and 21780 Hz gives no signal.
 
