@@ -9797,6 +9797,17 @@ unit holds the address and answers nothing on it. Measured on one association:
 **connected 640 s having sent 62 packets**, inactive time running 18 to 40 s,
 and its uplink pinned at the **6.0 MBit/s** 802.11g floor.
 
+**THE FADE IS THE MECHANISM, AND LAYER 2 IS NO LONGER AT THE FLOOR.** Measured
+2026-11-07 from the router on one association: **signal -49 dBm over a range of
+[-83, -49]**, tx bitrate **48.0 MBit/s** rather than the 6.0 MBit/s floor
+above, 19 tx retries in 101 packets, 0 tx failed, and the ARP entry STALE
+rather than FAILED. So the association is healthier than when this entry was
+written while the symptom persists -- **100% ICMP loss in one window and HTTP
+dead for 32 s in another**, both recovering unaided, and five OTA transfers
+dropped under `OK`/`CONNECTED`. A 34 dB swing within one association is an
+episodic fade rather than a steady decline, which is what a signal average
+alone hides: ask for the RANGE, and for the retry count beside it.
+
 **THE CONTROL THAT SETTLES IT IS A SECOND STATION ON THE SAME AP INTERFACE,
 AT THE BENCH, ON THE SAME BAND.** A laptop moved to `26Myrica` -- 2.4 GHz,
 `phy1-ap0`, 192.168.88.x, sitting beside the scaler -- reads **0% loss to the
