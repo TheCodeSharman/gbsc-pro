@@ -34,8 +34,6 @@
 #define RGBs_Sync 2
 #define Ypbpr_Sync 3
 
-extern bool scalingRgbhv();
-extern void applyPresets();
 extern void saveUserPrefs();
 extern void loadDefaultUserOptions();
 extern void ChangeAvModeOption(uint8_t num);
@@ -53,6 +51,7 @@ extern OLEDMenuManager oledMenu;
 extern FrameTimeLock frameTimeLock;
 extern Tv5725::VideoPath geometry;
 extern void chooseOutputMode(const Tv5725::OutputMode *mode);
+extern void selectOutputResolution(const Tv5725::OutputMode *mode);
 unsigned long oledMenuFreezeStartTime;
 unsigned long oledMenuFreezeTimeoutInMS;
 
@@ -145,37 +144,8 @@ bool resolutionMenuHandler(OLEDMenuManager *manager, OLEDMenuItem *item, OLEDMen
     }
     if (item->tag != MT_BYPASS)
     {
-        chooseOutputMode(chosen);
-        if (scalingRgbhv())
-        {
-            Tv5725::RgbhvOutput::chooseBypass();
-        }
-        else
-        {
-            applyPresets();
-        }
+        selectOutputResolution(chosen);
     }
-    else
-    {
-        // setOutModeHdBypass(false);
-        // uopt->presetPreference = preset;
-        // {
-        //     rto->autoBestHtotalEnabled = 0;
-        //     if (rto->applyPresetDoneStage == 11)
-        //     {
-        //         rto->applyPresetDoneStage = 1;
-        //     }
-        //     else
-        //     {
-        //         rto->applyPresetDoneStage = 10;
-        //     }
-        // }
-        // else
-        // {
-        //     rto->applyPresetDoneStage = 1;
-        // }
-    }
-    saveUserPrefs();
     manager->freeze();
     return false;
 }

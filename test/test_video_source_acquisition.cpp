@@ -1034,6 +1034,30 @@ TEST_CASE("a passed-through source names itself rather than the last scaled one"
     CHECK(unit.path.reportedKey().lines() == 525);
 }
 
+// The contract the sketch's one resolution path leans on: choosing the scaled
+// route through the acquisition takes a passed-through source off bypass. The
+// VideoPath's own chooseRoute() only stores it, and nothing re-reads a stored
+// route while the source stands still -- so a resolution that stored it there
+// alone left the chip passing through. docs/rgbhv-bypass-trap.md
+TEST_CASE("choosing the scaled route takes a passed-through source off bypass")
+{
+    seedPassThroughSource();
+    g_passThroughSwitches = 0;
+
+    Acquiring unit;
+    unit.acquisition.usePassThroughSwitch(enterPassThrough);
+    unit.start();
+
+    REQUIRE(unit.pollUntilSolved(8));
+    REQUIRE(unit.path.outputMode()->isBypass());
+
+    REQUIRE(unit.acquisition.chooseRoute(Route::scaled(), unit.nowMs));
+    for (uint8_t i = 0; i < 8 && unit.path.outputMode()->isBypass(); ++i)
+        unit.poll();
+
+    CHECK(!unit.path.outputMode()->isBypass());
+}
+
 TEST_CASE("a route taken away underneath pass-through is claimed again")
 {
     seedPassThroughSource();

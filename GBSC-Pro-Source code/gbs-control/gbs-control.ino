@@ -2652,15 +2652,20 @@ static void togglePassThroughForSource()
         debugPrintf("route: not stored, no source identified\n");
 }
 
-// A resolution is a command to scale THIS source: pass-through holds a source
-// off the resolution just chosen. No other source changes route because one was
-// given a resolution.
-//
-// The store alone, where the toggle goes through the acquisition: the
-// resolution change on the next line arms the pass that re-answers the route.
-static void scaleSourceForResolution()
+// A resolution is a command to scale THIS source, and the one path for it: the
+// serial letters, /output and the OLED knob all reach here. The scaled route
+// goes through the acquisition so the chip leaves bypass on the resolve --
+// storing it on the VideoPath alone does not, because nothing re-reads a stored
+// route while the source stands still, so a passed-through source stays passed
+// through and the menu's pass-through state falls out of step with the toggle.
+// No other source changes route because one was given a resolution.
+// docs/rgbhv-bypass-trap.md
+void selectOutputResolution(const Tv5725::OutputMode *mode)
 {
-    geometry.chooseRoute(Tv5725::Route::scaled());
+    chooseOutputMode(mode);
+    changeOutputResolution();
+    inputAcquisition.chooseRoute(Tv5725::Route::scaled(), millisNow());
+    saveUserPrefs();
 }
 
 void enterHdBypass()
@@ -5263,14 +5268,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
         if (pendingOutputMode != NULL) {
             const Tv5725::OutputMode *const wanted = pendingOutputMode;
             pendingOutputMode = NULL;
-
-            // A RESOLUTION IS A COMMAND TO SCALE: pass-through holds a source
-            // off the resolution just chosen, so choosing one leaves it, and
-            // before the change or the next pass routes the source back.
-            chooseOutputMode(wanted);
-            scaleSourceForResolution();
-            changeOutputResolution();
-            saveUserPrefs();
+            selectOutputResolution(wanted);
         }
 
         if (pendingInputSelection != VideoSourceSelection::None) {
@@ -5409,28 +5407,21 @@ void handleType2Command(char argument)
         case 'p':
         case 's':
         case 'L': {
+            // 'L' re-scales at the current resolution; the rest name one.
+            const Tv5725::OutputMode *mode = chosenOutputMode();
             if (argument == 'f')
-                chooseOutputMode(&Tv5725::Mode960p);
-            if (argument == 'g')
-                chooseOutputMode(&Tv5725::Mode720p);
-            if (argument == 'h')
-                chooseOutputMode(&Tv5725::Mode480p);
-            if (argument == 'j')
-                chooseOutputMode(&Tv5725::Mode576p);
-            if (argument == 'p')
-                chooseOutputMode(&Tv5725::Mode1024p);
-            if (argument == 's')
-                chooseOutputMode(&Tv5725::Mode1080p);
-
-            // A RESOLUTION IS A COMMAND TO SCALE. Pass-through is the one thing
-            // that can hold a source off the resolution just chosen -- it hands
-            // the source's own timing to the encoder and the engine's raster
-            // reaches nothing -- so choosing one leaves it. Before the change,
-            // or the next pass routes the source straight back.
-            scaleSourceForResolution();
-
-            changeOutputResolution();
-            saveUserPrefs();
+                mode = &Tv5725::Mode960p;
+            else if (argument == 'g')
+                mode = &Tv5725::Mode720p;
+            else if (argument == 'h')
+                mode = &Tv5725::Mode480p;
+            else if (argument == 'j')
+                mode = &Tv5725::Mode576p;
+            else if (argument == 'p')
+                mode = &Tv5725::Mode1024p;
+            else if (argument == 's')
+                mode = &Tv5725::Mode1080p;
+            selectOutputResolution(mode);
         } break;
         case 'i':
             // toggle active frametime lock method
