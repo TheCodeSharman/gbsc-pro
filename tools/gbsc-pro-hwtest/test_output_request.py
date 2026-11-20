@@ -11,7 +11,8 @@ import time
 import pytest
 
 from gbs_unit import (OUTPUT_COMMANDS, OUTPUT_FRAME_LINES, acquired_and_settled,
-                      choose_output, get, read_named, wait_for, want_route)
+                      choose_output, get, handed_over, read_named, wait_for,
+                      want_route)
 
 # A mode change takes seconds to reach the engine, and `state` is stale across
 # one -- so a settle check taken straight after the command answers about the
@@ -61,6 +62,47 @@ def test_one_output_request_lands_after_a_source_mode_change(host, source, prese
         assert raster_carries(host, other), (
             f"{other} was asked for once after a source mode change and the raster "
             f"stayed on {read_named(host, 'VDS_VSYNC_RST') + 1} lines")
+    finally:
+        choose_output(host, "1080p")
+        modeserv(f"MODE {BENCH_MODE}")
+        modeserv("PATTERN CARD")
+        modeserv("ANIM OFF")
+
+
+@pytest.mark.source_mode
+def test_a_resolution_request_leaves_passthrough(host, source, preset_save, modeserv):
+    """Choosing an output resolution takes a passed-through source off bypass.
+
+    A resolution is a command to scale, so one request must leave pass-through.
+    The scaled route is stored through the acquisition, which re-answers the
+    route and drops the chip off bypass -- storing it on the VideoPath alone
+    does not, because nothing re-reads a stored route while the source stands
+    still. The path in force is read off DAC_RGBS_BYPS2DAC/OUT_SYNC_SEL, not off
+    the preference /geometry reports wanting. docs/rgbhv-bypass-trap.md
+
+    This is also what keeps the menu's pass-through state in step with its
+    toggle: while the chip passed through on a scaled route, the row read ON off
+    the chip and the toggle read OFF off the route, so turning it off took two
+    presses.
+    """
+    modeserv(f"MODE {OTHER_MODE}")
+    time.sleep(SOURCE_SETTLE_SECONDS)
+    assert wait_for(lambda: acquired_and_settled(host), timeout=60.0), \
+        f"{OTHER_MODE} never acquired"
+
+    # PUT it in pass-through and confirm the PATH carries it, not just the wish.
+    assert want_route(host, True), f"{OTHER_MODE} would not pass through"
+    assert wait_for(lambda: handed_over(host), timeout=30.0), \
+        "pass-through was asked for but the path never carried it"
+
+    try:
+        # choose_output waits for the mode's own raster, which a chip left in
+        # bypass never carries -- so the bug fails this on both its counts: the
+        # resolution does not land and the path stays bypassed.
+        assert choose_output(host, "1080p"), \
+            "1080p was chosen once from pass-through and its raster never came"
+        assert wait_for(lambda: handed_over(host) is False, timeout=15.0), \
+            "the output stayed on the bypass path after a resolution was chosen"
     finally:
         choose_output(host, "1080p")
         modeserv(f"MODE {BENCH_MODE}")
